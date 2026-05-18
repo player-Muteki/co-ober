@@ -1,0 +1,388 @@
+/* Copsidian — main styles */
+
+.copsidian-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.copsidian-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  flex-shrink: 0;
+}
+
+.copsidian-header-title {
+  font-weight: 600;
+  font-size: var(--font-ui-medium);
+}
+
+.copsidian-header-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* Messages */
+.copsidian-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.copsidian-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.copsidian-msg.user .copsidian-msg-body {
+  background: var(--background-primary-accent);
+  color: var(--text-on-accent);
+  padding: 8px 12px;
+  border-radius: var(--radius-s);
+  font-size: var(--font-ui-small);
+}
+
+.copsidian-msg.assistant .copsidian-msg-body {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  padding: 8px 12px;
+  border-radius: var(--radius-s);
+  font-size: var(--font-ui-small);
+  line-height: 1.5;
+}
+
+/* Thinking */
+.copsidian-thinking {
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  overflow: hidden;
+}
+
+.copsidian-thinking-header {
+  padding: 4px 10px;
+  font-size: var(--font-smaller);
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.copsidian-thinking-body {
+  padding: 8px 10px;
+  font-size: var(--font-smaller);
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1.5;
+}
+
+/* Tool calls */
+.copsidian-tool-call {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  overflow: hidden;
+}
+
+.copsidian-tool-call-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--background-secondary);
+  cursor: pointer;
+  font-size: var(--font-smaller);
+}
+
+.copsidian-tool-call-header .tc-status {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.copsidian-tool-call-body {
+  padding: 8px 10px;
+  font-size: var(--font-smaller);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  font-family: var(--font-editor);
+  line-height: 1.4;
+}
+
+/* Plan */
+.copsidian-plan-panel {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  padding: 8px 12px;
+}
+
+.copsidian-plan-panel .plan-title {
+  font-weight: 600;
+  font-size: var(--font-smaller);
+  margin-bottom: 6px;
+}
+
+.copsidian-plan-panel .plan-item {
+  font-size: var(--font-smaller);
+  padding: 2px 0;
+}
+
+.copsidian-plan-panel .status-completed {
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+
+.copsidian-plan-panel .status-in_progress {
+  color: var(--text-accent);
+}
+
+.copsidian-plan-panel .status-todo {
+  color: var(--text-muted);
+}
+
+/* Loading */
+.copsidian-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--text-muted);
+  font-size: var(--font-smaller);
+}
+
+.copsidian-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--background-modifier-border);
+  border-top-color: var(--text-accent);
+  border-radius: 50%;
+  animation: copsidian-spin 0.8s linear infinite;
+}
+
+@keyframes copsidian-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Error */
+.copsidian-error {
+  padding: 8px 12px;
+  color: var(--text-error);
+  font-size: var(--font-smaller);
+  background: var(--background-modifier-error);
+  border-radius: var(--radius-s);
+}
+
+/* Context chips */
+.copsidian-context-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 8px;
+  flex-shrink: 0;
+}
+
+.copsidian-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  padding: 2px 8px;
+  font-size: var(--font-smaller);
+  cursor: pointer;
+  user-select: none;
+}
+
+.copsidian-chip:hover {
+  background: var(--background-modifier-hover);
+}
+
+/* Toolbar */
+.copsidian-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--background-modifier-border);
+  flex-shrink: 0;
+  font-size: var(--font-smaller);
+  background: var(--background-secondary);
+}
+
+.copsidian-toolbar .tb-label {
+  font-size: var(--font-smaller);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.copsidian-toolbar .tb-select {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  padding: 2px 4px;
+  font-size: var(--font-smaller);
+  color: var(--text-normal);
+  outline: none;
+  width: 100px;
+}
+
+.copsidian-toolbar .copsidian-toolbar-sending {
+  margin-left: auto;
+  font-size: 12px;
+}
+
+/* Input */
+.copsidian-input-area {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+  flex-shrink: 0;
+}
+
+.copsidian-input-area .copsidian-input {
+  flex: 1;
+  resize: none;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  padding: 8px;
+  font-size: var(--font-ui-small);
+  font-family: var(--font-editor);
+  line-height: 1.4;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  outline: none;
+  min-height: 38px;
+  max-height: 200px;
+}
+
+.copsidian-input-area .copsidian-input:focus {
+  border-color: var(--text-accent);
+}
+
+.copsidian-input-area .copsidian-send-btn {
+  background: var(--text-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: var(--radius-s);
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: var(--font-ui-small);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.copsidian-input-area .copsidian-send-btn:hover {
+  opacity: 0.85;
+}
+
+.copsidian-input-area .copsidian-send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Autocomplete dropdown */
+.copsidian-ac-dropdown {
+  position: fixed;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  font-size: var(--font-smaller);
+}
+
+.copsidian-ac-dropdown .copsidian-ac-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.copsidian-ac-dropdown .copsidian-ac-item.selected {
+  background: var(--background-modifier-hover);
+}
+
+.copsidian-ac-dropdown .ac-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copsidian-ac-dropdown .ac-desc {
+  color: var(--text-muted);
+  font-size: var(--font-smaller);
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+/* Session list */
+.copsidian-session-list {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  width: 320px;
+  max-height: 400px;
+  overflow-y: auto;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  padding: 4px 0;
+}
+
+.copsidian-session-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: var(--font-smaller);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.copsidian-session-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.copsidian-session-item.active {
+  background: var(--background-modifier-hover);
+  font-weight: 500;
+}
+
+/* Settings enhancements */
+.copsidian-sync-rule {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  padding: 8px;
+  margin: 6px 0;
+  background: var(--background-secondary);
+}
+
+.copsidian-sync-rule strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.copsidian-sync-rule .mod-warning {
+  background: var(--background-modifier-error);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: var(--radius-s);
+  padding: 4px 12px;
+  cursor: pointer;
+  font-size: var(--font-smaller);
+  margin-top: 8px;
+}

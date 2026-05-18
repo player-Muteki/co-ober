@@ -1,0 +1,37 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+      - run: npx esbuild --minify
+
+      - name: Package
+        run: |
+          mkdir -p copsidian-release
+          cp main.js manifest.json styles/main.css copsidian-release/
+          tar -czf copsidian.tar.gz -C copsidian-release .
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            copsidian.tar.gz
+            main.js
+            manifest.json
+            styles/main.css

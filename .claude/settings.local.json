@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(node esbuild.config.mjs)",
+      "Bash(npx esbuild *)",
+      "Bash(git init *)"
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "id": "copsidian",
+  "name": "Copsidian",
+  "description": "Embed the complete OpenCode agent inside Obsidian sidebar",
+  "minAppVersion": "1.7.0",
+  "isDesktopOnly": true,
+  "version": "0.1.0",
+  "js": "main.js",
+  "css": "styles/main.css"
+}

@@ -1,0 +1,21 @@
+{
+  "name": "copsidian",
+  "version": "0.1.0",
+  "description": "Embed the complete OpenCode agent inside Obsidian sidebar",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit && node esbuild.config.mjs --minify"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^0.21.1",
+    "tslib": "^2.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "esbuild": "^0.28.0",
+    "obsidian": "latest",
+    "typescript": "^5.7.0"
+  },
+  "private": true
+}
