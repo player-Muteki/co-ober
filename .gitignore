@@ -4,4 +4,4 @@ main.js.map
 styles.css
 release/
 *.tar.gz
-.claude/worktrees/
+.claude/
