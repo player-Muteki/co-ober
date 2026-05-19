@@ -718,7 +718,7 @@ export class CopsidianView extends ItemView {
 			this.input.focus();
 			// Show usage stats after streaming completes
 			if (this.state.usage) {
-				this.renderer.showUsage(this.state.usage);
+				this.renderer.showUsage({ ...this.state.usage, modelId: this.state.currentModelId ?? undefined });
 			}
 		}
 	}

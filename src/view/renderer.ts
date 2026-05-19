@@ -8,6 +8,7 @@ export interface UsageDisplay {
   outputTokens: number;
   thoughtTokens?: number;
   cost?: { amount: number; currency: string };
+  modelId?: string;
 }
 
 export class ChatRenderer {
@@ -86,18 +87,20 @@ export class ChatRenderer {
   }
 
   appendText(text: string, messageId?: string, timestamp?: number): void {
-    this.currentAssistantText += text;
     if (messageId && this.currentAssistantId !== messageId) {
       this.currentAssistantEl = null;
+      this.currentAssistantWrap = null;
       this.currentAssistantText = '';
       this.currentAssistantId = messageId;
       this.currentAssistantType = 'text';
     }
     if (this.currentAssistantType !== 'text') {
       this.currentAssistantEl = null;
+      this.currentAssistantWrap = null;
       this.currentAssistantText = '';
       this.currentAssistantType = 'text';
     }
+    this.currentAssistantText += text;
     if (!this.currentAssistantEl) {
       const wrap = this.container.createDiv({ cls: 'copsidian-msg assistant' });
       wrap.dataset.timestamp = this.formatTimestamp(timestamp ?? Date.now());
@@ -317,12 +320,13 @@ export class ChatRenderer {
     const el = target.createDiv({ cls: 'copsidian-usage' });
 
     const parts: string[] = [];
+    if (usage.modelId) parts.push(usage.modelId.split('/').pop() ?? usage.modelId);
     if (usage.inputTokens) parts.push(`↑${usage.inputTokens}`);
     if (usage.outputTokens) parts.push(`↓${usage.outputTokens}`);
     if (usage.thoughtTokens) parts.push(`💭${usage.thoughtTokens}`);
-    if (usage.cost) parts.push(`$${usage.cost.amount.toFixed(4)}`);
+    if (usage.cost?.amount) parts.push(`$${usage.cost.amount.toFixed(4)}`);
     el.textContent = parts.join(' · ');
-    el.title = `Input: ${usage.inputTokens}, Output: ${usage.outputTokens}${usage.thoughtTokens ? `, Thinking: ${usage.thoughtTokens}` : ''}`;
+    el.title = `Model: ${usage.modelId ?? '?'} | Input: ${usage.inputTokens}, Output: ${usage.outputTokens}${usage.thoughtTokens ? `, Thinking: ${usage.thoughtTokens}` : ''}`;
 
     this.scrollToBottom();
   }
