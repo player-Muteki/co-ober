@@ -677,6 +677,7 @@ export class CopsidianView extends ItemView {
 			await this.executeBuiltIn(cmd.name, cmd.args);
 			return;
 		}
+		// Non-built-in slash commands are sent directly to the agent as text
 
 		this.busy = true;
 		this.state.isStreaming = true;
@@ -690,10 +691,20 @@ export class CopsidianView extends ItemView {
 			await this.syncRuntimeSession(sessionId);
 			const parts = await this.buildParts(text, refs);
 			if (this.state.sessionId !== sessionId || !this.busy) return;
-			await c.sendMessage(sessionId, parts, (ch: SessionUpdate) => {
+			const response = await c.sendMessage(sessionId, parts, (ch: SessionUpdate) => {
 				if (!this.busy || this.state.sessionId !== sessionId) return;
 				this.streamCtrl.handleChunk(ch);
 			});
+			// Use response-level usage (has inputTokens/outputTokens), fall back to state.usage for cost
+			if (response?.usage) {
+				this.state.usage = {
+					totalTokens: response.usage.totalTokens ?? 0,
+					inputTokens: response.usage.inputTokens ?? 0,
+					outputTokens: response.usage.outputTokens ?? 0,
+					thoughtTokens: response.usage.thoughtTokens,
+					cost: this.state.usage?.cost,
+				};
+			}
 		} catch (e: unknown) {
 			if (this.state.sessionId === sessionId) {
 				this.renderer.addError(e instanceof Error ? e.message : String(e));
