@@ -19,11 +19,17 @@ export class ChatInput {
     container: HTMLDivElement,
     private callbacks: InputCallbacks,
   ) {
-    this.textarea = container.createEl('textarea', { placeholder: 'Type a message…' });
-    this.textarea.rows = 1;
+    // Resize handle
+    const handle = container.createDiv({ cls: 'copsidian-input-resize-handle' });
+    this.setupResizeHandle(handle, container);
+
+    // Input row
+    const row = container.createDiv({ cls: 'copsidian-input-row' });
+
+    this.textarea = row.createEl('textarea', { placeholder: 'Type a message…' });
     this.textarea.addClass('copsidian-input');
 
-    this.sendBtn = container.createEl('button', { text: 'Send', cls: 'copsidian-send-btn' });
+    this.sendBtn = row.createEl('button', { text: 'Send', cls: 'copsidian-send-btn' });
     this.sendBtn.onclick = () => this.handleButtonClick();
 
     this.textarea.addEventListener('keydown', (e: KeyboardEvent) => {
@@ -48,8 +54,31 @@ export class ChatInput {
         return;
       }
     });
+  }
 
-    this.autoResize();
+  private setupResizeHandle(handle: HTMLDivElement, container: HTMLDivElement): void {
+    let startY = 0;
+    let startH = 0;
+
+    handle.addEventListener('mousedown', (e: MouseEvent) => {
+      e.preventDefault();
+      startY = e.clientY;
+      startH = container.offsetHeight;
+      handle.addClass('dragging');
+
+      const onMove = (ev: MouseEvent) => {
+        const delta = startY - ev.clientY;
+        const newH = Math.min(400, Math.max(80, startH + delta));
+        container.style.height = newH + 'px';
+      };
+      const onUp = () => {
+        handle.removeClass('dragging');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
   }
 
   private handleButtonClick(): void {
@@ -65,7 +94,6 @@ export class ChatInput {
     if (!text || this.disabled) return;
     this.callbacks.onSend(text, []);
     this.textarea.value = '';
-    this.autoResize();
   }
 
   setStreaming(on: boolean): void {
@@ -86,12 +114,5 @@ export class ChatInput {
 
   appendValue(text: string): void {
     this.textarea.value += text;
-    this.autoResize();
-  }
-
-  private autoResize(): void {
-    const el = this.textarea;
-    el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 200) + 'px';
   }
 }

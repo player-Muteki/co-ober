@@ -275,13 +275,35 @@
 /* Input */
 .copsidian-input-area {
   display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  background: var(--background-primary);
+  border-top: 1px solid var(--background-modifier-border);
+  min-height: 80px;
+  max-height: 400px;
+  position: relative;
+}
+
+.copsidian-input-resize-handle {
+  height: 5px;
+  cursor: ns-resize;
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.copsidian-input-resize-handle:hover,
+.copsidian-input-resize-handle.dragging {
+  background: var(--text-accent);
+  opacity: 0.4;
+}
+
+.copsidian-input-row {
+  display: flex;
   align-items: flex-end;
   gap: 6px;
-  padding: 8px;
-  border-top: 1px solid var(--background-modifier-border);
-  flex-shrink: 0;
-  position: relative;
-  background: var(--background-primary);
+  padding: 6px 8px 8px;
+  flex: 1;
+  min-height: 0;
 }
 
 .copsidian-input-area .copsidian-input {
@@ -296,8 +318,8 @@
   background: var(--background-primary);
   color: var(--text-normal);
   outline: none;
-  min-height: 36px;
-  max-height: 160px;
+  height: 100%;
+  min-height: 60px;
 }
 
 .copsidian-input-area .copsidian-input:focus {
