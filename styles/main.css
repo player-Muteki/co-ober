@@ -251,21 +251,11 @@
   border-color: var(--text-accent);
 }
 
-.copsidian-toolbar .tb-model {
-  flex: 1;
-  max-width: 50%;
-}
-
-.copsidian-toolbar .tb-agent {
-  flex: 0 1 auto;
-}
-
-.copsidian-toolbar .tb-effort {
-  flex: 0 1 auto;
-}
+.copsidian-toolbar .tb-model { flex: 1; max-width: 50%; }
+.copsidian-toolbar .tb-agent { flex: 0 1 auto; }
+.copsidian-toolbar .tb-effort { flex: 0 1 auto; }
 
 .copsidian-toolbar .copsidian-toolbar-sending {
-  margin-left: auto;
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -278,6 +268,23 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
 }
+
+.copsidian-toolbar .copsidian-send-btn {
+  margin-left: auto;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: var(--radius-s);
+  padding: 4px 14px;
+  cursor: pointer;
+  font-size: var(--font-ui-small);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.copsidian-toolbar .copsidian-send-btn:hover { opacity: 0.85; }
+.copsidian-toolbar .copsidian-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.copsidian-toolbar .copsidian-send-btn.mod-stop { background: var(--text-error); }
 
 /* Input */
 .copsidian-input-area {
@@ -306,9 +313,7 @@
 
 .copsidian-input-row {
   display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  padding: 6px 8px 8px;
+  padding: 6px 8px 4px;
   flex: 1;
   min-height: 0;
 }
@@ -316,46 +321,15 @@
 .copsidian-input-area .copsidian-input {
   flex: 1;
   resize: none;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-s);
-  padding: 8px 10px;
+  border: none;
+  padding: 4px 6px;
   font-size: var(--font-ui-small);
   font-family: var(--font-interface);
   line-height: 1.5;
-  background: var(--background-primary);
+  background: transparent;
   color: var(--text-normal);
   outline: none;
   height: 100%;
-  min-height: 60px;
-}
-
-.copsidian-input-area .copsidian-input:focus {
-  border-color: var(--text-accent);
-}
-
-.copsidian-input-area .copsidian-send-btn {
-  background: var(--text-accent);
-  color: var(--text-on-accent);
-  border: none;
-  border-radius: var(--radius-s);
-  padding: 6px 14px;
-  cursor: pointer;
-  font-size: var(--font-ui-small);
-  font-weight: 500;
-  flex-shrink: 0;
-}
-
-.copsidian-input-area .copsidian-send-btn:hover {
-  opacity: 0.85;
-}
-
-.copsidian-input-area .copsidian-send-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.copsidian-input-area .copsidian-send-btn.mod-stop {
-  background: var(--text-error);
 }
 
 /* Autocomplete dropdown */

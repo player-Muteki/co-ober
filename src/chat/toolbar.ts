@@ -2,12 +2,15 @@ export interface ToolbarCallbacks {
   onAgentChange?: (agent: string) => void;
   onModelChange?: (model: string) => void;
   onEffortChange?: (effort: string) => void;
+  onSend?: () => void;
+  onStop?: () => void;
 }
 
 export class InputToolbar {
   private agentSelect: HTMLSelectElement;
   private modelSelect: HTMLSelectElement;
   private effortSelect: HTMLSelectElement;
+  private sendBtn: HTMLButtonElement;
   private sendingEl: HTMLSpanElement;
 
   constructor(container: HTMLDivElement, private callbacks: ToolbarCallbacks) {
@@ -27,6 +30,17 @@ export class InputToolbar {
 
     this.sendingEl = container.createSpan({ cls: 'copsidian-toolbar-sending' });
     this.sendingEl.style.display = 'none';
+
+    this.sendBtn = container.createEl('button', { text: 'Send', cls: 'copsidian-send-btn' });
+    this.sendBtn.onclick = () => this.handleSendClick();
+  }
+
+  private handleSendClick(): void {
+    if (this.sendBtn.classList.contains('mod-stop')) {
+      this.callbacks.onStop?.();
+    } else {
+      this.callbacks.onSend?.();
+    }
   }
 
   updateAgents(options: Array<{ value: string; label: string }>, current?: string): void {
@@ -34,9 +48,7 @@ export class InputToolbar {
     if (options.length === 0) {
       this.agentSelect.createEl('option', { text: '—', value: '' });
     } else {
-      for (const o of options) {
-        this.agentSelect.createEl('option', { text: o.label, value: o.value });
-      }
+      for (const o of options) this.agentSelect.createEl('option', { text: o.label, value: o.value });
       if (current) this.agentSelect.value = current;
     }
   }
@@ -46,22 +58,21 @@ export class InputToolbar {
     if (options.length === 0) {
       this.modelSelect.createEl('option', { text: 'No models', value: '' });
     } else {
-      for (const o of options) {
-        this.modelSelect.createEl('option', { text: o.label, value: o.value });
-      }
+      for (const o of options) this.modelSelect.createEl('option', { text: o.label, value: o.value });
       if (current) this.modelSelect.value = current;
     }
   }
 
   updateEffort(options: Array<{ value: string; label: string }>, current?: string): void {
     this.effortSelect.empty();
-    for (const o of options) {
-      this.effortSelect.createEl('option', { text: o.label, value: o.value });
-    }
+    for (const o of options) this.effortSelect.createEl('option', { text: o.label, value: o.value });
     if (current) this.effortSelect.value = current;
   }
 
   setSending(on: boolean): void {
     this.sendingEl.style.display = on ? '' : 'none';
+    this.sendBtn.textContent = on ? 'Stop' : 'Send';
+    this.sendBtn.classList.toggle('mod-stop', on);
+    this.sendBtn.disabled = false;
   }
 }

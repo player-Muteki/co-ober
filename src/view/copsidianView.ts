@@ -170,24 +170,20 @@ export class CopsidianView extends ItemView {
 			onAgentChange: (agent: string) => {
 				const client = this.plugin.getClient();
 				if (!this.state.sessionId || !client) return;
-				void client.setMode(this.state.sessionId, agent)
-					.then(() => this.loadToolbarOptions())
-					.catch(() => {});
+				void client.setMode(this.state.sessionId, agent).then(() => this.loadToolbarOptions()).catch(() => {});
 			},
 			onModelChange: (model: string) => {
 				const client = this.plugin.getClient();
 				if (!this.state.sessionId || !client) return;
-				void client.setModel(this.state.sessionId, model)
-					.then(() => this.loadToolbarOptions())
-					.catch(() => {});
+				void client.setModel(this.state.sessionId, model).then(() => this.loadToolbarOptions()).catch(() => {});
 			},
 			onEffortChange: (effort: string) => {
 				const client = this.plugin.getClient();
 				if (!this.state.sessionId || !client) return;
-				void client.setConfigOption(this.state.sessionId, 'effort', effort)
-					.then(() => this.loadToolbarOptions())
-					.catch(() => {});
+				void client.setConfigOption(this.state.sessionId, 'effort', effort).then(() => this.loadToolbarOptions()).catch(() => {});
 			},
+			onSend: () => this.input.triggerSend(),
+			onStop: () => this.input.triggerStop(),
 		});
 
 		// Init StreamController
