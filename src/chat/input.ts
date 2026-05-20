@@ -1,4 +1,5 @@
 import type { ContextRef } from '../types';
+import { t } from '../i18n/index';
 
 export interface InputCallbacks {
   onSend: (text: string, refs?: ContextRef[]) => void;
@@ -22,7 +23,7 @@ export class ChatInput {
     this.setupResizeHandle(handle, container);
 
     const row = container.createDiv({ cls: 'copsidian-input-row' });
-    this.textarea = row.createEl('textarea', { placeholder: 'Type a message… (Enter to send, Shift+Enter for newline)' });
+    this.textarea = row.createEl('textarea', { placeholder: t().input.placeholder });
     this.textarea.addClass('copsidian-input');
 
     this.textarea.addEventListener('keydown', (e: KeyboardEvent) => {

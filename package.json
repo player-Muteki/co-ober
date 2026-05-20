@@ -1,12 +1,13 @@
 {
   "name": "copsidian",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Embed the complete OpenCode agent inside Obsidian sidebar",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit && node esbuild.config.mjs --minify",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.21.1",
@@ -16,7 +17,8 @@
     "@types/node": "^20.11.0",
     "esbuild": "^0.28.0",
     "obsidian": "latest",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.7"
   },
   "author": "YouSheng Kang",
   "license": "MIT",

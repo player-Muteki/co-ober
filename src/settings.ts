@@ -4,6 +4,7 @@ import { delimiter, isAbsolute } from 'path';
 import CopsidianPlugin from './main';
 import { VIEW_TYPE } from './types';
 import type { PermissionLevel, SyncRule } from './types';
+import { setLocale } from './i18n/index';
 
 export class CopsidianSettingsTab extends PluginSettingTab {
   constructor(private plugin: CopsidianPlugin) {
@@ -126,6 +127,13 @@ export class CopsidianSettingsTab extends PluginSettingTab {
 
     // ── Appearance ──
     new Setting(containerEl).setName('Appearance').setHeading();
+
+    new Setting(containerEl)
+      .setName('Language')
+      .setDesc('UI language (requires restart to apply to open views)')
+      .addDropdown((d) => d.addOptions({ en: 'English', zh: '中文' })
+        .setValue(s.language)
+        .onChange(async (v) => { s.language = v; setLocale(v); await this.save(); }));
 
     new Setting(containerEl)
       .setName('Auto-scroll')

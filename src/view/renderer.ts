@@ -1,6 +1,7 @@
 import type { App } from 'obsidian';
 import { MarkdownRenderer } from 'obsidian';
 import { ContextInjection } from '../context/injection';
+import { t } from '../i18n/index';
 
 export interface UsageDisplay {
   totalTokens: number;
@@ -77,7 +78,7 @@ export class ChatRenderer {
     const wrap = this.container.createDiv({ cls: 'copsidian-msg assistant' });
     const el = wrap.createDiv({ cls: 'copsidian-loading' });
     el.createDiv({ cls: 'copsidian-spinner' });
-    el.createSpan({ text: 'Thinking…' });
+    el.createSpan({ text: t().loading.thinking });
     this.placeholderEl = wrap;
     this.scrollToBottom();
   }
@@ -152,11 +153,11 @@ export class ChatRenderer {
 
       const btn = document.createElement('button');
       btn.className = 'copsidian-copy-btn';
-      btn.textContent = 'Copy';
+      btn.textContent = t().copy.button;
       btn.onclick = async () => {
         const text = codeEl.textContent || '';
         await navigator.clipboard.writeText(text);
-        btn.textContent = 'Copied';
+        btn.textContent = t().copy.copied;
         setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
       };
       pre.style.position = 'relative';
@@ -179,7 +180,7 @@ export class ChatRenderer {
       const wrap = this.container.createDiv({ cls: 'copsidian-msg assistant' });
       wrap.dataset.timestamp = this.formatTimestamp(timestamp ?? Date.now());
       const box = wrap.createDiv({ cls: 'copsidian-thinking' });
-      const hdr = box.createDiv({ cls: 'copsidian-thinking-header', text: 'Thinking' });
+      const hdr = box.createDiv({ cls: 'copsidian-thinking-header', text: t().thinking.header });
       this.thinkingEl = box.createDiv({ cls: 'copsidian-thinking-body' });
       this.thinkingEl.style.display = 'none';
       hdr.onclick = () => {
@@ -310,7 +311,7 @@ export class ChatRenderer {
   setPlanEntries(entries: Array<{ content: string; status: string; priority?: string }>): void {
     if (!this.planEl) {
       this.planEl = this.container.createDiv({ cls: 'copsidian-plan-panel' });
-      this.planEl.createDiv({ cls: 'plan-title', text: '📋 Plan' });
+      this.planEl.createDiv({ cls: 'plan-title', text: t().plan.title });
     }
     this.planEl.querySelectorAll('.plan-item').forEach((el) => el.remove());
     for (const e of entries) {

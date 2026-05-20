@@ -157,6 +157,7 @@ export interface CopsidianSettings {
   permissionMode: PermissionLevel;
   defaultNoteFolder: string;
   systemPrompt: string;
+  language: string;
   maxNoteSize: number;
   syncRules: SyncRule[];
   autoConnect?: boolean;
@@ -173,6 +174,7 @@ export const DEFAULT_SETTINGS: CopsidianSettings = {
   permissionMode: 'safe',
   defaultNoteFolder: 'opencode-sync',
   systemPrompt: '',
+  language: 'en',
   maxNoteSize: 8000,
   syncRules: [
     { id: 'edit', enabled: true, toolName: 'edit', folder: 'opencode-sync', filenameTemplate: '{{tool}}-{{date}}-{{shortId}}' },

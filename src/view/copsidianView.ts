@@ -2,6 +2,7 @@ import { ItemView, WorkspaceLeaf } from 'obsidian';
 import type CopsidianPlugin from '../main';
 import { VIEW_TYPE } from '../types';
 import type { SessionUpdate, ContextRef, PromptPart, PermissionRequest } from '../types';
+import { t } from '../i18n/index';
 import { ChatRenderer } from './renderer';
 import { ChatInput } from '../chat/input';
 import { InputToolbar } from '../chat/toolbar';
@@ -126,7 +127,7 @@ export class CopsidianView extends ItemView {
 	}
 
 	override getViewType(): string { return VIEW_TYPE; }
-	override getDisplayText(): string { return 'Copsidian'; }
+	override getDisplayText(): string { return t().appName; }
 	override getIcon(): string { return 'terminal-square'; }
 
 	override async onOpen(): Promise<void> {
@@ -154,9 +155,9 @@ export class CopsidianView extends ItemView {
 
 		// ── Header ──
 		const header = el.createDiv({ cls: 'copsidian-header' });
-		header.createDiv({ text: 'Copsidian', cls: 'copsidian-header-title' });
+		header.createDiv({ text: t().appName, cls: 'copsidian-header-title' });
 		const actions = header.createDiv({ cls: 'copsidian-header-actions' });
-		actions.createEl('button', { text: 'New', cls: 'mod-icon' }).onclick = () => this.newSession();
+		actions.createEl('button', { text: t().header.new, cls: 'mod-icon' }).onclick = () => this.newSession();
 		this.sessionButtonEl = actions.createEl('button', { text: '⋯', cls: 'mod-icon' });
 		this.sessionButtonEl.onclick = () => this.toggleSessions();
 
@@ -283,24 +284,24 @@ export class CopsidianView extends ItemView {
 		const welcome = this.messagesEl.createDiv({ cls: 'copsidian-welcome' });
 		this.welcomeEl = welcome;
 
-		welcome.createDiv({ cls: 'copsidian-welcome-title', text: 'Copsidian' });
-		welcome.createDiv({ cls: 'copsidian-welcome-subtitle', text: 'OpenCode Agent in Obsidian' });
+		welcome.createDiv({ cls: 'copsidian-welcome-title', text: t().appName });
+		welcome.createDiv({ cls: 'copsidian-welcome-subtitle', text: t().appSubtitle });
 
 		const shortcuts = welcome.createDiv({ cls: 'copsidian-welcome-shortcuts' });
-		shortcuts.createDiv({ text: 'Enter  Send message' });
-		shortcuts.createDiv({ text: 'Escape  Stop generation' });
-		shortcuts.createDiv({ text: '@  Reference a note' });
-		shortcuts.createDiv({ text: '/  Slash commands' });
+		shortcuts.createDiv({ text: t().welcome.shortcuts.enter });
+		shortcuts.createDiv({ text: t().welcome.shortcuts.escape });
+		shortcuts.createDiv({ text: t().welcome.shortcuts.at });
+		shortcuts.createDiv({ text: t().welcome.shortcuts.slash });
 
 		const status = welcome.createDiv({ cls: 'copsidian-welcome-status' });
-		status.createSpan({ text: this.plugin.getClient() ? '● Connected' : '○ Disconnected' });
+		status.createSpan({ text: this.plugin.getClient() ? t().welcome.connected : t().welcome.disconnected });
 	}
 
 	updateWelcomeStatus(): void {
 		if (!this.welcomeEl) return;
 		const status = this.welcomeEl.querySelector('.copsidian-welcome-status');
 		if (!status) return;
-		status.textContent = this.plugin.getClient() ? '● Connected' : '○ Disconnected';
+		status.textContent = this.plugin.getClient() ? t().welcome.connected : t().welcome.disconnected;
 	}
 
 	private hideWelcome(): void {
@@ -391,7 +392,7 @@ export class CopsidianView extends ItemView {
 		if (this.newMessagesBtn) return;
 		const btn = this.messagesEl.createEl('button', {
 			cls: 'copsidian-new-messages-btn',
-			text: '↓ New messages',
+			text: t().newMessages,
 		});
 		btn.onclick = () => {
 			this.state.autoScrollEnabled = true;
@@ -438,7 +439,7 @@ export class CopsidianView extends ItemView {
 	private showDragOverlay(): void {
 		if (this.dragOverlayEl) return;
 		const overlay = this.messagesEl.createDiv({ cls: 'copsidian-drag-overlay' });
-		overlay.createDiv({ text: 'Drop to attach' });
+		overlay.createDiv({ text: t().dragOverlay });
 		this.dragOverlayEl = overlay;
 	}
 
@@ -541,14 +542,14 @@ export class CopsidianView extends ItemView {
 		if (this.reconnectBtn) return;
 		this.reconnectBtn = this.contentEl.createEl('button', {
 			cls: 'copsidian-reconnect-btn',
-			text: 'Reconnect',
+			text: t().reconnect.text,
 		});
 		this.reconnectBtn.onclick = () => this.reconnect();
 	}
 
 	private async reconnect(): Promise<void> {
 		if (this.reconnectBtn) {
-			this.reconnectBtn.textContent = 'Reconnecting…';
+			this.reconnectBtn.textContent = t().reconnect.connecting;
 			this.reconnectBtn.disabled = true;
 		}
 		try {
@@ -566,7 +567,7 @@ export class CopsidianView extends ItemView {
 		} catch (e) {
 			console.error('[copsidian] reconnect failed:', e);
 			if (this.reconnectBtn) {
-				this.reconnectBtn.textContent = 'Reconnect (failed)';
+				this.reconnectBtn.textContent = t().reconnect.failed;
 				this.reconnectBtn.disabled = false;
 			}
 		}
@@ -633,7 +634,7 @@ export class CopsidianView extends ItemView {
 		// Search input
 		const searchInput = dd.createEl('input', {
 			cls: 'copsidian-session-search',
-			attr: { placeholder: 'Search sessions…', type: 'text' },
+			attr: { placeholder: t().session.search, type: 'text' },
 		});
 
 		const itemsContainer = dd.createDiv({ cls: 'copsidian-session-items' });
@@ -647,7 +648,7 @@ export class CopsidianView extends ItemView {
 			if (filtered.length === 0) {
 				itemsContainer.createDiv({
 					cls: 'copsidian-session-empty',
-					text: 'No sessions found',
+					text: t().session.empty,
 				});
 				return;
 			}
@@ -794,12 +795,12 @@ export class CopsidianView extends ItemView {
 				if (this.state.sessionId !== sessionId) return;
 				await c.compact(sessionId);
 				if (this.state.sessionId !== sessionId) return;
-				const message = 'Session compacted.';
+				const message = t().message.compacted;
 				this.renderer.appendText(message, `compact-${Date.now()}`);
 				this.streamCtrl.saveMessage('assistant', message, 'text');
 			} catch (e) {
 				if (this.state.sessionId === sessionId) {
-					this.renderer.addError(e instanceof Error ? e.message : 'Compact failed');
+					this.renderer.addError(e instanceof Error ? e.message : t().error.compact);
 				}
 			}
 		}
@@ -829,7 +830,7 @@ export class CopsidianView extends ItemView {
 			this.permissionBannerEl = banner;
 
 			const title = req.toolCall.title || req.toolCall.kind;
-			banner.createDiv({ cls: 'perm-title', text: `Permission: ${title}` });
+			banner.createDiv({ cls: 'perm-title', text: t().permission.title.replace('{title}', title) });
 
 			if (req.toolCall.locations?.length) {
 				banner.createDiv({ cls: 'perm-path', text: req.toolCall.locations[0].path });
@@ -935,11 +936,12 @@ export class CopsidianView extends ItemView {
 
 		const agents = snapshot.availableModes.map(mode => ({ value: mode.id, label: mode.name }));
 		const models = snapshot.availableModels.map(model => ({ value: model.modelId, label: model.name }));
+		const ef = t().toolbar.effort;
 		const efforts = [
-			{ value: 'default', label: 'Default' },
-			{ value: 'low', label: 'Low' },
-			{ value: 'medium', label: 'Medium' },
-			{ value: 'high', label: 'High' },
+			{ value: 'default', label: ef.default },
+			{ value: 'low', label: ef.low },
+			{ value: 'medium', label: ef.medium },
+			{ value: 'high', label: ef.high },
 		];
 
 		this.toolbar.updateAgents(
@@ -1039,7 +1041,7 @@ export class CopsidianView extends ItemView {
 				allItems.push({ value: cmd.name, label: `/${cmd.name}`, description: cmd.description });
 			}
 			if (allItems.length === 0) {
-				allItems.push({ value: 'compact', label: '/compact', description: 'compact the session' });
+				allItems.push({ value: 'compact', label: '/compact', description: t().slash.compact });
 			}
 		}
 
@@ -1063,7 +1065,7 @@ export class CopsidianView extends ItemView {
 		const render = () => {
 			ac.empty();
 			if (filtered.length === 0) {
-				ac.createDiv({ cls: 'copsidian-ac-item', text: 'No matches' });
+				ac.createDiv({ cls: 'copsidian-ac-item', text: t().autocomplete.noMatches });
 				return;
 			}
 			for (let i = 0; i < filtered.length; i++) {
