@@ -14,9 +14,15 @@ export function ruleMatches(rule: SyncRule, ctx: SyncContext): boolean {
   if (rule.toolName !== '*' && rule.toolName !== ctx.toolName) return false;
   if (rule.pathPattern && ctx.rawInput) {
     const fp = (ctx.rawInput as any).filePath as string | undefined;
-    if (fp && !new RegExp('^' + rule.pathPattern.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$').test(fp)) return false;
+    if (fp && !globLikeMatch(rule.pathPattern, fp)) return false;
   }
   return true;
+}
+
+function globLikeMatch(pattern: string, value: string): boolean {
+  const escaped = pattern.replace(/[-/\\^$+?.()|[\]{}]/g, '\\$&');
+  const regex = new RegExp('^' + escaped.replace(/\*/g, '.*') + '$');
+  return regex.test(value);
 }
 
 export function buildSyncNote(ctx: SyncContext, folder: string, filenameTemplate: string, template?: string): { path: string; content: string } {

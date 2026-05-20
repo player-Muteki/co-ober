@@ -160,6 +160,7 @@ export interface CopsidianSettings {
   maxNoteSize: number;
   syncRules: SyncRule[];
   autoConnect?: boolean;
+  autoScrollEnabled?: boolean;
   maxSessionMessages?: number;
   sessionRetentionDays?: number;
 }
@@ -169,7 +170,7 @@ export const DEFAULT_SETTINGS: CopsidianSettings = {
   defaultAgent: 'build',
   defaultModel: '',
   defaultEffort: 'default',
-  permissionMode: 'yolo',
+  permissionMode: 'safe',
   defaultNoteFolder: 'opencode-sync',
   systemPrompt: '',
   maxNoteSize: 8000,
@@ -178,6 +179,7 @@ export const DEFAULT_SETTINGS: CopsidianSettings = {
     { id: 'write', enabled: true, toolName: 'write', folder: 'opencode-sync', filenameTemplate: '{{tool}}-{{date}}-{{shortId}}' },
   ],
   autoConnect: true,
+  autoScrollEnabled: true,
   maxSessionMessages: 200,
   sessionRetentionDays: 30,
 };

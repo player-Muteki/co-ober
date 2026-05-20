@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.0.2 - 2026-05-20
+
+### Fixed
+- Align default permission mode with safer behavior
+- Persist auto-scroll setting and apply live to open views
+- Prevent duplicate image attachments after sending
+- Isolate sync rule failures and improve path pattern matching
+- Update session timestamps during streaming output
+- Improve Windows ACP spawn robustness without unsafe shells
+- Stabilize auto-reference and connection status updates
+
 ## 0.0.1 - 2026-05-19
 
 Initial release.

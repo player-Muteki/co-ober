@@ -14,6 +14,8 @@ export class ContextMention {
   getAllRefs(): ContextRef[] { return [...this.refs]; }
   clear(): void { this.refs = []; }
 
+  hasRef(id: string): boolean { return this.refs.some((r) => r.id === id); }
+
   listAllNotes(): ContextRef[] {
     return this.vault.getMarkdownFiles().map((f: TFile) => ({
       id: f.path, type: 'note' as const, name: f.basename, path: f.path,

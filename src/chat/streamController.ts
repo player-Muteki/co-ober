@@ -178,11 +178,13 @@ export class StreamController {
 				timestamp: Date.now(),
 			});
 			this.assistantMessageIndex.set(key, session.messages.length - 1);
+			session.updatedAt = Date.now();
 		} else {
 			const session = this.deps.sessionStore.get(sessionId);
 			if (!session) return;
 			const msg = session.messages[index];
 			if (msg) msg.content = buffer;
+			session.updatedAt = Date.now();
 		}
 		this.deps.sessionStore.setActive(sessionId);
 		this.scheduleSave();

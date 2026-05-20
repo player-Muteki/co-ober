@@ -36,6 +36,7 @@ export class CopsidianView extends ItemView {
 	private acOutsideHandler: ((e: MouseEvent) => void) | null = null;
 	private acKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 	private currentRefs: ContextRef[] = [];
+	private manualRefs = new Set<string>();
 	private acDropdown: HTMLDivElement | null = null;
 	private reconnectBtn: HTMLButtonElement | null = null;
 	private permissionBannerEl: HTMLDivElement | null = null;
@@ -71,6 +72,8 @@ export class CopsidianView extends ItemView {
 		this.toolbar.setSending(false);
 		this.currentRefs = [];
 		this.pendingImageParts = [];
+		this.manualRefs.clear();
+		this.lastAutoRefId = null;
 		this.mention.clear();
 		this.contextChipsEl.empty();
 	}
@@ -103,6 +106,7 @@ export class CopsidianView extends ItemView {
 			await this.plugin.initClient();
 			this.bindClientHandlers();
 			this.state.isConnected = true;
+			this.updateWelcomeStatus();
 			this.hideReconnectBtn();
 			this.hookPermissionHandler();
 			try {
@@ -128,6 +132,7 @@ export class CopsidianView extends ItemView {
 		this.syncEngine = new SyncEngine(this.plugin.app.vault, this.plugin.settings.syncRules);
 		this.sessionStore = createSessionStore(this.plugin);
 		await this.sessionStore.load();
+		this.state.autoScrollEnabled = this.plugin.settings.autoScrollEnabled ?? true;
 
 		// Restore active session
 		const savedId = this.plugin.activeSessionId;
@@ -162,7 +167,7 @@ export class CopsidianView extends ItemView {
 			onStop: () => this.stopGeneration(),
 			onToggleMention: () => this.showAC('@'),
 			onToggleSlash: () => this.showAC('/'),
-			onAddRef: (ref: ContextRef) => this.addChip(ref),
+			onAddRef: (ref: ContextRef) => this.addChip(ref, 'manual'),
 			onRemoveRef: (id: string) => this.removeChip(id),
 		});
 
@@ -285,6 +290,13 @@ export class CopsidianView extends ItemView {
 		status.createSpan({ text: this.plugin.getClient() ? '● Connected' : '○ Disconnected' });
 	}
 
+	updateWelcomeStatus(): void {
+		if (!this.welcomeEl) return;
+		const status = this.welcomeEl.querySelector('.copsidian-welcome-status');
+		if (!status) return;
+		status.textContent = this.plugin.getClient() ? '● Connected' : '○ Disconnected';
+	}
+
 	private hideWelcome(): void {
 		if (this.welcomeEl) {
 			this.welcomeEl.remove();
@@ -332,6 +344,7 @@ export class CopsidianView extends ItemView {
 	private async clearScreen(): Promise<void> {
 		await this.cancelActiveGeneration();
 		this.resetConversationView();
+		this.clearAutoRefs();
 		this.maybeShowWelcome();
 	}
 
@@ -387,6 +400,11 @@ export class CopsidianView extends ItemView {
 		this.newMessagesBtn = null;
 	}
 
+	setAutoScrollEnabled(enabled: boolean): void {
+		this.state.autoScrollEnabled = enabled;
+		if (enabled) this.hideNewMessagesBtn();
+	}
+
 	// ── Drag and Drop ──
 
 	private setupDragDrop(): void {
@@ -423,6 +441,20 @@ export class CopsidianView extends ItemView {
 		this.dragOverlayEl = null;
 	}
 
+	private clearPendingImageChips(): void {
+		this.pendingImageParts = [];
+		this.contextChipsEl.querySelectorAll('.copsidian-chip').forEach((el) => {
+			if ((el as HTMLDivElement).dataset.kind === 'image') el.remove();
+		});
+	}
+
+	private clearAutoRefs(): void {
+		if (!this.lastAutoRefId) return;
+		const existing = this.currentRefs.find(r => r.id === this.lastAutoRefId);
+		if (existing && !this.manualRefs.has(existing.id)) this.removeChip(existing.id);
+		this.lastAutoRefId = null;
+	}
+
 	private async handleDrop(e: DragEvent): Promise<void> {
 		const files = e.dataTransfer?.files;
 		if (!files?.length) return;
@@ -437,7 +469,7 @@ export class CopsidianView extends ItemView {
 					name: file.name.replace(/\.md$/, ''),
 					path,
 				};
-				this.addChip(ref);
+				this.addChip(ref, 'manual');
 			} else if (file.type.startsWith('image/')) {
 				// Image → base64 PromptPart
 				try {
@@ -448,14 +480,15 @@ export class CopsidianView extends ItemView {
 						data,
 					});
 					// Show chip for image
-					const chip = this.contextChipsEl.createDiv({
-						cls: 'copsidian-chip',
-						text: `🖼 ${file.name}`,
-					});
-					chip.onclick = () => {
-						this.pendingImageParts = this.pendingImageParts.filter(p => p.data !== data);
-						chip.remove();
-					};
+				const chip = this.contextChipsEl.createDiv({
+					cls: 'copsidian-chip',
+					text: `🖼 ${file.name}`,
+				});
+				chip.dataset.kind = 'image';
+				chip.onclick = () => {
+					this.pendingImageParts = this.pendingImageParts.filter(p => p.data !== data);
+					chip.remove();
+				};
 				} catch (err) {
 					console.error('[copsidian] Failed to read image:', err);
 				}
@@ -490,6 +523,7 @@ export class CopsidianView extends ItemView {
 		this.state.needsAttention = false;
 		this.input.setStreaming(false);
 		this.toolbar.setSending(false);
+		this.updateWelcomeStatus();
 		if (this.reconnectBtn) return;
 		this.reconnectBtn = this.contentEl.createEl('button', {
 			cls: 'copsidian-reconnect-btn',
@@ -514,6 +548,7 @@ export class CopsidianView extends ItemView {
 			}
 			this.loadToolbarOptions();
 			this.state.isConnected = true;
+			this.updateWelcomeStatus();
 			this.hideReconnectBtn();
 		} catch (e) {
 			console.error('[copsidian] reconnect failed:', e);
@@ -556,13 +591,13 @@ export class CopsidianView extends ItemView {
 		try {
 			await this.cancelActiveGeneration();
 			this.resetConversationView();
-			this.autoRefActiveFile();
 			this.state.sessionId = await c.createSession(this.getVaultCwd());
 			this.sessionStore.getOrCreate(this.state.sessionId);
 			this.sessionStore.setActive(this.state.sessionId);
 			await this.sessionStore.save();
 			this.loadToolbarOptions();
 			this.maybeShowWelcome();
+			this.autoRefActiveFile();
 		} catch (e) {
 			console.error('[copsidian] newSession:', e);
 		}
@@ -614,30 +649,32 @@ export class CopsidianView extends ItemView {
 					e.stopPropagation();
 					this.sessionStore.remove(s.sessionId);
 					await this.sessionStore.save();
-					if (s.sessionId === this.state.sessionId) {
-						await this.newSession();
-					}
-					this.closeSessionDropdown();
-				};
-				it.onclick = async () => {
-					this.state.sessionId = s.sessionId;
-					this.sessionStore.getOrCreate(s.sessionId);
-					this.closeSessionDropdown();
-					await this.cancelActiveGeneration();
-					this.resetConversationView();
-					try {
-						await this.syncRuntimeSession(s.sessionId);
-					} catch (e) {
-						console.error('[copsidian] session switch sync:', e);
-					}
-					await this.restoreSession();
-					this.sessionStore.setActive(s.sessionId);
-					await this.sessionStore.save();
-					this.loadToolbarOptions();
-					this.maybeShowWelcome();
-				};
-			}
-		};
+				if (s.sessionId === this.state.sessionId) {
+					await this.newSession();
+				}
+				this.closeSessionDropdown();
+			};
+			it.onclick = async () => {
+				this.state.sessionId = s.sessionId;
+				this.sessionStore.getOrCreate(s.sessionId);
+				this.closeSessionDropdown();
+				await this.cancelActiveGeneration();
+				this.resetConversationView();
+				this.clearAutoRefs();
+				try {
+					await this.syncRuntimeSession(s.sessionId);
+				} catch (e) {
+					console.error('[copsidian] session switch sync:', e);
+				}
+				await this.restoreSession();
+				this.sessionStore.setActive(s.sessionId);
+				await this.sessionStore.save();
+				this.loadToolbarOptions();
+				this.maybeShowWelcome();
+				this.autoRefActiveFile();
+			};
+		}
+	};
 
 		searchInput.addEventListener('input', () => {
 			renderItems(searchInput.value);
@@ -694,6 +731,7 @@ export class CopsidianView extends ItemView {
 			await this.syncRuntimeSession(sessionId);
 			const parts = await this.buildParts(text, refs);
 			if (this.state.sessionId !== sessionId || !this.busy) return;
+			this.clearPendingImageChips();
 			const response = await c.sendMessage(sessionId, parts, (ch: SessionUpdate) => {
 				if (!this.busy || this.state.sessionId !== sessionId) return;
 				this.streamCtrl.handleChunk(ch);
@@ -920,9 +958,19 @@ export class CopsidianView extends ItemView {
 
 	// ── @mention chips ──
 
-	private addChip(ref: ContextRef): void {
-		if (this.currentRefs.some(r => r.id === ref.id)) return;
+	private addChip(ref: ContextRef, source: 'manual' | 'auto' = 'manual'): void {
+		if (this.currentRefs.some(r => r.id === ref.id)) {
+			if (source === 'manual') {
+				this.manualRefs.add(ref.id);
+				if (this.lastAutoRefId === ref.id) this.lastAutoRefId = null;
+			}
+			return;
+		}
 		this.currentRefs.push(ref);
+		if (source === 'manual') {
+			this.manualRefs.add(ref.id);
+			if (this.lastAutoRefId === ref.id) this.lastAutoRefId = null;
+		}
 		const chip = this.contextChipsEl.createDiv({ cls: 'copsidian-chip' });
 		chip.dataset.refId = ref.id;
 		chip.title = ref.path;
@@ -933,7 +981,8 @@ export class CopsidianView extends ItemView {
 
 	private removeChip(id: string): void {
 		this.currentRefs = this.currentRefs.filter(r => r.id !== id);
-		this.mention.removeRef(id);
+		if (this.mention.hasRef(id)) this.mention.removeRef(id);
+		this.manualRefs.delete(id);
 		this.contextChipsEl.querySelectorAll('.copsidian-chip').forEach(el => {
 			if ((el as HTMLDivElement).dataset.refId === id) el.remove();
 		});
@@ -947,7 +996,9 @@ export class CopsidianView extends ItemView {
 			? (activeLeaf.view as any).file
 			: leaves[0]?.view ? (leaves[0].view as any).file : null;
 		if (!file || file.extension !== 'md') return;
-		this.addChip({ id: file.path, type: 'note', name: file.basename, path: file.path });
+		if (this.manualRefs.has(file.path)) return;
+		this.addChip({ id: file.path, type: 'note', name: file.basename, path: file.path }, 'auto');
+		this.lastAutoRefId = file.path;
 	}
 
 	private setupActiveFileTracking(): void {
@@ -960,9 +1011,13 @@ export class CopsidianView extends ItemView {
 				if (!file || file.extension !== 'md') return;
 				// Replace existing auto-ref chip with the new active file
 				const existing = this.currentRefs.find(r => r.id === this.lastAutoRefId);
-				if (existing) this.removeChip(existing.id);
+				if (existing) {
+					if (this.manualRefs.has(existing.id)) this.lastAutoRefId = null;
+					else this.removeChip(existing.id);
+				}
+				if (this.manualRefs.has(file.path)) return;
 				this.lastAutoRefId = file.path;
-				this.addChip({ id: file.path, type: 'note', name: file.basename, path: file.path });
+				this.addChip({ id: file.path, type: 'note', name: file.basename, path: file.path }, 'auto');
 			}),
 		);
 	}
@@ -1091,7 +1146,7 @@ export class CopsidianView extends ItemView {
 			const note = allNotes.find(n => n.path === value || n.name === value);
 			if (note) {
 				this.mention.addRef(note);
-				this.addChip(note);
+				this.addChip(note, 'manual');
 				value = `@${note.name}`;
 			} else {
 				value = value.startsWith('@') ? value : `@${value}`;

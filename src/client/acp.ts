@@ -1,4 +1,6 @@
 import { spawn, type ChildProcess } from 'child_process';
+import { existsSync } from 'fs';
+import { delimiter, extname } from 'path';
 import type {
   SessionUpdate,
   PromptPart,
@@ -65,16 +67,16 @@ export class AcpClient implements OpencodeClient {
   isConnected(): boolean { return this.connected; }
 
   async connect(): Promise<void> {
-    const isWindows = process.platform === 'win32';
-    const cmd = this.cmdPath;
+    const cmd = this.cmdPath.replace(/^"(.+)"$/, '$1').replace(/^'(.+)'$/, '$1');
     const args = ['acp'];
     const cwd = this.cwd ?? process.cwd();
 
-    this.process = spawn(cmd, args, {
+    const spawnInfo = this.getSpawnInfo(cmd, args);
+    this.process = spawn(spawnInfo.command, spawnInfo.args, {
       cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
-      shell: isWindows,
+      shell: false,
     });
 
     this.process.stdin!.on('error', (e: unknown) => console.error('[copsidian] stdin:', e));
@@ -424,5 +426,57 @@ export class AcpClient implements OpencodeClient {
         });
       }
     }, delay);
+  }
+
+  private getSpawnInfo(cmd: string, args: string[]): { command: string; args: string[] } {
+    if (process.platform !== 'win32') return { command: cmd, args };
+
+    const resolved = this.resolveWindowsCommand(cmd);
+    if (resolved.useCmdShell) {
+      const commandLine = [this.quoteCmdArg(resolved.command), ...args.map((arg) => this.quoteCmdArg(arg))].join(' ');
+      const comspec = process.env.ComSpec ?? 'cmd.exe';
+      return { command: comspec, args: ['/d', '/s', '/c', commandLine] };
+    }
+
+    return { command: resolved.command, args };
+  }
+
+  private resolveWindowsCommand(cmd: string): { command: string; useCmdShell: boolean } {
+    const ext = extname(cmd).toLowerCase();
+    if (ext === '.cmd' || ext === '.bat') return { command: cmd, useCmdShell: true };
+    if (ext) return { command: cmd, useCmdShell: false };
+
+    if (cmd.includes('\\') || cmd.includes('/')) {
+      const exe = `${cmd}.exe`;
+      if (existsSync(exe)) return { command: exe, useCmdShell: false };
+      const cmdExt = `${cmd}.cmd`;
+      if (existsSync(cmdExt)) return { command: cmdExt, useCmdShell: true };
+      const batExt = `${cmd}.bat`;
+      if (existsSync(batExt)) return { command: batExt, useCmdShell: true };
+      return { command: cmd, useCmdShell: false };
+    }
+
+    const pathExts = (process.env.PATHEXT ?? '.EXE;.CMD;.BAT')
+      .split(';')
+      .map((value) => value.toLowerCase());
+    const pathDirs = (process.env.PATH ?? '').split(delimiter);
+
+    for (const dir of pathDirs) {
+      for (const extPart of pathExts) {
+        const candidate = `${dir}\\${cmd}${extPart}`;
+        if (existsSync(candidate)) {
+          const useCmdShell = extPart === '.cmd' || extPart === '.bat';
+          return { command: candidate, useCmdShell };
+        }
+      }
+    }
+
+    return { command: cmd, useCmdShell: false };
+  }
+
+  private quoteCmdArg(value: string): string {
+    if (!value) return '""';
+    if (!/[\s"]/g.test(value)) return value;
+    return `"${value.replace(/"/g, '\\"')}"`;
   }
 }

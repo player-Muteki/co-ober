@@ -2,6 +2,7 @@ import { PluginSettingTab, Setting, Notice } from 'obsidian';
 import { existsSync } from 'fs';
 import { delimiter, isAbsolute } from 'path';
 import CopsidianPlugin from './main';
+import { VIEW_TYPE } from './types';
 import type { PermissionLevel, SyncRule } from './types';
 
 export class CopsidianSettingsTab extends PluginSettingTab {
@@ -129,8 +130,18 @@ export class CopsidianSettingsTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Auto-scroll')
       .setDesc('Automatically scroll to bottom on new messages')
-      .addToggle((t) => t.setValue(true)
-        .onChange(async () => { new Notice('Setting saved'); }));
+      .addToggle((t) => t.setValue(s.autoScrollEnabled ?? true)
+        .onChange(async (v) => {
+          s.autoScrollEnabled = v;
+          await this.save();
+          const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE);
+          for (const leaf of leaves) {
+            const view = leaf.view as any;
+            if (typeof view?.setAutoScrollEnabled === 'function') {
+              view.setAutoScrollEnabled(v);
+            }
+          }
+        }));
 
     // ── Session Limits ──
     new Setting(containerEl).setName('Session Limits').setHeading();
