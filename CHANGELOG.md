@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.0.7 - 2026-05-21
+
+### Added
+- AI Edit Selection command: select text in any note and invoke to open sidebar with inline edit request
+- SessionDropdown component extracted from main view
+- Autocomplete component extracted from main view
+- parseSessionUpdate, mergeAvailableCommands, extractConfigMeta ACP utilities
+- Test coverage for chatState, session, mention, resolver, sync engine, and acp modules
+
 ## 0.0.6 - 2026-05-21
 
 ### Added
