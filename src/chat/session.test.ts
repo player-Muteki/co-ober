@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { createSessionStore } from './session';
 import type CopsidianPlugin from '../main';
 import type { SerializedSession, SerializedMessage } from '../types';
+import { setLocale } from '../i18n/index';
 
 function createMockPlugin(): CopsidianPlugin {
   return {
@@ -30,16 +31,29 @@ describe('SessionStore', () => {
   });
 
   it('should create a new session via getOrCreate', () => {
+    setLocale('en');
     const plugin = createMockPlugin();
     const store = createSessionStore(plugin);
 
     const session = store.getOrCreate('new-id');
 
     expect(session.sessionId).toBe('new-id');
+    expect(session.title).toContain('Chat ');
     expect(session.messages).toEqual([]);
     expect(plugin.sessions.has('new-id')).toBe(true);
     expect(store.activeId).toBe('new-id');
     expect(plugin.activeSessionId).toBe('new-id');
+  });
+
+  it('should localize new session titles', () => {
+    setLocale('zh');
+    const plugin = createMockPlugin();
+    const store = createSessionStore(plugin);
+
+    const session = store.getOrCreate('zh-id');
+
+    expect(session.title).toContain('会话 ');
+    setLocale('en');
   });
 
   it('should return existing session via getOrCreate', () => {
