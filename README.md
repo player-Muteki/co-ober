@@ -187,7 +187,7 @@ src/
 - [x] Sync engine with configurable rules
 - [x] Model and mode switching
 - [x] Drag & drop files and images
-- [ ] Inline edit (select text in note → AI edit with diff preview)
+- [x] Inline edit (select text in note → AI edit with diff preview)
 - [x] MCP server support
 - [ ] Custom agents and skills
 - [x] i18n (internationalization)
@@ -399,7 +399,7 @@ src/
 - [x] 可配置规则的同步引擎
 - [x] 模型和模式切换
 - [x] 拖拽文件和图片
-- [ ] 行内编辑（选中笔记文字 → AI 编辑并显示 Diff 预览）
+- [x] 行内编辑（选中笔记文字 → AI 编辑并显示 Diff 预览）
 - [x] MCP 服务器支持
 - [ ] 自定义 Agent 和技能
 - [x] 国际化（i18n）

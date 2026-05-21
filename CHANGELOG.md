@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.0.9 - 2026-05-21
+
+### Changed
+- Mark inline edit with diff preview as complete and add regression coverage for preview, apply, discard, and locale refresh behavior.
+
 ## 0.0.8 - 2026-05-21
 
 ### Fixed
