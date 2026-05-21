@@ -805,3 +805,35 @@ pre:hover .copsidian-copy-btn {
   font-size: var(--font-ui-medium);
   color: var(--text-accent);
 }
+
+/* Inline Edit Panel */
+.copsidian-inline-edit-panel {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  width: 480px;
+  max-width: calc(100% - 32px);
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  z-index: 200;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.copsidian-inline-edit-title {
+  font-weight: 600;
+  font-size: var(--font-ui-medium);
+  color: var(--text-normal);
+}
+
+.copsidian-inline-edit-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

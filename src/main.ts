@@ -40,6 +40,11 @@ export default class CopsidianPlugin extends Plugin {
       name: 'Open Copsidian',
       callback: () => this.activateView(),
     });
+    this.addCommand({
+      id: 'ai-edit-selection',
+      name: 'AI Edit Selection',
+      editorCallback: (editor, view) => this.aiEditSelection(editor, view),
+    });
     if (this.settings.autoConnect !== false) {
       void this.initClient();
     }
@@ -136,6 +141,20 @@ export default class CopsidianPlugin extends Plugin {
   }
 
   // ── Client ──
+
+  async aiEditSelection(editor: import('obsidian').Editor, _view: import('obsidian').MarkdownView | import('obsidian').MarkdownFileInfo): Promise<void> {
+    const selected = editor.getSelection();
+    if (!selected || selected.trim().length === 0) {
+      new Notice('No text selected');
+      return;
+    }
+    await this.activateView();
+    const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
+    const copsidianView = leaf?.view as CopsidianView | undefined;
+    if (copsidianView) {
+      await copsidianView.requestInlineEdit(selected, editor);
+    }
+  }
 
   async activateView(): Promise<void> {
     const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];

@@ -33,6 +33,149 @@ interface JsonRpcResponse {
 
 type RpcEntry = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 
+export interface AcpSessionMeta {
+  availableCommands: AvailableCommand[];
+  availableModels: ModelOption[];
+  availableModes: ModeOption[];
+  configOptions: SessionConfigOption[];
+  currentModelId: string | null;
+  currentModeId: string | null;
+}
+
+/** Parse a JSON-RPC update into a strongly typed SessionUpdate */
+export function parseSessionUpdate(u: Record<string, unknown> | undefined | null): SessionUpdate | null {
+  if (!u || !u.sessionUpdate) return null;
+  const c = u.content;
+  const su = u.sessionUpdate as string;
+  switch (su) {
+    case 'agent_message_chunk':
+      return { sessionUpdate: 'agent_message_chunk', messageId: u.messageId as string, content: c as { type: string; text: string } };
+    case 'agent_thought_chunk':
+      return { sessionUpdate: 'agent_thought_chunk', messageId: u.messageId as string, content: c as { type: string; text: string } };
+    case 'tool_call':
+      return { sessionUpdate: 'tool_call', toolCallId: u.toolCallId as string, title: u.title as string, kind: u.kind as import('../types').ToolKind, status: (u.status as string) ?? 'pending', rawInput: u.rawInput as Record<string, unknown>, locations: u.locations as { path: string }[] };
+    case 'tool_call_update':
+      return { sessionUpdate: 'tool_call_update', toolCallId: u.toolCallId as string, status: u.status as 'pending' | 'in_progress' | 'completed' | 'failed', kind: u.kind as import('../types').ToolKind, title: u.title as string, rawInput: u.rawInput as Record<string, unknown>, rawOutput: u.rawOutput as Record<string, unknown>, content: u.content as import('../types').ToolCallContent[] };
+    case 'plan':
+      return { sessionUpdate: 'plan', entries: (u.entries ?? []) as { content: string; status: string; priority: string }[] };
+    case 'user_message_chunk':
+      return { sessionUpdate: 'user_message_chunk', messageId: u.messageId as string, content: c as { type: string; text: string } };
+    case 'config_option_update':
+      return { sessionUpdate: 'config_option_update', configOptions: (u.configOptions ?? []) as import('../types').SessionConfigOption[] };
+    case 'available_commands_update':
+      return { sessionUpdate: 'available_commands_update', availableCommands: (u.availableCommands ?? []) as import('../types').AvailableCommand[] };
+    case 'usage_update':
+      return { sessionUpdate: 'usage_update', used: u.used as number, size: u.size as number, cost: u.cost as { amount: number; currency: string }, totalTokens: u.totalTokens as number, inputTokens: u.inputTokens as number, outputTokens: u.outputTokens as number, thoughtTokens: u.thoughtTokens as number };
+    case 'current_mode_update':
+      return { sessionUpdate: 'current_mode_update', currentModeId: u.currentModeId as string, availableModes: u.availableModes as import('../types').ModeOption[] };
+    case 'current_model_update':
+      return { sessionUpdate: 'current_model_update', currentModelId: u.currentModelId as string, availableModels: u.availableModels as import('../types').ModelOption[] };
+    case 'session_info_update':
+      return { sessionUpdate: 'session_info_update', sessionId: u.sessionId as string, title: u.title as string, cwd: u.cwd as string };
+    default: return null;
+  }
+}
+
+/** Merge command lists, deduplicating by name and ensuring 'compact' is present */
+export function mergeAvailableCommands(commands: AvailableCommand[]): AvailableCommand[] {
+  const merged: AvailableCommand[] = [];
+  const seen = new Set<string>();
+
+  for (const command of commands) {
+    const name = command.name.trim();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    merged.push({ ...command });
+  }
+
+  if (!seen.has('compact')) {
+    merged.push({ name: 'compact', description: 'compact the session' });
+  }
+
+  return merged;
+}
+
+/** Extract model and mode metadata from config options */
+export function extractConfigMeta(configOptions: SessionConfigOption[]): Pick<AcpSessionMeta, 'currentModelId' | 'availableModels' | 'currentModeId' | 'availableModes' | 'configOptions'> {
+  const meta: Pick<AcpSessionMeta, 'currentModelId' | 'availableModels' | 'currentModeId' | 'availableModes' | 'configOptions'> = {
+    configOptions: [...configOptions],
+    currentModelId: null,
+    availableModels: [],
+    currentModeId: null,
+    availableModes: [],
+  };
+
+  const modelOption = configOptions.find((opt) => opt.id === 'model');
+  if (modelOption) {
+    meta.currentModelId = modelOption.currentValue;
+    meta.availableModels = modelOption.options.map((opt) => ({
+      modelId: opt.value,
+      name: opt.name,
+    }));
+  }
+
+  const modeOption = configOptions.find((opt) => opt.id === 'mode');
+  if (modeOption) {
+    meta.currentModeId = modeOption.currentValue;
+    meta.availableModes = modeOption.options.map((opt) => ({
+      id: opt.value,
+      name: opt.name,
+      description: opt.description,
+    }));
+  }
+
+  return meta;
+}
+
+/** Extract session metadata from a server result object */
+export function extractSessionSnapshot(result: Record<string, unknown>): AcpSessionMeta {
+  const snapshot: AcpSessionMeta = {
+    availableCommands: [{ name: 'compact', description: 'compact the session' }],
+    availableModels: [],
+    availableModes: [],
+    configOptions: [],
+    currentModelId: null,
+    currentModeId: null,
+  };
+
+  if (!result || typeof result !== 'object') return snapshot;
+
+  if (Array.isArray(result.availableCommands)) {
+    snapshot.availableCommands = mergeAvailableCommands(result.availableCommands as AvailableCommand[]);
+  }
+
+  if (Array.isArray(result.configOptions)) {
+    const configMeta = extractConfigMeta(result.configOptions as SessionConfigOption[]);
+    snapshot.configOptions = configMeta.configOptions;
+    snapshot.currentModelId = configMeta.currentModelId;
+    snapshot.availableModels = configMeta.availableModels;
+    snapshot.currentModeId = configMeta.currentModeId;
+    snapshot.availableModes = configMeta.availableModes;
+  }
+
+  const models = result.models as { currentModelId?: string; availableModels?: ModelOption[] } | undefined;
+  if (models) {
+    if (typeof models.currentModelId === 'string') {
+      snapshot.currentModelId = models.currentModelId;
+    }
+    if (Array.isArray(models.availableModels)) {
+      snapshot.availableModels = [...models.availableModels];
+    }
+  }
+
+  const modes = result.modes as { currentModeId?: string; availableModes?: ModeOption[] } | undefined;
+  if (modes) {
+    if (typeof modes.currentModeId === 'string') {
+      snapshot.currentModeId = modes.currentModeId;
+    }
+    if (Array.isArray(modes.availableModes)) {
+      snapshot.availableModes = [...modes.availableModes];
+    }
+  }
+
+  return snapshot;
+}
+
 export interface AcpMcpServer {
   name: string;
   command: string;
@@ -233,76 +376,26 @@ export class AcpClient implements OpencodeClient {
   }
 
   private applySessionSnapshot(result: Record<string, unknown>): void {
-    if (!result || typeof result !== 'object') return;
-
-    if (Array.isArray(result.availableCommands)) {
-      this.availableCommands = this.mergeAvailableCommands(result.availableCommands as AvailableCommand[]);
-    }
-
-    if (Array.isArray(result.configOptions)) {
-      this.applyConfigOptions(result.configOptions as SessionConfigOption[]);
-    }
-
-    const models = result.models as { currentModelId?: string; availableModels?: ModelOption[] } | undefined;
-    if (models) {
-      if (typeof models.currentModelId === 'string') {
-        this.currentModelId = models.currentModelId;
-      }
-      if (Array.isArray(models.availableModels)) {
-        this.availableModels = [...models.availableModels];
-      }
-    }
-
-    const modes = result.modes as { currentModeId?: string; availableModes?: ModeOption[] } | undefined;
-    if (modes) {
-      if (typeof modes.currentModeId === 'string') {
-        this.currentModeId = modes.currentModeId;
-      }
-      if (Array.isArray(modes.availableModes)) {
-        this.availableModes = [...modes.availableModes];
-      }
-    }
+    const snapshot = extractSessionSnapshot(result);
+    this.availableCommands = snapshot.availableCommands;
+    this.availableModels = snapshot.availableModels;
+    this.availableModes = snapshot.availableModes;
+    this.configOptions = snapshot.configOptions;
+    this.currentModelId = snapshot.currentModelId;
+    this.currentModeId = snapshot.currentModeId;
   }
 
   private applyConfigOptions(configOptions: SessionConfigOption[]): void {
-    this.configOptions = [...configOptions];
-
-    const modelOption = configOptions.find((opt) => opt.id === 'model');
-    if (modelOption) {
-      this.currentModelId = modelOption.currentValue;
-      this.availableModels = modelOption.options.map((opt) => ({
-        modelId: opt.value,
-        name: opt.name,
-      }));
-    }
-
-    const modeOption = configOptions.find((opt) => opt.id === 'mode');
-    if (modeOption) {
-      this.currentModeId = modeOption.currentValue;
-      this.availableModes = modeOption.options.map((opt) => ({
-        id: opt.value,
-        name: opt.name,
-        description: opt.description,
-      }));
-    }
+    const meta = extractConfigMeta(configOptions);
+    this.configOptions = meta.configOptions;
+    this.currentModelId = meta.currentModelId;
+    this.availableModels = meta.availableModels;
+    this.currentModeId = meta.currentModeId;
+    this.availableModes = meta.availableModes;
   }
 
   private mergeAvailableCommands(commands: AvailableCommand[]): AvailableCommand[] {
-    const merged: AvailableCommand[] = [];
-    const seen = new Set<string>();
-
-    for (const command of commands) {
-      const name = command.name.trim();
-      if (!name || seen.has(name)) continue;
-      seen.add(name);
-      merged.push({ ...command });
-    }
-
-    if (!seen.has('compact')) {
-      merged.push({ name: 'compact', description: 'compact the session' });
-    }
-
-    return merged;
+    return mergeAvailableCommands(commands);
   }
 
   private applySessionUpdate(update: SessionUpdate): void {
@@ -391,36 +484,7 @@ export class AcpClient implements OpencodeClient {
   }
 
   private parseUpdate(u: Record<string, unknown> | undefined | null): SessionUpdate | null {
-    if (!u || !u.sessionUpdate) return null;
-    const c = u.content;
-    const su = u.sessionUpdate as string;
-    switch (su) {
-      case 'agent_message_chunk':
-        return { sessionUpdate: 'agent_message_chunk', messageId: u.messageId as string, content: c as { type: string; text: string } };
-      case 'agent_thought_chunk':
-        return { sessionUpdate: 'agent_thought_chunk', messageId: u.messageId as string, content: c as { type: string; text: string } };
-      case 'tool_call':
-        return { sessionUpdate: 'tool_call', toolCallId: u.toolCallId as string, title: u.title as string, kind: u.kind as import('../types').ToolKind, status: (u.status as string) ?? 'pending', rawInput: u.rawInput as Record<string, unknown>, locations: u.locations as { path: string }[] };
-      case 'tool_call_update':
-        return { sessionUpdate: 'tool_call_update', toolCallId: u.toolCallId as string, status: u.status as 'pending' | 'in_progress' | 'completed' | 'failed', kind: u.kind as import('../types').ToolKind, title: u.title as string, rawInput: u.rawInput as Record<string, unknown>, rawOutput: u.rawOutput as Record<string, unknown>, content: u.content as import('../types').ToolCallContent[] };
-      case 'plan':
-        return { sessionUpdate: 'plan', entries: (u.entries ?? []) as { content: string; status: string; priority: string }[] };
-      case 'user_message_chunk':
-        return { sessionUpdate: 'user_message_chunk', messageId: u.messageId as string, content: c as { type: string; text: string } };
-      case 'config_option_update':
-        return { sessionUpdate: 'config_option_update', configOptions: (u.configOptions ?? []) as import('../types').SessionConfigOption[] };
-      case 'available_commands_update':
-        return { sessionUpdate: 'available_commands_update', availableCommands: (u.availableCommands ?? []) as import('../types').AvailableCommand[] };
-      case 'usage_update':
-        return { sessionUpdate: 'usage_update', used: u.used as number, size: u.size as number, cost: u.cost as { amount: number; currency: string }, totalTokens: u.totalTokens as number, inputTokens: u.inputTokens as number, outputTokens: u.outputTokens as number, thoughtTokens: u.thoughtTokens as number };
-      case 'current_mode_update':
-        return { sessionUpdate: 'current_mode_update', currentModeId: u.currentModeId as string, availableModes: u.availableModes as import('../types').ModeOption[] };
-      case 'current_model_update':
-        return { sessionUpdate: 'current_model_update', currentModelId: u.currentModelId as string, availableModels: u.availableModels as import('../types').ModelOption[] };
-      case 'session_info_update':
-        return { sessionUpdate: 'session_info_update', sessionId: u.sessionId as string, title: u.title as string, cwd: u.cwd as string };
-      default: return null;
-    }
+    return parseSessionUpdate(u);
   }
 
   private request(method: string, params?: Record<string, unknown>): Promise<unknown> {

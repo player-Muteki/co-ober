@@ -16,6 +16,8 @@ import type { SessionStore } from '../chat/session';
 import { ChatState } from '../chat/chatState';
 import { StreamController } from '../chat/streamController';
 import { parseSlashCommand, isBuiltInCommand } from '../commands/executor';
+import { SessionDropdown } from './sessionDropdown';
+import { Autocomplete } from './autocomplete';
 
 interface MarkdownFileView {
 	getViewType(): string;
@@ -37,13 +39,10 @@ export class CopsidianView extends ItemView {
 	private state = new ChatState();
 	private streamCtrl!: StreamController;
 	private busy = false;
-	private sessionDropdown: HTMLDivElement | null = null;
-	private sessionOutsideHandler: ((e: MouseEvent) => void) | null = null;
-	private acOutsideHandler: ((e: MouseEvent) => void) | null = null;
-	private acKeyHandler: ((e: KeyboardEvent) => void) | null = null;
+	private sessionDropdownMgr: SessionDropdown | null = null;
+	private autocomplete: Autocomplete | null = null;
 	private currentRefs: ContextRef[] = [];
 	private manualRefs = new Set<string>();
-	private acDropdown: HTMLDivElement | null = null;
 	private reconnectBtn: HTMLButtonElement | null = null;
 	private permissionBannerEl: HTMLDivElement | null = null;
 	private welcomeEl: HTMLDivElement | null = null;
@@ -55,6 +54,12 @@ export class CopsidianView extends ItemView {
 	private static readonly MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB
 	private lastAutoRefId: string | null = null;
 	private sendStartTime = 0;
+
+	// Event listener references for cleanup on close
+	private scrollHandler: (() => void) | null = null;
+	private dragOverHandler: ((e: DragEvent) => void) | null = null;
+	private dragLeaveHandler: ((e: DragEvent) => void) | null = null;
+	private dropHandler: ((e: DragEvent) => void) | null = null;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -147,6 +152,9 @@ export class CopsidianView extends ItemView {
 		await this.sessionStore.load();
 		this.state.autoScrollEnabled = this.plugin.settings.autoScrollEnabled ?? true;
 
+		// Session dropdown (initialized after sessionButtonEl is created below)
+		this.sessionDropdownMgr = null; // will be set after header creation
+
 		// Restore active session
 		const savedId = this.plugin.activeSessionId;
 		if (savedId) {
@@ -165,6 +173,46 @@ export class CopsidianView extends ItemView {
 		actions.createEl('button', { text: t().header.new, cls: 'mod-icon' }).onclick = () => this.newSession();
 		this.sessionButtonEl = actions.createEl('button', { text: '⋯', cls: 'mod-icon' });
 		this.sessionButtonEl.onclick = () => this.toggleSessions();
+		this.sessionDropdownMgr = new SessionDropdown(
+			this.contentEl,
+			this.sessionButtonEl,
+			this.sessionStore,
+			() => this.state.sessionId,
+			{
+				onSwitch: async (sessionId: string) => {
+					this.state.sessionId = sessionId;
+					this.sessionStore.getOrCreate(sessionId);
+					this.closeSessionDropdown();
+					await this.cancelActiveGeneration();
+					this.resetConversationView();
+					this.clearAutoRefs();
+					try {
+						await this.syncRuntimeSession(sessionId);
+					} catch (e) {
+						console.error('[copsidian] session switch sync:', e);
+					}
+					await this.restoreSession();
+					this.sessionStore.setActive(sessionId);
+					await this.sessionStore.save();
+					this.loadToolbarOptions();
+					this.maybeShowWelcome();
+					this.autoRefActiveFile();
+				},
+				onDelete: async (sessionId: string) => {
+					this.sessionStore.remove(sessionId);
+					await this.sessionStore.save();
+					if (sessionId === this.state.sessionId) {
+						await this.newSession();
+					}
+					this.closeSessionDropdown();
+				},
+				onNewSession: async () => this.newSession(),
+			},
+		);
+
+		this.autocomplete = new Autocomplete(this.inputAreaEl, {
+			onSelect: (value: string, mode: '@' | '/') => this.handleACSelect(value, mode),
+		});
 
 		// ── Messages ──
 		this.messagesEl = el.createDiv({ cls: 'copsidian-messages' });
@@ -273,8 +321,28 @@ export class CopsidianView extends ItemView {
 		this.closeSessionDropdown();
 		this.closeAutocomplete();
 		this.unregisterKeybindings();
+		this.unregisterEventListeners();
 		this.contextChipsEl.remove();
 		return Promise.resolve();
+	}
+
+	private unregisterEventListeners(): void {
+		if (this.scrollHandler) {
+			this.messagesEl.removeEventListener('scroll', this.scrollHandler);
+			this.scrollHandler = null;
+		}
+		if (this.dragOverHandler) {
+			this.messagesEl.removeEventListener('dragover', this.dragOverHandler);
+			this.dragOverHandler = null;
+		}
+		if (this.dragLeaveHandler) {
+			this.messagesEl.removeEventListener('dragleave', this.dragLeaveHandler);
+			this.dragLeaveHandler = null;
+		}
+		if (this.dropHandler) {
+			this.messagesEl.removeEventListener('drop', this.dropHandler);
+			this.dropHandler = null;
+		}
 	}
 
 	// ── Welcome page ──
@@ -377,7 +445,7 @@ export class CopsidianView extends ItemView {
 	// ── Smart Auto-scroll ──
 
 	private setupSmartScroll(): void {
-		this.messagesEl.addEventListener('scroll', () => {
+		this.scrollHandler = () => {
 			const { scrollTop, clientHeight, scrollHeight } = this.messagesEl;
 			const nearBottom = scrollTop + clientHeight >= scrollHeight - 50;
 
@@ -390,7 +458,8 @@ export class CopsidianView extends ItemView {
 				this.state.autoScrollEnabled = true;
 				this.hideNewMessagesBtn();
 			}
-		});
+		};
+		this.messagesEl.addEventListener('scroll', this.scrollHandler);
 	}
 
 	private showNewMessagesBtn(): void {
@@ -422,23 +491,26 @@ export class CopsidianView extends ItemView {
 	private setupDragDrop(): void {
 		const dropZone = this.messagesEl;
 
-		dropZone.addEventListener('dragover', (e: DragEvent) => {
+		this.dragOverHandler = (e: DragEvent) => {
 			e.preventDefault();
 			e.dataTransfer!.dropEffect = 'copy';
 			this.showDragOverlay();
-		});
+		};
+		dropZone.addEventListener('dragover', this.dragOverHandler);
 
-		dropZone.addEventListener('dragleave', (e: DragEvent) => {
+		this.dragLeaveHandler = (e: DragEvent) => {
 			if (!dropZone.contains(e.relatedTarget as Node)) {
 				this.hideDragOverlay();
 			}
-		});
+		};
+		dropZone.addEventListener('dragleave', this.dragLeaveHandler);
 
-		dropZone.addEventListener('drop', async (e: DragEvent) => {
+		this.dropHandler = async (e: DragEvent) => {
 			e.preventDefault();
 			this.hideDragOverlay();
 			await this.handleDrop(e);
-		});
+		};
+		dropZone.addEventListener('drop', this.dropHandler);
 	}
 
 	private showDragOverlay(): void {
@@ -623,101 +695,16 @@ export class CopsidianView extends ItemView {
 	}
 
 	private async toggleSessions(): Promise<void> {
-		if (this.sessionDropdown) {
-			this.closeSessionDropdown();
+		if (!this.sessionDropdownMgr) return;
+		if (this.sessionDropdownMgr.isOpen()) {
+			this.sessionDropdownMgr.close();
 			return;
 		}
-
-		const list = this.sessionStore.list();
-		const dd = this.contentEl.createDiv({ cls: 'copsidian-session-list' });
-
-		const rect = this.sessionButtonEl?.getBoundingClientRect();
-		dd.style.position = 'fixed';
-		dd.style.top = `${(rect?.bottom ?? 36) + 4}px`;
-		dd.style.right = `${Math.max(8, (window.innerWidth - (rect?.right ?? window.innerWidth - 8)))}px`;
-
-		// Search input
-		const searchInput = dd.createEl('input', {
-			cls: 'copsidian-session-search',
-			attr: { placeholder: t().session.search, type: 'text' },
-		});
-
-		const itemsContainer = dd.createDiv({ cls: 'copsidian-session-items' });
-
-		const renderItems = (filter: string) => {
-			itemsContainer.empty();
-			const filtered = filter
-				? list.filter(s => s.title?.toLowerCase().includes(filter.toLowerCase()))
-				: list;
-
-			if (filtered.length === 0) {
-				itemsContainer.createDiv({
-					cls: 'copsidian-session-empty',
-					text: t().session.empty,
-				});
-				return;
-			}
-
-			for (const s of filtered) {
-				const it = itemsContainer.createDiv({
-					cls: `copsidian-session-item${s.sessionId === this.state.sessionId ? ' active' : ''}`,
-				});
-				it.createSpan({ text: s.title || s.sessionId, cls: 'session-label' });
-				const delBtn = it.createSpan({ text: '×', cls: 'session-delete' });
-				delBtn.onclick = async (e: MouseEvent) => {
-					e.stopPropagation();
-					this.sessionStore.remove(s.sessionId);
-					await this.sessionStore.save();
-				if (s.sessionId === this.state.sessionId) {
-					await this.newSession();
-				}
-				this.closeSessionDropdown();
-			};
-			it.onclick = async () => {
-				this.state.sessionId = s.sessionId;
-				this.sessionStore.getOrCreate(s.sessionId);
-				this.closeSessionDropdown();
-				await this.cancelActiveGeneration();
-				this.resetConversationView();
-				this.clearAutoRefs();
-				try {
-					await this.syncRuntimeSession(s.sessionId);
-				} catch (e) {
-					console.error('[copsidian] session switch sync:', e);
-				}
-				await this.restoreSession();
-				this.sessionStore.setActive(s.sessionId);
-				await this.sessionStore.save();
-				this.loadToolbarOptions();
-				this.maybeShowWelcome();
-				this.autoRefActiveFile();
-			};
-		}
-	};
-
-		searchInput.addEventListener('input', () => {
-			renderItems(searchInput.value);
-		});
-
-		renderItems('');
-
-		this.sessionDropdown = dd;
-		this.sessionOutsideHandler = (evt: MouseEvent) => {
-			if (!this.sessionDropdown) return;
-			const target = evt.target as Node;
-			if (this.sessionDropdown.contains(target) || this.sessionButtonEl?.contains(target)) return;
-			this.closeSessionDropdown();
-		};
-		document.addEventListener('mousedown', this.sessionOutsideHandler, true);
+		this.sessionDropdownMgr.open();
 	}
 
 	private closeSessionDropdown(): void {
-		if (this.sessionDropdown) this.sessionDropdown.remove();
-		this.sessionDropdown = null;
-		if (this.sessionOutsideHandler) {
-			document.removeEventListener('mousedown', this.sessionOutsideHandler, true);
-			this.sessionOutsideHandler = null;
-		}
+		this.sessionDropdownMgr?.close();
 	}
 
 	// ── Sending ──
@@ -783,6 +770,16 @@ export class CopsidianView extends ItemView {
 					modelId: this.state.currentModelId ?? undefined,
 					elapsedMs: Date.now() - this.sendStartTime,
 				});
+			}
+			// Handle inline edit response
+			if (this.pendingInlineEdit) {
+				const session = this.sessionStore.get(sessionId ?? '');
+				if (session) {
+					const lastMsg = session.messages.slice().reverse().find(m => m.role === 'assistant');
+					if (lastMsg) {
+						this.showInlineEditDiff(this.pendingInlineEdit.original, lastMsg.content);
+					}
+				}
 			}
 		}
 	}
@@ -1052,100 +1049,7 @@ export class CopsidianView extends ItemView {
 			}
 		}
 
-		const ac = this.inputAreaEl.createDiv({ cls: 'copsidian-ac-dropdown' });
-		this.acDropdown = ac;
-
-		let selIdx = 0;
-		let filterText = '';
-		let filtered = allItems;
-
-		const applyFilter = () => {
-			if (!filterText) {
-				filtered = allItems;
-			} else {
-				const lower = filterText.toLowerCase();
-				filtered = allItems.filter(it => it.label.toLowerCase().includes(lower) || it.description?.toLowerCase().includes(lower));
-			}
-			selIdx = 0;
-		};
-
-		const render = () => {
-			ac.empty();
-			if (filtered.length === 0) {
-				ac.createDiv({ cls: 'copsidian-ac-item', text: t().autocomplete.noMatches });
-				return;
-			}
-			for (let i = 0; i < filtered.length; i++) {
-				const el = ac.createDiv({ cls: `copsidian-ac-item${i === selIdx ? ' selected' : ''}` });
-				el.createSpan({ text: filtered[i].label, cls: 'ac-label' });
-				if (filtered[i].description) el.createSpan({ text: filtered[i].description, cls: 'ac-desc' });
-				el.onclick = () => {
-					this.handleACSelect(filtered[i].value, mode);
-				};
-			}
-		};
-		render();
-
-		this.acKeyHandler = (e: KeyboardEvent) => {
-			if (e.key === 'Escape') {
-				this.closeAutocomplete();
-				e.preventDefault();
-				e.stopPropagation();
-				return;
-			}
-			if (e.key === 'ArrowDown') {
-				selIdx = (selIdx + 1) % Math.max(1, filtered.length);
-				render();
-				e.preventDefault();
-				e.stopPropagation();
-				return;
-			}
-			if (e.key === 'ArrowUp') {
-				selIdx = (selIdx - 1 + filtered.length) % Math.max(1, filtered.length);
-				render();
-				e.preventDefault();
-				e.stopPropagation();
-				return;
-			}
-			if (e.key === 'Enter') {
-				if (filtered.length > 0) {
-					this.handleACSelect(filtered[selIdx].value, mode);
-				}
-				this.closeAutocomplete();
-				e.preventDefault();
-				e.stopPropagation();
-				return;
-			}
-			if (e.key === 'Backspace') {
-				if (filterText.length > 0) {
-					e.preventDefault();
-					e.stopPropagation();
-					filterText = filterText.slice(0, -1);
-					applyFilter();
-					render();
-				} else {
-					this.closeAutocomplete();
-					e.preventDefault();
-					e.stopPropagation();
-				}
-				return;
-			}
-			if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
-				e.preventDefault();
-				e.stopPropagation();
-				filterText += e.key;
-				applyFilter();
-				render();
-			}
-		};
-		document.addEventListener('keydown', this.acKeyHandler, true);
-
-		this.acOutsideHandler = (evt: MouseEvent) => {
-			const target = evt.target as Node;
-			if (ac.contains(target)) return;
-			this.closeAutocomplete();
-		};
-		document.addEventListener('mousedown', this.acOutsideHandler, true);
+		this.autocomplete?.open(allItems, mode);
 	}
 
 	private handleACSelect(value: string, mode: '@' | '/'): void {
@@ -1170,15 +1074,75 @@ export class CopsidianView extends ItemView {
 	}
 
 	private closeAutocomplete(): void {
-		if (this.acDropdown) this.acDropdown.remove();
-		this.acDropdown = null;
-		if (this.acOutsideHandler) {
-			document.removeEventListener('mousedown', this.acOutsideHandler, true);
-			this.acOutsideHandler = null;
+		this.autocomplete?.close();
+	}
+
+	// ── Inline Edit ──
+
+	private pendingInlineEdit: { original: string; editor: import('obsidian').Editor } | null = null;
+	private inlineEditPanelEl: HTMLDivElement | null = null;
+
+	async requestInlineEdit(selected: string, editor: import('obsidian').Editor): Promise<void> {
+		this.pendingInlineEdit = { original: selected, editor };
+		const prompt = `Please edit and improve the following text. Respond with ONLY the edited text, no explanations:\n\n${selected}`;
+		await this.send(prompt, []);
+	}
+
+	showInlineEditDiff(original: string, edited: string): void {
+		this.hideInlineEditDiff();
+		const panel = this.contentEl.createDiv({ cls: 'copsidian-inline-edit-panel' });
+		this.inlineEditPanelEl = panel;
+
+		panel.createDiv({ cls: 'copsidian-inline-edit-title', text: 'AI Edit Preview' });
+
+		const diffBody = panel.createDiv({ cls: 'copsidian-diff-body' });
+		const oldLines = original.split('\n');
+		const newLines = edited.split('\n');
+		const maxLen = Math.max(oldLines.length, newLines.length);
+		for (let i = 0; i < maxLen; i++) {
+			const oldLine = oldLines[i];
+			const newLine = newLines[i];
+			if (oldLine === undefined) {
+				const line = diffBody.createDiv({ cls: 'diff-line added' });
+				line.createSpan({ cls: 'diff-marker', text: '+' });
+				line.createSpan({ text: newLine });
+			} else if (newLine === undefined) {
+				const line = diffBody.createDiv({ cls: 'diff-line removed' });
+				line.createSpan({ cls: 'diff-marker', text: '-' });
+				line.createSpan({ text: oldLine });
+			} else if (oldLine !== newLine) {
+				const rmLine = diffBody.createDiv({ cls: 'diff-line removed' });
+				rmLine.createSpan({ cls: 'diff-marker', text: '-' });
+				rmLine.createSpan({ text: oldLine });
+				const addLine = diffBody.createDiv({ cls: 'diff-line added' });
+				addLine.createSpan({ cls: 'diff-marker', text: '+' });
+				addLine.createSpan({ text: newLine });
+			} else {
+				const line = diffBody.createDiv({ cls: 'diff-line context' });
+				line.createSpan({ cls: 'diff-marker', text: ' ' });
+				line.createSpan({ text: oldLine });
+			}
 		}
-		if (this.acKeyHandler) {
-			document.removeEventListener('keydown', this.acKeyHandler, true);
-			this.acKeyHandler = null;
+
+		const actions = panel.createDiv({ cls: 'copsidian-inline-edit-actions' });
+		const applyBtn = actions.createEl('button', { cls: 'mod-cta', text: 'Apply' });
+		applyBtn.onclick = () => this.applyInlineEdit(edited);
+		const discardBtn = actions.createEl('button', { text: 'Discard' });
+		discardBtn.onclick = () => this.hideInlineEditDiff();
+	}
+
+	private applyInlineEdit(edited: string): void {
+		if (!this.pendingInlineEdit) return;
+		const { editor } = this.pendingInlineEdit;
+		editor.replaceSelection(edited);
+		this.hideInlineEditDiff();
+		this.pendingInlineEdit = null;
+	}
+
+	private hideInlineEditDiff(): void {
+		if (this.inlineEditPanelEl) {
+			this.inlineEditPanelEl.remove();
+			this.inlineEditPanelEl = null;
 		}
 	}
 }
