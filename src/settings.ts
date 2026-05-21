@@ -3,7 +3,7 @@ import { existsSync } from 'fs';
 import { delimiter, isAbsolute } from 'path';
 import CopsidianPlugin from './main';
 import { VIEW_TYPE } from './types';
-import type { PermissionLevel, SyncRule } from './types';
+import type { McpServerConfig, PermissionLevel, SyncRule } from './types';
 import { setLocale } from './i18n/index';
 
 interface AutoScrollView {
@@ -104,6 +104,29 @@ export class CopsidianSettingsTab extends PluginSettingTab {
         .onChange(async (v) => {
           const n = parseInt(v, 10);
           if (!isNaN(n) && n > 0) { s.maxNoteSize = n; await this.save(); new Notice('Setting saved'); }
+        }));
+
+    // ── MCP Servers ──
+    new Setting(containerEl).setName('MCP Servers').setHeading();
+
+    for (const server of s.mcpServers) {
+      this.addMcpServerBlock(containerEl, server);
+    }
+
+    new Setting(containerEl)
+      .setName('')
+      .addButton((b) => b.setButtonText('+ Add MCP Server')
+        .onClick(async () => {
+          const server: McpServerConfig = {
+            id: Date.now().toString(),
+            enabled: true,
+            name: 'filesystem',
+            command: 'npx',
+            args: ['-y', '@modelcontextprotocol/server-filesystem'],
+          };
+          s.mcpServers.push(server);
+          await this.save();
+          this.display();
         }));
 
     // ── Sync Rules ──
@@ -218,6 +241,48 @@ export class CopsidianSettingsTab extends PluginSettingTab {
     const delBtn = block.createEl('button', { text: 'Delete', cls: 'mod-warning' });
     delBtn.onclick = async () => {
       this.plugin.settings.syncRules = this.plugin.settings.syncRules.filter((r: SyncRule) => r.id !== rule.id);
+      await this.save();
+      this.display();
+    };
+  }
+
+  private addMcpServerBlock(containerEl: HTMLElement, server: McpServerConfig): void {
+    const block = containerEl.createDiv({ cls: 'copsidian-mcp-server' });
+    block.createEl('strong', { text: `MCP: ${server.name || 'Unnamed server'}` });
+
+    new Setting(block)
+      .setName('Enabled')
+      .addToggle((toggle) => toggle.setValue(server.enabled)
+        .onChange(async (value) => { server.enabled = value; await this.save(); }));
+
+    new Setting(block)
+      .setName('Name')
+      .setDesc('Unique server name passed to OpenCode')
+      .addText((text) => text.setValue(server.name)
+        .onChange(async (value) => { server.name = value.trim(); await this.save(); }));
+
+    new Setting(block)
+      .setName('Command')
+      .setDesc('Executable command, for example npx or uvx')
+      .addText((text) => text.setValue(server.command)
+        .onChange(async (value) => { server.command = value.trim(); await this.save(); }));
+
+    new Setting(block)
+      .setName('Arguments')
+      .setDesc('One argument per line')
+      .addTextArea((text) => {
+        text.setValue(server.args.join('\n'));
+        text.inputEl.rows = 4;
+        text.inputEl.classList.add('copsidian-mcp-args');
+        text.onChange(async (value) => {
+          server.args = value.split('\n').map((arg) => arg.trim()).filter(Boolean);
+          await this.save();
+        });
+      });
+
+    const delBtn = block.createEl('button', { text: 'Delete', cls: 'mod-warning' });
+    delBtn.onclick = async () => {
+      this.plugin.settings.mcpServers = this.plugin.settings.mcpServers.filter((item) => item.id !== server.id);
       await this.save();
       this.display();
     };

@@ -225,7 +225,7 @@ export class CopsidianView extends ItemView {
 			try {
 				const c = this.plugin.getClient();
 				if (c) {
-					this.state.sessionId = await c.createSession(this.getVaultCwd());
+					this.state.sessionId = await c.createSession(this.getVaultCwd(), this.plugin.settings.mcpServers);
 					this.sessionStore.getOrCreate(this.state.sessionId);
 					this.sessionStore.setActive(this.state.sessionId);
 					await this.sessionStore.save();
@@ -610,7 +610,7 @@ export class CopsidianView extends ItemView {
 		try {
 			await this.cancelActiveGeneration();
 			this.resetConversationView();
-			this.state.sessionId = await c.createSession(this.getVaultCwd());
+			this.state.sessionId = await c.createSession(this.getVaultCwd(), this.plugin.settings.mcpServers);
 			this.sessionStore.getOrCreate(this.state.sessionId);
 			this.sessionStore.setActive(this.state.sessionId);
 			await this.sessionStore.save();

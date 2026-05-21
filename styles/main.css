@@ -462,7 +462,8 @@
 }
 
 /* Settings enhancements */
-.copsidian-sync-rule {
+.copsidian-sync-rule,
+.copsidian-mcp-server {
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
   padding: 8px;
@@ -470,12 +471,14 @@
   background: var(--background-secondary);
 }
 
-.copsidian-sync-rule strong {
+.copsidian-sync-rule strong,
+.copsidian-mcp-server strong {
   display: block;
   margin-bottom: 8px;
 }
 
-.copsidian-sync-rule .mod-warning {
+.copsidian-sync-rule .mod-warning,
+.copsidian-mcp-server .mod-warning {
   background: var(--background-modifier-error);
   color: var(--text-on-accent);
   border: none;
@@ -484,6 +487,10 @@
   cursor: pointer;
   font-size: var(--font-smaller);
   margin-top: 8px;
+}
+
+.copsidian-mcp-args {
+  font-family: var(--font-monospace);
 }
 
 .copsidian-reconnect-btn {
