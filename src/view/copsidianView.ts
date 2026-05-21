@@ -54,6 +54,8 @@ export class CopsidianView extends ItemView {
 	private static readonly MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB
 	private lastAutoRefId: string | null = null;
 	private sendStartTime = 0;
+	private headerTitleEl: HTMLDivElement | null = null;
+	private newSessionBtnEl: HTMLButtonElement | null = null;
 
 	// Event listener references for cleanup on close
 	private scrollHandler: (() => void) | null = null;
@@ -71,6 +73,7 @@ export class CopsidianView extends ItemView {
 	}
 
 	private resetConversationView(): void {
+		this.clearInlineEditState();
 		this.closeAutocomplete();
 		this.dismissPermissionBanner();
 		this.hideWelcome();
@@ -116,7 +119,6 @@ export class CopsidianView extends ItemView {
 		client.setClientHandlers({
 			onClose: () => this.handleDisconnect(),
 			onReconnect: async () => {
-				await this.plugin.initClient();
 				this.bindClientHandlers();
 				this.state.isConnected = true;
 				this.updateWelcomeStatus();
@@ -168,9 +170,10 @@ export class CopsidianView extends ItemView {
 
 		// ── Header ──
 		const header = el.createDiv({ cls: 'copsidian-header' });
-		header.createDiv({ text: t().appName, cls: 'copsidian-header-title' });
+		this.headerTitleEl = header.createDiv({ text: t().appName, cls: 'copsidian-header-title' });
 		const actions = header.createDiv({ cls: 'copsidian-header-actions' });
-		actions.createEl('button', { text: t().header.new, cls: 'mod-icon' }).onclick = () => this.newSession();
+		this.newSessionBtnEl = actions.createEl('button', { text: t().header.new, cls: 'mod-icon' });
+		this.newSessionBtnEl.onclick = () => this.newSession();
 		this.sessionButtonEl = actions.createEl('button', { text: '⋯', cls: 'mod-icon' });
 		this.sessionButtonEl.onclick = () => this.toggleSessions();
 		this.sessionDropdownMgr = new SessionDropdown(
@@ -265,11 +268,16 @@ export class CopsidianView extends ItemView {
 			onModeUpdate: (modeId, modes) => this.applyModeUpdate(modeId, modes),
 			onModelsUpdate: (modelId, models) => this.applyModelUpdate(modelId, models),
 			onCommandsUpdate: (_cmds) => {},
+			onSyncFailure: (message) => this.renderer.addError(message),
 		});
 
 		// Ensure a session exists before rendering
-		await this.plugin.waitForClient();
-		if (!this.state.sessionId) {
+		const clientReady = await this.plugin.waitForClient();
+		this.state.isConnected = clientReady;
+		if (!clientReady) {
+			this.handleDisconnect();
+		}
+		if (clientReady && !this.state.sessionId) {
 			try {
 				const c = this.plugin.getClient();
 				if (c) {
@@ -486,6 +494,25 @@ export class CopsidianView extends ItemView {
 		if (enabled) this.hideNewMessagesBtn();
 	}
 
+	refreshLocale(): void {
+		this.headerTitleEl?.setText(t().appName);
+		this.newSessionBtnEl?.setText(t().header.new);
+		this.input?.refreshLocale();
+		this.toolbar?.refreshLocale();
+		this.renderer?.refreshLocale();
+		this.refreshInlineEditLocale();
+		this.updateWelcomeStatus();
+		if (this.welcomeEl) {
+			this.showWelcome();
+		}
+		if (this.reconnectBtn) {
+			this.reconnectBtn.textContent = this.reconnectBtn.disabled ? t().reconnect.connecting : t().reconnect.text;
+		}
+		if (this.newMessagesBtn) {
+			this.newMessagesBtn.textContent = t().newMessages;
+		}
+	}
+
 	// ── Drag and Drop ──
 
 	private setupDragDrop(): void {
@@ -559,7 +586,7 @@ export class CopsidianView extends ItemView {
 				// Image → base64 PromptPart
 				try {
 					const data = await this.fileToBase64(file);
-					const imageBytes = data.length; // base64 string length as proxy
+					const imageBytes = file.size;
 					if (this.pendingImageTotalBytes + imageBytes > CopsidianView.MAX_IMAGE_BYTES) {
 						console.warn(`[copsidian] Image "${file.name}" exceeds total size limit (10MB), skipped`);
 						continue;
@@ -630,7 +657,8 @@ export class CopsidianView extends ItemView {
 			this.reconnectBtn.disabled = true;
 		}
 		try {
-			await this.plugin.initClient();
+			const connected = await this.plugin.initClient();
+			if (!connected) throw new Error(t().reconnect.failed);
 			this.bindClientHandlers();
 			try {
 				await this.syncRuntimeSession(this.state.sessionId);
@@ -713,6 +741,8 @@ export class CopsidianView extends ItemView {
 		const c = this.plugin.getClient();
 		const sessionId = this.state.sessionId;
 		if (!c || !sessionId || this.busy) return;
+		const inlineEdit = this.pendingInlineEdit;
+		if (!inlineEdit) this.hideInlineEditDiff();
 
 		// Hide welcome page on first message
 		this.hideWelcome();
@@ -772,14 +802,15 @@ export class CopsidianView extends ItemView {
 				});
 			}
 			// Handle inline edit response
-			if (this.pendingInlineEdit) {
+			if (inlineEdit && this.pendingInlineEdit === inlineEdit) {
 				const session = this.sessionStore.get(sessionId ?? '');
 				if (session) {
 					const lastMsg = session.messages.slice().reverse().find(m => m.role === 'assistant');
 					if (lastMsg) {
-						this.showInlineEditDiff(this.pendingInlineEdit.original, lastMsg.content);
+						this.showInlineEditDiff(inlineEdit.original, lastMsg.content);
 					}
 				}
+				this.pendingInlineEdit = null;
 			}
 		}
 	}
@@ -1083,17 +1114,19 @@ export class CopsidianView extends ItemView {
 	private inlineEditPanelEl: HTMLDivElement | null = null;
 
 	async requestInlineEdit(selected: string, editor: import('obsidian').Editor): Promise<void> {
+		this.clearInlineEditState();
 		this.pendingInlineEdit = { original: selected, editor };
-		const prompt = `Please edit and improve the following text. Respond with ONLY the edited text, no explanations:\n\n${selected}`;
+		const prompt = t().inlineEdit.prompt.replace('{text}', selected);
 		await this.send(prompt, []);
 	}
 
 	showInlineEditDiff(original: string, edited: string): void {
 		this.hideInlineEditDiff();
+		const editor = this.pendingInlineEdit?.editor;
 		const panel = this.contentEl.createDiv({ cls: 'copsidian-inline-edit-panel' });
 		this.inlineEditPanelEl = panel;
 
-		panel.createDiv({ cls: 'copsidian-inline-edit-title', text: 'AI Edit Preview' });
+		panel.createDiv({ cls: 'copsidian-inline-edit-title', text: t().inlineEdit.title });
 
 		const diffBody = panel.createDiv({ cls: 'copsidian-diff-body' });
 		const oldLines = original.split('\n');
@@ -1125,18 +1158,32 @@ export class CopsidianView extends ItemView {
 		}
 
 		const actions = panel.createDiv({ cls: 'copsidian-inline-edit-actions' });
-		const applyBtn = actions.createEl('button', { cls: 'mod-cta', text: 'Apply' });
-		applyBtn.onclick = () => this.applyInlineEdit(edited);
-		const discardBtn = actions.createEl('button', { text: 'Discard' });
-		discardBtn.onclick = () => this.hideInlineEditDiff();
+		const applyBtn = actions.createEl('button', { cls: 'mod-cta', text: t().inlineEdit.apply });
+		applyBtn.onclick = () => this.applyInlineEdit(editor, edited);
+		const discardBtn = actions.createEl('button', { text: t().inlineEdit.discard });
+		discardBtn.onclick = () => this.clearInlineEditState();
 	}
 
-	private applyInlineEdit(edited: string): void {
-		if (!this.pendingInlineEdit) return;
-		const { editor } = this.pendingInlineEdit;
+	private refreshInlineEditLocale(): void {
+		if (!this.inlineEditPanelEl) return;
+		const title = this.inlineEditPanelEl.querySelector('.copsidian-inline-edit-title');
+		if (title) title.textContent = t().inlineEdit.title;
+		const apply = this.inlineEditPanelEl.querySelector('.copsidian-inline-edit-actions .mod-cta');
+		if (apply) apply.textContent = t().inlineEdit.apply;
+		const buttons = this.inlineEditPanelEl.querySelectorAll('.copsidian-inline-edit-actions button');
+		const discard = buttons[1];
+		if (discard) discard.textContent = t().inlineEdit.discard;
+	}
+
+	private applyInlineEdit(editor: import('obsidian').Editor | undefined, edited: string): void {
+		if (!editor) return;
 		editor.replaceSelection(edited);
-		this.hideInlineEditDiff();
+		this.clearInlineEditState();
+	}
+
+	private clearInlineEditState(): void {
 		this.pendingInlineEdit = null;
+		this.hideInlineEditDiff();
 	}
 
 	private hideInlineEditDiff(): void {

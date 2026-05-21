@@ -28,6 +28,7 @@ export class ChatRenderer {
   private toolEls = new Map<string, HTMLDivElement>();
   private placeholderEl: HTMLDivElement | null = null;
   private renderTimeout: number | null = null;
+  private usageEls = new Map<HTMLDivElement, UsageDisplay>();
 
   constructor(container: HTMLDivElement, app: App, shouldAutoScroll: () => boolean = () => true) {
     this.container = container;
@@ -46,6 +47,7 @@ export class ChatRenderer {
     this.thinkingEl = null;
     this.planEl = null;
     this.placeholderEl = null;
+    this.usageEls.clear();
     if (this.renderTimeout !== null) {
       clearTimeout(this.renderTimeout);
       this.renderTimeout = null;
@@ -347,9 +349,25 @@ export class ChatRenderer {
     if (usage.thoughtTokens) parts.push(`💭${usage.thoughtTokens}`);
     if (usage.cost?.amount) parts.push(`$${usage.cost.amount.toFixed(4)}`);
     el.textContent = parts.join(' · ');
-    el.title = `Model: ${usage.modelId ?? '?'} | Input: ${usage.inputTokens}, Output: ${usage.outputTokens}${usage.thoughtTokens ? `, Thinking: ${usage.thoughtTokens}` : ''}`;
+    this.usageEls.set(el, usage);
+    el.title = this.formatUsageTitle(usage);
 
     this.scrollToBottom();
+  }
+
+  refreshLocale(): void {
+    for (const [el, usage] of this.usageEls) {
+      if (!el.isConnected) {
+        this.usageEls.delete(el);
+        continue;
+      }
+      el.title = this.formatUsageTitle(usage);
+    }
+  }
+
+  private formatUsageTitle(usage: UsageDisplay): string {
+    const labels = t().usage;
+    return `${labels.model}: ${usage.modelId ?? '?'} | ${labels.input}: ${usage.inputTokens}, ${labels.output}: ${usage.outputTokens}${usage.thoughtTokens ? `, ${labels.thinking}: ${usage.thoughtTokens}` : ''}`;
   }
 
   private formatTimestamp(ts: number): string {

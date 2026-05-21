@@ -1,5 +1,6 @@
 import type CopsidianPlugin from '../main';
 import type { SessionMeta, SerializedMessage, SerializedSession } from '../types';
+import { t } from '../i18n/index';
 
 /** Session store for persisting conversations in Obsidian plugin data */
 export interface SessionStore {
@@ -31,7 +32,7 @@ export function createSessionStore(plugin: CopsidianPlugin): SessionStore {
       const now = Date.now();
       session = {
         sessionId: opencodeSessionId,
-        title: `Chat ${new Date(now).toLocaleTimeString()}`,
+        title: t().session.defaultTitle.replace('{time}', new Date(now).toLocaleTimeString()),
         opencodeSessionId,
         messages: [],
         createdAt: now,

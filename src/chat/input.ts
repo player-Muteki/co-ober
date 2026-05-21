@@ -70,6 +70,10 @@ export class ChatInput {
     this.textarea.disabled = on;
   }
 
+  refreshLocale(): void {
+    this.textarea.placeholder = t().input.placeholder;
+  }
+
   /** Check if the character before the cursor is whitespace or start-of-input */
   private isAtWordBoundary(): boolean {
     const cursor = this.textarea.selectionStart;
