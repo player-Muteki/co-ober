@@ -1,4 +1,4 @@
-import type { App } from 'obsidian';
+import type { App, Component } from 'obsidian';
 import { MarkdownRenderer } from 'obsidian';
 import { ContextInjection } from '../context/injection';
 import { t } from '../i18n/index';
@@ -137,7 +137,7 @@ export class ChatRenderer {
       textWithWikilinks,
       placeholder,
       '',
-      this.container as any,
+      this.container as unknown as Component,
     ).then(() => {
       this.addCopyButtons(placeholder);
     }).catch(() => {
@@ -158,7 +158,7 @@ export class ChatRenderer {
         const text = codeEl.textContent || '';
         await navigator.clipboard.writeText(text);
         btn.textContent = t().copy.copied;
-        setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+        setTimeout(() => { btn.textContent = t().copy.button; }, 1500);
       };
       pre.style.position = 'relative';
       pre.appendChild(btn);

@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf } from 'obsidian';
+import { ItemView, WorkspaceLeaf, TFile } from 'obsidian';
 import type CopsidianPlugin from '../main';
 import { VIEW_TYPE } from '../types';
 import type { SessionUpdate, ContextRef, PromptPart, PermissionRequest } from '../types';
@@ -16,6 +16,11 @@ import type { SessionStore } from '../chat/session';
 import { ChatState } from '../chat/chatState';
 import { StreamController } from '../chat/streamController';
 import { parseSlashCommand, isBuiltInCommand } from '../commands/executor';
+
+interface MarkdownFileView {
+	getViewType(): string;
+	file?: TFile | null;
+}
 
 export class CopsidianView extends ItemView {
 	private messagesEl!: HTMLDivElement;
@@ -470,7 +475,7 @@ export class CopsidianView extends ItemView {
 		for (const file of Array.from(files)) {
 			if (file.name.endsWith('.md')) {
 				// Markdown file → ContextRef
-				const path = (file as any).webkitRelativePath || file.name;
+				const path = file.webkitRelativePath || file.name;
 				const ref: ContextRef = {
 					id: path,
 					type: 'note',
@@ -995,9 +1000,11 @@ export class CopsidianView extends ItemView {
 		// Try to get the active file from a non-Copsidian leaf
 		const leaves = this.plugin.app.workspace.getLeavesOfType('markdown');
 		const activeLeaf = this.plugin.app.workspace.getMostRecentLeaf();
+		const activeView = activeLeaf?.view as MarkdownFileView | undefined;
+		const firstMarkdownView = leaves[0]?.view as MarkdownFileView | undefined;
 		const file = activeLeaf?.view?.getViewType() === 'markdown'
-			? (activeLeaf.view as any).file
-			: leaves[0]?.view ? (leaves[0].view as any).file : null;
+			? activeView?.file
+			: firstMarkdownView?.file;
 		if (!file || file.extension !== 'md') return;
 		if (this.manualRefs.has(file.path)) return;
 		this.addChip({ id: file.path, type: 'note', name: file.basename, path: file.path }, 'auto');
@@ -1008,7 +1015,7 @@ export class CopsidianView extends ItemView {
 		this.registerEvent(
 			this.plugin.app.workspace.on('active-leaf-change', (leaf) => {
 				if (!leaf) return;
-				const view = leaf.view as any;
+				const view = leaf.view as MarkdownFileView;
 				if (view?.getViewType?.() !== 'markdown') return;
 				const file = view.file;
 				if (!file || file.extension !== 'md') return;
