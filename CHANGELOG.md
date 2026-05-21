@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.0.8 - 2026-05-21
+
+### Fixed
+- Apply saved English/Chinese language settings on plugin startup and refresh both the plugin settings tab and open Copsidian views immediately after changing language in Settings.
+- Complete i18n coverage for runtime notices, toolbar tooltips, inline edit UI and prompt, usage tooltips, sync failure messages, ACP errors, and default session titles.
+- Harden permission handling so `safe` mode does not auto-approve tool requests when no UI permission handler is available.
+- Prevent connection failures from blocking sidebar initialization, and avoid false “connected” states after failed reconnect attempts.
+- Reject pending ACP requests when the OpenCode process exits or stdin is unavailable.
+- Clear stale inline-edit state after apply, discard, session reset, or subsequent sends.
+- Surface sync rule failures in the chat UI instead of only logging them to the console.
+- Use byte-accurate note truncation and real file sizes for image attachment limits.
+
+### Changed
+- Split normal build and release packaging so `npm run build` validates version consistency without mutating release artifacts, while `npm run release` prepares release files.
+- Update GitHub release workflow to use the release packaging script.
+
 ## 0.0.7 - 2026-05-21
 
 ### Added

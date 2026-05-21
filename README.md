@@ -36,6 +36,8 @@ Existing AI plugins for Obsidian fall into two categories: those that require th
 
 **i18n (Internationalization)** — Switch between English and Chinese UI in Settings → Appearance. Community translations welcome.
 
+Language changes apply immediately to the settings tab and open Copsidian views, including notices, toolbar labels, inline edit UI, and runtime error messages. The selected language persists across plugin restarts.
+
 **MCP Servers** — Configure local MCP servers in Settings and attach them automatically when creating new OpenCode sessions.
 
 ## Requirements
@@ -245,6 +247,8 @@ Licensed under the [MIT License](LICENSE).
 **自动重连** — OpenCode 进程崩溃后自动恢复连接。
 
 **国际化（i18n）** — 在设置 → 外观中切换中英文界面，社区翻译欢迎提交 PR。
+
+语言切换会立即应用到设置页和已打开的 Copsidian 视图，包括通知、工具栏文案、行内编辑界面和运行时错误提示。所选语言会在插件重启后保持生效。
 
 **MCP 服务器** — 在设置中配置本地 MCP 服务器，新建 OpenCode 会话时自动附加。
 
