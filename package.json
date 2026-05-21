@@ -1,11 +1,12 @@
 {
   "name": "copsidian",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "Embed the complete OpenCode agent inside Obsidian sidebar",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit && node esbuild.config.mjs --minify",
+    "release": "tsc -noEmit && node esbuild.config.mjs --minify --release",
     "check": "tsc --noEmit",
     "test": "vitest run"
   },

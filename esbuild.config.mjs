@@ -3,6 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import path from "path";
 
 const mode = process.argv.includes("--minify") ? "production" : "development";
+const release = process.argv.includes("--release");
 const entryPath = path.join(process.cwd(), "src", "main.ts");
 const entryDir = path.dirname(entryPath);
 
@@ -84,13 +85,19 @@ await esbuild.build({
 
 const manifest = JSON.parse(readFileSync("manifest.json", "utf8"));
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
-manifest.version = pkg.version;
-writeFileSync("manifest.json", JSON.stringify(manifest, null, 2) + "\n");
+if (release) {
+  manifest.version = pkg.version;
+  writeFileSync("manifest.json", JSON.stringify(manifest, null, 2) + "\n");
+} else if (manifest.version !== pkg.version) {
+  throw new Error(`manifest.json version (${manifest.version}) must match package.json version (${pkg.version})`);
+}
 copyFileSync("styles/main.css", "styles.css");
 
-mkdirSync("release", { recursive: true });
-copyFileSync("main.js", path.join("release", "main.js"));
-copyFileSync("manifest.json", path.join("release", "manifest.json"));
-copyFileSync("styles.css", path.join("release", "styles.css"));
+if (release) {
+  mkdirSync("release", { recursive: true });
+  copyFileSync("main.js", path.join("release", "main.js"));
+  copyFileSync("manifest.json", path.join("release", "manifest.json"));
+  copyFileSync("styles.css", path.join("release", "styles.css"));
+}
 
 console.log(`Build complete (${mode}). Version: ${manifest.version}`);
