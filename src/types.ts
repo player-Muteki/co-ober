@@ -126,6 +126,14 @@ export interface SyncRule {
   template?: string;
 }
 
+export interface McpServerConfig {
+  id: string;
+  enabled: boolean;
+  name: string;
+  command: string;
+  args: string[];
+}
+
 export interface SerializedMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -160,6 +168,7 @@ export interface CopsidianSettings {
   language: string;
   maxNoteSize: number;
   syncRules: SyncRule[];
+  mcpServers: McpServerConfig[];
   autoConnect?: boolean;
   autoScrollEnabled?: boolean;
   maxSessionMessages?: number;
@@ -180,6 +189,7 @@ export const DEFAULT_SETTINGS: CopsidianSettings = {
     { id: 'edit', enabled: true, toolName: 'edit', folder: 'opencode-sync', filenameTemplate: '{{tool}}-{{date}}-{{shortId}}' },
     { id: 'write', enabled: true, toolName: 'write', folder: 'opencode-sync', filenameTemplate: '{{tool}}-{{date}}-{{shortId}}' },
   ],
+  mcpServers: [],
   autoConnect: true,
   autoScrollEnabled: true,
   maxSessionMessages: 200,

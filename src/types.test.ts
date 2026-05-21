@@ -15,6 +15,7 @@ describe('DEFAULT_SETTINGS', () => {
     expect(DEFAULT_SETTINGS).toHaveProperty('autoScrollEnabled', true);
     expect(DEFAULT_SETTINGS).toHaveProperty('maxSessionMessages', 200);
     expect(DEFAULT_SETTINGS).toHaveProperty('sessionRetentionDays', 30);
+    expect(DEFAULT_SETTINGS).toHaveProperty('mcpServers', []);
   });
 
   it('should have default sync rules', () => {
