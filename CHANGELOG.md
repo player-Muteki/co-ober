@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.0.10 - 2026-05-21
+
+### Fixed
+- Keep ACP permission requests responsive when the Obsidian permission UI handler fails by falling back to a safe reject decision.
+- Align ACP initialize client metadata with the plugin release version.
+
+### Tested
+- Re-ran the full test suite five times during pressure testing and added ACP regression coverage for permission fallback handling.
+- Cover live plugin settings language refresh alongside open chat view refresh.
+
 ## 0.0.9 - 2026-05-21
 
 ### Changed
