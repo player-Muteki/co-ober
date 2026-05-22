@@ -1,6 +1,7 @@
 # Phase Plan: Test → i18n → Inline Edit
 
 ## Phase 1: Unit Tests
+**Status**: Completed
 **Goal**: Set up test infrastructure + cover critical modules
 - Tasks:
   - Install vitest + configure
@@ -11,6 +12,7 @@
 - QA: `npx vitest run` passes, coverage ≥70% on tested modules
 
 ## Phase 2: i18n
+**Status**: Completed
 **Goal**: Add English/Chinese locale system
 - Tasks:
   - Create `src/i18n/` with `en.ts`, `zh.ts`, `index.ts`
@@ -19,6 +21,7 @@
 - QA: Switch language in settings, verify all UI text changes
 
 ## Phase 3: Inline Edit
+**Status**: Completed
 **Goal**: Select note text → AI edit with diff preview
 - Tasks:
   - Add context menu item on text selection in markdown editor

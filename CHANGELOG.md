@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.12 - 2026-05-22
+
+### Changed
+- Document custom agents and reusable custom skills in the English and Chinese feature lists.
+- Mark completed roadmap and phase-plan items as done.
+
 ## 0.0.11 - 2026-05-22
 
 ### Added

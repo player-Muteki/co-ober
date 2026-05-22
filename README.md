@@ -26,6 +26,8 @@ Existing AI plugins for Obsidian fall into two categories: those that require th
 
 **Model & Mode Switching** — Switch AI models and Agent modes (`build` / `plan` / `docs`) directly in the UI.
 
+**Custom Agents & Skills** — Define local agent profiles and reusable skill instructions in Settings, then inject them into new chat prompts.
+
 **Streaming Response Rendering** — Real-time rendering of Markdown, thinking blocks, tool calls, and plan panels.
 
 **Sync Engine** — Tool call results (file edits, writes) are automatically written back to Vault notes based on configurable sync rules with filename templates.
@@ -194,7 +196,7 @@ src/
 - [x] Drag & drop files and images
 - [x] Inline edit (select text in note → AI edit with diff preview)
 - [x] MCP server support
-- [ ] Custom agents and skills
+- [x] Custom agents and skills
 - [x] i18n (internationalization)
 - [ ] More to come!
 
@@ -242,6 +244,8 @@ Licensed under the [MIT License](LICENSE).
 **多会话管理** — 同时运行多个对话。会话在 Obsidian 重启后自动恢复，支持可配置的保留策略。
 
 **模型与模式切换** — 在界面中直接切换 AI 模型和 Agent 模式（`build` / `plan` / `docs`）。
+
+**自定义 Agent 与技能** — 在设置中定义本地 Agent 配置和可复用技能指令，并注入到新的对话提示词中。
 
 **流式响应渲染** — 实时渲染 Markdown、思考块、工具调用和计划面板。
 
@@ -411,7 +415,7 @@ src/
 - [x] 拖拽文件和图片
 - [x] 行内编辑（选中笔记文字 → AI 编辑并显示 Diff 预览）
 - [x] MCP 服务器支持
-- [ ] 自定义 Agent 和技能
+- [x] 自定义 Agent 和技能
 - [x] 国际化（i18n）
 - [ ] 更多功能持续开发中！
 
