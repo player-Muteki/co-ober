@@ -9,7 +9,6 @@
     "prerelease": "node scripts/check-release.mjs",
     "release": "tsc -noEmit && node esbuild.config.mjs --minify --release",
     "release:check": "node scripts/check-release.mjs --artifacts",
-    "qa:obsidian": "node scripts/qa-obsidian-smoke.mjs",
     "check": "tsc --noEmit",
     "test": "vitest run"
   },
