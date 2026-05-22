@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.0.13 - 2026-05-22
+
+### Fixed
+- Preserve configured MCP servers when restoring existing OpenCode sessions.
+- Initialize autocomplete after the chat input area is created.
+- Deduplicate Copsidian side leaves during plugin reload/open stress scenarios.
+- Make Copsidian view cleanup safe before the view finishes opening.
+
+### Changed
+- Record the local QA vault convention and keep the QA vault out of commits.
+
+### Tested
+- Add regression coverage for MCP session restore, autocomplete initialization, side leaf deduplication, and early view cleanup.
+- Run high-pressure Obsidian regression smoke tests against the local QA vault.
+
 ## 0.0.12 - 2026-05-22
 
 ### Changed
