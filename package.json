@@ -1,6 +1,6 @@
 {
   "name": "copsidian",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "description": "Embed the complete OpenCode agent inside Obsidian sidebar",
   "main": "main.js",
   "scripts": {
