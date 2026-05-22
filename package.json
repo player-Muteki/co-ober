@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit && node esbuild.config.mjs --minify",
+    "prerelease": "node scripts/check-release.mjs",
     "release": "tsc -noEmit && node esbuild.config.mjs --minify --release",
     "check": "tsc --noEmit",
     "test": "vitest run"
