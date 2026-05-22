@@ -134,6 +134,25 @@ export interface McpServerConfig {
   args: string[];
 }
 
+export interface CustomSkillDefinition {
+  id: string;
+  enabled: boolean;
+  name: string;
+  description: string;
+  instructions: string;
+}
+
+export interface CustomAgentDefinition {
+  id: string;
+  enabled: boolean;
+  name: string;
+  description: string;
+  instructions: string;
+  skillIds: string[];
+  modeId?: string;
+  modelId?: string;
+}
+
 export interface SerializedMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -169,6 +188,10 @@ export interface CopsidianSettings {
   maxNoteSize: number;
   syncRules: SyncRule[];
   mcpServers: McpServerConfig[];
+  customSkills: CustomSkillDefinition[];
+  customAgents: CustomAgentDefinition[];
+  activeCustomAgentId: string;
+  commonModels: string[];
   autoConnect?: boolean;
   autoScrollEnabled?: boolean;
   maxSessionMessages?: number;
@@ -190,6 +213,10 @@ export const DEFAULT_SETTINGS: CopsidianSettings = {
     { id: 'write', enabled: true, toolName: 'write', folder: 'opencode-sync', filenameTemplate: '{{tool}}-{{date}}-{{shortId}}' },
   ],
   mcpServers: [],
+  customSkills: [],
+  customAgents: [],
+  activeCustomAgentId: '',
+  commonModels: [],
   autoConnect: true,
   autoScrollEnabled: true,
   maxSessionMessages: 200,

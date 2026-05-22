@@ -19,9 +19,10 @@ export class ContextInjection {
     );
   }
 
-  static systemPrompt(instructions: string): string {
+  static systemPrompt(instructions: string, customAgentPrompt = ''): string {
     const parts = [ContextInjection.IDENTITY];
     if (instructions.trim()) parts.push(instructions.trim());
+    if (customAgentPrompt.trim()) parts.push(customAgentPrompt.trim());
     return parts.join('\n\n');
   }
 

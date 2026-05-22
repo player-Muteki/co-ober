@@ -16,6 +16,10 @@ describe('DEFAULT_SETTINGS', () => {
     expect(DEFAULT_SETTINGS).toHaveProperty('maxSessionMessages', 200);
     expect(DEFAULT_SETTINGS).toHaveProperty('sessionRetentionDays', 30);
     expect(DEFAULT_SETTINGS).toHaveProperty('mcpServers', []);
+    expect(DEFAULT_SETTINGS).toHaveProperty('customSkills', []);
+    expect(DEFAULT_SETTINGS).toHaveProperty('customAgents', []);
+    expect(DEFAULT_SETTINGS).toHaveProperty('activeCustomAgentId', '');
+    expect(DEFAULT_SETTINGS).toHaveProperty('commonModels', []);
   });
 
   it('should have default sync rules', () => {
