@@ -70,7 +70,7 @@ export function createSessionStore(plugin: CopsidianPlugin): SessionStore {
     },
 
     async load(): Promise<void> {
-      await plugin.loadPluginData();
+      // Data is already loaded in plugin.onload(), just sync the active session ID
       this.activeId = plugin.activeSessionId;
     },
 

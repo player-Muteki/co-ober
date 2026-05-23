@@ -121,7 +121,6 @@ describe('SessionStore', () => {
 
     plugin.activeSessionId = 'loaded-id';
     await store.load();
-    expect(plugin.loadPluginData).toHaveBeenCalled();
     expect(store.activeId).toBe('loaded-id');
   });
 
