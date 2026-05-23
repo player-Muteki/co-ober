@@ -163,6 +163,146 @@ describe('CopsidianSettingsTab locale refresh', () => {
     expect(refreshedView.loadToolbarOptions).toHaveBeenCalled();
   });
 
+  it('renders successful diagnostics for connection and runtime metadata', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() }, {
+      availableModes: [{ id: 'build', name: 'Build' }],
+      availableModels: [{ modelId: 'openai/gpt', name: 'GPT' }],
+      availableCommands: [{ name: 'compact', description: 'Compact' }],
+    });
+    plugin.settings.mcpServers.push({ id: 'fs', enabled: true, name: 'filesystem', command: 'npx', args: ['-y'] });
+    const tab = new CopsidianSettingsTab(plugin);
+
+    tab.display();
+    const diagnosticsButton = [...tab.containerEl.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Run Diagnostics') as HTMLButtonElement | undefined;
+    expect(diagnosticsButton).toBeDefined();
+    diagnosticsButton!.click();
+    await flushPromises();
+    await flushPromises();
+
+    expect(plugin.initClient).toHaveBeenCalled();
+    expect(tab.containerEl.textContent).toContain('Pass: ACP connection');
+    expect(tab.containerEl.textContent).toContain('Connected to OpenCode');
+    expect(tab.containerEl.textContent).toContain('Pass: Runtime metadata');
+    expect(tab.containerEl.textContent).toContain('1 agents, 1 models, 1 commands');
+    expect(tab.containerEl.textContent).toContain('1 enabled, 1 configured');
+    expect(tab.containerEl.textContent).toContain('ACP client version');
+  });
+
+  it('does not reconnect when an existing client is connected', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() }, {
+      availableModes: [{ id: 'build', name: 'Build' }],
+    });
+    const tab = new CopsidianSettingsTab(plugin);
+
+    tab.display();
+    vi.mocked(plugin.initClient).mockClear();
+    const diagnosticsButton = [...tab.containerEl.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Run Diagnostics') as HTMLButtonElement | undefined;
+    diagnosticsButton!.click();
+    await flushPromises();
+    await flushPromises();
+
+    expect(plugin.getClient()?.isConnected).toHaveBeenCalled();
+    expect(plugin.initClient).not.toHaveBeenCalled();
+    expect(tab.containerEl.textContent).toContain('Pass: ACP connection');
+  });
+
+  it('falls back to runtime metadata getters when snapshot is empty', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() }, {}, {
+      availableModes: [{ id: 'docs', name: 'Docs' }],
+      availableModels: [{ modelId: 'openai/gpt', name: 'GPT' }],
+      availableCommands: [{ name: 'skill-writer', description: 'Write with context' }],
+    });
+    const tab = new CopsidianSettingsTab(plugin);
+
+    tab.display();
+    const diagnosticsButton = [...tab.containerEl.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Run Diagnostics') as HTMLButtonElement | undefined;
+    diagnosticsButton!.click();
+    await flushPromises();
+    await flushPromises();
+
+    expect(plugin.getClient()?.getAvailableAgents).toHaveBeenCalled();
+    expect(plugin.getClient()?.getAvailableModels).toHaveBeenCalled();
+    expect(plugin.getClient()?.getAvailableCommands).toHaveBeenCalled();
+    expect(tab.containerEl.textContent).toContain('Pass: Runtime metadata');
+    expect(tab.containerEl.textContent).toContain('1 agents, 1 models, 1 commands');
+  });
+
+  it('re-enables diagnostics button when diagnostics throws', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() }, {
+      availableModes: [{ id: 'build', name: 'Build' }],
+    });
+    const tab = new CopsidianSettingsTab(plugin);
+
+    tab.display();
+    await flushPromises();
+    await flushPromises();
+    vi.mocked(plugin.getClient()!.getSessionSnapshot).mockImplementation(() => {
+      throw new Error('snapshot failed');
+    });
+    const diagnosticsButton = [...tab.containerEl.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Run Diagnostics') as HTMLButtonElement | undefined;
+    diagnosticsButton!.click();
+    await flushPromises();
+    await flushPromises();
+
+    const rerenderedButton = [...tab.containerEl.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Run Diagnostics') as HTMLButtonElement | undefined;
+    expect(rerenderedButton).toBeDefined();
+    expect(rerenderedButton!.disabled).toBe(false);
+  });
+
+  it('reports failed diagnostics without mutating settings', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() }, {}, {}, false);
+    plugin.settings.opencodePath = '';
+    plugin.settings.defaultNoteFolder = '';
+    const tab = new CopsidianSettingsTab(plugin);
+
+    tab.display();
+    const diagnosticsButton = [...tab.containerEl.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Run Diagnostics') as HTMLButtonElement | undefined;
+    diagnosticsButton!.click();
+    await flushPromises();
+    await flushPromises();
+
+    expect(plugin.initClient).toHaveBeenCalled();
+    expect(tab.containerEl.textContent).toContain('Fail: OpenCode CLI path');
+    expect(tab.containerEl.textContent).toContain('OpenCode CLI path is empty');
+    expect(tab.containerEl.textContent).toContain('Fail: ACP connection');
+    expect(tab.containerEl.textContent).toContain('Failed to connect to OpenCode');
+    expect(tab.containerEl.textContent).toContain('Fail: Runtime metadata');
+    expect(tab.containerEl.textContent).toContain('Fail: Default sync folder');
+    expect(plugin.settings.defaultNoteFolder).toBe('');
+  });
+
+  it('localizes diagnostics controls when switching language', async () => {
+    setLocale('en');
+    const refreshedView = { refreshLocale: vi.fn() };
+    const plugin = createPlugin(refreshedView);
+    const tab = new CopsidianSettingsTab(plugin);
+
+    tab.display();
+    expect(tab.containerEl.textContent).toContain('Diagnostics');
+    expect(tab.containerEl.textContent).toContain('Run Diagnostics');
+
+    const languageSelect = [...tab.containerEl.querySelectorAll('select')]
+      .find((select) => [...select.options].some((option) => option.value === 'zh')) as HTMLSelectElement | undefined;
+    languageSelect!.value = 'zh';
+    languageSelect!.dispatchEvent(new Event('change'));
+    await flushPromises();
+
+    expect(tab.containerEl.textContent).toContain('诊断');
+    expect(tab.containerEl.textContent).toContain('运行诊断');
+    expect(tab.containerEl.textContent).not.toContain('Run Diagnostics');
+  });
+
   it('actively loads runtime options after settings opens with an empty snapshot', async () => {
     setLocale('en');
     const plugin = createPlugin({ refreshLocale: vi.fn() }, {}, {
@@ -194,6 +334,7 @@ function createPlugin(
     availableCommands?: Array<{ name: string; description: string }>;
   } = {},
   runtimeOptions = snapshot,
+  initClientResult = true,
 ): CopsidianPlugin {
   const settings: CopsidianSettings = {
     ...DEFAULT_SETTINGS,
@@ -206,6 +347,7 @@ function createPlugin(
     language: 'en',
   };
   const client = {
+    isConnected: vi.fn().mockReturnValue(initClientResult),
     createSession: vi.fn().mockResolvedValue('settings-session'),
     closeSession: vi.fn().mockResolvedValue(undefined),
     getAvailableAgents: vi.fn().mockResolvedValue(runtimeOptions.availableModes ?? []),
@@ -230,7 +372,7 @@ function createPlugin(
     },
     settings,
     savePluginData: vi.fn().mockResolvedValue(undefined),
-    initClient: vi.fn().mockResolvedValue(true),
+    initClient: vi.fn().mockResolvedValue(initClientResult),
     getClient: vi.fn(() => client),
     client: null,
   } as unknown as CopsidianPlugin;

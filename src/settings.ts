@@ -4,7 +4,9 @@ import { delimiter, isAbsolute } from 'path';
 import CopsidianPlugin from './main';
 import { VIEW_TYPE } from './types';
 import type { AvailableCommand, CustomAgentDefinition, CustomSkillDefinition, McpServerConfig, ModeOption, ModelOption, PermissionLevel, SyncRule } from './types';
+import type { OpencodeClient } from './client';
 import { setLocale, t as locale } from './i18n/index';
+import { CLIENT_VERSION } from './client/acp';
 
 interface AutoScrollView {
   setAutoScrollEnabled?: (enabled: boolean) => void;
@@ -14,12 +16,25 @@ interface LocaleAwareView {
   refreshLocale?: () => void;
 }
 
+interface DiagnosticResult {
+  label: string;
+  ok: boolean;
+  detail: string;
+}
+
+interface PathDiagnostic {
+  ok: boolean;
+  detail: string;
+}
+
 export class CopsidianSettingsTab extends PluginSettingTab {
   private runtimeAgents: ModeOption[] = [];
   private runtimeModels: ModelOption[] = [];
   private runtimeSkills: AvailableCommand[] = [];
   private runtimeOptionsLoaded = false;
   private runtimeOptionsLoading = false;
+  private diagnosticsRunning = false;
+  private diagnosticsResults: DiagnosticResult[] = [];
 
   constructor(private plugin: CopsidianPlugin) {
     super(plugin.app, plugin);
@@ -66,6 +81,8 @@ export class CopsidianSettingsTab extends PluginSettingTab {
       .setDesc(labels.autostart.desc)
       .addToggle((t) => t.setValue(s.autoConnect ?? true)
         .onChange(async (v) => { s.autoConnect = v; await this.save(); }));
+
+    this.addDiagnosticsBlock(containerEl);
 
     // ── Agent ──
     new Setting(containerEl).setName(labels.agent).setHeading();
@@ -372,6 +389,108 @@ export class CopsidianSettingsTab extends PluginSettingTab {
     };
   }
 
+  private addDiagnosticsBlock(containerEl: HTMLElement): void {
+    const labels = locale().settings.diagnostics;
+    new Setting(containerEl).setName(labels.heading).setHeading();
+
+    new Setting(containerEl)
+      .setName(labels.description)
+      .addButton((button) => {
+        button.setButtonText(this.diagnosticsRunning ? labels.running : labels.run);
+        button.buttonEl.disabled = this.diagnosticsRunning;
+        button.onClick(async () => {
+          await this.runDiagnostics();
+        });
+      });
+
+    for (const result of this.diagnosticsResults) {
+      new Setting(containerEl)
+        .setName(`${result.ok ? labels.pass : labels.fail} ${result.label}`)
+        .setDesc(result.detail);
+    }
+  }
+
+  private async runDiagnostics(): Promise<void> {
+    this.diagnosticsRunning = true;
+    this.display();
+
+    try {
+      this.diagnosticsResults = await this.collectDiagnostics();
+    } catch {
+      const labels = locale().settings.diagnostics;
+      this.diagnosticsResults = [{ label: labels.heading, ok: false, detail: labels.unexpectedError }];
+    } finally {
+      this.diagnosticsRunning = false;
+      this.display();
+    }
+  }
+
+  private async collectDiagnostics(): Promise<DiagnosticResult[]> {
+    const labels = locale().settings.diagnostics;
+    const results: DiagnosticResult[] = [];
+
+    const pathStatus = this.getOpencodePathStatus(this.plugin.settings.opencodePath);
+    results.push({ label: labels.path, ok: pathStatus.ok, detail: pathStatus.detail });
+
+    const existingClient = this.plugin.getClient();
+    const connected = existingClient?.isConnected() ?? await this.plugin.initClient();
+    const client = this.plugin.getClient();
+    results.push({
+      label: labels.connection,
+      ok: connected,
+      detail: connected ? labels.connectionOk : labels.connectionFailed,
+    });
+
+    const runtimeCounts = connected && client
+      ? await this.getRuntimeMetadataCounts(client)
+      : { modes: 0, models: 0, commands: 0 };
+    results.push({
+      label: labels.runtime,
+      ok: runtimeCounts.modes + runtimeCounts.models + runtimeCounts.commands > 0,
+      detail: labels.runtimeDetail
+        .replace('{modes}', String(runtimeCounts.modes))
+        .replace('{models}', String(runtimeCounts.models))
+        .replace('{commands}', String(runtimeCounts.commands)),
+    });
+
+    const configuredMcp = this.plugin.settings.mcpServers.length;
+    const enabledMcp = this.plugin.settings.mcpServers.filter((server) => server.enabled).length;
+    results.push({
+      label: labels.mcp,
+      ok: true,
+      detail: labels.mcpDetail
+        .replace('{enabled}', String(enabledMcp))
+        .replace('{configured}', String(configuredMcp)),
+    });
+
+    const syncFolder = this.plugin.settings.defaultNoteFolder.trim();
+    results.push({
+      label: labels.syncFolder,
+      ok: syncFolder.length > 0,
+      detail: syncFolder.length > 0 ? syncFolder : labels.syncFolderMissing,
+    });
+
+    results.push({ label: labels.clientVersion, ok: true, detail: CLIENT_VERSION });
+    return results;
+  }
+
+  private async getRuntimeMetadataCounts(client: OpencodeClient): Promise<{ modes: number; models: number; commands: number }> {
+    const snapshot = client.getSessionSnapshot();
+    const snapshotCounts = {
+      modes: snapshot.availableModes.length,
+      models: snapshot.availableModels.length,
+      commands: snapshot.availableCommands.length,
+    };
+    if (snapshotCounts.modes + snapshotCounts.models + snapshotCounts.commands > 0) return snapshotCounts;
+
+    const [agents, models, commands] = await Promise.all([
+      client.getAvailableAgents().catch(() => [] as ModeOption[]),
+      client.getAvailableModels().catch(() => [] as ModelOption[]),
+      client.getAvailableCommands().catch(() => [] as AvailableCommand[]),
+    ]);
+    return { modes: agents.length, models: models.length, commands: commands.length };
+  }
+
   private addCustomAgentBlock(containerEl: HTMLElement, agent: CustomAgentDefinition): void {
     const labels = locale().settings.customAgents;
     const block = containerEl.createDiv({ cls: 'copsidian-custom-agent' });
@@ -663,11 +782,17 @@ export class CopsidianSettingsTab extends PluginSettingTab {
   }
 
   private validateOpencodePath(path: string): boolean {
-    if (!path) return false;
+    const status = this.getOpencodePathStatus(path);
+    if (!status.ok) new Notice(status.detail);
+    return status.ok;
+  }
+
+  private getOpencodePathStatus(path: string): PathDiagnostic {
+    const labels = locale().settings.diagnostics;
+    if (!path) return { ok: false, detail: labels.pathEmpty };
     if (isAbsolute(path) || path.includes('/') || path.includes('\\')) {
-      if (existsSync(path)) return true;
-      new Notice(locale().settings.opencodePath.notFound.replace('{path}', path));
-      return false;
+      if (existsSync(path)) return { ok: true, detail: labels.pathFound.replace('{path}', path) };
+      return { ok: false, detail: locale().settings.opencodePath.notFound.replace('{path}', path) };
     }
 
     const executableNames = process.platform === 'win32' ? [path, `${path}.cmd`, `${path}.exe`] : [path];
@@ -675,7 +800,7 @@ export class CopsidianSettingsTab extends PluginSettingTab {
       .split(delimiter)
       .some((dir) => executableNames.some((name) => existsSync(`${dir}/${name}`)));
 
-    if (!found) new Notice(locale().settings.opencodePath.notFound.replace('{path}', path));
-    return found;
+    if (!found) return { ok: false, detail: locale().settings.opencodePath.notFound.replace('{path}', path) };
+    return { ok: true, detail: labels.pathFound.replace('{path}', path) };
   }
 }

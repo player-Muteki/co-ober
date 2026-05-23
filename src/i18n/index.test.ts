@@ -31,5 +31,10 @@ describe('i18n locale switching', () => {
     expect(t().acp.stdinNotWritable).toBeTruthy();
     expect(t().acp.requestTimeout).toBeTruthy();
     expect(t().session.defaultTitle).toContain('{time}');
+    expect(t().settings.diagnostics.runtimeDetail).toContain('{modes}');
+    expect(t().settings.diagnostics.runtimeDetail).toContain('{models}');
+    expect(t().settings.diagnostics.runtimeDetail).toContain('{commands}');
+    expect(t().settings.diagnostics.mcpDetail).toContain('{enabled}');
+    expect(t().settings.diagnostics.mcpDetail).toContain('{configured}');
   });
 });
