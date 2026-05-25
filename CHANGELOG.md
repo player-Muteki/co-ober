@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.0.18 - 2026-05-25
+
+### Changed
+- Extract ACP client layer into modular components for better maintainability:
+  - `AcpMethodNames.ts` — Logical method name aliases for OpenCode CLI version compatibility
+  - `AcpJsonRpcTransport.ts` — JSON-RPC transport with timeout support and notification handlers
+  - `AcpSubprocess.ts` — Process lifecycle management (spawn, shutdown, stderr capture)
+  - `AcpErrors.ts` — Hierarchical error types (transport, protocol, timeout, process exit)
+
 ## 0.0.17 - 2026-05-25
 
 ### Fixed
