@@ -280,6 +280,8 @@ export class CopsidianView extends ItemView {
 			void this.syncRuntimeSession(this.state.sessionId).catch((e) => {
 				console.error('[copsidian] session sync:', e);
 			});
+		} else if (this.plugin.settings.autoConnect) {
+			void this.ensureClientConnected();
 		}
 
 		// Restore previous messages if any
@@ -792,7 +794,7 @@ export class CopsidianView extends ItemView {
 				if (session) {
 					const lastMsg = session.messages.slice().reverse().find(m => m.role === 'assistant');
 					if (lastMsg) {
-						this.showInlineEditDiff(inlineEdit.original, lastMsg.content);
+						this.showInlineEditDiff(inlineEdit.original, this.extractInlineEditContent(lastMsg.content));
 					}
 				}
 				this.pendingInlineEdit = null;
@@ -1227,6 +1229,21 @@ export class CopsidianView extends ItemView {
 	private clearInlineEditState(): void {
 		this.pendingInlineEdit = null;
 		this.hideInlineEditDiff();
+	}
+
+	/** Extract actual edited content from agent response, stripping explanation text. */
+	private extractInlineEditContent(content: string): string {
+		const trimmed = content.trim();
+		// If there's a single fenced code block, extract its content
+		const fenceMatch = trimmed.match(/^```[\w-]*\n([\s\S]*?)\n```$/);
+		if (fenceMatch) return fenceMatch[1];
+		// If there are multiple code blocks, try the first one
+		const blocks = trimmed.match(/```[\w-]*\n([\s\S]*?)\n```/g);
+		if (blocks && blocks.length === 1) {
+			const inner = blocks[0].match(/^```[\w-]*\n([\s\S]*?)\n```$/);
+			if (inner) return inner[1];
+		}
+		return content;
 	}
 
 	private hideInlineEditDiff(): void {
