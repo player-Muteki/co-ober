@@ -259,6 +259,7 @@ export class CopsidianSettingsTab extends PluginSettingTab {
             name: 'filesystem',
             command: 'npx',
             args: ['-y', '@modelcontextprotocol/server-filesystem'],
+            env: [],
           };
           s.mcpServers.push(server);
           await this.save();
@@ -652,6 +653,56 @@ export class CopsidianSettingsTab extends PluginSettingTab {
           await this.save();
         });
       });
+
+    const envDetails = block.createEl('details', { cls: 'copsidian-mcp-env-details' });
+    envDetails.createEl('summary', { text: labels.env });
+
+    const renderEnvVars = () => {
+      envDetails.querySelectorAll('.copsidian-mcp-env-var, .copsidian-mcp-env-add').forEach((el) => el.remove());
+      const envVars = server.env ?? [];
+      for (let i = 0; i < envVars.length; i++) {
+        const envVar = envVars[i];
+        const row = envDetails.createDiv({ cls: 'copsidian-mcp-env-var' });
+        row.style.display = 'flex';
+        row.style.gap = '8px';
+        row.style.marginBottom = '8px';
+
+        const nameInput = row.createEl('input', { type: 'text', placeholder: labels.envName });
+        nameInput.value = envVar.name;
+        nameInput.style.flex = '1';
+        nameInput.onchange = async () => {
+          envVar.name = nameInput.value.trim();
+          await this.save();
+        };
+
+        const valueInput = row.createEl('input', { type: 'text', placeholder: labels.envValue });
+        valueInput.value = envVar.value;
+        valueInput.style.flex = '2';
+        valueInput.onchange = async () => {
+          envVar.value = valueInput.value.trim();
+          await this.save();
+        };
+
+        const delEnvBtn = row.createEl('button', { text: '✕' });
+        delEnvBtn.onclick = async () => {
+          server.env = server.env?.filter((_, index) => index !== i);
+          await this.save();
+          renderEnvVars();
+        };
+      }
+
+      const addRow = envDetails.createDiv({ cls: 'copsidian-mcp-env-add' });
+      new Setting(addRow)
+        .setName('')
+        .addButton((b) => b.setButtonText(labels.envAdd)
+          .onClick(async () => {
+            if (!server.env) server.env = [];
+            server.env.push({ name: '', value: '' });
+            await this.save();
+            renderEnvVars();
+          }));
+    };
+    renderEnvVars();
 
     const delBtn = block.createEl('button', { text: locale().settings.sync.delete, cls: 'mod-warning' });
     delBtn.onclick = async () => {

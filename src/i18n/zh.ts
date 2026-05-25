@@ -241,6 +241,10 @@ const zh: Locale = {
       commandDesc: '可执行命令，例如 npx 或 uvx',
       args: '参数',
       argsDesc: '每行一个参数',
+      env: '环境变量',
+      envName: '名称',
+      envValue: '值',
+      envAdd: '+ 添加变量',
     },
     sync: {
       heading: '同步规则',

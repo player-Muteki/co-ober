@@ -239,6 +239,10 @@ const en = {
       commandDesc: 'Executable command, for example npx or uvx',
       args: 'Arguments',
       argsDesc: 'One argument per line',
+      env: 'Environment Variables',
+      envName: 'Name',
+      envValue: 'Value',
+      envAdd: '+ Add Variable',
     },
     sync: {
       heading: 'Sync Rules',

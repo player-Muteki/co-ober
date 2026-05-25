@@ -88,13 +88,14 @@ export class AgentRuntime implements OpencodeClient {
         const allow = req.options.find((o) => o.kind === 'allow_always' || o.kind === 'allow_once');
         if (allow) return allow.optionId;
       }
-      const reject = req.options.find((o) => o.kind === 'reject_once');
+      const reject = req.options.find((o) => o.kind === 'reject_always' || o.kind === 'reject_once');
       if (reject) return reject.optionId;
     }
-    const reject = req.options.find((o) => o.kind === 'reject_once');
+    const reject = req.options.find((o) => o.kind === 'reject_always' || o.kind === 'reject_once');
     return reject?.optionId ?? req.options[0]?.optionId ?? 'reject_once';
   }
 
+  getAgentCapabilities(): Record<string, unknown> | null { return this.acp.getAgentCapabilities(); }
   getAvailableAgents(): Promise<ModeOption[]> { return this.acp.getAvailableAgents(); }
   getAvailableModels(): Promise<ModelOption[]> { return this.acp.getAvailableModels(); }
   getAvailableCommands(): Promise<AvailableCommand[]> { return this.acp.getAvailableCommands(); }
