@@ -1,14 +1,23 @@
 import type { PermissionRequest } from '../types';
-import { t } from '../i18n/index';
+import { t, onLocaleChange } from '../i18n/index';
 
 export class PermissionBanner {
 	private el: HTMLDivElement | null = null;
+	private currentReq: { req: PermissionRequest, resolve: (val: string) => void } | null = null;
 
-	constructor(private containerEl: HTMLElement) {}
+	constructor(private containerEl: HTMLElement) {
+		onLocaleChange(() => {
+			if (this.currentReq) {
+				const { req, resolve } = this.currentReq;
+				this.show(req).then(resolve);
+			}
+		});
+	}
 
 	show(req: PermissionRequest): Promise<string> {
 		return new Promise((resolve) => {
-			this.dismiss();
+			this.currentReq = { req, resolve };
+			this.dismiss(true);
 			const banner = this.containerEl.createDiv({ cls: 'copsidian-permission-banner' });
 			this.el = banner;
 
@@ -27,6 +36,7 @@ export class PermissionBanner {
 				});
 				btn.onclick = () => {
 					this.dismiss();
+					this.currentReq = null;
 					resolve(opt.optionId);
 				};
 			}
@@ -35,10 +45,13 @@ export class PermissionBanner {
 		});
 	}
 
-	dismiss(): void {
+	dismiss(skipClearReq = false): void {
 		if (this.el) {
 			this.el.remove();
 			this.el = null;
+		}
+		if (!skipClearReq) {
+			this.currentReq = null;
 		}
 	}
 }

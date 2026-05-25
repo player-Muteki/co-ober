@@ -1,5 +1,5 @@
 import type { ContextRef } from '../types';
-import { t } from '../i18n/index';
+import { t, onLocaleChange } from '../i18n/index';
 
 export interface InputCallbacks {
   onSend: (text: string, refs?: ContextRef[]) => void;
@@ -25,6 +25,7 @@ export class ChatInput {
     const row = container.createDiv({ cls: 'copsidian-input-row' });
     this.textarea = row.createEl('textarea', { placeholder: t().input.placeholder });
     this.textarea.addClass('copsidian-input');
+    onLocaleChange(() => this.refreshLocale());
 
     this.textarea.addEventListener('keydown', (e: KeyboardEvent) => {
       if (e.key === 'Escape' && this.streaming) { e.preventDefault(); this.callbacks.onStop(); return; }

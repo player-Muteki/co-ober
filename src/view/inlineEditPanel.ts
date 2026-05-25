@@ -1,5 +1,5 @@
 import type { Editor } from 'obsidian';
-import { t } from '../i18n/index';
+import { t, onLocaleChange } from '../i18n/index';
 
 export interface InlineEditState {
 	original: string;
@@ -10,7 +10,9 @@ export class InlineEditPanel {
 	private el: HTMLDivElement | null = null;
 	public pendingState: InlineEditState | null = null;
 
-	constructor(private containerEl: HTMLElement) {}
+	constructor(private containerEl: HTMLElement) {
+		onLocaleChange(() => this.refreshLocale());
+	}
 
 	request(selected: string, editor: Editor): string {
 		this.clearState();

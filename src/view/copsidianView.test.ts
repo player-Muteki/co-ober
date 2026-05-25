@@ -48,7 +48,7 @@ describe('CopsidianView inline edit preview', () => {
     expect(text(view, '.mod-cta')).toBe('Apply');
 
     setLocale('zh');
-    view.refreshLocale();
+    view.refreshLocale(); // manual trigger of parent since dom relies on it
 
     expect(text(view, '.copsidian-inline-edit-title')).toBe('AI 编辑预览');
     expect(text(view, '.mod-cta')).toBe('应用');

@@ -1,4 +1,4 @@
-import { t } from '../i18n/index';
+import { t, onLocaleChange } from '../i18n/index';
 
 export interface ToolbarCallbacks {
   onAgentChange?: (agent: string) => void;
@@ -20,6 +20,7 @@ export class InputToolbar {
 
   constructor(container: HTMLDivElement, private callbacks: ToolbarCallbacks) {
     container.addClass('copsidian-toolbar');
+    onLocaleChange(() => this.refreshLocale());
 
     this.modelSelect = container.createEl('select', { cls: 'copsidian-dropdown tb-select tb-model' });
     this.modelSelect.title = t().toolbar.modelTitle;

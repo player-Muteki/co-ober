@@ -1,7 +1,7 @@
 import type { App, Component } from 'obsidian';
 import { MarkdownRenderer } from 'obsidian';
 import { ContextInjection } from '../context/injection';
-import { t } from '../i18n/index';
+import { t, onLocaleChange } from '../i18n/index';
 
 export interface UsageDisplay {
   totalTokens: number;
@@ -34,6 +34,7 @@ export class ChatRenderer {
     this.container = container;
     this.app = app;
     this.shouldAutoScroll = shouldAutoScroll;
+    onLocaleChange(() => this.refreshLocale());
   }
 
   clear(): void {

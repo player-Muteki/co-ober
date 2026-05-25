@@ -25,6 +25,7 @@ import { Mutex } from '../utils/mutex';
 import { DragDropManager } from './dragDropManager';
 import { PermissionBanner } from './permissionBanner';
 import { InlineEditPanel } from './inlineEditPanel';
+import { WelcomeView } from './welcomeView';
 
 interface MarkdownFileView {
 	getViewType(): string;
@@ -52,7 +53,7 @@ export class CopsidianView extends ItemView {
 	private currentRefs: ContextRef[] = [];
 	private manualRefs = new Set<string>();
 	private reconnectBtn: HTMLButtonElement | null = null;
-	private welcomeEl: HTMLDivElement | null = null;
+	private welcomeView!: WelcomeView;
 	private globalKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 	private newMessagesBtn: HTMLButtonElement | null = null;
 	private dragDropManager!: DragDropManager;
@@ -80,7 +81,7 @@ export class CopsidianView extends ItemView {
 		if (this.inlineEditPanel) this.inlineEditPanel.clearState();
 		this.closeAutocomplete();
 		if (this.permissionBanner) this.permissionBanner.dismiss();
-		this.hideWelcome();
+		if (this.welcomeView) this.welcomeView.hide();
 		this.renderer.clear();
 		this.streamCtrl.reset();
 		this.busy = false;
@@ -127,7 +128,7 @@ export class CopsidianView extends ItemView {
 			onReconnect: async () => {
 				this.bindClientHandlers();
 				this.state.isConnected = true;
-				this.updateWelcomeStatus();
+				if (this.welcomeView) this.welcomeView.updateStatus(true);
 				this.hideReconnectBtn();
 				try {
 					await this.syncRuntimeSession(this.state.sessionId);
@@ -204,7 +205,9 @@ export class CopsidianView extends ItemView {
 					this.sessionStore.setActive(sessionId);
 					await this.sessionStore.save();
 					this.loadToolbarOptions();
-					this.maybeShowWelcome();
+					if (this.messagesEl.children.length === 0) {
+						this.welcomeView.show(this.plugin.getClient() !== null);
+					}
 					this.autoRefActiveFile();
 				},
 				onDelete: async (sessionId: string) => {
@@ -225,6 +228,7 @@ export class CopsidianView extends ItemView {
 
 		this.permissionBanner = new PermissionBanner(this.messagesEl);
 		this.inlineEditPanel = new InlineEditPanel(this.contentEl);
+		this.welcomeView = new WelcomeView(this.messagesEl);
 
 		// ── Context chips ──
 		this.contextChipsEl = el.createDiv({ cls: 'copsidian-context-chips' });
@@ -297,7 +301,9 @@ export class CopsidianView extends ItemView {
 		this.loadToolbarOptions();
 
 		// Show welcome page if no messages
-		this.maybeShowWelcome();
+		if (this.messagesEl.children.length === 0) {
+			this.welcomeView.show(this.plugin.getClient() !== null);
+		}
 
 		// Auto-reference the currently active file
 		this.autoRefActiveFile();
@@ -351,45 +357,6 @@ export class CopsidianView extends ItemView {
 		}
 	}
 
-	// ── Welcome page ──
-
-	private maybeShowWelcome(): void {
-		if (this.messagesEl.children.length > 0) return;
-		this.showWelcome();
-	}
-
-	private showWelcome(): void {
-		this.hideWelcome();
-		const welcome = this.messagesEl.createDiv({ cls: 'copsidian-welcome' });
-		this.welcomeEl = welcome;
-
-		welcome.createDiv({ cls: 'copsidian-welcome-title', text: t().appName });
-		welcome.createDiv({ cls: 'copsidian-welcome-subtitle', text: t().appSubtitle });
-
-		const shortcuts = welcome.createDiv({ cls: 'copsidian-welcome-shortcuts' });
-		shortcuts.createDiv({ text: t().welcome.shortcuts.enter });
-		shortcuts.createDiv({ text: t().welcome.shortcuts.escape });
-		shortcuts.createDiv({ text: t().welcome.shortcuts.at });
-		shortcuts.createDiv({ text: t().welcome.shortcuts.slash });
-
-		const status = welcome.createDiv({ cls: 'copsidian-welcome-status' });
-		status.createSpan({ text: this.plugin.getClient() ? t().welcome.connected : t().welcome.disconnected });
-	}
-
-	updateWelcomeStatus(): void {
-		if (!this.welcomeEl) return;
-		const status = this.welcomeEl.querySelector('.copsidian-welcome-status');
-		if (!status) return;
-		status.textContent = this.plugin.getClient() ? t().welcome.connected : t().welcome.disconnected;
-	}
-
-	private hideWelcome(): void {
-		if (this.welcomeEl) {
-			this.welcomeEl.remove();
-			this.welcomeEl = null;
-		}
-	}
-
 	// ── Keybindings ──
 
 	private registerKeybindings(): void {
@@ -431,7 +398,9 @@ export class CopsidianView extends ItemView {
 		await this.cancelActiveGeneration();
 		this.resetConversationView();
 		this.clearAutoRefs();
-		this.maybeShowWelcome();
+		if (this.messagesEl.children.length === 0) {
+			this.welcomeView.show(this.plugin.getClient() !== null);
+		}
 	}
 
 	private copyLastAssistantMessage(): void {
@@ -495,14 +464,6 @@ export class CopsidianView extends ItemView {
 	refreshLocale(): void {
 		this.headerTitleEl?.setText(t().appName);
 		this.newSessionBtnEl?.setText(t().header.new);
-		this.input?.refreshLocale();
-		this.toolbar?.refreshLocale();
-		this.renderer?.refreshLocale();
-		if (this.inlineEditPanel) this.inlineEditPanel.refreshLocale();
-		this.updateWelcomeStatus();
-		if (this.welcomeEl) {
-			this.showWelcome();
-		}
 		if (this.reconnectBtn) {
 			this.reconnectBtn.textContent = this.reconnectBtn.disabled ? t().reconnect.connecting : t().reconnect.text;
 		}
@@ -541,7 +502,7 @@ export class CopsidianView extends ItemView {
 		this.state.needsAttention = false;
 		this.input.setStreaming(false);
 		this.toolbar.setSending(false);
-		this.updateWelcomeStatus();
+		if (this.welcomeView) this.welcomeView.updateStatus(false);
 		if (this.reconnectBtn) return;
 		this.reconnectBtn = this.contentEl.createEl('button', {
 			cls: 'copsidian-reconnect-btn',
@@ -566,7 +527,7 @@ export class CopsidianView extends ItemView {
 			}
 			this.loadToolbarOptions();
 			this.state.isConnected = true;
-			this.updateWelcomeStatus();
+			if (this.welcomeView) this.welcomeView.updateStatus(true);
 			this.hideReconnectBtn();
 		} catch (e) {
 			console.error('[copsidian] reconnect failed:', e);
@@ -621,7 +582,9 @@ export class CopsidianView extends ItemView {
 			}
 			await this.sessionStore.save();
 			this.loadToolbarOptions();
-			this.maybeShowWelcome();
+			if (this.messagesEl.children.length === 0) {
+				this.welcomeView.show(this.plugin.getClient() !== null);
+			}
 			this.autoRefActiveFile();
 		} catch (e) {
 			console.error('[copsidian] newSession:', e);
@@ -652,7 +615,7 @@ export class CopsidianView extends ItemView {
 		if (!inlineEdit) this.inlineEditPanel.clearState();
 
 		// Hide welcome page on first message
-		this.hideWelcome();
+		if (this.welcomeView) this.welcomeView.hide();
 
 		const cmd = parseSlashCommand(text);
 		if (cmd && isBuiltInCommand(cmd.name)) {
@@ -832,7 +795,7 @@ export class CopsidianView extends ItemView {
 			this.state.isConnected = true;
 			this.bindClientHandlers();
 			this.hideReconnectBtn();
-			this.updateWelcomeStatus();
+			if (this.welcomeView) this.welcomeView.updateStatus(true);
 			return true;
 		}
 
@@ -845,7 +808,7 @@ export class CopsidianView extends ItemView {
 
 		this.bindClientHandlers();
 		this.hideReconnectBtn();
-		this.updateWelcomeStatus();
+		if (this.welcomeView) this.welcomeView.updateStatus(true);
 		return true;
 	}
 

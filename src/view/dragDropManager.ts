@@ -1,5 +1,5 @@
 import type { ContextRef } from '../types';
-import { t } from '../i18n/index';
+import { t, onLocaleChange } from '../i18n/index';
 
 export interface DragDropHandlers {
 	onAddNoteRef: (ref: ContextRef) => void;
@@ -20,7 +20,14 @@ export class DragDropManager {
 		private dropZoneEl: HTMLElement,
 		private overlayContainerEl: HTMLElement,
 		private handlers: DragDropHandlers
-	) {}
+	) {
+		onLocaleChange(() => {
+			if (this.dragOverlayEl) {
+				const textDiv = this.dragOverlayEl.querySelector('div');
+				if (textDiv) textDiv.textContent = t().dragOverlay;
+			}
+		});
+	}
 
 	setup(): void {
 		this.dragOverHandler = (e: DragEvent) => {
