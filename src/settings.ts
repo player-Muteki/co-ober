@@ -133,6 +133,7 @@ export class CopsidianSettingsTab extends PluginSettingTab {
       .setName(labels.systemPrompt.name)
       .setDesc(labels.systemPrompt.desc)
       .addTextArea((c) => {
+        c.setValue(s.systemPrompt);
         c.setPlaceholder(labels.systemPrompt.placeholder);
         c.inputEl.rows = 6;
         c.inputEl.classList.add('copsidian-prompt-input');
