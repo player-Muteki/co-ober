@@ -14,7 +14,8 @@ describe('CopsidianView inline edit preview', () => {
     const editor = createEditor();
     setPendingInlineEdit(view, 'old line', editor);
 
-    view.showInlineEditDiff('old line', 'new line');
+    const inlineEditPanel = Reflect.get(view, 'inlineEditPanel') as InlineEditPanel;
+    inlineEditPanel.showDiff('old line', 'new line');
 
     expect(texts(view, '.diff-line.removed')).toEqual(['-old line']);
     expect(texts(view, '.diff-line.added')).toEqual(['+new line']);
@@ -31,7 +32,8 @@ describe('CopsidianView inline edit preview', () => {
     const editor = createEditor();
     setPendingInlineEdit(view, 'original', editor);
 
-    view.showInlineEditDiff('original', 'edited');
+    const inlineEditPanel = Reflect.get(view, 'inlineEditPanel') as InlineEditPanel;
+    inlineEditPanel.showDiff('original', 'edited');
     click(view, '.copsidian-inline-edit-actions button:not(.mod-cta)');
 
     expect(editor.replaceSelection).not.toHaveBeenCalled();
@@ -43,7 +45,8 @@ describe('CopsidianView inline edit preview', () => {
     const view = createView();
     setPendingInlineEdit(view, 'old', createEditor());
 
-    view.showInlineEditDiff('old', 'new');
+    const inlineEditPanel = Reflect.get(view, 'inlineEditPanel') as InlineEditPanel;
+    inlineEditPanel.showDiff('old', 'new');
     expect(text(view, '.copsidian-inline-edit-title')).toBe('AI Edit Preview');
     expect(text(view, '.mod-cta')).toBe('Apply');
 

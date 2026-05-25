@@ -26,6 +26,7 @@ import { DragDropManager } from './dragDropManager';
 import { PermissionBanner } from './permissionBanner';
 import { InlineEditPanel } from './inlineEditPanel';
 import { WelcomeView } from './welcomeView';
+import { KeybindingManager } from './keybindingManager';
 
 interface MarkdownFileView {
 	getViewType(): string;
@@ -54,8 +55,8 @@ export class CopsidianView extends ItemView {
 	private manualRefs = new Set<string>();
 	private reconnectBtn: HTMLButtonElement | null = null;
 	private welcomeView!: WelcomeView;
-	private globalKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 	private newMessagesBtn: HTMLButtonElement | null = null;
+	private keybindingMgr!: KeybindingManager;
 	private dragDropManager!: DragDropManager;
 	private permissionBanner!: PermissionBanner;
 	private inlineEditPanel!: InlineEditPanel;
@@ -312,7 +313,12 @@ export class CopsidianView extends ItemView {
 		this.setupActiveFileTracking();
 
 		// Register global keybindings
-		this.registerKeybindings();
+		this.keybindingMgr = new KeybindingManager(this.contentEl, {
+			onNewSession: () => void this.newSession(),
+			onClearScreen: () => void this.clearScreen(),
+			onCopyLastMessage: () => this.copyLastAssistantMessage(),
+		});
+		this.keybindingMgr.register();
 
 		// Setup smart auto-scroll
 		this.setupSmartScroll();
@@ -341,7 +347,7 @@ export class CopsidianView extends ItemView {
 	override onClose(): Promise<void> {
 		this.closeSessionDropdown();
 		this.closeAutocomplete();
-		this.unregisterKeybindings();
+		this.keybindingMgr?.unregister();
 		this.unregisterEventListeners();
 		this.contextChipsEl?.remove();
 		return Promise.resolve();
@@ -358,41 +364,6 @@ export class CopsidianView extends ItemView {
 	}
 
 	// ── Keybindings ──
-
-	private registerKeybindings(): void {
-		this.globalKeyHandler = (e: KeyboardEvent) => {
-			const isMod = e.ctrlKey || e.metaKey;
-
-			// Ctrl/Cmd + N → New session
-			if (isMod && e.key.toLowerCase() === 'n' && !e.shiftKey) {
-				e.preventDefault();
-				this.newSession();
-				return;
-			}
-
-			// Ctrl/Cmd + L → Clear screen
-			if (isMod && e.key.toLowerCase() === 'l' && !e.shiftKey) {
-				e.preventDefault();
-				void this.clearScreen();
-				return;
-			}
-
-			// Ctrl/Cmd + Shift + C → Copy last assistant message
-			if (isMod && e.shiftKey && e.key.toLowerCase() === 'c') {
-				e.preventDefault();
-				this.copyLastAssistantMessage();
-				return;
-			}
-		};
-		this.contentEl.addEventListener('keydown', this.globalKeyHandler);
-	}
-
-	private unregisterKeybindings(): void {
-		if (this.globalKeyHandler) {
-			this.contentEl.removeEventListener('keydown', this.globalKeyHandler);
-			this.globalKeyHandler = null;
-		}
-	}
 
 	private async clearScreen(): Promise<void> {
 		await this.cancelActiveGeneration();
@@ -677,7 +648,7 @@ export class CopsidianView extends ItemView {
 				if (session) {
 					const lastMsg = session.messages.slice().reverse().find(m => m.role === 'assistant');
 					if (lastMsg) {
-						this.showInlineEditDiff(inlineEdit.original, this.extractInlineEditContent(lastMsg.content));
+						this.inlineEditPanel.showDiffFromResponse(inlineEdit.original, lastMsg.content);
 					}
 				}
 				this.inlineEditPanel.pendingState = null;
@@ -1008,25 +979,5 @@ export class CopsidianView extends ItemView {
 	async requestInlineEdit(selected: string, editor: import('obsidian').Editor): Promise<void> {
 		const prompt = this.inlineEditPanel.request(selected, editor);
 		await this.send(prompt, []);
-	}
-
-	// Exposed for tests
-	showInlineEditDiff(original: string, edited: string): void {
-		this.inlineEditPanel.showDiff(original, edited);
-	}
-
-	/** Extract actual edited content from agent response, stripping explanation text. */
-	private extractInlineEditContent(content: string): string {
-		const trimmed = content.trim();
-		// If there's a single fenced code block, extract its content
-		const fenceMatch = trimmed.match(/^```[\w-]*\n([\s\S]*?)\n```$/);
-		if (fenceMatch) return fenceMatch[1];
-		// If there are multiple code blocks, try the first one
-		const blocks = trimmed.match(/```[\w-]*\n([\s\S]*?)\n```/g);
-		if (blocks && blocks.length === 1) {
-			const inner = blocks[0].match(/^```[\w-]*\n([\s\S]*?)\n```$/);
-			if (inner) return inner[1];
-		}
-		return content;
 	}
 }

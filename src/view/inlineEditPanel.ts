@@ -20,6 +20,10 @@ export class InlineEditPanel {
 		return t().inlineEdit.prompt.replace('{text}', selected);
 	}
 
+	showDiffFromResponse(original: string, responseContent: string): void {
+		this.showDiff(original, this.extractContent(responseContent));
+	}
+
 	showDiff(original: string, edited: string): void {
 		this.hideDiff();
 		const editor = this.pendingState?.editor;
@@ -91,5 +95,17 @@ export class InlineEditPanel {
 			this.el.remove();
 			this.el = null;
 		}
+	}
+
+	private extractContent(content: string): string {
+		const trimmed = content.trim();
+		const fenceMatch = trimmed.match(/^```[\w-]*\n([\s\S]*?)\n```$/);
+		if (fenceMatch) return fenceMatch[1];
+		const blocks = trimmed.match(/```[\w-]*\n([\s\S]*?)\n```/g);
+		if (blocks && blocks.length === 1) {
+			const inner = blocks[0].match(/^```[\w-]*\n([\s\S]*?)\n```$/);
+			if (inner) return inner[1];
+		}
+		return content;
 	}
 }

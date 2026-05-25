@@ -7,17 +7,18 @@ export class PermissionBanner {
 
 	constructor(private containerEl: HTMLElement) {
 		onLocaleChange(() => {
-			if (this.currentReq) {
-				const { req, resolve } = this.currentReq;
-				this.show(req).then(resolve);
-			}
+			if (!this.el || !this.currentReq) return;
+			const title = this.currentReq.req.toolCall.title || this.currentReq.req.toolCall.kind;
+			const titleEl = this.el.querySelector('.perm-title');
+			if (titleEl) titleEl.textContent = t().permission.title.replace('{title}', title);
 		});
 	}
 
 	show(req: PermissionRequest): Promise<string> {
 		return new Promise((resolve) => {
 			this.currentReq = { req, resolve };
-			this.dismiss(true);
+			this.dismiss();
+			this.currentReq = { req, resolve }; // re-assign after dismiss
 			const banner = this.containerEl.createDiv({ cls: 'copsidian-permission-banner' });
 			this.el = banner;
 
@@ -45,13 +46,11 @@ export class PermissionBanner {
 		});
 	}
 
-	dismiss(skipClearReq = false): void {
+	dismiss(): void {
 		if (this.el) {
 			this.el.remove();
 			this.el = null;
 		}
-		if (!skipClearReq) {
-			this.currentReq = null;
-		}
+		this.currentReq = null;
 	}
 }
