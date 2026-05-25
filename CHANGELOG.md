@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.0.15 - 2026-05-25
+
+### Fixed
+- Sanitize sync note paths to prevent path traversal, absolute paths, drive letters, and illegal filename characters.
+- Support `rawInput.path` fallback in sync rule path matching alongside existing `filePath`.
+- Restore custom system prompt value display in Settings text area.
+- Extract actual edited content from fenced code blocks in inline edit responses, stripping surrounding explanation text.
+- Clean up ACP stream lifecycle: clear `activeStreamSessionId` and `chunkHandler` on complete/cancel, null out process reference on close.
+- Use `once('close')` with kill fallback and 2s timeout in `disconnect()` to prevent hangs.
+
+### Changed
+- Extract drag-and-drop logic into `DragDropManager` component.
+- Extract permission approval UI into `PermissionBanner` component.
+- Extract inline edit diff panel into `InlineEditPanel` component.
+- Replace manual ACP stdout buffer concatenation with `readline` interface for cleaner JSON-RPC line parsing.
+- Change agent request timeout from fixed 5-minute total to idle timeout that resets on each streaming chunk.
+- Add `Mutex` to `SyncEngine.process()` and session management to prevent concurrent Vault write conflicts and session race conditions.
+
 ## 0.0.14 - 2026-05-23
 
 ### Changed
