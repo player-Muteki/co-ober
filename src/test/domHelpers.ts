@@ -9,6 +9,10 @@ export function installObsidianDomHelpers(): void {
     this.classList.add(...cls.split(' ').filter(Boolean));
   };
 
+  HTMLElement.prototype.removeClass = function removeClass(cls: string): void {
+    this.classList.remove(...cls.split(' ').filter(Boolean));
+  };
+
   HTMLElement.prototype.createEl = function createEl<K extends keyof HTMLElementTagNameMap>(
     tag: K,
     options: CreateElOptions = {},
