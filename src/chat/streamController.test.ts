@@ -39,17 +39,17 @@ describe('StreamController', () => {
 	});
 
 	it('handles agent_message_chunk', () => {
-		const session = { messages: [], updatedAt: 0 };
+		const session: { messages: Array<{ role: string; content: string; type: string }>; updatedAt: number } = { messages: [], updatedAt: 0 };
 		deps.sessionStore.get.mockReturnValue(session);
 
-		controller.handleChunk({ sessionUpdate: 'agent_message_chunk', messageId: 'msg-1', content: { text: 'Hello' } });
+		controller.handleChunk({ sessionUpdate: 'agent_message_chunk', messageId: 'msg-1', content: { type: 'text', text: 'Hello' } });
 
 		expect(deps.renderer.removeAssistantPlaceholder).toHaveBeenCalled();
 		expect(deps.renderer.appendText).toHaveBeenCalledWith('Hello', 'msg-1');
 		expect(session.messages).toHaveLength(1);
 		expect(session.messages[0]).toEqual(expect.objectContaining({ role: 'assistant', content: 'Hello', type: 'text' }));
 
-		controller.handleChunk({ sessionUpdate: 'agent_message_chunk', messageId: 'msg-1', content: { text: ' world' } });
+		controller.handleChunk({ sessionUpdate: 'agent_message_chunk', messageId: 'msg-1', content: { type: 'text', text: ' world' } });
 		expect(session.messages[0].content).toBe('Hello world');
 	});
 
@@ -57,7 +57,7 @@ describe('StreamController', () => {
 		const session = { messages: [], updatedAt: 0 };
 		deps.sessionStore.get.mockReturnValue(session);
 
-		controller.handleChunk({ sessionUpdate: 'agent_thought_chunk', messageId: 'msg-1', content: { text: 'Thinking...' } });
+		controller.handleChunk({ sessionUpdate: 'agent_thought_chunk', messageId: 'msg-1', content: { type: 'text', text: 'Thinking...' } });
 
 		expect(deps.renderer.removeAssistantPlaceholder).toHaveBeenCalled();
 		expect(deps.renderer.appendThinking).toHaveBeenCalledWith('Thinking...', 'msg-1');
@@ -74,7 +74,7 @@ describe('StreamController', () => {
 		// Mock tool_call to set kind and input
 		controller.handleChunk({ sessionUpdate: 'tool_call', toolCallId: 'call-1', title: 'Search', kind: 'search', rawInput: { q: 'test' } });
 
-		const content = [{ type: 'content', content: { type: 'text', text: 'Result' } }];
+		const content = [{ type: 'content' as const, content: { type: 'text' as const, text: 'Result' } }];
 		controller.handleChunk({ sessionUpdate: 'tool_call_update', toolCallId: 'call-1', status: 'completed', rawOutput: { res: 'ok' }, content });
 
 		expect(deps.renderer.updateToolCall).toHaveBeenCalledWith('call-1', 'completed', { res: 'ok' }, content);
@@ -94,7 +94,7 @@ describe('StreamController', () => {
 	});
 
 	it('handles tool_call_update with sync failure', async () => {
-		controller.handleChunk({ sessionUpdate: 'tool_call', toolCallId: 'call-2', title: 'Sync', kind: 'sync', rawInput: {} });
+		controller.handleChunk({ sessionUpdate: 'tool_call', toolCallId: 'call-2', title: 'Sync', kind: 'other', rawInput: {} });
 		deps.syncEngine.process.mockResolvedValue([{ rule: { toolName: 'sync' }, error: new Error('Write error') }]);
 
 		controller.handleChunk({ sessionUpdate: 'tool_call_update', toolCallId: 'call-2', status: 'completed' });
@@ -167,7 +167,7 @@ describe('StreamController', () => {
 
 	it('handles user_message_chunk', () => {
 		// Just for branch coverage
-		controller.handleChunk({ sessionUpdate: 'user_message_chunk' });
+		controller.handleChunk({ sessionUpdate: 'user_message_chunk', messageId: 'msg-1', content: { type: 'text', text: 'Hello' } });
 	});
 
 	it('saveMessage appends a new message and schedules a save', () => {
@@ -187,13 +187,13 @@ describe('StreamController', () => {
 
 	it('saveAssistantChunk skips if no sessionId', () => {
 		deps.getSessionId.mockReturnValue(null);
-		controller.handleChunk({ sessionUpdate: 'agent_message_chunk', messageId: 'msg-1', content: { text: 'Hello' } });
+		controller.handleChunk({ sessionUpdate: 'agent_message_chunk', messageId: 'msg-1', content: { type: 'text', text: 'Hello' } });
 		expect(deps.sessionStore.getOrCreate).not.toHaveBeenCalled();
 	});
 
 	it('saveAssistantChunk handles missing session in store', () => {
 		deps.sessionStore.get.mockReturnValue(undefined);
-		controller.handleChunk({ sessionUpdate: 'agent_message_chunk', messageId: 'msg-1', content: { text: 'Hello' } });
+		controller.handleChunk({ sessionUpdate: 'agent_message_chunk', messageId: 'msg-1', content: { type: 'text', text: 'Hello' } });
 		// Only check it doesn't crash
 		expect(deps.sessionStore.setActive).not.toHaveBeenCalled();
 	});
@@ -201,10 +201,10 @@ describe('StreamController', () => {
 	it('saveAssistantChunk handles missing session in store on subsequent chunks', () => {
 		const session = { messages: [], updatedAt: 0 };
 		deps.sessionStore.get.mockReturnValueOnce(session);
-		controller.handleChunk({ sessionUpdate: 'agent_message_chunk', messageId: 'msg-1', content: { text: 'Hello' } });
+		controller.handleChunk({ sessionUpdate: 'agent_message_chunk', messageId: 'msg-1', content: { type: 'text', text: 'Hello' } });
 
 		deps.sessionStore.get.mockReturnValueOnce(undefined);
-		controller.handleChunk({ sessionUpdate: 'agent_message_chunk', messageId: 'msg-1', content: { text: ' World' } });
+		controller.handleChunk({ sessionUpdate: 'agent_message_chunk', messageId: 'msg-1', content: { type: 'text', text: ' World' } });
 		// Doesn't crash
 	});
 
