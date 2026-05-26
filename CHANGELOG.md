@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.0.21 - 2026-05-26
+
+### Changed
+- Add comprehensive unit tests for full module coverage (36 test files, 403 tests):
+  - `utils/vault.ts` — 12 tests for getVaultPath function
+  - `client/agent.ts` — 34 tests for AgentRuntime delegation and permission handling
+  - `client/AcpMethodNames.ts` — 25 tests for ACP method name aliases
+  - `view/renderer.ts` — 31 tests for ChatRenderer message rendering
+  - `view/dragDropManager.ts` — 13 tests for drag/drop file handling
+  - `view/keybindingManager.ts` — 11 tests for keyboard shortcuts
+  - `view/sessionDropdown.ts` — 12 tests for session list UI
+  - `view/autocomplete.ts` — 19 tests for autocomplete dropdown
+  - `i18n/locale.test.ts` — 5 tests for locale completeness validation
+
+## 0.0.20 - 2026-05-26
+
+### Fixed
+- Sync manifest.json version to match package.json
+- Fix TypeScript type errors in streamController.test.ts
+- Remove coverage directory (should have been deleted by PR #20)
+
+### Changed
+- Add PLANNING_REPORT.md with architecture and planning report
+- Improve test coverage for ChatInput, StreamController, getLocale, AcpSubprocess
+
 ## 0.0.19 - 2026-05-25
 
 ### Changed
