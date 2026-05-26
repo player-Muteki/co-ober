@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.0.28 - 2026-05-26
+
+### Changed
+- Extracted business/session/streaming logic from `CopsidianView` into new `CopsidianViewController` class.
+- View now handles only DOM creation, UI event binding, and Obsidian lifecycle hooks.
+- Controller owns connection management, session lifecycle, message sending, toolbar sync, and state.
+- View delegates all operations to controller via `ControllerDeps` and `ControllerCallbacks` interfaces.
+
+## 0.0.27 - 2026-05-26
+
+### Fixed
+- Eliminated all 33 ESLint `@typescript-eslint/no-explicit-any` warnings across codebase.
+- Replaced `as any` casts in `buildMcpServers()` with proper `McpServerConfig` discriminated union narrowing.
+- Replaced `as any` casts in `addMcpServerBlock()` with `Extract<McpServerConfig, ...>` type assertions.
+- Replaced `Object.assign` + `delete` pattern in MCP type switching with direct array entry replacement.
+- Used `Record<string, unknown>[]` instead of `any[]` in `parseSessionUpdate` content mapping.
+
 ## 0.0.26 - 2026-05-26
 
 ### Added

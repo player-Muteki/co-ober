@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
 import { CopsidianView } from './copsidianView';
+import { CopsidianViewController } from './copsidianViewController';
+import type { ControllerCallbacks, ControllerDeps } from './copsidianViewController';
 import { setLocale } from '../i18n/index';
 import { installObsidianDomHelpers } from '../test/domHelpers';
 import type CopsidianPlugin from '../main';
@@ -108,13 +110,14 @@ describe('CopsidianView runtime session sync', () => {
       getCurrentSessionId: vi.fn(() => 'other-session'),
       loadSession: vi.fn().mockResolvedValue(undefined),
     };
-    const view = createView({
+    const plugin = {
       app: { vault: { adapter: { getBasePath: () => '/vault' } } },
       settings: { maxNoteSize: 8000, syncRules: [], mcpServers },
       getClient: () => client,
-    } as unknown as CopsidianPlugin);
+    } as unknown as CopsidianPlugin;
 
-    await Reflect.get(view, 'syncRuntimeSession').call(view, 'restored-session');
+    const controller = createController(plugin);
+    await controller.syncRuntimeSession('restored-session');
 
     expect(client.loadSession).toHaveBeenCalledWith('restored-session', '/vault', mcpServers);
   });
@@ -132,6 +135,36 @@ function createView(plugin = createPlugin()): CopsidianView {
   const view = new CopsidianView({} as never, plugin);
   Reflect.set(view, 'registerEvent', vi.fn());
   return view;
+}
+
+function createController(plugin: CopsidianPlugin): CopsidianViewController {
+	const noop = vi.fn();
+	const deps: ControllerDeps = {
+    renderer: {
+      clear: noop, addUserMessage: noop, addAssistantPlaceholder: noop, removeAssistantPlaceholder: noop,
+      appendText: noop, appendThinking: noop, addError: noop, showUsage: noop, forceScrollToBottom: noop,
+      addToolCall: noop, updateToolCall: noop, setPlanEntries: noop,
+    } as unknown as ControllerDeps['renderer'],
+    input: { setStreaming: noop, focus: noop, appendValue: noop, triggerSend: noop, triggerStop: noop } as unknown as ControllerDeps['input'],
+    toolbar: { setSending: noop, updateAgents: noop, updateModels: noop, updateEffort: noop } as unknown as ControllerDeps['toolbar'],
+    inlineEditPanel: { clearState: noop, pendingState: null, showDiffFromResponse: noop } as unknown as ControllerDeps['inlineEditPanel'],
+    permissionBanner: { dismiss: noop, show: vi.fn() } as unknown as ControllerDeps['permissionBanner'],
+    mention: { clear: noop, listAllNotes: vi.fn(() => []), addRef: noop, hasRef: vi.fn(() => false), removeRef: noop } as unknown as ControllerDeps['mention'],
+    resolver: { resolveNote: vi.fn() } as unknown as ControllerDeps['resolver'],
+    syncEngine: { process: vi.fn() } as unknown as ControllerDeps['syncEngine'],
+    sessionStore: {
+      get: vi.fn(), getOrCreate: vi.fn(), setActive: vi.fn(), save: vi.fn(), load: vi.fn(), remove: vi.fn(), list: vi.fn(() => []),
+      sessions: new Map(), activeId: null,
+    } as unknown as ControllerDeps['sessionStore'],
+    welcomeView: { show: noop, hide: noop, updateStatus: noop } as unknown as ControllerDeps['welcomeView'],
+    plugin,
+  };
+  const callbacks: ControllerCallbacks = {
+    onShowWelcome: noop, onHideWelcome: noop, onShowReconnectBtn: noop, onHideReconnectBtn: noop,
+    onShowNewMessagesBtn: noop, onHideNewMessagesBtn: noop, onScrollToBottom: noop, onClearUI: noop,
+    onClearChips: noop, onClearPendingImageChips: noop, onAutoRefActiveFile: noop,
+  };
+  return new CopsidianViewController(deps, callbacks);
 }
 
 function createPlugin(overrides: {

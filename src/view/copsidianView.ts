@@ -1,32 +1,25 @@
 import { ItemView, WorkspaceLeaf, TFile } from 'obsidian';
 import type CopsidianPlugin from '../main';
 import { VIEW_TYPE } from '../types';
-import type { NormalizedUpdate, ContextRef, PromptPart } from '../types';
+import type { ContextRef, PromptPart } from '../types';
 import { t } from '../i18n/index';
 import { ChatRenderer } from './renderer';
 import { ChatInput } from '../chat/input';
 import { InputToolbar } from '../chat/toolbar';
 import { ContextMention } from '../context/mention';
 import { ContextResolver } from '../context/resolver';
-import { ContextInjection } from '../context/injection';
 import { SyncEngine } from '../sync/engine';
-import { getVaultPath } from '../utils/vault';
 import { createSessionStore } from '../chat/session';
 import type { SessionStore } from '../chat/session';
-import { ChatState } from '../chat/chatState';
-import { StreamController } from '../chat/streamController';
-import { parseSlashCommand, isBuiltInCommand } from '../commands/executor';
 import { SessionDropdown } from './sessionDropdown';
 import { Autocomplete } from './autocomplete';
-import { buildCustomAgentPrompt, getValidActiveCustomAgent } from '../agents/custom';
-import { filterCommonModelOptions } from './modelFilter';
-import { applyDefaultSessionSettings } from './sessionDefaults';
-import { Mutex } from '../utils/mutex';
 import { DragDropManager } from './dragDropManager';
 import { PermissionBanner } from './permissionBanner';
 import { InlineEditPanel } from './inlineEditPanel';
 import { WelcomeView } from './welcomeView';
 import { KeybindingManager } from './keybindingManager';
+import { CopsidianViewController } from './copsidianViewController';
+import type { ControllerCallbacks, ControllerDeps } from './copsidianViewController';
 
 interface MarkdownFileView {
 	getViewType(): string;
@@ -34,7 +27,6 @@ interface MarkdownFileView {
 }
 
 export class CopsidianView extends ItemView {
-	private sessionMutex = new Mutex();
 	private messagesEl!: HTMLDivElement;
 	private contextChipsEl!: HTMLDivElement;
 	private renderer!: ChatRenderer;
@@ -46,9 +38,6 @@ export class CopsidianView extends ItemView {
 	private mention!: ContextMention;
 	private resolver!: ContextResolver;
 	private sessionStore!: SessionStore;
-	private state = new ChatState();
-	private streamCtrl!: StreamController;
-	private busy = false;
 	private sessionDropdownMgr: SessionDropdown | null = null;
 	private autocomplete: Autocomplete | null = null;
 	private currentRefs: ContextRef[] = [];
@@ -62,9 +51,9 @@ export class CopsidianView extends ItemView {
 	private inlineEditPanel!: InlineEditPanel;
 	private pendingImageParts: PromptPart[] = [];
 	private lastAutoRefId: string | null = null;
-	private sendStartTime = 0;
 	private headerTitleEl: HTMLDivElement | null = null;
 	private newSessionBtnEl: HTMLButtonElement | null = null;
+	private controller!: CopsidianViewController;
 
 	// Event listener references for cleanup on close
 	private scrollHandler: (() => void) | null = null;
@@ -73,78 +62,6 @@ export class CopsidianView extends ItemView {
 		leaf: WorkspaceLeaf,
 		private plugin: CopsidianPlugin,
 	) { super(leaf); }
-
-	private getVaultCwd(): string {
-		return getVaultPath(this.plugin.app);
-	}
-
-	private resetConversationView(): void {
-		if (this.inlineEditPanel) this.inlineEditPanel.clearState();
-		this.closeAutocomplete();
-		if (this.permissionBanner) this.permissionBanner.dismiss();
-		if (this.welcomeView) this.welcomeView.hide();
-		this.renderer.clear();
-		this.streamCtrl.reset();
-		this.busy = false;
-		this.state.isStreaming = false;
-		this.state.usage = null;
-		this.state.lastError = null;
-		this.state.needsAttention = false;
-		this.input.setStreaming(false);
-		this.toolbar.setSending(false);
-		this.currentRefs = [];
-		this.pendingImageParts = [];
-		if (this.dragDropManager) this.dragDropManager.resetBytes();
-		this.manualRefs.clear();
-		this.lastAutoRefId = null;
-		this.mention.clear();
-		this.contextChipsEl.empty();
-	}
-
-	private async syncRuntimeSession(sessionId: string | null): Promise<void> {
-		if (!sessionId) return;
-		return this.sessionMutex.runExclusive(async () => {
-			const client = this.plugin.getClient();
-			if (!client) return;
-			if (client.getCurrentSessionId() === sessionId) return;
-			await client.loadSession(sessionId, this.getVaultCwd(), this.plugin.settings.mcpServers);
-		});
-	}
-
-	private async cancelActiveGeneration(): Promise<void> {
-		const client = this.plugin.getClient();
-		if (!client || !this.busy || !this.state.sessionId) return;
-		try {
-			await client.cancel(this.state.sessionId);
-		} catch (e) {
-			console.error('[copsidian] cancel:', e);
-		}
-	}
-
-	private bindClientHandlers(): void {
-		const client = this.plugin.getClient();
-		if (!client) return;
-		client.setClientHandlers({
-			onClose: () => this.handleDisconnect(),
-			onReconnect: async () => {
-				this.bindClientHandlers();
-				this.state.isConnected = true;
-				if (this.welcomeView) this.welcomeView.updateStatus(true);
-				this.hideReconnectBtn();
-				try {
-					await this.syncRuntimeSession(this.state.sessionId);
-				} catch (e) {
-					console.error('[copsidian] session resync:', e);
-				}
-				this.loadToolbarOptions();
-			},
-			onPermissionRequest: async (req) => (
-				client.permissionMode === 'safe'
-					? this.permissionBanner.show(req)
-					: client.requestPermission(req)
-			),
-		});
-	}
 
 	override getViewType(): string { return VIEW_TYPE; }
 	override getDisplayText(): string { return t().appName; }
@@ -160,19 +77,15 @@ export class CopsidianView extends ItemView {
 		this.syncEngine = new SyncEngine(this.plugin.app.vault, this.plugin.settings.syncRules);
 		this.sessionStore = createSessionStore(this.plugin);
 		await this.sessionStore.load();
-		this.state.autoScrollEnabled = this.plugin.settings.autoScrollEnabled ?? true;
-
-		// Session dropdown (initialized after sessionButtonEl is created below)
-		this.sessionDropdownMgr = null; // will be set after header creation
 
 		// Restore active session
 		const savedId = this.plugin.activeSessionId;
 		if (savedId) {
 			const saved = this.sessionStore.get(savedId);
 			if (saved) {
-				this.state.sessionId = saved.opencodeSessionId ?? savedId;
-				this.sessionStore.getOrCreate(this.state.sessionId);
-				this.sessionStore.setActive(this.state.sessionId);
+				const sessionId = saved.opencodeSessionId ?? savedId;
+				this.sessionStore.getOrCreate(sessionId);
+				this.sessionStore.setActive(sessionId);
 			}
 		}
 
@@ -181,72 +94,11 @@ export class CopsidianView extends ItemView {
 		this.headerTitleEl = header.createDiv({ text: t().appName, cls: 'copsidian-header-title' });
 		const actions = header.createDiv({ cls: 'copsidian-header-actions' });
 		this.newSessionBtnEl = actions.createEl('button', { text: t().header.new, cls: 'mod-icon' });
-		this.newSessionBtnEl.onclick = () => this.newSession();
 		this.sessionButtonEl = actions.createEl('button', { text: '⋯', cls: 'mod-icon' });
-		this.sessionButtonEl.onclick = () => this.toggleSessions();
-		this.sessionDropdownMgr = new SessionDropdown(
-			this.contentEl,
-			this.sessionButtonEl,
-			this.sessionStore,
-			() => this.state.sessionId,
-			{
-				onSwitch: async (sessionId: string) => {
-					this.state.sessionId = sessionId;
-					this.sessionStore.getOrCreate(sessionId);
-					this.closeSessionDropdown();
-					await this.cancelActiveGeneration();
-					this.resetConversationView();
-					this.clearAutoRefs();
-					try {
-						await this.syncRuntimeSession(sessionId);
-					} catch (e) {
-						console.error('[copsidian] session switch sync:', e);
-					}
-					await this.restoreSession();
-					this.sessionStore.setActive(sessionId);
-					await this.sessionStore.save();
-					this.loadToolbarOptions();
-					if (this.messagesEl.children.length === 0) {
-						this.welcomeView.show(this.plugin.getClient() !== null);
-					}
-					this.autoRefActiveFile();
-				},
-				onDelete: async (sessionId: string) => {
-					this.sessionStore.remove(sessionId);
-					await this.sessionStore.save();
-					if (sessionId === this.state.sessionId) {
-						await this.newSession();
-					}
-					this.closeSessionDropdown();
-				},
-				onNewSession: async () => this.newSession(),
-				onFork: async (sessionId: string) => {
-					const client = this.plugin.getClient();
-					if (!client) return;
-					const forkedId = await client.forkSession(sessionId, this.getVaultCwd());
-					this.state.sessionId = forkedId;
-					this.sessionStore.getOrCreate(forkedId);
-					this.sessionStore.setActive(forkedId);
-					await this.sessionStore.save();
-					this.closeSessionDropdown();
-				},
-				onResume: async (sessionId: string) => {
-					const client = this.plugin.getClient();
-					if (!client) return;
-					await client.resumeSession(sessionId, this.getVaultCwd());
-					this.state.sessionId = sessionId;
-					this.sessionStore.getOrCreate(sessionId);
-					this.sessionStore.setActive(sessionId);
-					await this.sessionStore.save();
-					this.closeSessionDropdown();
-				},
-			},
-			() => this.plugin.getClient()?.getAgentCapabilities() ?? null,
-		);
 
 		// ── Messages ──
 		this.messagesEl = el.createDiv({ cls: 'copsidian-messages' });
-		this.renderer = new ChatRenderer(this.messagesEl, this.plugin.app, () => this.state.autoScrollEnabled);
+		this.renderer = new ChatRenderer(this.messagesEl, this.plugin.app, () => this.controller?.state.autoScrollEnabled ?? true);
 
 		this.permissionBanner = new PermissionBanner(this.messagesEl);
 		this.inlineEditPanel = new InlineEditPanel(this.contentEl);
@@ -258,7 +110,7 @@ export class CopsidianView extends ItemView {
 		// ── Input ──
 		this.inputAreaEl = el.createDiv({ cls: 'copsidian-input-area' });
 		this.input = new ChatInput(this.inputAreaEl, {
-			onSend: (text: string) => this.send(text, this.currentRefs),
+			onSend: (text: string) => this.send(text),
 			onStop: () => this.stopGeneration(),
 			onToggleMention: () => this.showAC('@'),
 			onToggleSlash: () => this.showAC('/'),
@@ -274,53 +126,120 @@ export class CopsidianView extends ItemView {
 		this.toolbar = new InputToolbar(tbEl, {
 			onAgentChange: (agent: string) => {
 				const client = this.plugin.getClient();
-				if (!this.state.sessionId || !client) return;
-				void client.setMode(this.state.sessionId, agent).then(() => this.loadToolbarOptions()).catch(() => {});
+				if (!this.controller?.getSessionId() || !client) return;
+				void client.setMode(this.controller.getSessionId()!, agent).then(() => this.controller.loadToolbarOptions()).catch(() => {});
 			},
 			onModelChange: (model: string) => {
 				const client = this.plugin.getClient();
-				if (!this.state.sessionId || !client) return;
-				void client.setModel(this.state.sessionId, model).then(() => this.loadToolbarOptions()).catch(() => {});
+				if (!this.controller?.getSessionId() || !client) return;
+				void client.setModel(this.controller.getSessionId()!, model).then(() => this.controller.loadToolbarOptions()).catch(() => {});
 			},
 			onEffortChange: (effort: string) => {
 				const client = this.plugin.getClient();
-				if (!this.state.sessionId || !client) return;
-				void client.setConfigOption(this.state.sessionId, 'effort', effort).then(() => this.loadToolbarOptions()).catch(() => {});
+				if (!this.controller?.getSessionId() || !client) return;
+				void client.setConfigOption(this.controller.getSessionId()!, 'effort', effort).then(() => this.controller.loadToolbarOptions()).catch(() => {});
 			},
 			onSend: () => this.input.triggerSend(),
 			onStop: () => this.input.triggerStop(),
 		});
 
-		// Init StreamController
-		this.streamCtrl = new StreamController({
-			state: this.state,
+		// ── Create controller ──
+		const deps: ControllerDeps = {
 			renderer: this.renderer,
+			input: this.input,
+			toolbar: this.toolbar,
+			inlineEditPanel: this.inlineEditPanel,
+			permissionBanner: this.permissionBanner,
+			mention: this.mention,
+			resolver: this.resolver,
 			syncEngine: this.syncEngine,
 			sessionStore: this.sessionStore,
-			getSessionId: () => this.state.sessionId,
-			onConfigUpdate: (opts) => this.applyConfigOptions(opts),
-			onModeUpdate: (modeId, modes) => this.applyModeUpdate(modeId, modes),
-			onModelsUpdate: (modelId, models) => this.applyModelUpdate(modelId, models),
-			onCommandsUpdate: (_cmds) => {},
-			onSyncFailure: (message) => this.renderer.addError(message),
-		});
+			welcomeView: this.welcomeView,
+			plugin: this.plugin,
+		};
 
+		const savedSessionId = this.sessionStore.activeId;
+		const callbacks: ControllerCallbacks = {
+			onShowWelcome: (connected: boolean) => {
+				if (this.messagesEl.children.length === 0) {
+					this.welcomeView.show(connected);
+				}
+			},
+			onHideWelcome: () => this.welcomeView.hide(),
+			onShowReconnectBtn: () => this.showReconnectBtn(),
+			onHideReconnectBtn: () => this.hideReconnectBtn(),
+			onShowNewMessagesBtn: () => this.showNewMessagesBtn(),
+			onHideNewMessagesBtn: () => this.hideNewMessagesBtn(),
+			onScrollToBottom: () => this.renderer.forceScrollToBottom(),
+			onClearUI: () => {
+				this.closeAutocomplete();
+				this.currentRefs = [];
+				this.pendingImageParts = [];
+				if (this.dragDropManager) this.dragDropManager.resetBytes();
+				this.manualRefs.clear();
+				this.lastAutoRefId = null;
+				this.mention.clear();
+			},
+			onClearChips: () => this.contextChipsEl.empty(),
+			onClearPendingImageChips: () => this.clearPendingImageChips(),
+			onAutoRefActiveFile: () => this.autoRefActiveFile(),
+		};
+
+		this.controller = new CopsidianViewController(deps, callbacks);
+
+		// Restore session ID into controller state
+		if (savedSessionId) {
+			this.controller.state.sessionId = savedSessionId;
+		}
+		this.controller.state.autoScrollEnabled = this.plugin.settings.autoScrollEnabled ?? true;
+
+		// Session dropdown
+		this.newSessionBtnEl.onclick = () => this.newSession();
+		this.sessionButtonEl.onclick = () => this.toggleSessions();
+		this.sessionDropdownMgr = new SessionDropdown(
+			this.contentEl,
+			this.sessionButtonEl,
+			this.sessionStore,
+			() => this.controller.getSessionId(),
+			{
+				onSwitch: async (sessionId: string) => {
+					this.closeSessionDropdown();
+					await this.controller.switchSession(sessionId);
+				},
+				onDelete: async (sessionId: string) => {
+					this.closeSessionDropdown();
+					await this.controller.deleteSession(sessionId);
+				},
+				onNewSession: async () => this.newSession(),
+				onFork: async (sessionId: string) => {
+					await this.controller.forkSession(sessionId);
+					this.closeSessionDropdown();
+				},
+				onResume: async (sessionId: string) => {
+					await this.controller.resumeSession(sessionId);
+					this.closeSessionDropdown();
+				},
+			},
+			() => this.plugin.getClient()?.getAgentCapabilities() ?? null,
+		);
+
+		// Init connection
 		const connectedClient = this.plugin.getClient();
-		this.state.isConnected = connectedClient?.isConnected() ?? false;
-		if (this.state.isConnected) {
-			this.bindClientHandlers();
-			void this.syncRuntimeSession(this.state.sessionId).catch((e) => {
+		this.controller.state.isConnected = connectedClient?.isConnected() ?? false;
+		if (this.controller.state.isConnected) {
+			this.controller.bindClientHandlers();
+			void this.controller.syncRuntimeSession(this.controller.getSessionId()).catch((e) => {
 				console.error('[copsidian] session sync:', e);
 			});
 		} else if (this.plugin.settings.autoConnect) {
-			void this.ensureClientConnected();
+			void this.controller.ensureClientConnected();
 		}
 
 		// Restore previous messages if any
-		await this.restoreSession();
+		await this.controller.restoreSession();
 
 		// Load toolbar options when an ACP client is already available.
-		this.loadToolbarOptions();
+		this.controller.loadToolbarOptions();
 
 		// Show welcome page if no messages
 		if (this.messagesEl.children.length === 0) {
@@ -337,7 +256,7 @@ export class CopsidianView extends ItemView {
 		this.keybindingMgr = new KeybindingManager(this.contentEl, {
 			onNewSession: () => void this.newSession(),
 			onClearScreen: () => void this.clearScreen(),
-			onCopyLastMessage: () => this.copyLastAssistantMessage(),
+			onCopyLastMessage: () => this.controller.copyLastAssistantMessage(),
 		});
 		this.keybindingMgr.register();
 
@@ -387,25 +306,11 @@ export class CopsidianView extends ItemView {
 	// ── Keybindings ──
 
 	private async clearScreen(): Promise<void> {
-		await this.cancelActiveGeneration();
-		this.resetConversationView();
+		await this.controller.cancelActiveGeneration();
 		this.clearAutoRefs();
+		this.controller.resetConversationView();
 		if (this.messagesEl.children.length === 0) {
 			this.welcomeView.show(this.plugin.getClient() !== null);
-		}
-	}
-
-	private copyLastAssistantMessage(): void {
-		if (!this.state.sessionId) return;
-		const session = this.sessionStore.get(this.state.sessionId);
-		if (!session) return;
-
-		for (let i = session.messages.length - 1; i >= 0; i--) {
-			const msg = session.messages[i];
-			if (msg.role === 'assistant' && msg.type !== 'thinking') {
-				navigator.clipboard.writeText(msg.content);
-				break;
-			}
 		}
 	}
 
@@ -416,13 +321,11 @@ export class CopsidianView extends ItemView {
 			const { scrollTop, clientHeight, scrollHeight } = this.messagesEl;
 			const nearBottom = scrollTop + clientHeight >= scrollHeight - 50;
 
-			if (!nearBottom && this.state.autoScrollEnabled) {
-				// User scrolled up, pause auto-scroll
-				this.state.autoScrollEnabled = false;
+			if (!nearBottom && this.controller.state.autoScrollEnabled) {
+				this.controller.state.autoScrollEnabled = false;
 				this.showNewMessagesBtn();
-			} else if (nearBottom && !this.state.autoScrollEnabled) {
-				// User scrolled to bottom, resume auto-scroll
-				this.state.autoScrollEnabled = true;
+			} else if (nearBottom && !this.controller.state.autoScrollEnabled) {
+				this.controller.state.autoScrollEnabled = true;
 				this.hideNewMessagesBtn();
 			}
 		};
@@ -436,7 +339,7 @@ export class CopsidianView extends ItemView {
 			text: t().newMessages,
 		});
 		btn.onclick = () => {
-			this.state.autoScrollEnabled = true;
+			this.controller.state.autoScrollEnabled = true;
 			this.hideNewMessagesBtn();
 			this.renderer.forceScrollToBottom();
 		};
@@ -449,7 +352,7 @@ export class CopsidianView extends ItemView {
 	}
 
 	setAutoScrollEnabled(enabled: boolean): void {
-		this.state.autoScrollEnabled = enabled;
+		this.controller.state.autoScrollEnabled = enabled;
 		if (enabled) this.hideNewMessagesBtn();
 	}
 
@@ -461,6 +364,40 @@ export class CopsidianView extends ItemView {
 		}
 		if (this.newMessagesBtn) {
 			this.newMessagesBtn.textContent = t().newMessages;
+		}
+	}
+
+	// ── Reconnect button (view-owned DOM) ──
+
+	private showReconnectBtn(): void {
+		if (this.reconnectBtn) return;
+		this.reconnectBtn = this.contentEl.createEl('button', {
+			cls: 'copsidian-reconnect-btn',
+			text: t().reconnect.text,
+		});
+		this.reconnectBtn.onclick = () => this.reconnect();
+	}
+
+	private async reconnect(): Promise<void> {
+		if (this.reconnectBtn) {
+			this.reconnectBtn.textContent = t().reconnect.connecting;
+			this.reconnectBtn.disabled = true;
+		}
+		try {
+			await this.controller.reconnect();
+			this.hideReconnectBtn();
+		} catch {
+			if (this.reconnectBtn) {
+				this.reconnectBtn.textContent = t().reconnect.failed;
+				this.reconnectBtn.disabled = false;
+			}
+		}
+	}
+
+	private hideReconnectBtn(): void {
+		if (this.reconnectBtn) {
+			this.reconnectBtn.remove();
+			this.reconnectBtn = null;
 		}
 	}
 
@@ -481,106 +418,8 @@ export class CopsidianView extends ItemView {
 
 	// ── Session management ──
 
-	private handleDisconnect(): void {
-		this.state.isConnected = false;
-		this.closeAutocomplete();
-		if (this.permissionBanner) this.permissionBanner.dismiss();
-		this.renderer.removeAssistantPlaceholder();
-		this.streamCtrl.reset();
-		this.busy = false;
-		this.state.isStreaming = false;
-		this.state.usage = null;
-		this.state.lastError = null;
-		this.state.needsAttention = false;
-		this.input.setStreaming(false);
-		this.toolbar.setSending(false);
-		if (this.welcomeView) this.welcomeView.updateStatus(false);
-		if (this.reconnectBtn) return;
-		this.reconnectBtn = this.contentEl.createEl('button', {
-			cls: 'copsidian-reconnect-btn',
-			text: t().reconnect.text,
-		});
-		this.reconnectBtn.onclick = () => this.reconnect();
-	}
-
-	private async reconnect(): Promise<void> {
-		if (this.reconnectBtn) {
-			this.reconnectBtn.textContent = t().reconnect.connecting;
-			this.reconnectBtn.disabled = true;
-		}
-		try {
-			const connected = await this.plugin.initClient();
-			if (!connected) throw new Error(t().reconnect.failed);
-			this.bindClientHandlers();
-			try {
-				await this.syncRuntimeSession(this.state.sessionId);
-			} catch (e) {
-				console.error('[copsidian] session resync:', e);
-			}
-			this.loadToolbarOptions();
-			this.state.isConnected = true;
-			if (this.welcomeView) this.welcomeView.updateStatus(true);
-			this.hideReconnectBtn();
-		} catch (e) {
-			console.error('[copsidian] reconnect failed:', e);
-			if (this.reconnectBtn) {
-				this.reconnectBtn.textContent = t().reconnect.failed;
-				this.reconnectBtn.disabled = false;
-			}
-		}
-	}
-
-	private hideReconnectBtn(): void {
-		if (this.reconnectBtn) {
-			this.reconnectBtn.remove();
-			this.reconnectBtn = null;
-		}
-	}
-
-	private async restoreSession(): Promise<void> {
-		if (!this.state.sessionId) return;
-		const session = this.sessionStore.get(this.state.sessionId);
-		if (!session) return;
-		let idx = 0;
-		for (const msg of session.messages) {
-			const restoreId = `restore-${msg.timestamp}-${idx++}`;
-			if (msg.role === 'user') {
-				this.renderer.addUserMessage(msg.content, msg.timestamp);
-			} else if (msg.role === 'assistant') {
-				if (msg.type === 'thinking') this.renderer.appendThinking(msg.content, restoreId, msg.timestamp);
-				else this.renderer.appendText(msg.content, restoreId, msg.timestamp);
-			}
-		}
-	}
-
 	private async newSession(): Promise<void> {
-		await this.sessionStore.save();
-		const connected = await this.ensureClientConnected();
-		if (!connected) return;
-		const c = this.plugin.getClient();
-		if (!c) return;
-
-		try {
-			await this.cancelActiveGeneration();
-			this.resetConversationView();
-			await this.sessionMutex.runExclusive(async () => {
-				const sid = await c.createSession(this.getVaultCwd(), this.plugin.settings.mcpServers);
-				this.state.sessionId = sid;
-				await applyDefaultSessionSettings(c, sid, this.plugin.settings);
-			});
-			if (this.state.sessionId) {
-				this.sessionStore.getOrCreate(this.state.sessionId);
-				this.sessionStore.setActive(this.state.sessionId);
-			}
-			await this.sessionStore.save();
-			this.loadToolbarOptions();
-			if (this.messagesEl.children.length === 0) {
-				this.welcomeView.show(this.plugin.getClient() !== null);
-			}
-			this.autoRefActiveFile();
-		} catch (e) {
-			console.error('[copsidian] newSession:', e);
-		}
+		await this.controller.newSession();
 	}
 
 	private async toggleSessions(): Promise<void> {
@@ -598,285 +437,12 @@ export class CopsidianView extends ItemView {
 
 	// ── Sending ──
 
-	private async send(text: string, refs: ContextRef[]): Promise<void> {
-		if (this.busy) return;
-		const sessionId = await this.ensureRuntimeSession();
-		const c = this.plugin.getClient();
-		if (!c || !sessionId) return;
-		const inlineEdit = this.inlineEditPanel.pendingState;
-		if (!inlineEdit) this.inlineEditPanel.clearState();
-
-		// Hide welcome page on first message
-		if (this.welcomeView) this.welcomeView.hide();
-
-		const cmd = parseSlashCommand(text);
-		if (cmd && isBuiltInCommand(cmd.name)) {
-			await this.executeBuiltIn(cmd.name, cmd.args);
-			return;
-		}
-		// Non-built-in slash commands are sent directly to the agent as text
-
-		this.busy = true;
-		this.state.isStreaming = true;
-		this.input.setStreaming(true);
-		this.toolbar.setSending(true);
-		this.sendStartTime = Date.now();
-		this.renderer.addUserMessage(text);
-		this.streamCtrl.saveMessage('user', text, 'text');
-		this.renderer.addAssistantPlaceholder();
-
-		try {
-			await this.syncRuntimeSession(sessionId);
-			const parts = await this.buildParts(text, refs);
-			if (this.state.sessionId !== sessionId || !this.busy) return;
-			this.clearPendingImageChips();
-			const response = await c.sendMessage(sessionId, parts, (ch: NormalizedUpdate) => {
-				if (!this.busy || this.state.sessionId !== sessionId) return;
-				this.streamCtrl.handleChunk(ch);
-			});
-			// Use response-level usage (has inputTokens/outputTokens), fall back to state.usage for cost
-			if (response?.usage) {
-				this.state.usage = {
-					totalTokens: response.usage.totalTokens ?? 0,
-					inputTokens: response.usage.inputTokens ?? 0,
-					outputTokens: response.usage.outputTokens ?? 0,
-					thoughtTokens: response.usage.thoughtTokens,
-					cost: this.state.usage?.cost,
-				};
-			}
-		} catch (e: unknown) {
-			if (this.state.sessionId === sessionId) {
-				this.renderer.addError(e instanceof Error ? e.message : String(e));
-			}
-		} finally {
-			this.renderer.removeAssistantPlaceholder();
-			this.busy = false;
-			this.state.isStreaming = false;
-			this.input.setStreaming(false);
-			this.toolbar.setSending(false);
-			this.input.focus();
-			// Show usage stats after streaming completes
-			if (this.state.usage) {
-				this.renderer.showUsage({
-					...this.state.usage,
-					modelId: this.state.currentModelId ?? undefined,
-					elapsedMs: Date.now() - this.sendStartTime,
-				});
-			}
-			// Handle inline edit response
-			if (inlineEdit && this.inlineEditPanel.pendingState === inlineEdit) {
-				const session = this.sessionStore.get(sessionId ?? '');
-				if (session) {
-					const lastMsg = session.messages.slice().reverse().find(m => m.role === 'assistant');
-					if (lastMsg) {
-						this.inlineEditPanel.showDiffFromResponse(inlineEdit.original, lastMsg.content);
-					}
-				}
-				this.inlineEditPanel.pendingState = null;
-			}
-		}
-	}
-
-	private async executeBuiltIn(name: string, _args: string): Promise<void> {
-		const sessionId = await this.ensureRuntimeSession();
-		const c = this.plugin.getClient();
-		if (!c || !sessionId) return;
-
-		if (name === 'compact') {
-			this.renderer.addUserMessage('/compact');
-			this.streamCtrl.saveMessage('user', '/compact', 'text');
-			try {
-				await this.syncRuntimeSession(sessionId);
-				if (this.state.sessionId !== sessionId) return;
-				await c.compact(sessionId);
-				if (this.state.sessionId !== sessionId) return;
-				const message = t().message.compacted;
-				this.renderer.appendText(message, `compact-${Date.now()}`);
-				this.streamCtrl.saveMessage('assistant', message, 'text');
-			} catch (e) {
-				if (this.state.sessionId === sessionId) {
-					this.renderer.addError(e instanceof Error ? e.message : t().error.compact);
-				}
-			}
-		}
+	private async send(text: string): Promise<void> {
+		await this.controller.send(text, this.currentRefs);
 	}
 
 	private async stopGeneration(): Promise<void> {
-		const c = this.plugin.getClient();
-		if (!c || !this.state.sessionId || (!this.busy && !this.state.isStreaming)) return;
-		// Reset UI immediately so user gets feedback
-		this.busy = false;
-		this.state.isStreaming = false;
-		this.input.setStreaming(false);
-		this.toolbar.setSending(false);
-		try {
-			await c.cancel(this.state.sessionId);
-		} catch (e) {
-			console.error('[copsidian] cancel:', e);
-		}
-	}
-
-	private async buildParts(text: string, refs: ContextRef[]): Promise<PromptPart[]> {
-		const parts: PromptPart[] = [];
-
-		// Add context injection if there are references
-		const resolved: Array<{ name: string; content: string }> = [];
-		for (const ref of refs) {
-			const result = await this.resolver.resolveNote(ref.path);
-			if (result) resolved.push(result);
-		}
-		const injection = ContextInjection.build(resolved);
-		const activeAgent = getValidActiveCustomAgent(
-			this.plugin.settings.activeCustomAgentId,
-			this.plugin.settings.customAgents,
-			this.plugin.settings.customSkills,
-		);
-		const customAgentPrompt = buildCustomAgentPrompt(activeAgent, this.plugin.settings.customSkills);
-		const sysPrompt = ContextInjection.systemPrompt(this.plugin.settings.systemPrompt, customAgentPrompt);
-		const combined = [sysPrompt, injection].filter(Boolean).join('\n\n');
-		if (combined) parts.push({ type: 'text', text: combined });
-
-		parts.push({ type: 'text', text });
-		parts.push(...this.pendingImageParts.map(part => ({ ...part })));
-
-		return parts;
-	}
-
-	// ── Toolbar options ──
-
-	private applyConfigOptions(opts: import('../types').SessionConfigOption[]): void {
-		for (const opt of opts) {
-			if (opt.id === 'model') {
-				this.toolbar.updateModels(
-					this.filterCommonModelOptions(opt.options.map(o => ({ value: o.value, label: o.name }))),
-					opt.currentValue,
-				);
-			}
-			if (opt.id === 'effort') {
-				this.toolbar.updateEffort(
-					opt.options.map(o => ({ value: o.value, label: o.name })),
-					opt.currentValue,
-				);
-			}
-			if (opt.id === 'mode') {
-				this.toolbar.updateAgents(
-					opt.options.map(o => ({ value: o.value, label: o.name })),
-					opt.currentValue,
-				);
-			}
-		}
-	}
-
-	private applyModeUpdate(modeId: string | null, modes: import('../types').ModeOption[]): void {
-		this.toolbar.updateAgents(
-			modes.map(m => ({ value: m.id, label: m.name })),
-			modeId ?? undefined,
-		);
-	}
-
-	private applyModelUpdate(modelId: string | null, models: import('../types').ModelOption[]): void {
-		this.toolbar.updateModels(
-			this.filterCommonModelOptions(models.map(m => ({ value: m.modelId, label: m.name }))),
-			modelId ?? undefined,
-		);
-	}
-
-	private async ensureClientConnected(): Promise<boolean> {
-		const existing = this.plugin.getClient();
-		if (existing?.isConnected()) {
-			this.state.isConnected = true;
-			this.bindClientHandlers();
-			this.hideReconnectBtn();
-			if (this.welcomeView) this.welcomeView.updateStatus(true);
-			return true;
-		}
-
-		const connected = await this.plugin.initClient();
-		this.state.isConnected = connected;
-		if (!connected) {
-			this.handleDisconnect();
-			return false;
-		}
-
-		this.bindClientHandlers();
-		this.hideReconnectBtn();
-		if (this.welcomeView) this.welcomeView.updateStatus(true);
-		return true;
-	}
-
-	private async ensureRuntimeSession(): Promise<string | null> {
-		if (!(await this.ensureClientConnected())) return null;
-		const client = this.plugin.getClient();
-		if (!client) return null;
-
-		if (this.state.sessionId) {
-			await this.syncRuntimeSession(this.state.sessionId);
-			this.loadToolbarOptions();
-			return this.state.sessionId;
-		}
-
-		try {
-			await this.sessionMutex.runExclusive(async () => {
-				const sid = await client.createSession(this.getVaultCwd(), this.plugin.settings.mcpServers);
-				this.state.sessionId = sid;
-				await applyDefaultSessionSettings(client, sid, this.plugin.settings);
-			});
-			if (this.state.sessionId) {
-				this.sessionStore.getOrCreate(this.state.sessionId);
-				this.sessionStore.setActive(this.state.sessionId);
-			}
-			await this.sessionStore.save();
-			this.loadToolbarOptions();
-			return this.state.sessionId;
-		} catch (e) {
-			console.error('[copsidian] session init:', e);
-			return null;
-		}
-	}
-
-	loadToolbarOptions(): void {
-		const c = this.plugin.getClient();
-		if (!c) return;
-
-		const snapshot = c.getSessionSnapshot();
-		this.state.configOptions = snapshot.configOptions;
-		this.state.availableCommands = snapshot.availableCommands;
-		this.state.availableModels = snapshot.availableModels;
-		this.state.availableModes = snapshot.availableModes;
-		this.state.currentModeId = snapshot.currentModeId;
-
-		const configMap = new Map(snapshot.configOptions.map(opt => [opt.id, opt]));
-		const modeConfig = configMap.get('mode');
-		const modelConfig = configMap.get('model');
-		const effortConfig = configMap.get('effort');
-
-		const agents = snapshot.availableModes.map(mode => ({ value: mode.id, label: mode.name }));
-		const models = this.filterCommonModelOptions(snapshot.availableModels.map(model => ({ value: model.modelId, label: model.name })));
-		const ef = t().toolbar.effort;
-		const efforts = [
-			{ value: 'default', label: ef.default },
-			{ value: 'low', label: ef.low },
-			{ value: 'medium', label: ef.medium },
-			{ value: 'high', label: ef.high },
-		];
-
-		this.toolbar.updateAgents(
-			agents,
-			snapshot.currentModeId ?? modeConfig?.currentValue ?? this.plugin.settings.defaultAgent,
-		);
-		this.toolbar.updateModels(
-			models,
-			snapshot.currentModelId ?? modelConfig?.currentValue ?? this.plugin.settings.defaultModel,
-		);
-		this.state.currentModelId = snapshot.currentModelId ?? modelConfig?.currentValue ?? null;
-		this.toolbar.updateEffort(
-			efforts,
-			effortConfig?.currentValue ?? this.plugin.settings.defaultEffort,
-		);
-	}
-
-	private filterCommonModelOptions(options: Array<{ value: string; label: string }>): Array<{ value: string; label: string }> {
-		return filterCommonModelOptions(options, this.plugin.settings.commonModels, this.plugin.settings.defaultModel);
+		await this.controller.stopGeneration();
 	}
 
 	// ── @mention chips ──
@@ -912,7 +478,6 @@ export class CopsidianView extends ItemView {
 	}
 
 	private autoRefActiveFile(): void {
-		// Try to get the active file from a non-Copsidian leaf
 		const leaves = this.plugin.app.workspace.getLeavesOfType('markdown');
 		const activeLeaf = this.plugin.app.workspace.getMostRecentLeaf();
 		const activeView = activeLeaf?.view as MarkdownFileView | undefined;
@@ -934,7 +499,6 @@ export class CopsidianView extends ItemView {
 				if (view?.getViewType?.() !== 'markdown') return;
 				const file = view.file;
 				if (!file || file.extension !== 'md') return;
-				// Replace existing auto-ref chip with the new active file
 				const existing = this.currentRefs.find(r => r.id === this.lastAutoRefId);
 				if (existing) {
 					if (this.manualRefs.has(existing.id)) this.lastAutoRefId = null;
@@ -959,7 +523,7 @@ export class CopsidianView extends ItemView {
 				allItems.push({ value: n.path, label: `@${n.name}`, description: n.path });
 			}
 		} else {
-			for (const cmd of this.state.availableCommands) {
+			for (const cmd of this.controller.state.availableCommands) {
 				allItems.push({ value: cmd.name, label: `/${cmd.name}`, description: cmd.description });
 			}
 			if (allItems.length === 0) {
@@ -999,6 +563,6 @@ export class CopsidianView extends ItemView {
 
 	async requestInlineEdit(selected: string, editor: import('obsidian').Editor): Promise<void> {
 		const prompt = this.inlineEditPanel.request(selected, editor);
-		await this.send(prompt, []);
+		await this.send(prompt);
 	}
 }

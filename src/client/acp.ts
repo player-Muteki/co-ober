@@ -24,7 +24,7 @@ import { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
 import { SessionUpdateNormalizer } from './sessionUpdateNormalizer';
 import type { NormalizedUpdate } from '../types';
 
-export const CLIENT_VERSION = '0.0.26';
+export const CLIENT_VERSION = '0.0.28';
 
 export interface AcpSessionMeta {
   availableCommands: AvailableCommand[];
@@ -53,7 +53,7 @@ export function parseSessionUpdate(u: Record<string, unknown> | undefined | null
     case 'tool_call':
       return { sessionUpdate: 'tool_call', toolCallId: u.toolCallId as string, title: u.title as string, kind: u.kind as import('../types').ToolKind, status: (u.status as string) ?? 'pending', rawInput: u.rawInput as Record<string, unknown>, locations: u.locations as { path: string }[] };
     case 'tool_call_update':
-      return { sessionUpdate: 'tool_call_update', toolCallId: u.toolCallId as string, status: u.status as 'pending' | 'in_progress' | 'completed' | 'failed', kind: u.kind as import('../types').ToolKind, title: u.title as string, rawInput: u.rawInput as Record<string, unknown>, rawOutput: u.rawOutput as Record<string, unknown>, content: (u.content as any[])?.map((c: any) => c.type === 'terminal' ? { type: 'terminal', terminalId: c.terminalId } : c) as import('../types').ToolCallContent[] };
+      return { sessionUpdate: 'tool_call_update', toolCallId: u.toolCallId as string, status: u.status as 'pending' | 'in_progress' | 'completed' | 'failed', kind: u.kind as import('../types').ToolKind, title: u.title as string, rawInput: u.rawInput as Record<string, unknown>, rawOutput: u.rawOutput as Record<string, unknown>, content: (u.content as Record<string, unknown>[])?.map((c) => c.type === 'terminal' ? { type: 'terminal', terminalId: c.terminalId } : c) as import('../types').ToolCallContent[] };
     case 'plan':
       return { sessionUpdate: 'plan', entries: (u.entries ?? []) as { content: string; status: string; priority: string }[] };
     case 'user_message_chunk':
@@ -643,25 +643,24 @@ export function buildMcpServers(servers: McpServerConfig[]): AcpMcpServer[] {
   return servers
     .filter((server) => server.enabled && server.name.trim())
     .map((server) => {
-      const type = server.type ?? 'stdio';
-      if (type === 'stdio') {
-        const cmd = 'command' in server ? (server as any).command : '';
+      if (server.type === 'stdio') {
+        const cmd = server.command;
         if (!cmd || !cmd.trim()) return null;
         return {
           type: 'stdio',
           name: server.name.trim(),
           command: cmd.trim(),
-          args: ('args' in server ? (server as any).args : []).map((arg: string) => arg.trim()).filter(Boolean),
-          env: ('env' in server ? (server as any).env : []) ?? [],
+          args: (server.args ?? []).map((arg) => arg.trim()).filter(Boolean),
+          env: server.env ?? [],
         } satisfies AcpMcpServer;
       } else {
-        const url = 'url' in server ? (server as any).url : '';
+        const url = server.url;
         if (!url || !url.trim()) return null;
         return {
-          type,
+          type: server.type,
           name: server.name.trim(),
           url: url.trim(),
-          headers: ('headers' in server ? (server as any).headers : []) ?? [],
+          headers: server.headers ?? [],
         } satisfies AcpMcpServer;
       }
     })
