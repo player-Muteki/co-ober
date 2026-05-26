@@ -1,4 +1,4 @@
-import type { SessionUpdate, SessionConfigOption, ModeOption, AvailableCommand, ModelOption } from '../types';
+import type { NormalizedUpdate, SessionConfigOption, ModeOption, AvailableCommand, ModelOption } from '../types';
 import type { ChatState } from './chatState';
 import type { ChatRenderer } from '../view/renderer';
 import type { SyncEngine } from '../sync/engine';
@@ -22,54 +22,45 @@ export interface StreamControllerDeps {
 export class StreamController {
 	private deps: StreamControllerDeps;
 	private syncedToolCalls = new Set<string>();
-	private pendingToolInputs = new Map<string, Record<string, unknown>>();
-	private pendingToolKinds = new Map<string, string>();
 	private assistantMessageIndex = new Map<string, number>();
-	private assistantMessageBuffer = new Map<string, string>();
 	private saveTimer: number | null = null;
 
 	constructor(deps: StreamControllerDeps) {
 		this.deps = deps;
 	}
 
-	handleChunk(ch: SessionUpdate): void {
+	handleChunk(ch: NormalizedUpdate): void {
 		const { state, renderer } = this.deps;
 
-		switch (ch.sessionUpdate) {
-			case 'agent_message_chunk': {
+		switch (ch.kind) {
+			case 'message_chunk': {
+				if (ch.role === 'user') break;
 				renderer.removeAssistantPlaceholder();
-				const text = ch.content.text;
-				renderer.appendText(text, ch.messageId);
-				this.saveAssistantChunk(ch.messageId, text, 'text');
+				if (ch.role === 'agent') {
+					renderer.appendText(ch.chunkText, ch.messageId);
+					this.saveAssistantChunk(ch.messageId, ch.accumulatedText, 'text');
+				} else if (ch.role === 'thought') {
+					renderer.appendThinking(ch.chunkText, ch.messageId);
+					this.saveAssistantChunk(ch.messageId, ch.accumulatedText, 'thinking');
+				}
 				break;
 			}
-			case 'agent_thought_chunk': {
-				renderer.removeAssistantPlaceholder();
-				const text = ch.content.text;
-				renderer.appendThinking(text, ch.messageId);
-				this.saveAssistantChunk(ch.messageId, text, 'thinking');
-				break;
-			}
-			case 'tool_call': {
-				renderer.addToolCall(ch.toolCallId, ch.title, ch.kind ?? 'other', ch.rawInput);
-				if (ch.rawInput) this.pendingToolInputs.set(ch.toolCallId, ch.rawInput);
-				if (ch.kind) this.pendingToolKinds.set(ch.toolCallId, ch.kind);
-				break;
-			}
-			case 'tool_call_update': {
-				const input = ch.rawInput ?? this.pendingToolInputs.get(ch.toolCallId);
-				const kind = ch.kind ?? this.pendingToolKinds.get(ch.toolCallId);
-				renderer.updateToolCall(ch.toolCallId, ch.status, ch.rawOutput, ch.content);
+			case 'tool_call_snapshot': {
+				if (ch.status === 'pending') {
+					renderer.addToolCall(ch.toolCallId, ch.title, ch.toolKind, ch.rawInput);
+				} else {
+					renderer.updateToolCall(ch.toolCallId, ch.status, ch.rawOutput, ch.contents);
+				}
 
 				if ((ch.status === 'completed' || ch.status === 'failed') && !this.syncedToolCalls.has(ch.toolCallId)) {
 					this.syncedToolCalls.add(ch.toolCallId);
-					const firstContent = ch.content?.[0];
+					const firstContent = ch.contents?.[0];
 					const contentText = firstContent?.type === 'content' && firstContent.content?.type === 'text' ? firstContent.content.text : '';
 					const ctx: SyncContext = {
 						toolCallId: ch.toolCallId,
-						toolName: kind ?? 'unknown',
+						toolName: ch.toolKind,
 						toolStatus: ch.status,
-						rawInput: input,
+						rawInput: ch.rawInput,
 						rawOutput: ch.rawOutput,
 						content: contentText,
 					};
@@ -90,17 +81,17 @@ export class StreamController {
 				renderer.setPlanEntries(ch.entries);
 				break;
 			}
-			case 'config_option_update': {
+			case 'config_options': {
 				state.configOptions = ch.configOptions;
 				this.deps.onConfigUpdate?.(ch.configOptions);
 				break;
 			}
-			case 'available_commands_update': {
-				state.availableCommands = ch.availableCommands;
-				this.deps.onCommandsUpdate?.(ch.availableCommands);
+			case 'commands': {
+				state.availableCommands = ch.commands;
+				this.deps.onCommandsUpdate?.(ch.commands);
 				break;
 			}
-			case 'usage_update': {
+			case 'usage': {
 				state.usage = {
 					totalTokens: ch.totalTokens ?? ch.used ?? 0,
 					inputTokens: ch.inputTokens ?? 0,
@@ -110,19 +101,19 @@ export class StreamController {
 				};
 				break;
 			}
-			case 'current_mode_update': {
-				if (ch.currentModeId !== undefined) state.currentModeId = ch.currentModeId;
+			case 'mode': {
+				if (ch.currentModeId !== null) state.currentModeId = ch.currentModeId;
 				if (ch.availableModes) state.availableModes = ch.availableModes;
 				this.deps.onModeUpdate?.(state.currentModeId, state.availableModes);
 				break;
 			}
-			case 'current_model_update': {
-				if (ch.currentModelId !== undefined) state.currentModelId = ch.currentModelId;
+			case 'model': {
+				if (ch.currentModelId !== null) state.currentModelId = ch.currentModelId;
 				if (ch.availableModels) state.availableModels = ch.availableModels;
 				this.deps.onModelsUpdate?.(state.currentModelId, state.availableModels);
 				break;
 			}
-			case 'session_info_update': {
+			case 'session_info': {
 				const sid = ch.sessionId ?? this.deps.getSessionId();
 				if (sid && ch.title) {
 					const session = this.deps.sessionStore.get(sid);
@@ -133,18 +124,12 @@ export class StreamController {
 				}
 				break;
 			}
-			case 'user_message_chunk': {
-				break;
-			}
 		}
 	}
 
 	reset(): void {
 		this.syncedToolCalls.clear();
-		this.pendingToolInputs.clear();
-		this.pendingToolKinds.clear();
 		this.assistantMessageIndex.clear();
-		this.assistantMessageBuffer.clear();
 		this.deps.state.resetStreamingState();
 		if (this.saveTimer !== null) {
 			clearTimeout(this.saveTimer);
@@ -152,14 +137,12 @@ export class StreamController {
 		}
 	}
 
-	private saveAssistantChunk(messageId: string, chunk: string, type: 'text' | 'thinking'): void {
+	private saveAssistantChunk(messageId: string, accumulatedText: string, type: 'text' | 'thinking'): void {
 		const sessionId = this.deps.getSessionId();
 		if (!sessionId) return;
 
 		const key = `${sessionId}:${messageId}:${type}`;
 		const index = this.assistantMessageIndex.get(key);
-		const buffer = (this.assistantMessageBuffer.get(key) ?? '') + chunk;
-		this.assistantMessageBuffer.set(key, buffer);
 
 		if (index === undefined) {
 			this.deps.sessionStore.getOrCreate(sessionId);
@@ -167,7 +150,7 @@ export class StreamController {
 			if (!session) return;
 			session.messages.push({
 				role: 'assistant',
-				content: buffer,
+				content: accumulatedText,
 				type,
 				timestamp: Date.now(),
 			});
@@ -177,7 +160,7 @@ export class StreamController {
 			const session = this.deps.sessionStore.get(sessionId);
 			if (!session) return;
 			const msg = session.messages[index];
-			if (msg) msg.content = buffer;
+			if (msg) msg.content = accumulatedText;
 			session.updatedAt = Date.now();
 		}
 		this.deps.sessionStore.setActive(sessionId);

@@ -21,8 +21,10 @@ import type { SessionMeta } from '../types';
 import type { AcpResponse } from '../types';
 import { t } from '../i18n/index';
 import { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
+import { SessionUpdateNormalizer } from './sessionUpdateNormalizer';
+import type { NormalizedUpdate } from '../types';
 
-export const CLIENT_VERSION = '0.0.25';
+export const CLIENT_VERSION = '0.0.26';
 
 export interface AcpSessionMeta {
   availableCommands: AvailableCommand[];
@@ -191,7 +193,8 @@ export class AcpClient implements OpencodeClient {
   private transport: AcpJsonRpcTransport | null = null;
   private agentCapabilities: AgentCapabilities | null = null;
   private activeStreamSessionId: string | null = null;
-  private chunkHandler: ((update: SessionUpdate) => void) | null = null;
+  private chunkHandler: ((update: NormalizedUpdate) => void) | null = null;
+  private normalizer = new SessionUpdateNormalizer();
   private sessionId_: string | null = null;
   private cmdPath: string;
   private cwd?: string;
@@ -256,7 +259,10 @@ export class AcpClient implements OpencodeClient {
         const update = this.parseUpdate(p?.update as Record<string, unknown> | undefined);
         if (update) {
           this.applySessionUpdate(update);
-          if (this.chunkHandler) this.chunkHandler(update);
+          if (this.chunkHandler) {
+            const norm = this.normalizer.normalize(update);
+            if (norm) this.chunkHandler(norm);
+          }
         }
       });
 
@@ -340,7 +346,8 @@ export class AcpClient implements OpencodeClient {
     return configOptions;
   }
 
-  sendMessage(id: string, parts: PromptPart[], onChunk: (u: SessionUpdate) => void): Promise<AcpResponse> {
+  sendMessage(id: string, parts: PromptPart[], onChunk: (u: NormalizedUpdate) => void): Promise<AcpResponse> {
+    this.normalizer.reset();
     this.activeStreamSessionId = id;
     this.chunkHandler = onChunk;
     return (this.requestWithFallback('prompt', { sessionId: id, prompt: parts }) as Promise<AcpResponse>)

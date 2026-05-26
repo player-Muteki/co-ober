@@ -356,7 +356,50 @@ describe('AcpClient server request handling', () => {
   });
 
   it('uses the current release version for ACP clientInfo', () => {
-    expect(CLIENT_VERSION).toBe('0.0.25');
+    expect(CLIENT_VERSION).toBe('0.0.26');
+  });
+});
+
+describe('sendMessage flow', () => {
+  it('normalizes session updates and passes them to chunkHandler', async () => {
+    const client = new AcpClient('opencode');
+    Reflect.set(client, 'transport', { request: vi.fn().mockResolvedValue({}) });
+
+    // Access internal methods
+    const chunkHandler = vi.fn();
+    // Simulate sendMessage state
+    client.sendMessage('s1', [], chunkHandler).catch(() => {});
+
+    // Call the mock response block of the internal session update apply logic
+    // we bypass transport and just call the chunkHandler directly as transport notification does
+    const update = {
+      sessionUpdate: 'agent_message_chunk',
+      messageId: 'm1',
+      content: { type: 'text', text: 'Hello' }
+    };
+
+    // Replicate the onNotification('session/update') logic:
+    const p = { update };
+    const parsed = (client as any).parseUpdate(p.update);
+    if (parsed) {
+      (client as any).applySessionUpdate(parsed);
+      const internalHandler = (client as any).chunkHandler;
+      if (internalHandler) {
+        const norm = (client as any).normalizer.normalize(parsed);
+        if (norm) internalHandler(norm);
+      }
+    }
+
+    expect(chunkHandler).toHaveBeenCalledTimes(1);
+    expect(chunkHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'message_chunk',
+        role: 'agent',
+        messageId: 'm1',
+        chunkText: 'Hello',
+        accumulatedText: 'Hello'
+      })
+    );
   });
 });
 
