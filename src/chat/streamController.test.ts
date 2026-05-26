@@ -38,26 +38,26 @@ describe('StreamController', () => {
 		vi.useFakeTimers();
 	});
 
-	it('handles agent_message_chunk', () => {
+	it('handles message_chunk with role agent', () => {
 		const session: { messages: Array<{ role: string; content: string; type: string }>; updatedAt: number } = { messages: [], updatedAt: 0 };
 		deps.sessionStore.get.mockReturnValue(session);
 
-		controller.handleChunk({ sessionUpdate: 'agent_message_chunk', messageId: 'msg-1', content: { type: 'text', text: 'Hello' } });
+		controller.handleChunk({ kind: 'message_chunk', role: 'agent', messageId: 'msg-1', chunkText: 'Hello', accumulatedText: 'Hello' });
 
 		expect(deps.renderer.removeAssistantPlaceholder).toHaveBeenCalled();
 		expect(deps.renderer.appendText).toHaveBeenCalledWith('Hello', 'msg-1');
 		expect(session.messages).toHaveLength(1);
 		expect(session.messages[0]).toEqual(expect.objectContaining({ role: 'assistant', content: 'Hello', type: 'text' }));
 
-		controller.handleChunk({ sessionUpdate: 'agent_message_chunk', messageId: 'msg-1', content: { type: 'text', text: ' world' } });
+		controller.handleChunk({ kind: 'message_chunk', role: 'agent', messageId: 'msg-1', chunkText: ' world', accumulatedText: 'Hello world' });
 		expect(session.messages[0].content).toBe('Hello world');
 	});
 
-	it('handles agent_thought_chunk', () => {
+	it('handles message_chunk with role thought', () => {
 		const session = { messages: [], updatedAt: 0 };
 		deps.sessionStore.get.mockReturnValue(session);
 
-		controller.handleChunk({ sessionUpdate: 'agent_thought_chunk', messageId: 'msg-1', content: { type: 'text', text: 'Thinking...' } });
+		controller.handleChunk({ kind: 'message_chunk', role: 'thought', messageId: 'msg-1', chunkText: 'Thinking...', accumulatedText: 'Thinking...' });
 
 		expect(deps.renderer.removeAssistantPlaceholder).toHaveBeenCalled();
 		expect(deps.renderer.appendThinking).toHaveBeenCalledWith('Thinking...', 'msg-1');
@@ -65,17 +65,17 @@ describe('StreamController', () => {
 		expect(session.messages[0]).toEqual(expect.objectContaining({ role: 'assistant', content: 'Thinking...', type: 'thinking' }));
 	});
 
-	it('handles tool_call', () => {
-		controller.handleChunk({ sessionUpdate: 'tool_call', toolCallId: 'call-1', title: 'Search', kind: 'search', rawInput: { q: 'test' } });
+	it('handles tool_call_snapshot pending', () => {
+		controller.handleChunk({ kind: 'tool_call_snapshot', toolCallId: 'call-1', title: 'Search', toolKind: 'search', status: 'pending', rawInput: { q: 'test' }, contents: [] });
 		expect(deps.renderer.addToolCall).toHaveBeenCalledWith('call-1', 'Search', 'search', { q: 'test' });
 	});
 
-	it('handles tool_call_update and processes syncEngine on completion', async () => {
+	it('handles tool_call_snapshot completed and processes syncEngine', async () => {
 		// Mock tool_call to set kind and input
-		controller.handleChunk({ sessionUpdate: 'tool_call', toolCallId: 'call-1', title: 'Search', kind: 'search', rawInput: { q: 'test' } });
+		controller.handleChunk({ kind: 'tool_call_snapshot', toolCallId: 'call-1', title: 'Search', toolKind: 'search', status: 'pending', rawInput: { q: 'test' }, contents: [] });
 
 		const content = [{ type: 'content' as const, content: { type: 'text' as const, text: 'Result' } }];
-		controller.handleChunk({ sessionUpdate: 'tool_call_update', toolCallId: 'call-1', status: 'completed', rawOutput: { res: 'ok' }, content });
+		controller.handleChunk({ kind: 'tool_call_snapshot', toolCallId: 'call-1', title: 'Search', toolKind: 'search', status: 'completed', rawInput: { q: 'test' }, rawOutput: { res: 'ok' }, contents: content });
 
 		expect(deps.renderer.updateToolCall).toHaveBeenCalledWith('call-1', 'completed', { res: 'ok' }, content);
 
@@ -93,20 +93,19 @@ describe('StreamController', () => {
 		expect(deps.onSyncFailure).not.toHaveBeenCalled();
 	});
 
-	it('handles tool_call_update with sync failure', async () => {
-		controller.handleChunk({ sessionUpdate: 'tool_call', toolCallId: 'call-2', title: 'Sync', kind: 'other', rawInput: {} });
+	it('handles tool_call_snapshot with sync failure', async () => {
 		deps.syncEngine.process.mockResolvedValue([{ rule: { toolName: 'sync' }, error: new Error('Write error') }]);
 
-		controller.handleChunk({ sessionUpdate: 'tool_call_update', toolCallId: 'call-2', status: 'completed' });
+		controller.handleChunk({ kind: 'tool_call_snapshot', toolCallId: 'call-2', title: 'Sync', toolKind: 'other', status: 'completed', contents: [] });
 
 		await Promise.resolve();
 		// The error message uses i18n t().sync.ruleFailed
 		expect(deps.onSyncFailure).toHaveBeenCalled();
 	});
 
-	it('handles tool_call_update with syncEngine rejection', async () => {
+	it('handles tool_call_snapshot with syncEngine rejection', async () => {
 		deps.syncEngine.process.mockRejectedValue(new Error('Fatal error'));
-		controller.handleChunk({ sessionUpdate: 'tool_call_update', toolCallId: 'call-3', status: 'completed' });
+		controller.handleChunk({ kind: 'tool_call_snapshot', toolCallId: 'call-3', title: 'Sync', toolKind: 'other', status: 'completed', contents: [] });
 
 		// Flush microtasks
 		for (let i = 0; i < 5; i++) await Promise.resolve();
@@ -114,60 +113,60 @@ describe('StreamController', () => {
 	});
 
 	it('handles plan chunk', () => {
-		controller.handleChunk({ sessionUpdate: 'plan', entries: [] });
+		controller.handleChunk({ kind: 'plan', entries: [] });
 		expect(deps.renderer.setPlanEntries).toHaveBeenCalledWith([]);
 	});
 
-	it('handles config_option_update', () => {
-		controller.handleChunk({ sessionUpdate: 'config_option_update', configOptions: [] });
+	it('handles config_options update', () => {
+		controller.handleChunk({ kind: 'config_options', configOptions: [] });
 		expect(deps.state.configOptions).toEqual([]);
 		expect(deps.onConfigUpdate).toHaveBeenCalledWith([]);
 	});
 
-	it('handles available_commands_update', () => {
-		controller.handleChunk({ sessionUpdate: 'available_commands_update', availableCommands: [] });
+	it('handles available commands update', () => {
+		controller.handleChunk({ kind: 'commands', commands: [] });
 		expect(deps.state.availableCommands).toEqual([]);
 		expect(deps.onCommandsUpdate).toHaveBeenCalledWith([]);
 	});
 
-	it('handles usage_update', () => {
-		controller.handleChunk({ sessionUpdate: 'usage_update', totalTokens: 100, inputTokens: 50, outputTokens: 50 });
+	it('handles usage update', () => {
+		controller.handleChunk({ kind: 'usage', totalTokens: 100, inputTokens: 50, outputTokens: 50 });
 		expect(deps.state.usage).toEqual({ totalTokens: 100, inputTokens: 50, outputTokens: 50, thoughtTokens: undefined, cost: undefined });
 	});
 
-	it('handles current_mode_update', () => {
-		controller.handleChunk({ sessionUpdate: 'current_mode_update', currentModeId: 'mode-1', availableModes: [] });
+	it('handles mode update', () => {
+		controller.handleChunk({ kind: 'mode', currentModeId: 'mode-1', availableModes: [] });
 		expect(deps.state.currentModeId).toBe('mode-1');
 		expect(deps.state.availableModes).toEqual([]);
 		expect(deps.onModeUpdate).toHaveBeenCalledWith('mode-1', []);
 	});
 
-	it('handles current_model_update', () => {
-		controller.handleChunk({ sessionUpdate: 'current_model_update', currentModelId: 'model-1', availableModels: [] });
+	it('handles model update', () => {
+		controller.handleChunk({ kind: 'model', currentModelId: 'model-1', availableModels: [] });
 		expect(deps.state.currentModelId).toBe('model-1');
 		expect(deps.state.availableModels).toEqual([]);
 		expect(deps.onModelsUpdate).toHaveBeenCalledWith('model-1', []);
 	});
 
-	it('handles session_info_update', () => {
+	it('handles session_info', () => {
 		const session = { title: 'Old Title' };
 		deps.sessionStore.get.mockReturnValue(session);
-		controller.handleChunk({ sessionUpdate: 'session_info_update', title: 'New Title' });
+		controller.handleChunk({ kind: 'session_info', title: 'New Title' });
 		expect(session.title).toBe('New Title');
 	});
 
-	it('handles session_info_update with missing sessionId', () => {
+	it('handles session_info with missing sessionId', () => {
 		deps.getSessionId.mockReturnValue(null);
 		const session = { title: 'Old Title' };
 		deps.sessionStore.get.mockReturnValue(session);
-		controller.handleChunk({ sessionUpdate: 'session_info_update', title: 'New Title' });
+		controller.handleChunk({ kind: 'session_info', title: 'New Title' });
 		// should safely do nothing
 		expect(session.title).toBe('Old Title');
 	});
 
-	it('handles user_message_chunk', () => {
+	it('handles message_chunk with role user', () => {
 		// Just for branch coverage
-		controller.handleChunk({ sessionUpdate: 'user_message_chunk', messageId: 'msg-1', content: { type: 'text', text: 'Hello' } });
+		controller.handleChunk({ kind: 'message_chunk', role: 'user', messageId: 'msg-1', chunkText: 'Hello', accumulatedText: 'Hello' });
 	});
 
 	it('saveMessage appends a new message and schedules a save', () => {
@@ -187,13 +186,13 @@ describe('StreamController', () => {
 
 	it('saveAssistantChunk skips if no sessionId', () => {
 		deps.getSessionId.mockReturnValue(null);
-		controller.handleChunk({ sessionUpdate: 'agent_message_chunk', messageId: 'msg-1', content: { type: 'text', text: 'Hello' } });
+		controller.handleChunk({ kind: 'message_chunk', role: 'agent', messageId: 'msg-1', chunkText: 'Hello', accumulatedText: 'Hello' });
 		expect(deps.sessionStore.getOrCreate).not.toHaveBeenCalled();
 	});
 
 	it('saveAssistantChunk handles missing session in store', () => {
 		deps.sessionStore.get.mockReturnValue(undefined);
-		controller.handleChunk({ sessionUpdate: 'agent_message_chunk', messageId: 'msg-1', content: { type: 'text', text: 'Hello' } });
+		controller.handleChunk({ kind: 'message_chunk', role: 'agent', messageId: 'msg-1', chunkText: 'Hello', accumulatedText: 'Hello' });
 		// Only check it doesn't crash
 		expect(deps.sessionStore.setActive).not.toHaveBeenCalled();
 	});
@@ -201,10 +200,10 @@ describe('StreamController', () => {
 	it('saveAssistantChunk handles missing session in store on subsequent chunks', () => {
 		const session = { messages: [], updatedAt: 0 };
 		deps.sessionStore.get.mockReturnValueOnce(session);
-		controller.handleChunk({ sessionUpdate: 'agent_message_chunk', messageId: 'msg-1', content: { type: 'text', text: 'Hello' } });
+		controller.handleChunk({ kind: 'message_chunk', role: 'agent', messageId: 'msg-1', chunkText: 'Hello', accumulatedText: 'Hello' });
 
 		deps.sessionStore.get.mockReturnValueOnce(undefined);
-		controller.handleChunk({ sessionUpdate: 'agent_message_chunk', messageId: 'msg-1', content: { type: 'text', text: ' World' } });
+		controller.handleChunk({ kind: 'message_chunk', role: 'agent', messageId: 'msg-1', chunkText: ' World', accumulatedText: 'Hello World' });
 		// Doesn't crash
 	});
 

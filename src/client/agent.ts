@@ -1,5 +1,5 @@
 import type {
-  SessionUpdate,
+  NormalizedUpdate,
   PromptPart,
   SessionConfigOption,
   PermissionRequest,
@@ -37,7 +37,7 @@ export class AgentRuntime implements OpencodeClient {
     return this.acp.setConfigOption(id, cid, val);
   }
 
-  async sendMessage(id: string, parts: PromptPart[], handler: (u: SessionUpdate) => void): Promise<AcpResponse> {
+  async sendMessage(id: string, parts: PromptPart[], handler: (u: NormalizedUpdate) => void): Promise<AcpResponse> {
     const timeoutMs = 5 * 60 * 1000; // 5 minutes idle timeout
     return new Promise<AcpResponse>((resolve, reject) => {
       let timeout: NodeJS.Timeout;
@@ -52,7 +52,7 @@ export class AgentRuntime implements OpencodeClient {
 
       resetTimeout();
 
-      const heartbeatHandler = (u: SessionUpdate) => {
+      const heartbeatHandler = (u: NormalizedUpdate) => {
         resetTimeout();
         handler(u);
       };

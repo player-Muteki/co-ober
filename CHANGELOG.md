@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.26 - 2026-05-26
+
+### Added
+- Introduce `SessionUpdateNormalizer` in client to encapsulate and normalize session updates and chunks into `NormalizedUpdate` states.
+- Offload chunk aggregation logic from `StreamController` to client-side.
+
 ## 0.0.25 - 2026-05-26
 
 ### Tooling

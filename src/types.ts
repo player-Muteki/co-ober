@@ -117,6 +117,17 @@ export type SessionUpdate =
   | { sessionUpdate: 'session_info_update'; sessionId?: string; title?: string; cwd?: string }
   | { sessionUpdate: 'usage_update'; used?: number; size?: number; totalTokens?: number; inputTokens?: number; outputTokens?: number; thoughtTokens?: number; cost?: { amount: number; currency: string } };
 
+export type NormalizedUpdate =
+  | { kind: 'message_chunk'; role: 'user' | 'agent' | 'thought'; messageId: string; chunkText: string; accumulatedText: string }
+  | { kind: 'tool_call_snapshot'; toolCallId: string; title: string; toolKind: ToolKind; status: 'pending' | 'in_progress' | 'completed' | 'failed'; rawInput?: Record<string, unknown>; rawOutput?: Record<string, unknown>; locations?: { path: string }[]; contents: ToolCallContent[] }
+  | { kind: 'plan'; entries: { content: string; status: string; priority: string }[] }
+  | { kind: 'commands'; commands: AvailableCommand[] }
+  | { kind: 'mode'; currentModeId: string | null; availableModes: ModeOption[] }
+  | { kind: 'model'; currentModelId: string | null; availableModels: ModelOption[] }
+  | { kind: 'config_options'; configOptions: SessionConfigOption[] }
+  | { kind: 'session_info'; sessionId?: string; title?: string; cwd?: string }
+  | { kind: 'usage'; totalTokens?: number; inputTokens?: number; outputTokens?: number; thoughtTokens?: number; cost?: { amount: number; currency: string }; used?: number; size?: number };
+
 export interface AcpResponse {
   stopReason: 'end_turn' | 'max_tokens' | 'tool_calls' | 'interrupted';
   usage?: {

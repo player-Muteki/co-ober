@@ -1,7 +1,7 @@
 import { ItemView, WorkspaceLeaf, TFile } from 'obsidian';
 import type CopsidianPlugin from '../main';
 import { VIEW_TYPE } from '../types';
-import type { SessionUpdate, ContextRef, PromptPart } from '../types';
+import type { NormalizedUpdate, ContextRef, PromptPart } from '../types';
 import { t } from '../i18n/index';
 import { ChatRenderer } from './renderer';
 import { ChatInput } from '../chat/input';
@@ -630,7 +630,7 @@ export class CopsidianView extends ItemView {
 			const parts = await this.buildParts(text, refs);
 			if (this.state.sessionId !== sessionId || !this.busy) return;
 			this.clearPendingImageChips();
-			const response = await c.sendMessage(sessionId, parts, (ch: SessionUpdate) => {
+			const response = await c.sendMessage(sessionId, parts, (ch: NormalizedUpdate) => {
 				if (!this.busy || this.state.sessionId !== sessionId) return;
 				this.streamCtrl.handleChunk(ch);
 			});
