@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { setLocale, t } from './index';
+import { getLocale, setLocale, t } from './index';
 
 describe('i18n locale switching', () => {
   it('switches runtime labels between English and Chinese', () => {
@@ -19,6 +19,16 @@ describe('i18n locale switching', () => {
   it('falls back to English for unknown locales', () => {
     setLocale('unknown');
     expect(t().settings.appearance.language).toBe('Language');
+  });
+
+  it('returns the current locale via getLocale', () => {
+    setLocale('en');
+    expect(getLocale()).toBe(t());
+    expect(getLocale().settings.appearance.language).toBe('Language');
+
+    setLocale('zh');
+    expect(getLocale()).toBe(t());
+    expect(getLocale().settings.appearance.language).toBe('语言');
   });
 
   it('keeps all release-critical i18n surfaces addressable', () => {
