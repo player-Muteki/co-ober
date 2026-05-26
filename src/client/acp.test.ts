@@ -1,3 +1,4 @@
+import { AcpProtocolError } from './AcpErrors';
 import { describe, it, expect, vi } from 'vitest';
 import { AcpClient, CLIENT_VERSION, buildMcpServers, parseSessionUpdate, extractSessionSnapshot, extractConfigMeta, mergeAvailableCommands } from './acp';
 import type { SessionUpdate } from '../types';
@@ -309,15 +310,15 @@ describe('buildMcpServers', () => {
 describe('AcpClient session loading', () => {
   it('passes enabled MCP servers when loading a session', async () => {
     const client = new AcpClient('opencode');
-    const request = vi.fn().mockResolvedValue({ sessionId: 's1' });
-    Reflect.set(client, 'request', request);
+    const requestWithFallback = vi.fn().mockResolvedValue({ sessionId: 's1' });
+    Reflect.set(client, 'requestWithFallback', requestWithFallback);
 
     await client.loadSession('s1', '/vault', [
       { type: 'stdio', id: 'fs', enabled: true, name: ' filesystem ', command: ' npx ', args: [' -y ', '', '@modelcontextprotocol/server-filesystem'] },
       { type: 'stdio', id: 'off', enabled: false, name: 'disabled', command: 'npx', args: [] },
     ]);
 
-    expect(request).toHaveBeenCalledWith('session/load', {
+    expect(requestWithFallback).toHaveBeenCalledWith('loadSession', {
       sessionId: 's1',
       cwd: '/vault',
       mcpServers: [
@@ -355,6 +356,77 @@ describe('AcpClient server request handling', () => {
   });
 
   it('uses the current release version for ACP clientInfo', () => {
-    expect(CLIENT_VERSION).toBe('0.0.22');
+    expect(CLIENT_VERSION).toBe('0.0.23');
+  });
+});
+
+describe('requestWithFallback', () => {
+  it('falls back to second candidate when first throws -32601', async () => {
+    const client = new AcpClient('opencode');
+    const transport = {
+      request: vi.fn()
+        .mockRejectedValueOnce(new AcpProtocolError('Method not found', 'session/new', -32601))
+        .mockResolvedValueOnce({ sessionId: 's2' })
+    };
+    Reflect.set(client, 'transport', transport);
+
+    const result = await Reflect.get(client, 'requestWithFallback').call(client, 'newSession', { cwd: '/test' });
+
+    expect(transport.request).toHaveBeenCalledTimes(2);
+    expect(transport.request).toHaveBeenNthCalledWith(1, 'session/new', { cwd: '/test' }, undefined);
+    expect(transport.request).toHaveBeenNthCalledWith(2, 'newSession', { cwd: '/test' }, undefined);
+    expect(result).toEqual({ sessionId: 's2' });
+  });
+
+  it('uses cached candidate without retrying first', async () => {
+    const client = new AcpClient('opencode');
+    const transport = {
+      request: vi.fn()
+        .mockRejectedValueOnce(new AcpProtocolError('Method not found', 'session/new', -32601))
+        .mockResolvedValueOnce({ sessionId: 's2' })
+        .mockResolvedValueOnce({ sessionId: 's3' })
+    };
+    Reflect.set(client, 'transport', transport);
+
+    // First call caches the successful candidate
+    await Reflect.get(client, 'requestWithFallback').call(client, 'newSession', { cwd: '/test' });
+
+    // Second call should use 'newSession' directly
+    const result2 = await Reflect.get(client, 'requestWithFallback').call(client, 'newSession', { cwd: '/test2' });
+
+    expect(transport.request).toHaveBeenCalledTimes(3);
+    expect(transport.request).toHaveBeenNthCalledWith(3, 'newSession', { cwd: '/test2' }, undefined);
+    expect(result2).toEqual({ sessionId: 's3' });
+  });
+
+  it('does not trigger fallback when first candidate throws a different error', async () => {
+    const client = new AcpClient('opencode');
+    const expectedError = new AcpProtocolError('Server error', 'session/new', -32000);
+    const transport = {
+      request: vi.fn().mockRejectedValueOnce(expectedError)
+    };
+    Reflect.set(client, 'transport', transport);
+
+    await expect(Reflect.get(client, 'requestWithFallback').call(client, 'newSession', { cwd: '/test' }))
+      .rejects.toThrow(expectedError);
+
+    expect(transport.request).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws the original -32601 error if all candidates fail', async () => {
+    const client = new AcpClient('opencode');
+    const expectedError1 = new AcpProtocolError('Method not found', 'session/new', -32601);
+    const expectedError2 = new AcpProtocolError('Method not found', 'newSession', -32601);
+    const transport = {
+      request: vi.fn()
+        .mockRejectedValueOnce(expectedError1)
+        .mockRejectedValueOnce(expectedError2)
+    };
+    Reflect.set(client, 'transport', transport);
+
+    await expect(Reflect.get(client, 'requestWithFallback').call(client, 'newSession', { cwd: '/test' }))
+      .rejects.toThrow(expectedError2);
+
+    expect(transport.request).toHaveBeenCalledTimes(2);
   });
 });

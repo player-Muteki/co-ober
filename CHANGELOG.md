@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.0.23 - 2026-05-26
+
+### Added
+- Add `requestWithFallback` to `AcpClient` to gracefully handle method name changes across different OpenCode CLI versions, falling back to legacy JSON-RPC method aliases when encountering `-32601` (Method not found) errors. Cache successful method names to eliminate redundant fallback attempts on subsequent calls.
+
 ## 0.0.22
 
 ### Added

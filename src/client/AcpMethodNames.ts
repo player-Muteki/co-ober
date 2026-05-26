@@ -7,7 +7,12 @@ export type AcpLogicalMethod =
   | 'prompt'
   | 'cancel'
   | 'setMode'
-  | 'setConfigOption';
+  | 'setConfigOption'
+  | 'closeSession'
+  | 'forkSession'
+  | 'resumeSession'
+  | 'setModel'
+  | 'compact';
 
 const ACP_METHOD_CANDIDATES: Record<AcpLogicalMethod, readonly string[]> = {
   initialize: ['initialize'],
@@ -19,6 +24,11 @@ const ACP_METHOD_CANDIDATES: Record<AcpLogicalMethod, readonly string[]> = {
   cancel: ['session/cancel', 'cancel'],
   setMode: ['session/set_mode', 'setSessionMode'],
   setConfigOption: ['session/set_config_option', 'setSessionConfigOption'],
+  closeSession: ['session/close', 'closeSession'],
+  forkSession: ['session/unstable_fork', 'forkSession'],
+  resumeSession: ['session/resume', 'resumeSession'],
+  setModel: ['session/set_model', 'setSessionModel'],
+  compact: ['session/compact', 'compactSession'],
 } as const;
 
 export const ACP_SERVER_NOTIFICATION_ALIASES = {

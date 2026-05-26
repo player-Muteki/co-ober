@@ -4,7 +4,7 @@
   "description": "Embed the complete OpenCode agent inside Obsidian sidebar",
   "minAppVersion": "1.7.0",
   "isDesktopOnly": true,
-  "version": "0.0.22",
+  "version": "0.0.23",
   "js": "main.js",
   "css": "styles.css"
 }

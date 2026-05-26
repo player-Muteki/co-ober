@@ -1,6 +1,8 @@
 import { existsSync } from 'fs';
 import { AcpSubprocess, type AcpSubprocessLaunchSpec } from './AcpSubprocess';
 import { delimiter, extname } from 'path';
+import { type AcpLogicalMethod, getAcpMethodCandidates } from './AcpMethodNames';
+import { AcpProtocolError } from './AcpErrors';
 import type {
   SessionUpdate,
   PromptPart,
@@ -19,7 +21,7 @@ import type { AcpResponse } from '../types';
 import { t } from '../i18n/index';
 import { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
 
-export const CLIENT_VERSION = '0.0.22';
+export const CLIENT_VERSION = '0.0.23';
 
 export interface AcpSessionMeta {
   availableCommands: AvailableCommand[];
@@ -205,6 +207,7 @@ export class AcpClient implements OpencodeClient {
   private reconnectAttempts = 0;
   private readonly maxReconnectAttempts = 3;
   private isIntentionalDisconnect = false;
+  private methodCache = new Map<AcpLogicalMethod, string>();
 
   constructor(cmdPath: string, cwd?: string) {
     this.cmdPath = cmdPath;
@@ -294,50 +297,50 @@ export class AcpClient implements OpencodeClient {
   }
 
   async createSession(cwd?: string, mcpServers: McpServerConfig[] = []): Promise<string> {
-    const r = await this.request('session/new', { cwd: this.resolveCwd(cwd), mcpServers: buildMcpServers(mcpServers) }) as Record<string, unknown>;
+    const r = await this.requestWithFallback('newSession', { cwd: this.resolveCwd(cwd), mcpServers: buildMcpServers(mcpServers) }) as Record<string, unknown>;
     this.applySessionSnapshot(r);
     this.sessionId_ = (r.sessionId as string | undefined) ?? null;
     return this.sessionId_ ?? '';
   }
 
   async loadSession(id: string, cwd?: string, mcpServers: McpServerConfig[] = []): Promise<void> {
-    const r = await this.request('session/load', { sessionId: id, cwd: this.resolveCwd(cwd), mcpServers: buildMcpServers(mcpServers) }) as Record<string, unknown>;
+    const r = await this.requestWithFallback('loadSession', { sessionId: id, cwd: this.resolveCwd(cwd), mcpServers: buildMcpServers(mcpServers) }) as Record<string, unknown>;
     this.applySessionSnapshot(r);
     this.sessionId_ = id;
   }
 
   async listSessions(cwd?: string): Promise<SessionMeta[]> {
-    const r = await this.request('session/list', { cwd: this.resolveCwd(cwd), limit: 100 }) as Record<string, unknown>;
+    const r = await this.requestWithFallback('listSessions', { cwd: this.resolveCwd(cwd), limit: 100 }) as Record<string, unknown>;
     return (r.sessions as SessionMeta[]) ?? [];
   }
 
   async forkSession(id: string, cwd?: string): Promise<string> {
-    const r = await this.request('session/unstable_fork', { sessionId: id, cwd: this.resolveCwd(cwd) }) as Record<string, unknown>;
+    const r = await this.requestWithFallback('forkSession', { sessionId: id, cwd: this.resolveCwd(cwd) }) as Record<string, unknown>;
     return r.sessionId as string;
   }
 
   async resumeSession(id: string, cwd?: string): Promise<void> {
-    const r = await this.request('session/resume', { sessionId: id, cwd: this.resolveCwd(cwd) }) as Record<string, unknown>;
+    const r = await this.requestWithFallback('resumeSession', { sessionId: id, cwd: this.resolveCwd(cwd) }) as Record<string, unknown>;
     this.applySessionSnapshot(r);
     this.sessionId_ = id;
   }
 
   async closeSession(id: string): Promise<void> {
-    await this.request('session/close', { sessionId: id }).catch(() => {});
+    await this.requestWithFallback('closeSession', { sessionId: id }).catch(() => {});
   }
 
   async setMode(id: string, modeId: string): Promise<void> {
-    await this.request('session/set_mode', { sessionId: id, modeId }).then(() => {});
+    await this.requestWithFallback('setMode', { sessionId: id, modeId }).then(() => {});
     this.currentModeId = modeId;
   }
 
   async setModel(id: string, modelId: string): Promise<void> {
-    await this.request('session/set_model', { sessionId: id, modelId }).then(() => {});
+    await this.requestWithFallback('setModel', { sessionId: id, modelId }).then(() => {});
     this.currentModelId = modelId;
   }
 
   async setConfigOption(id: string, configId: string, value: string): Promise<SessionConfigOption[]> {
-    const r = await this.request('session/set_config_option', { sessionId: id, configId, value }) as Record<string, unknown>;
+    const r = await this.requestWithFallback('setConfigOption', { sessionId: id, configId, value }) as Record<string, unknown>;
     const configOptions = (r?.configOptions as SessionConfigOption[]) ?? [];
     this.applyConfigOptions(configOptions);
     return configOptions;
@@ -346,7 +349,7 @@ export class AcpClient implements OpencodeClient {
   sendMessage(id: string, parts: PromptPart[], onChunk: (u: SessionUpdate) => void): Promise<AcpResponse> {
     this.activeStreamSessionId = id;
     this.chunkHandler = onChunk;
-    return (this.request('session/prompt', { sessionId: id, prompt: parts }) as Promise<AcpResponse>)
+    return (this.requestWithFallback('prompt', { sessionId: id, prompt: parts }) as Promise<AcpResponse>)
       .finally(() => {
         if (this.activeStreamSessionId === id) {
           this.activeStreamSessionId = null;
@@ -360,11 +363,11 @@ export class AcpClient implements OpencodeClient {
       this.activeStreamSessionId = null;
       this.chunkHandler = null;
     }
-    return this.request('session/cancel', { sessionId: id }).then(() => {}).catch(() => {});
+    return this.requestWithFallback('cancel', { sessionId: id }).then(() => {}).catch(() => {});
   }
 
   compact(id: string): Promise<void> {
-    return this.request('session/compact', { sessionId: id }).then(() => {}).catch(() => {});
+    return this.requestWithFallback('compact', { sessionId: id }).then(() => {}).catch(() => {});
   }
 
   async requestPermission(req: PermissionRequest): Promise<string> {
@@ -490,6 +493,34 @@ export class AcpClient implements OpencodeClient {
   private request(method: string, params?: Record<string, unknown>): Promise<unknown> {
     if (!this.transport) return Promise.reject(new Error(t().acp.stdinNotWritable));
     return this.transport.request(method, params);
+  }
+
+  private async requestWithFallback(logicalMethod: AcpLogicalMethod, params?: Record<string, unknown>, timeoutMs?: number): Promise<unknown> {
+    if (!this.transport) throw new Error(t().acp.stdinNotWritable);
+
+    const cachedMethod = this.methodCache.get(logicalMethod);
+    if (cachedMethod) {
+      return this.transport.request(cachedMethod, params, timeoutMs);
+    }
+
+    const candidates = getAcpMethodCandidates(logicalMethod);
+    let lastError: unknown;
+
+    for (const candidate of candidates) {
+      try {
+        const result = await this.transport.request(candidate, params, timeoutMs);
+        this.methodCache.set(logicalMethod, candidate);
+        return result;
+      } catch (err) {
+        lastError = err;
+        if (err instanceof AcpProtocolError && err.code === -32601) {
+          continue; // Try next candidate
+        }
+        throw err; // Other errors: throw immediately
+      }
+    }
+
+    throw lastError;
   }
 
   async reconnect(): Promise<void> {
