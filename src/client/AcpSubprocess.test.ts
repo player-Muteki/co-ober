@@ -227,6 +227,20 @@ describe('AcpSubprocess', () => {
       consoleSpy.mockRestore();
   });
 
+  it('onClose() listener receives process error event', () => {
+    const subprocess = new AcpSubprocess(launchSpec);
+    const closeListener = vi.fn();
+
+    subprocess.onClose(closeListener);
+    subprocess.start();
+
+    const error = new Error('Process spawn error');
+    mockProc.emit('error', error);
+
+    expect(closeListener).toHaveBeenCalledTimes(1);
+    expect(closeListener).toHaveBeenCalledWith(error);
+  });
+
   it('shutdown resolves on timeout', async () => {
     vi.useFakeTimers();
     const subprocess = new AcpSubprocess(launchSpec);
