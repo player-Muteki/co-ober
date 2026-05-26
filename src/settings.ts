@@ -3,7 +3,7 @@ import { existsSync } from 'fs';
 import { delimiter, isAbsolute } from 'path';
 import CopsidianPlugin from './main';
 import { VIEW_TYPE } from './types';
-import type { AvailableCommand, CustomAgentDefinition, CustomSkillDefinition, McpServerConfig, ModeOption, ModelOption, PermissionLevel, SyncRule } from './types';
+import type { AgentCapabilities, AvailableCommand, CustomAgentDefinition, CustomSkillDefinition, McpServerConfig, ModeOption, ModelOption, PermissionLevel, SyncRule } from './types';
 import type { OpencodeClient } from './client';
 import { setLocale, t as locale } from './i18n/index';
 import { CLIENT_VERSION } from './client/acp';
@@ -638,10 +638,23 @@ export class CopsidianSettingsTab extends PluginSettingTab {
 
     const currentType = server.type ?? 'stdio';
 
+    const mcpCapabilities = this.getAgentCapabilities()?.mcpCapabilities;
+    const httpEnabled = mcpCapabilities?.http !== false;
+    const sseEnabled = mcpCapabilities?.sse !== false;
+    const typeOptions = {
+      stdio: 'stdio',
+      http: httpEnabled ? 'http' : `http (${locale().settings.mcpHttpDisabled})`,
+      sse: sseEnabled ? 'sse' : `sse (${locale().settings.mcpSseDisabled})`,
+    };
+
     new Setting(block)
       .setName('Type')
-      .addDropdown((d) => d.addOptions({ stdio: 'stdio', http: 'http', sse: 'sse' })
-        .setValue(currentType)
+      .addDropdown((d) => {
+        d.addOptions(typeOptions);
+        d.selectEl.querySelector<HTMLOptionElement>('option[value="http"]')!.disabled = !httpEnabled;
+        d.selectEl.querySelector<HTMLOptionElement>('option[value="sse"]')!.disabled = !sseEnabled;
+        d.setValue(currentType);
+        d
         .onChange(async (v) => {
           const newType = v as 'stdio' | 'http' | 'sse';
           if (newType === 'stdio') {
@@ -658,7 +671,8 @@ export class CopsidianSettingsTab extends PluginSettingTab {
           }
           await this.save();
           this.display();
-        }));
+        });
+      });
 
     if (currentType === 'stdio') {
       new Setting(block)
@@ -847,6 +861,16 @@ export class CopsidianSettingsTab extends PluginSettingTab {
       return this.plugin.getClient()?.getSessionSnapshot().availableCommands ?? [];
     } catch {
       return [];
+    }
+  }
+
+  private getAgentCapabilities(): AgentCapabilities | null {
+    try {
+      const client = this.plugin.getClient();
+      if (!client?.isConnected()) return null;
+      return client.getAgentCapabilities();
+    } catch {
+      return null;
     }
   }
 

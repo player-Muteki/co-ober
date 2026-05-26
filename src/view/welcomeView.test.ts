@@ -40,6 +40,30 @@ describe('WelcomeView', () => {
 		expect(status?.textContent).toBe(t().welcome.connected);
 	});
 
+	it('does not render auth methods when authMethods is empty', () => {
+		const container = document.createElement('div');
+		const view = new WelcomeView(container, () => ({ authMethods: [] }));
+
+		view.show(true);
+
+		expect(container.querySelector('.copsidian-welcome-auth-methods')).toBeNull();
+	});
+
+	it('renders auth methods and login command when authMethods is non-empty', () => {
+		const container = document.createElement('div');
+		const view = new WelcomeView(container, () => ({
+			authMethods: [{ id: 'github', name: 'GitHub' }],
+		}));
+
+		view.show(true);
+
+		const auth = container.querySelector('.copsidian-welcome-auth-methods');
+		expect(auth).not.toBeNull();
+		expect(auth?.textContent).toContain(t().welcome.authMethodsHint);
+		expect(auth?.textContent).toContain('github: GitHub');
+		expect(auth?.textContent).toContain(t().welcome.authLoginCommand);
+	});
+
 	it('show(false) displays "disconnected" status', () => {
 		const container = document.createElement('div');
 		const view = new WelcomeView(container);

@@ -192,6 +192,7 @@ function createClient() {
       currentModelId: null,
       currentModeId: null,
     })),
+    getAgentCapabilities: vi.fn(() => null),
     setClientHandlers: vi.fn(),
   };
 }

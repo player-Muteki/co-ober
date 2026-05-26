@@ -11,6 +11,7 @@ import type {
   McpServerConfig,
 } from '../types';
 import type { OpencodeClient, ClientHandlers } from './index';
+import type { AgentCapabilities } from '../types';
 import type { SessionMeta } from '../types';
 import { AcpClient } from './acp';
 import { t } from '../i18n/index';
@@ -95,7 +96,7 @@ export class AgentRuntime implements OpencodeClient {
     return reject?.optionId ?? req.options[0]?.optionId ?? 'reject_once';
   }
 
-  getAgentCapabilities(): Record<string, unknown> | null { return this.acp.getAgentCapabilities(); }
+  getAgentCapabilities(): AgentCapabilities | null { return this.acp.getAgentCapabilities(); }
   getAvailableAgents(): Promise<ModeOption[]> { return this.acp.getAvailableAgents(); }
   getAvailableModels(): Promise<ModelOption[]> { return this.acp.getAvailableModels(); }
   getAvailableCommands(): Promise<AvailableCommand[]> { return this.acp.getAvailableCommands(); }

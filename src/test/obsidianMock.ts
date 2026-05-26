@@ -40,7 +40,11 @@ export class PluginSettingTab {
 }
 
 export class Notice {
-  constructor(public message: string) {}
+  static messages: string[] = [];
+
+  constructor(public message: string) {
+    Notice.messages.push(message);
+  }
 }
 
 export class Setting {

@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { DragDropManager } from './dragDropManager';
 import { installObsidianDomHelpers } from '../test/domHelpers';
 import { setLocale } from '../i18n/index';
+import { Notice } from 'obsidian';
 
 installObsidianDomHelpers();
 
@@ -18,6 +19,7 @@ describe('DragDropManager', () => {
 
   beforeEach(() => {
     setLocale('en');
+    (Notice as any).messages = [];
     dropZone = document.createElement('div');
     overlayContainer = document.createElement('div');
     document.body.appendChild(dropZone);
@@ -178,6 +180,23 @@ describe('DragDropManager', () => {
         1024,
         'test.png'
       );
+    });
+
+    it('rejects image file drop when image capability is false', async () => {
+      manager = new DragDropManager(dropZone, overlayContainer, handlers as any, () => ({ promptCapabilities: { image: false } }));
+      manager.setup();
+
+      const file = new File(['image-data'], 'test.png', { type: 'image/png' });
+      const dataTransfer = { files: [file] };
+      const event = new DragEvent('drop', { bubbles: true });
+      Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
+      Object.defineProperty(event, 'preventDefault', { value: vi.fn() });
+
+      dropZone.dispatchEvent(event);
+      await new Promise(r => setTimeout(r, 10));
+
+      expect(handlers.onAddImagePart).not.toHaveBeenCalled();
+      expect((Notice as any).messages).toContain('This OpenCode agent does not support image prompts');
     });
 
     it('skips images exceeding size limit', async () => {

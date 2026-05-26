@@ -13,6 +13,14 @@ const zh: Locale = {
     },
     connected: '● 已连接',
     disconnected: '○ 未连接',
+    authMethodsHint: 'OpenCode 返回了可用的认证方式：',
+    authLoginCommand: '请在终端运行 `opencode auth login`，然后重新连接 Copsidian。',
+  },
+
+  sessionDropdown: {
+    forkDisabled: '当前 OpenCode Agent 不支持分叉会话',
+    resumeDisabled: '当前 OpenCode Agent 不支持恢复会话',
+    closeDisabled: '当前 OpenCode Agent 不支持关闭会话',
   },
 
   header: {
@@ -38,6 +46,10 @@ const zh: Locale = {
   newMessages: '↓ 新消息',
 
   dragOverlay: '拖放以附加',
+
+  dragDrop: {
+    imageNotSupported: '当前 OpenCode Agent 不支持图片提示词',
+  },
 
   permission: {
     title: '权限：{title}',
@@ -246,6 +258,8 @@ const zh: Locale = {
       envValue: '值',
       envAdd: '+ 添加变量',
     },
+    mcpHttpDisabled: '当前 Agent 不支持',
+    mcpSseDisabled: '当前 Agent 不支持',
     sync: {
       heading: '同步规则',
       add: '+ 添加规则',

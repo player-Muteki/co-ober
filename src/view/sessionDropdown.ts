@@ -1,10 +1,13 @@
 import type { SessionStore } from '../chat/session';
 import { t } from '../i18n/index';
+import type { AgentCapabilities, SessionMeta } from '../types';
 
 export interface SessionDropdownCallbacks {
 	onSwitch(sessionId: string): Promise<void>;
 	onDelete(sessionId: string): Promise<void>;
 	onNewSession(): Promise<void>;
+	onFork?(sessionId: string): Promise<void>;
+	onResume?(sessionId: string): Promise<void>;
 }
 
 export class SessionDropdown {
@@ -17,6 +20,7 @@ export class SessionDropdown {
 		private sessionStore: SessionStore,
 		private getCurrentSessionId: () => string | null,
 		private callbacks: SessionDropdownCallbacks,
+		private getAgentCapabilities: () => AgentCapabilities | null = () => null,
 	) {}
 
 	open(): void {
@@ -25,7 +29,9 @@ export class SessionDropdown {
 			return;
 		}
 
-		const list = this.sessionStore.list();
+		const capabilities = this.getAgentCapabilities()?.sessionCapabilities;
+		const canList = capabilities?.list !== false;
+		const list = this.getRenderableSessions(this.sessionStore.list(), canList);
 		const dd = this.container.createDiv({ cls: 'copsidian-session-list' });
 
 		const rect = this.anchorEl.getBoundingClientRect();
@@ -33,16 +39,18 @@ export class SessionDropdown {
 		dd.style.top = `${rect.bottom + 4}px`;
 		dd.style.right = `${Math.max(8, window.innerWidth - rect.right)}px`;
 
-		const searchInput = dd.createEl('input', {
-			cls: 'copsidian-session-search',
-			attr: { placeholder: t().session.search, type: 'text' },
-		});
+		const searchInput = canList
+			? dd.createEl('input', {
+				cls: 'copsidian-session-search',
+				attr: { placeholder: t().session.search, type: 'text' },
+			})
+			: null;
 
 		const itemsContainer = dd.createDiv({ cls: 'copsidian-session-items' });
 
 		const renderItems = (filter: string) => {
 			itemsContainer.empty();
-			const filtered = filter
+			const filtered = filter && canList
 				? list.filter(s => s.title?.toLowerCase().includes(filter.toLowerCase()))
 				: list;
 
@@ -60,23 +68,23 @@ export class SessionDropdown {
 					cls: `copsidian-session-item${s.sessionId === currentId ? ' active' : ''}`,
 				});
 				it.createSpan({ text: s.title || s.sessionId, cls: 'session-label' });
-				const delBtn = it.createSpan({ text: '×', cls: 'session-delete' });
-				delBtn.onclick = async (e: MouseEvent) => {
-					e.stopPropagation();
-					this.sessionStore.remove(s.sessionId);
-					await this.sessionStore.save();
-					if (s.sessionId === currentId) {
-						await this.callbacks.onNewSession();
-					}
+				this.createActionButton(it, 'session-fork', '⎇', capabilities?.fork === true, t().sessionDropdown.forkDisabled, async () => {
+					await this.callbacks.onFork?.(s.sessionId);
+				});
+				this.createActionButton(it, 'session-resume', '↻', capabilities?.resume === true, t().sessionDropdown.resumeDisabled, async () => {
+					await this.callbacks.onResume?.(s.sessionId);
+				});
+				this.createActionButton(it, 'session-delete', '×', capabilities?.close === true, t().sessionDropdown.closeDisabled, async () => {
+					await this.callbacks.onDelete(s.sessionId);
 					this.close();
-				};
+				});
 				it.onclick = async () => {
 					await this.callbacks.onSwitch(s.sessionId);
 				};
 			}
 		};
 
-		searchInput.addEventListener('input', () => {
+		searchInput?.addEventListener('input', () => {
 			renderItems(searchInput.value);
 		});
 
@@ -109,5 +117,27 @@ export class SessionDropdown {
 
 	destroy(): void {
 		this.close();
+	}
+
+	private getRenderableSessions(list: SessionMeta[], canList: boolean): SessionMeta[] {
+		if (canList) return list;
+		const currentId = this.getCurrentSessionId();
+		if (!currentId) return [];
+		const current = list.filter((session) => session.sessionId === currentId).slice(0, 1);
+		return current.length > 0 ? current : [{ sessionId: currentId, title: currentId }];
+	}
+
+	private createActionButton(container: HTMLElement, cls: string, text: string, enabled: boolean, disabledTitle: string, onClick: () => Promise<void>): void {
+		const button = container.createEl('button', { text, cls });
+		if (!enabled) {
+			button.disabled = true;
+			button.addClass('is-disabled');
+			button.setAttribute('title', disabledTitle);
+			return;
+		}
+		button.onclick = async (e: MouseEvent) => {
+			e.stopPropagation();
+			await onClick();
+		};
 	}
 }

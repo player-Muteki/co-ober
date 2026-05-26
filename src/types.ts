@@ -53,6 +53,29 @@ export interface SessionSnapshot {
   currentModeId: string | null;
 }
 
+export interface AgentCapabilities {
+  sessionCapabilities?: {
+    close?: boolean;
+    fork?: boolean;
+    list?: boolean;
+    resume?: boolean;
+  };
+  promptCapabilities?: {
+    audio?: boolean;
+    embeddedContext?: boolean;
+    image?: boolean;
+  };
+  mcpCapabilities?: {
+    http?: boolean;
+    sse?: boolean;
+  };
+  authMethods?: Array<{
+    id: string;
+    name: string;
+    description?: string;
+  }>;
+}
+
 export interface PermissionOption {
   optionId: string;
   kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';

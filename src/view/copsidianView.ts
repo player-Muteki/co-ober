@@ -220,7 +220,28 @@ export class CopsidianView extends ItemView {
 					this.closeSessionDropdown();
 				},
 				onNewSession: async () => this.newSession(),
+				onFork: async (sessionId: string) => {
+					const client = this.plugin.getClient();
+					if (!client) return;
+					const forkedId = await client.forkSession(sessionId, this.getVaultCwd());
+					this.state.sessionId = forkedId;
+					this.sessionStore.getOrCreate(forkedId);
+					this.sessionStore.setActive(forkedId);
+					await this.sessionStore.save();
+					this.closeSessionDropdown();
+				},
+				onResume: async (sessionId: string) => {
+					const client = this.plugin.getClient();
+					if (!client) return;
+					await client.resumeSession(sessionId, this.getVaultCwd());
+					this.state.sessionId = sessionId;
+					this.sessionStore.getOrCreate(sessionId);
+					this.sessionStore.setActive(sessionId);
+					await this.sessionStore.save();
+					this.closeSessionDropdown();
+				},
 			},
+			() => this.plugin.getClient()?.getAgentCapabilities() ?? null,
 		);
 
 		// ── Messages ──
@@ -229,7 +250,7 @@ export class CopsidianView extends ItemView {
 
 		this.permissionBanner = new PermissionBanner(this.messagesEl);
 		this.inlineEditPanel = new InlineEditPanel(this.contentEl);
-		this.welcomeView = new WelcomeView(this.messagesEl);
+		this.welcomeView = new WelcomeView(this.messagesEl, () => this.plugin.getClient()?.getAgentCapabilities() ?? null);
 
 		// ── Context chips ──
 		this.contextChipsEl = el.createDiv({ cls: 'copsidian-context-chips' });
@@ -340,7 +361,7 @@ export class CopsidianView extends ItemView {
 				};
 			},
 			onRemoveImagePart: (_data, _size) => {}
-		});
+		}, () => this.plugin.getClient()?.getAgentCapabilities() ?? null);
 		this.dragDropManager.setup();
 	}
 

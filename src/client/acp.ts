@@ -14,6 +14,7 @@ import type {
   ModeOption,
   SessionSnapshot,
   McpServerConfig,
+  AgentCapabilities,
 } from '../types';
 import type { OpencodeClient } from './index';
 import type { SessionMeta } from '../types';
@@ -21,7 +22,7 @@ import type { AcpResponse } from '../types';
 import { t } from '../i18n/index';
 import { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
 
-export const CLIENT_VERSION = '0.0.23';
+export const CLIENT_VERSION = '0.0.24';
 
 export interface AcpSessionMeta {
   availableCommands: AvailableCommand[];
@@ -188,7 +189,7 @@ export class AcpClient implements OpencodeClient {
   private subprocess: AcpSubprocess | null = null;
   private connected = false;
   private transport: AcpJsonRpcTransport | null = null;
-  private agentCapabilities: Record<string, unknown> | null = null;
+  private agentCapabilities: AgentCapabilities | null = null;
   private activeStreamSessionId: string | null = null;
   private chunkHandler: ((update: SessionUpdate) => void) | null = null;
   private sessionId_: string | null = null;
@@ -278,11 +279,11 @@ export class AcpClient implements OpencodeClient {
       clientInfo: { name: 'copsidian', version: CLIENT_VERSION },
       clientCapabilities: {},
     }) as Record<string, unknown>;
-    this.agentCapabilities = (response.agentCapabilities as Record<string, unknown>) ?? null;
+      this.agentCapabilities = (response.agentCapabilities as AgentCapabilities) ?? null;
     this.connected = true;
   }
 
-  getAgentCapabilities(): Record<string, unknown> | null {
+  getAgentCapabilities(): AgentCapabilities | null {
     return this.agentCapabilities;
   }
 

@@ -11,6 +11,7 @@ import type {
   SessionMeta,
   SessionSnapshot,
   McpServerConfig,
+  AgentCapabilities,
 } from '../types';
 
 export interface ClientHandlers {
@@ -23,7 +24,7 @@ export interface OpencodeClient {
   isConnected(): boolean;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
-  getAgentCapabilities(): Record<string, unknown> | null;
+  getAgentCapabilities(): AgentCapabilities | null;
 
   createSession(cwd?: string, mcpServers?: McpServerConfig[]): Promise<SessionId>;
   loadSession(sessionId: SessionId, cwd?: string, mcpServers?: McpServerConfig[]): Promise<void>;

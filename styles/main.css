@@ -439,15 +439,31 @@
   flex: 1;
 }
 
+.copsidian-session-item .session-fork,
+.copsidian-session-item .session-resume,
 .copsidian-session-item .session-delete {
   opacity: 0;
   margin-left: 8px;
-  color: var(--text-error);
-  font-weight: bold;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  padding: 0;
   cursor: pointer;
   flex-shrink: 0;
 }
 
+.copsidian-session-item .session-delete {
+  color: var(--text-error);
+  font-weight: bold;
+}
+
+.copsidian-session-item .is-disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.copsidian-session-item:hover .session-fork,
+.copsidian-session-item:hover .session-resume,
 .copsidian-session-item:hover .session-delete {
   opacity: 1;
 }

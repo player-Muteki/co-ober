@@ -50,6 +50,7 @@ describe('SessionDropdown', () => {
       sessionStore as any,
       () => 'session-1',
       callbacks as any,
+      () => ({ sessionCapabilities: { close: true, fork: true, list: true, resume: true } }),
     );
   });
 
@@ -93,6 +94,39 @@ describe('SessionDropdown', () => {
       dropdown.open();
       const items = container.querySelectorAll('.copsidian-session-list');
       expect(items.length).toBe(0);
+    });
+
+    it('disables fork, resume, and close controls when capabilities are missing', () => {
+      dropdown = new SessionDropdown(container, anchor, sessionStore as any, () => 'session-1', callbacks as any, () => ({ sessionCapabilities: {} }));
+      dropdown.open();
+      expect((container.querySelector('.session-fork') as HTMLButtonElement).disabled).toBe(true);
+      expect((container.querySelector('.session-resume') as HTMLButtonElement).disabled).toBe(true);
+      expect((container.querySelector('.session-delete') as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('enables only fork when only fork capability is true', () => {
+      dropdown = new SessionDropdown(container, anchor, sessionStore as any, () => 'session-1', callbacks as any, () => ({ sessionCapabilities: { fork: true } }));
+      dropdown.open();
+      expect((container.querySelector('.session-fork') as HTMLButtonElement).disabled).toBe(false);
+      expect((container.querySelector('.session-resume') as HTMLButtonElement).disabled).toBe(true);
+      expect((container.querySelector('.session-delete') as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('enables resume and close when those capabilities are true', () => {
+      dropdown = new SessionDropdown(container, anchor, sessionStore as any, () => 'session-1', callbacks as any, () => ({ sessionCapabilities: { resume: true, close: true } }));
+      dropdown.open();
+      expect((container.querySelector('.session-fork') as HTMLButtonElement).disabled).toBe(true);
+      expect((container.querySelector('.session-resume') as HTMLButtonElement).disabled).toBe(false);
+      expect((container.querySelector('.session-delete') as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it('shows only current session and no search when list capability is false', () => {
+      dropdown = new SessionDropdown(container, anchor, sessionStore as any, () => 'session-2', callbacks as any, () => ({ sessionCapabilities: { list: false, close: true, fork: true, resume: true } }));
+      dropdown.open();
+      expect(container.querySelector('.copsidian-session-search')).toBeNull();
+      const items = container.querySelectorAll('.copsidian-session-item');
+      expect(items.length).toBe(1);
+      expect(items[0].querySelector('.session-label')?.textContent).toBe('Chat 2');
     });
   });
 
@@ -141,9 +175,7 @@ describe('SessionDropdown', () => {
       const deleteBtn = container.querySelector('.copsidian-session-item.active .session-delete') as HTMLElement;
       deleteBtn.click();
       await new Promise(r => setTimeout(r, 10));
-      expect(sessionStore.remove).toHaveBeenCalledWith('session-1');
-      expect(sessionStore.save).toHaveBeenCalled();
-      expect(callbacks.onNewSession).toHaveBeenCalled();
+      expect(callbacks.onDelete).toHaveBeenCalledWith('session-1');
     });
 
     it('does not call onNewSession when deleting non-current session', async () => {
@@ -152,7 +184,7 @@ describe('SessionDropdown', () => {
       const deleteBtn = items[1].querySelector('.session-delete') as HTMLElement;
       deleteBtn.click();
       await new Promise(r => setTimeout(r, 10));
-      expect(sessionStore.remove).toHaveBeenCalledWith('session-2');
+      expect(callbacks.onDelete).toHaveBeenCalledWith('session-2');
       expect(callbacks.onNewSession).not.toHaveBeenCalled();
     });
   });

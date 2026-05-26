@@ -11,6 +11,14 @@ const en = {
     },
     connected: '● Connected',
     disconnected: '○ Disconnected',
+    authMethodsHint: 'OpenCode reported available authentication methods:',
+    authLoginCommand: 'Run `opencode auth login` in a terminal, then reconnect Copsidian.',
+  },
+
+  sessionDropdown: {
+    forkDisabled: 'Fork is not supported by this OpenCode agent',
+    resumeDisabled: 'Resume is not supported by this OpenCode agent',
+    closeDisabled: 'Close is not supported by this OpenCode agent',
   },
 
   header: {
@@ -36,6 +44,10 @@ const en = {
   newMessages: '↓ New messages',
 
   dragOverlay: 'Drop to attach',
+
+  dragDrop: {
+    imageNotSupported: 'This OpenCode agent does not support image prompts',
+  },
 
   permission: {
     title: 'Permission: {title}',
@@ -244,6 +256,8 @@ const en = {
       envValue: 'Value',
       envAdd: '+ Add Variable',
     },
+    mcpHttpDisabled: 'not supported by current agent',
+    mcpSseDisabled: 'not supported by current agent',
     sync: {
       heading: 'Sync Rules',
       add: '+ Add Rule',

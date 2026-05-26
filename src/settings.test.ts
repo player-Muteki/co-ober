@@ -323,6 +323,22 @@ describe('CopsidianSettingsTab locale refresh', () => {
     expect(plugin.getClient()?.closeSession).not.toHaveBeenCalled();
     expect(tab.containerEl.textContent).not.toContain('skill-writer');
   });
+
+  it('disables http MCP type option when capability is false', () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() }, {}, {}, true, { mcpCapabilities: { http: false } });
+    plugin.settings.mcpServers.push({ type: 'stdio', id: 'fs', enabled: true, name: 'filesystem', command: 'npx', args: [], env: [] });
+    const tab = new CopsidianSettingsTab(plugin);
+
+    tab.display();
+
+    const typeSelect = [...tab.containerEl.querySelectorAll('select')]
+      .find((select) => [...select.options].some((option) => option.value === 'http')) as HTMLSelectElement | undefined;
+    expect(typeSelect).toBeDefined();
+    const httpOption = [...typeSelect!.options].find((option) => option.value === 'http');
+    expect(httpOption?.disabled).toBe(true);
+    expect(httpOption?.textContent).toBe('http (not supported by current agent)');
+  });
 });
 
 function createPlugin(
@@ -334,6 +350,7 @@ function createPlugin(
   } = {},
   runtimeOptions = snapshot,
   initClientResult = true,
+  capabilities: Record<string, unknown> | null = null,
 ): CopsidianPlugin {
   const settings: CopsidianSettings = {
     ...DEFAULT_SETTINGS,
@@ -360,6 +377,7 @@ function createPlugin(
       currentModelId: null,
       currentModeId: null,
     })),
+    getAgentCapabilities: vi.fn(() => capabilities),
   };
   return {
     app: {

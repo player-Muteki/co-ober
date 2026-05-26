@@ -356,7 +356,7 @@ describe('AcpClient server request handling', () => {
   });
 
   it('uses the current release version for ACP clientInfo', () => {
-    expect(CLIENT_VERSION).toBe('0.0.23');
+    expect(CLIENT_VERSION).toBe('0.0.24');
   });
 });
 

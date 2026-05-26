@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.0.24 - 2026-05-26
+
+### Added
+- Add typed ACP agent capabilities covering session, prompt, MCP, and authentication metadata.
+- Show OpenCode authentication methods in the welcome view with terminal login guidance when reported by the agent.
+
+### Changed
+- Drive session dropdown controls, image drag-and-drop, and MCP type options from negotiated agent capabilities.
+- Disable unsupported session and MCP actions with localized explanatory labels.
+
+### Tested
+- Add unit coverage for welcome auth method rendering, session capability combinations, image drop rejection, and MCP type disabling.
+
 ## 0.0.23 - 2026-05-26
 
 ### Added
