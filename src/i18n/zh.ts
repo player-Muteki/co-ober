@@ -53,6 +53,10 @@ const zh: Locale = {
 
   permission: {
     title: '权限：{title}',
+    allowOnce: '允许一次',
+    allowAlways: '总是允许',
+    rejectOnce: '拒绝',
+    rejectAlways: '总是拒绝',
   },
 
   error: {
@@ -289,8 +293,9 @@ const zh: Locale = {
     fsCapability: {
       heading: '文件系统访问',
       mode: 'FS 能力模式',
-      modeDesc: '允许 OpenCode Agent 读取 Vault 中的文件',
-      enabled: '启用 — Agent 可以读取 Vault 文件',
+      modeDesc: '控制 OpenCode Agent 的文件系统访问权限',
+      enabled: '读写 — Agent 可以读写 Vault 文件',
+      readonly: '只读 — Agent 只能读取 Vault 文件',
       disabled: '禁用 — 无文件系统访问权限',
     },
     terminalCapability: {

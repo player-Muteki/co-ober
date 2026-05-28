@@ -74,7 +74,7 @@ export class AcpJsonRpcTransport {
         abortHandler = () => {
           if (timeout) clearTimeout(timeout);
           this.pending.delete(id);
-          this.send({ jsonrpc: '2.0', id, method: 'session/cancel', params: {} });
+          // Don't send cancel request when aborting - the abort itself handles cancellation
           reject(new AcpAbortError(method));
         };
         signal.addEventListener('abort', abortHandler, { once: true });

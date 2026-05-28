@@ -223,7 +223,7 @@ export class CopsidianView extends ItemView {
 			() => this.plugin.getClient()?.getAgentCapabilities() ?? null,
 		);
 
-		// Init connection
+		// Init connection - always try to connect when view opens
 		const connectedClient = this.plugin.getClient();
 		this.controller.state.isConnected = connectedClient?.isConnected() ?? false;
 		if (this.controller.state.isConnected) {
@@ -231,7 +231,8 @@ export class CopsidianView extends ItemView {
 			void this.controller.syncRuntimeSession(this.controller.getSessionId()).catch((e) => {
 				console.error('[copsidian] session sync:', e);
 			});
-		} else if (this.plugin.settings.autoConnect) {
+		} else {
+			// Always try to connect when view opens, not just when autoConnect is true
 			void this.controller.ensureClientConnected();
 		}
 

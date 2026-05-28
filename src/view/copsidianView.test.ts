@@ -62,7 +62,7 @@ describe('CopsidianView inline edit preview', () => {
 });
 
 describe('CopsidianView runtime session sync', () => {
-  it('opens without waiting for OpenCode or creating a session', async () => {
+  it('opens and tries to connect when view opens', async () => {
     setLocale('en');
     const plugin = createPlugin();
     const view = createView(plugin);
@@ -72,8 +72,8 @@ describe('CopsidianView runtime session sync', () => {
     expect(view.contentEl.querySelector('.copsidian-header')).not.toBeNull();
     expect(view.contentEl.querySelector('.copsidian-input')).not.toBeNull();
     expect(view.contentEl.querySelector('.copsidian-welcome')).not.toBeNull();
-    expect(plugin.waitForClient).not.toHaveBeenCalled();
-    expect(plugin.initClient).not.toHaveBeenCalled();
+    // Now we try to connect when view opens
+    expect(plugin.initClient).toHaveBeenCalled();
     expect(plugin.getClient()).toBeNull();
   });
 

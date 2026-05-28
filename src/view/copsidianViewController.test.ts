@@ -320,7 +320,8 @@ describe('CopsidianViewController', () => {
 
 			await controller.stopGeneration();
 
-			expect(client.cancel).toHaveBeenCalledWith('test-session');
+			// Now we only call abort, not cancel
+			expect(client.abort).toHaveBeenCalled();
 			expect(controller.isBusy()).toBe(false);
 			expect(controller.state.isStreaming).toBe(false);
 		});

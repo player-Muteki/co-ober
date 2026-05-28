@@ -359,6 +359,7 @@ export class CopsidianSettingsTab extends PluginSettingTab {
       .setDesc(labels.fsCapability.modeDesc)
       .addDropdown((d) => d.addOptions({
         enabled: labels.fsCapability.enabled,
+        readonly: labels.fsCapability.readonly,
         disabled: labels.fsCapability.disabled,
       })
         .setValue(s.fsCapability ?? 'enabled')

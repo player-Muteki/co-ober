@@ -51,6 +51,10 @@ const en = {
 
   permission: {
     title: 'Permission: {title}',
+    allowOnce: 'Allow Once',
+    allowAlways: 'Allow Always',
+    rejectOnce: 'Reject',
+    rejectAlways: 'Reject Always',
   },
 
   error: {
@@ -287,8 +291,9 @@ const en = {
     fsCapability: {
       heading: 'File System Access',
       mode: 'FS Capability Mode',
-      modeDesc: 'Allow OpenCode agent to read files from your vault',
-      enabled: 'Enabled — agent can read vault files',
+      modeDesc: 'Control file system access for OpenCode agent',
+      enabled: 'Read & Write — agent can read and write vault files',
+      readonly: 'Read Only — agent can only read vault files',
       disabled: 'Disabled — no file system access',
     },
     terminalCapability: {

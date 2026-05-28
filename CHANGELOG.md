@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.0.34 - 2026-05-28
+
+### Fixed
+- Fix session output interruption by removing unnecessary server cancel request during abort.
+- Fix error banner showing on user-initiated cancellation (AcpAbortError now properly suppressed).
+- Fix plugin not reconnecting when view opens - now always attempts connection on view open.
+
+### Changed
+- `stopGeneration()` now only calls `abort()` without sending `session/cancel` to server.
+- `AcpJsonRpcTransport` no longer sends cancel request when abort signal is triggered.
+- View now always tries to connect when opened, regardless of `autoConnect` setting.
+
+## 0.0.33 - 2026-05-28
+
+### Added
+- Enhance `PermissionBanner` with tool kind badge, location list, and input parameter summary.
+- Add CSS styles for new permission UI elements (kind badge, locations, input summary).
+
+### Changed
+- Permission banner now shows: tool type badge (e.g., READ, EDIT, EXECUTE), file paths (up to 3), and key input parameters.
+- Improved permission banner layout with better visual hierarchy.
+
+## 0.0.32 - 2026-05-28
+
+### Added
+- Add `writeTextFile` method to `FsDelegate` for vault file writing with boundary protection.
+- Register `fs/write_text_file` handler for OpenCode agent to write vault files.
+- Add `readonly` option to `FsCapabilityMode` for read-only file system access.
+- Update `clientCapabilities.fs.writeTextFile` based on FS capability mode.
+
+### Changed
+- FS capability mode now supports three options: `enabled` (read/write), `readonly` (read only), `disabled` (no access).
+- Default FS capability mode is `enabled` (read & write).
+
 ## 0.0.31 - 2026-05-28
 
 ### Added

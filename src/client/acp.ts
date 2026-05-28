@@ -29,7 +29,7 @@ import type { NormalizedUpdate } from '../types';
 import { FsDelegate } from './fsDelegate';
 import { TerminalManager } from './terminalManager';
 
-export const CLIENT_VERSION = '0.0.31';
+export const CLIENT_VERSION = '0.0.34';
 
 export interface AcpSessionMeta {
   availableCommands: AvailableCommand[];
@@ -297,6 +297,11 @@ export class AcpClient implements OpencodeClient {
 				return this.handleReadTextFile(params as Record<string, unknown>);
 			});
 
+			// Register fs/write_text_file handler
+			transport.onRequest('fs/write_text_file', (params) => {
+				return this.handleWriteTextFile(params as Record<string, unknown>);
+			});
+
 			// Register terminal handlers
 			transport.onRequest('terminal/create', (params) => {
 				return this.handleTerminalCreate(params as Record<string, unknown>);
@@ -317,8 +322,11 @@ export class AcpClient implements OpencodeClient {
 			subprocess.onClose((error) => this.handleSubprocessClose(subprocess, error));
 
 			const clientCapabilities: Record<string, unknown> = {};
-			if (this.fsCapabilityMode === 'enabled') {
-				clientCapabilities.fs = { readTextFile: true, writeTextFile: false };
+			if (this.fsCapabilityMode !== 'disabled') {
+				clientCapabilities.fs = {
+					readTextFile: true,
+					writeTextFile: this.fsCapabilityMode === 'enabled',
+				};
 			}
 			if (this.terminalCapabilityMode === 'enabled') {
 				clientCapabilities.terminal = true;
@@ -556,7 +564,7 @@ export class AcpClient implements OpencodeClient {
 
 	private handleReadTextFile(params: Record<string, unknown>): Promise<unknown> {
 		return new Promise((resolve) => {
-			if (this.fsCapabilityMode !== 'enabled' || !this.fsDelegate) {
+			if (this.fsCapabilityMode === 'disabled' || !this.fsDelegate) {
 				resolve({ content: '', error: 'File system access is disabled' });
 				return;
 			}
@@ -568,6 +576,31 @@ export class AcpClient implements OpencodeClient {
 			}
 
 			const result = this.fsDelegate.readTextFile(filePath);
+			resolve(result);
+		});
+	}
+
+	private handleWriteTextFile(params: Record<string, unknown>): Promise<unknown> {
+		return new Promise((resolve) => {
+			if (this.fsCapabilityMode !== 'enabled' || !this.fsDelegate) {
+				resolve({ success: false, error: 'File system write access is disabled' });
+				return;
+			}
+
+			const filePath = params.path as string;
+			const content = params.content as string;
+
+			if (!filePath) {
+				resolve({ success: false, error: 'Missing required parameter: path' });
+				return;
+			}
+
+			if (content === undefined || content === null) {
+				resolve({ success: false, error: 'Missing required parameter: content' });
+				return;
+			}
+
+			const result = this.fsDelegate.writeTextFile(filePath, content);
 			resolve(result);
 		});
 	}

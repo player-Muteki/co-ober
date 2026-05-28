@@ -1,8 +1,13 @@
-import { normalize, relative, isAbsolute, sep } from 'path';
-import { existsSync, readFileSync, statSync, openSync, readSync, closeSync } from 'fs';
+import { normalize, relative, isAbsolute, sep, dirname } from 'path';
+import { existsSync, readFileSync, statSync, openSync, readSync, closeSync, writeFileSync, mkdirSync } from 'fs';
 
 export interface FsReadResult {
 	content: string;
+	error?: string;
+}
+
+export interface FsWriteResult {
+	success: boolean;
 	error?: string;
 }
 
@@ -51,6 +56,33 @@ export class FsDelegate {
 		} catch (e) {
 			const message = e instanceof Error ? e.message : String(e);
 			return { content: '', error: `Failed to read file: ${message}` };
+		}
+	}
+
+	/**
+	 * Write a text file within the vault boundary.
+	 * @param filePath - Absolute or relative path to write
+	 * @param content - Content to write
+	 * @returns Success status or error message
+	 */
+	writeTextFile(filePath: string, content: string): FsWriteResult {
+		try {
+			const resolvedPath = this.resolveWithinVault(filePath);
+			if (!resolvedPath) {
+				return { success: false, error: 'Access denied: path is outside vault boundary' };
+			}
+
+			// Ensure parent directory exists
+			const dir = dirname(resolvedPath);
+			if (!existsSync(dir)) {
+				mkdirSync(dir, { recursive: true });
+			}
+
+			writeFileSync(resolvedPath, content, 'utf-8');
+			return { success: true };
+		} catch (e) {
+			const message = e instanceof Error ? e.message : String(e);
+			return { success: false, error: `Failed to write file: ${message}` };
 		}
 	}
 

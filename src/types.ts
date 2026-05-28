@@ -142,7 +142,7 @@ export interface AcpResponse {
 }
 
 export type PermissionLevel = 'yolo' | 'plan' | 'safe';
-export type FsCapabilityMode = 'enabled' | 'disabled';
+export type FsCapabilityMode = 'enabled' | 'readonly' | 'disabled';
 export type TerminalCapabilityMode = 'enabled' | 'disabled';
 
 export interface ContextRef {

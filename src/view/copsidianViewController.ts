@@ -450,10 +450,11 @@ export class CopsidianViewController {
 		this.deps.input.setStreaming(false);
 		this.deps.toolbar.setSending(false);
 		try {
+			// Only abort the current request, don't send cancel to server
+			// The abort signal will handle the cancellation
 			c.abort();
-			await c.cancel(this.state.sessionId);
 		} catch (e) {
-			console.error('[copsidian] cancel:', e);
+			console.error('[copsidian] abort:', e);
 		}
 	}
 

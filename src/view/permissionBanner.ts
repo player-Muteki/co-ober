@@ -8,9 +8,7 @@ export class PermissionBanner {
 	constructor(private containerEl: HTMLElement) {
 		onLocaleChange(() => {
 			if (!this.el || !this.currentReq) return;
-			const title = this.currentReq.req.toolCall.title || this.currentReq.req.toolCall.kind;
-			const titleEl = this.el.querySelector('.perm-title');
-			if (titleEl) titleEl.textContent = t().permission.title.replace('{title}', title);
+			this.renderBanner(this.currentReq.req);
 		});
 	}
 
@@ -19,31 +17,77 @@ export class PermissionBanner {
 			this.currentReq = { req, resolve };
 			this.dismiss();
 			this.currentReq = { req, resolve }; // re-assign after dismiss
-			const banner = this.containerEl.createDiv({ cls: 'copsidian-permission-banner' });
-			this.el = banner;
-
-			const title = req.toolCall.title || req.toolCall.kind;
-			banner.createDiv({ cls: 'perm-title', text: t().permission.title.replace('{title}', title) });
-
-			if (req.toolCall.locations?.length) {
-				banner.createDiv({ cls: 'perm-path', text: req.toolCall.locations[0].path });
-			}
-
-			const actions = banner.createDiv({ cls: 'perm-actions' });
-			for (const opt of req.options) {
-				const btn = actions.createEl('button', {
-					text: opt.name,
-					cls: `perm-btn perm-${opt.kind}`,
-				});
-				btn.onclick = () => {
-					this.dismiss();
-					this.currentReq = null;
-					resolve(opt.optionId);
-				};
-			}
-
+			this.renderBanner(req);
 			this.containerEl.scrollTop = this.containerEl.scrollHeight;
 		});
+	}
+
+	private renderBanner(req: PermissionRequest): void {
+		if (this.el) {
+			this.el.remove();
+			this.el = null;
+		}
+
+		const banner = this.containerEl.createDiv({ cls: 'copsidian-permission-banner' });
+		this.el = banner;
+
+		// Tool kind badge
+		const kind = req.toolCall.kind || 'other';
+		banner.createDiv({ cls: 'perm-kind', text: kind.toUpperCase() });
+
+		// Title
+		const title = req.toolCall.title || req.toolCall.kind;
+		banner.createDiv({ cls: 'perm-title', text: t().permission.title.replace('{title}', title) });
+
+		// Locations
+		if (req.toolCall.locations?.length) {
+			const locationsEl = banner.createDiv({ cls: 'perm-locations' });
+			for (const loc of req.toolCall.locations.slice(0, 3)) {
+				locationsEl.createDiv({ cls: 'perm-path', text: loc.path });
+			}
+			if (req.toolCall.locations.length > 3) {
+				locationsEl.createDiv({ cls: 'perm-path-more', text: `+${req.toolCall.locations.length - 3} more` });
+			}
+		}
+
+		// Raw input summary (if available)
+		if (req.toolCall.rawInput && Object.keys(req.toolCall.rawInput).length > 0) {
+			const inputSummary = this.summarizeInput(req.toolCall.rawInput);
+			if (inputSummary) {
+				banner.createDiv({ cls: 'perm-input', text: inputSummary });
+			}
+		}
+
+		// Actions
+		const actions = banner.createDiv({ cls: 'perm-actions' });
+		for (const opt of req.options) {
+			const btn = actions.createEl('button', {
+				text: opt.name,
+				cls: `perm-btn perm-${opt.kind}`,
+			});
+			btn.onclick = () => {
+				const resolve = this.currentReq?.resolve;
+				this.dismiss();
+				if (resolve) resolve(opt.optionId);
+			};
+		}
+	}
+
+	private summarizeInput(rawInput: Record<string, unknown>): string {
+		const parts: string[] = [];
+		const keys = Object.keys(rawInput);
+
+		for (const key of keys.slice(0, 3)) {
+			const value = rawInput[key];
+			if (typeof value === 'string') {
+				const truncated = value.length > 50 ? value.slice(0, 50) + '...' : value;
+				parts.push(`${key}: ${truncated}`);
+			} else if (typeof value === 'number' || typeof value === 'boolean') {
+				parts.push(`${key}: ${value}`);
+			}
+		}
+
+		return parts.join(', ');
 	}
 
 	dismiss(): void {
