@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.0.30 - 2026-05-28
+
+### Added
+- Add `FsDelegate` class for vault-boundary file system access with path traversal protection.
+- Register `fs/read_text_file` handler for OpenCode agent to read vault files.
+- Declare `clientCapabilities.fs` in ACP initialize request.
+- Add `FsCapabilityMode` setting (enabled/disabled) to control file system access.
+- Add `setFsCapabilityMode()` method to `AcpClient` and `AgentRuntime`.
+- Add unit tests for `FsDelegate` vault boundary checks and file reading.
+
+### Changed
+- Agent can now read files within the vault boundary when FS capability is enabled.
+- File size limited by `maxNoteSize` setting (default 8000 bytes).
+- Files exceeding the limit are truncated with `... [truncated]` suffix.
+
 ## 0.0.29 - 2026-05-28
 
 ### Added

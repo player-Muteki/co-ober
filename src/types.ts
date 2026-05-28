@@ -142,6 +142,7 @@ export interface AcpResponse {
 }
 
 export type PermissionLevel = 'yolo' | 'plan' | 'safe';
+export type FsCapabilityMode = 'enabled' | 'disabled';
 
 export interface ContextRef {
   id: string;
@@ -214,50 +215,52 @@ export interface PluginData {
 }
 
 export interface CopsidianSettings {
-  opencodePath: string;
-  defaultAgent: string;
-  defaultModel: string;
-  defaultEffort: string;
-  permissionMode: PermissionLevel;
-  defaultNoteFolder: string;
-  systemPrompt: string;
-  language: string;
-  maxNoteSize: number;
-  syncRules: SyncRule[];
-  mcpServers: McpServerConfig[];
-  customSkills: CustomSkillDefinition[];
-  customAgents: CustomAgentDefinition[];
-  activeCustomAgentId: string;
-  commonModels: string[];
-  autoConnect?: boolean;
-  autoScrollEnabled?: boolean;
-  maxSessionMessages?: number;
-  sessionRetentionDays?: number;
+	opencodePath: string;
+	defaultAgent: string;
+	defaultModel: string;
+	defaultEffort: string;
+	permissionMode: PermissionLevel;
+	defaultNoteFolder: string;
+	systemPrompt: string;
+	language: string;
+	maxNoteSize: number;
+	syncRules: SyncRule[];
+	mcpServers: McpServerConfig[];
+	customSkills: CustomSkillDefinition[];
+	customAgents: CustomAgentDefinition[];
+	activeCustomAgentId: string;
+	commonModels: string[];
+	autoConnect?: boolean;
+	autoScrollEnabled?: boolean;
+	maxSessionMessages?: number;
+	sessionRetentionDays?: number;
+	fsCapability?: FsCapabilityMode;
 }
 
 export const DEFAULT_SETTINGS: CopsidianSettings = {
-  opencodePath: 'opencode',
-  defaultAgent: 'build',
-  defaultModel: '',
-  defaultEffort: 'default',
-  permissionMode: 'safe',
-  defaultNoteFolder: 'opencode-sync',
-  systemPrompt: '',
-  language: 'en',
-  maxNoteSize: 8000,
-  syncRules: [
-    { id: 'edit', enabled: true, toolName: 'edit', folder: 'opencode-sync', filenameTemplate: '{{tool}}-{{date}}-{{shortId}}' },
-    { id: 'write', enabled: true, toolName: 'write', folder: 'opencode-sync', filenameTemplate: '{{tool}}-{{date}}-{{shortId}}' },
-  ],
-  mcpServers: [],
-  customSkills: [],
-  customAgents: [],
-  activeCustomAgentId: '',
-  commonModels: [],
-  autoConnect: false,
-  autoScrollEnabled: true,
-  maxSessionMessages: 200,
-  sessionRetentionDays: 30,
+	opencodePath: 'opencode',
+	defaultAgent: 'build',
+	defaultModel: '',
+	defaultEffort: 'default',
+	permissionMode: 'safe',
+	defaultNoteFolder: 'opencode-sync',
+	systemPrompt: '',
+	language: 'en',
+	maxNoteSize: 8000,
+	syncRules: [
+		{ id: 'edit', enabled: true, toolName: 'edit', folder: 'opencode-sync', filenameTemplate: '{{tool}}-{{date}}-{{shortId}}' },
+		{ id: 'write', enabled: true, toolName: 'write', folder: 'opencode-sync', filenameTemplate: '{{tool}}-{{date}}-{{shortId}}' },
+	],
+	mcpServers: [],
+	customSkills: [],
+	customAgents: [],
+	activeCustomAgentId: '',
+	commonModels: [],
+	autoConnect: false,
+	autoScrollEnabled: true,
+	maxSessionMessages: 200,
+	sessionRetentionDays: 30,
+	fsCapability: 'enabled',
 };
 
 export const VIEW_TYPE = 'copsidian-view';

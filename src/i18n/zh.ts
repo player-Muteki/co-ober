@@ -286,6 +286,13 @@ const zh: Locale = {
       retentionDays: '会话保留天数',
       retentionDaysDesc: '移除超过此天数的空会话（默认 30）',
     },
+    fsCapability: {
+      heading: '文件系统访问',
+      mode: 'FS 能力模式',
+      modeDesc: '允许 OpenCode Agent 读取 Vault 中的文件',
+      enabled: '启用 — Agent 可以读取 Vault 文件',
+      disabled: '禁用 — 无文件系统访问权限',
+    },
   },
 };
 

@@ -1,14 +1,15 @@
 import type {
-  NormalizedUpdate,
-  PromptPart,
-  SessionConfigOption,
-  PermissionRequest,
-  AvailableCommand,
-  ModelOption,
-  ModeOption,
-  AcpResponse,
-  SessionSnapshot,
-  McpServerConfig,
+	NormalizedUpdate,
+	PromptPart,
+	SessionConfigOption,
+	PermissionRequest,
+	AvailableCommand,
+	ModelOption,
+	ModeOption,
+	AcpResponse,
+	SessionSnapshot,
+	McpServerConfig,
+	FsCapabilityMode,
 } from '../types';
 import type { OpencodeClient, ClientHandlers } from './index';
 import type { AgentCapabilities } from '../types';
@@ -103,5 +104,6 @@ export class AgentRuntime implements OpencodeClient {
   getAvailableCommands(): Promise<AvailableCommand[]> { return this.acp.getAvailableCommands(); }
   getSessionInfo(): { sessionId?: string; title?: string; cwd?: string } | null { return this.acp.getSessionInfo(); }
   getSessionSnapshot(): SessionSnapshot { return this.acp.getSessionSnapshot(); }
-  getCurrentSessionId(): string | undefined { return this.acp.getCurrentSessionId(); }
+	getCurrentSessionId(): string | undefined { return this.acp.getCurrentSessionId(); }
+	setFsCapabilityMode(mode: FsCapabilityMode, maxBytes?: number): void { this.acp.setFsCapabilityMode(mode, maxBytes); }
 }

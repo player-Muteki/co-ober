@@ -3,7 +3,7 @@ import { existsSync } from 'fs';
 import { delimiter, isAbsolute } from 'path';
 import CopsidianPlugin from './main';
 import { VIEW_TYPE } from './types';
-import type { AgentCapabilities, AvailableCommand, CustomAgentDefinition, CustomSkillDefinition, McpServerConfig, ModeOption, ModelOption, PermissionLevel, SyncRule } from './types';
+import type { AgentCapabilities, AvailableCommand, CustomAgentDefinition, CustomSkillDefinition, McpServerConfig, ModeOption, ModelOption, PermissionLevel, SyncRule, FsCapabilityMode } from './types';
 import type { OpencodeClient } from './client';
 import { setLocale, t as locale } from './i18n/index';
 import { CLIENT_VERSION } from './client/acp';
@@ -348,6 +348,27 @@ export class CopsidianSettingsTab extends PluginSettingTab {
           if (!isNaN(n) && n > 0) {
             s.sessionRetentionDays = n;
             await this.save();
+          }
+        }));
+
+    // ── File System Capability ──
+    new Setting(containerEl).setName(labels.fsCapability.heading).setHeading();
+
+    new Setting(containerEl)
+      .setName(labels.fsCapability.mode)
+      .setDesc(labels.fsCapability.modeDesc)
+      .addDropdown((d) => d.addOptions({
+        enabled: labels.fsCapability.enabled,
+        disabled: labels.fsCapability.disabled,
+      })
+        .setValue(s.fsCapability ?? 'enabled')
+        .onChange(async (v) => {
+          s.fsCapability = v as FsCapabilityMode;
+          await this.save();
+          // Update connected client
+          const client = this.plugin.getClient();
+          if (client) {
+            client.setFsCapabilityMode(v as FsCapabilityMode, s.maxNoteSize);
           }
         }));
   }

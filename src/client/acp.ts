@@ -4,17 +4,18 @@ import { delimiter, extname } from 'path';
 import { type AcpLogicalMethod, getAcpMethodCandidates } from './AcpMethodNames';
 import { AcpProtocolError } from './AcpErrors';
 import type {
-  SessionUpdate,
-  PromptPart,
-  SessionConfigOption,
-  PermissionRequest,
-  PermissionOption,
-  AvailableCommand,
-  ModelOption,
-  ModeOption,
-  SessionSnapshot,
-  McpServerConfig,
-  AgentCapabilities,
+	SessionUpdate,
+	PromptPart,
+	SessionConfigOption,
+	PermissionRequest,
+	PermissionOption,
+	AvailableCommand,
+	ModelOption,
+	ModeOption,
+	SessionSnapshot,
+	McpServerConfig,
+	AgentCapabilities,
+	FsCapabilityMode,
 } from '../types';
 import type { OpencodeClient } from './index';
 import type { SessionMeta } from '../types';
@@ -23,8 +24,9 @@ import { t } from '../i18n/index';
 import { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
 import { SessionUpdateNormalizer } from './sessionUpdateNormalizer';
 import type { NormalizedUpdate } from '../types';
+import { FsDelegate } from './fsDelegate';
 
-export const CLIENT_VERSION = '0.0.29';
+export const CLIENT_VERSION = '0.0.30';
 
 export interface AcpSessionMeta {
   availableCommands: AvailableCommand[];
@@ -188,32 +190,34 @@ export type AcpMcpServer =
   | { type: 'sse'; name: string; url: string; headers: Array<{ name: string; value: string }> };
 
 export class AcpClient implements OpencodeClient {
-  private subprocess: AcpSubprocess | null = null;
-  private connected = false;
-  private transport: AcpJsonRpcTransport | null = null;
-  private agentCapabilities: AgentCapabilities | null = null;
-  private activeStreamSessionId: string | null = null;
-  private activeAbortController: AbortController | null = null;
-  private chunkHandler: ((update: NormalizedUpdate) => void) | null = null;
-  private normalizer = new SessionUpdateNormalizer();
-  private sessionId_: string | null = null;
-  private cmdPath: string;
-  private cwd?: string;
-  private availableCommands: AvailableCommand[] = [{ name: 'compact', description: 'compact the session' }];
-  private availableModels: ModelOption[] = [];
-  private availableModes: ModeOption[] = [];
-  private configOptions: SessionConfigOption[] = [];
-  private currentModelId: string | null = null;
-  private currentModeId: string | null = null;
-  private sessionInfo: { sessionId?: string; title?: string; cwd?: string } | null = null;
-  onClose?: () => void;
-  onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
-  onReconnect?: () => Promise<void>;
-  private reconnectAttempts = 0;
-  private readonly maxReconnectAttempts = 3;
-  private isIntentionalDisconnect = false;
-  private methodCache = new Map<AcpLogicalMethod, string>();
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+	private subprocess: AcpSubprocess | null = null;
+	private connected = false;
+	private transport: AcpJsonRpcTransport | null = null;
+	private agentCapabilities: AgentCapabilities | null = null;
+	private activeStreamSessionId: string | null = null;
+	private activeAbortController: AbortController | null = null;
+	private chunkHandler: ((update: NormalizedUpdate) => void) | null = null;
+	private normalizer = new SessionUpdateNormalizer();
+	private sessionId_: string | null = null;
+	private cmdPath: string;
+	private cwd?: string;
+	private fsDelegate: FsDelegate | null = null;
+	private fsCapabilityMode: FsCapabilityMode = 'enabled';
+	private availableCommands: AvailableCommand[] = [{ name: 'compact', description: 'compact the session' }];
+	private availableModels: ModelOption[] = [];
+	private availableModes: ModeOption[] = [];
+	private configOptions: SessionConfigOption[] = [];
+	private currentModelId: string | null = null;
+	private currentModeId: string | null = null;
+	private sessionInfo: { sessionId?: string; title?: string; cwd?: string } | null = null;
+	onClose?: () => void;
+	onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
+	onReconnect?: () => Promise<void>;
+	private reconnectAttempts = 0;
+	private readonly maxReconnectAttempts = 3;
+	private isIntentionalDisconnect = false;
+	private methodCache = new Map<AcpLogicalMethod, string>();
+	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(cmdPath: string, cwd?: string) {
     this.cmdPath = cmdPath;
@@ -225,66 +229,82 @@ export class AcpClient implements OpencodeClient {
 
   isConnected(): boolean { return this.connected; }
 
-  async connect(): Promise<void> {
-    if (this.connected) return;
-    this.isIntentionalDisconnect = false;
-    this.clearReconnectTimer();
+	async connect(): Promise<void> {
+		if (this.connected) return;
+		this.isIntentionalDisconnect = false;
+		this.clearReconnectTimer();
 
-    const cmd = this.cmdPath.replace(/^"(.+)"$/, '$1').replace(/^'(.+)'$/, '$1');
-    const args = ['acp'];
-    const cwd = this.cwd ?? process.cwd();
+		const cmd = this.cmdPath.replace(/^"(.+)"$/, '$1').replace(/^'(.+)'$/, '$1');
+		const args = ['acp'];
+		const cwd = this.cwd ?? process.cwd();
 
-    const spawnInfo = this.getSpawnInfo(cmd, args);
-    const launchSpec: AcpSubprocessLaunchSpec = {
-      command: spawnInfo.command,
-      args: spawnInfo.args,
-      cwd,
-    };
-    const subprocess = new AcpSubprocess(launchSpec);
-    this.subprocess = subprocess;
+		const spawnInfo = this.getSpawnInfo(cmd, args);
+		const launchSpec: AcpSubprocessLaunchSpec = {
+			command: spawnInfo.command,
+			args: spawnInfo.args,
+			cwd,
+		};
+		const subprocess = new AcpSubprocess(launchSpec);
+		this.subprocess = subprocess;
 
-    try {
-      subprocess.start();
-      const input = subprocess.stdout;
-      const output = subprocess.stdin;
-      if (!input || !output) {
-        throw new Error(t().acp.stdinNotWritable);
-      }
+		try {
+			subprocess.start();
+			const input = subprocess.stdout;
+			const output = subprocess.stdin;
+			if (!input || !output) {
+				throw new Error(t().acp.stdinNotWritable);
+			}
 
-      const transport = new AcpJsonRpcTransport({ input, output });
-      this.transport = transport;
-      transport.start();
+			const transport = new AcpJsonRpcTransport({ input, output });
+			this.transport = transport;
+			transport.start();
 
-      transport.onNotification('session/update', (params) => {
-        const p = params as Record<string, unknown> | undefined;
-        const update = this.parseUpdate(p?.update as Record<string, unknown> | undefined);
-        if (update) {
-          this.applySessionUpdate(update);
-          if (this.chunkHandler) {
-            const norm = this.normalizer.normalize(update);
-            if (norm) this.chunkHandler(norm);
-          }
-        }
-      });
+			// Initialize FsDelegate for vault boundary checks
+			this.fsDelegate = new FsDelegate({
+				vaultPath: cwd,
+				maxBytes: 8000, // Will be updated when settings are applied
+			});
 
-      transport.onRequest('request_permission', (params) => {
-        return this.handleServerRequestPermission(params as Record<string, unknown>);
-      });
+			transport.onNotification('session/update', (params) => {
+				const p = params as Record<string, unknown> | undefined;
+				const update = this.parseUpdate(p?.update as Record<string, unknown> | undefined);
+				if (update) {
+					this.applySessionUpdate(update);
+					if (this.chunkHandler) {
+						const norm = this.normalizer.normalize(update);
+						if (norm) this.chunkHandler(norm);
+					}
+				}
+			});
 
-      subprocess.onClose((error) => this.handleSubprocessClose(subprocess, error));
+			transport.onRequest('request_permission', (params) => {
+				return this.handleServerRequestPermission(params as Record<string, unknown>);
+			});
 
-      const response = await this.request('initialize', {
-        protocolVersion: 1,
-        clientInfo: { name: 'copsidian', version: CLIENT_VERSION },
-        clientCapabilities: {},
-      }) as Record<string, unknown>;
-      this.agentCapabilities = (response.agentCapabilities as AgentCapabilities) ?? null;
-      this.connected = true;
-    } catch (error) {
-      await this.disposeConnection(error instanceof Error ? error : new Error(String(error)), true);
-      throw error;
-    }
-  }
+			// Register fs/read_text_file handler
+			transport.onRequest('fs/read_text_file', (params) => {
+				return this.handleReadTextFile(params as Record<string, unknown>);
+			});
+
+			subprocess.onClose((error) => this.handleSubprocessClose(subprocess, error));
+
+			const clientCapabilities: Record<string, unknown> = {};
+			if (this.fsCapabilityMode === 'enabled') {
+				clientCapabilities.fs = { readTextFile: true, writeTextFile: false };
+			}
+
+			const response = await this.request('initialize', {
+				protocolVersion: 1,
+				clientInfo: { name: 'copsidian', version: CLIENT_VERSION },
+				clientCapabilities,
+			}) as Record<string, unknown>;
+			this.agentCapabilities = (response.agentCapabilities as AgentCapabilities) ?? null;
+			this.connected = true;
+		} catch (error) {
+			await this.disposeConnection(error instanceof Error ? error : new Error(String(error)), true);
+			throw error;
+		}
+	}
 
   getAgentCapabilities(): AgentCapabilities | null {
     return this.agentCapabilities;
@@ -482,26 +502,54 @@ export class AcpClient implements OpencodeClient {
     }
   }
 
-  private handleServerRequestPermission(params: Record<string, unknown>): Promise<unknown> {
-    return new Promise((resolve, reject) => {
-      const req: PermissionRequest = {
-        sessionId: params.sessionId as string,
-        toolCall: params.toolCall as PermissionRequest['toolCall'],
-        options: params.options as PermissionOption[],
-      };
+	private handleServerRequestPermission(params: Record<string, unknown>): Promise<unknown> {
+		return new Promise((resolve, reject) => {
+			const req: PermissionRequest = {
+				sessionId: params.sessionId as string,
+				toolCall: params.toolCall as PermissionRequest['toolCall'],
+				options: params.options as PermissionOption[],
+			};
 
-      const handler = this.onPermissionRequest ?? ((r: PermissionRequest) => this.requestPermission(r));
-      handler(req).then((decision: string) => {
-        resolve({ sessionId: params.sessionId, decision: { optionId: decision } });
-      }).catch((error: unknown) => {
-        console.error('[copsidian] permission request failed:', error);
-        // Fallback to default handler on failure
-        this.requestPermission(req).then((decision: string) => {
-          resolve({ sessionId: params.sessionId, decision: { optionId: decision } });
-        }).catch(reject);
-      });
-    });
-  }
+			const handler = this.onPermissionRequest ?? ((r: PermissionRequest) => this.requestPermission(r));
+			handler(req).then((decision: string) => {
+				resolve({ sessionId: params.sessionId, decision: { optionId: decision } });
+			}).catch((error: unknown) => {
+				console.error('[copsidian] permission request failed:', error);
+				// Fallback to default handler on failure
+				this.requestPermission(req).then((decision: string) => {
+					resolve({ sessionId: params.sessionId, decision: { optionId: decision } });
+				}).catch(reject);
+			});
+		});
+	}
+
+	private handleReadTextFile(params: Record<string, unknown>): Promise<unknown> {
+		return new Promise((resolve) => {
+			if (this.fsCapabilityMode !== 'enabled' || !this.fsDelegate) {
+				resolve({ content: '', error: 'File system access is disabled' });
+				return;
+			}
+
+			const filePath = params.path as string;
+			if (!filePath) {
+				resolve({ content: '', error: 'Missing required parameter: path' });
+				return;
+			}
+
+			const result = this.fsDelegate.readTextFile(filePath);
+			resolve(result);
+		});
+	}
+
+	setFsCapabilityMode(mode: FsCapabilityMode, maxBytes?: number): void {
+		this.fsCapabilityMode = mode;
+		if (this.fsDelegate && maxBytes !== undefined) {
+			this.fsDelegate = new FsDelegate({
+				vaultPath: this.cwd ?? process.cwd(),
+				maxBytes,
+			});
+		}
+	}
 
   private parseUpdate(u: Record<string, unknown> | undefined | null): SessionUpdate | null {
     return parseSessionUpdate(u);

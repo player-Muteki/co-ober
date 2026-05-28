@@ -374,7 +374,7 @@ TerminalView (新建, 视图组件)
 v0.0.27 ✅ 消除 lint warnings
 v0.0.28 ✅ CopsidianView Controller 化
 v0.0.29 ✅ Transport AbortSignal + 错误分类 UI
-v0.0.30    clientCapabilities.fs + Vault 边界 (只读)
+v0.0.30 ✅ clientCapabilities.fs + Vault 边界 (只读)
 v0.0.31    Terminal Phase 1 (只读输出)
 v0.0.32    Terminal Phase 2 + fs write
 v0.0.33    丰富权限 UI + audio

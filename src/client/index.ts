@@ -1,17 +1,18 @@
 import type {
-  SessionId,
-  SessionConfigOption,
-  ModelOption,
-  ModeOption,
-  AvailableCommand,
-  PermissionRequest,
-  NormalizedUpdate,
-  PromptPart,
-  AcpResponse,
-  SessionMeta,
-  SessionSnapshot,
-  McpServerConfig,
-  AgentCapabilities,
+	SessionId,
+	SessionConfigOption,
+	ModelOption,
+	ModeOption,
+	AvailableCommand,
+	PermissionRequest,
+	NormalizedUpdate,
+	PromptPart,
+	AcpResponse,
+	SessionMeta,
+	SessionSnapshot,
+	McpServerConfig,
+	AgentCapabilities,
+	FsCapabilityMode,
 } from '../types';
 
 export interface ClientHandlers {
@@ -49,7 +50,8 @@ export interface OpencodeClient {
   getAvailableModels(): Promise<ModelOption[]>;
   getAvailableCommands(): Promise<AvailableCommand[]>;
   getSessionInfo(): { sessionId?: string; title?: string; cwd?: string } | null;
-  getSessionSnapshot(): SessionSnapshot;
-  getCurrentSessionId(): SessionId | undefined;
-  setClientHandlers(handlers: ClientHandlers): void;
+	getSessionSnapshot(): SessionSnapshot;
+	getCurrentSessionId(): SessionId | undefined;
+	setClientHandlers(handlers: ClientHandlers): void;
+	setFsCapabilityMode(mode: FsCapabilityMode, maxBytes?: number): void;
 }

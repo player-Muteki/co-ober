@@ -284,6 +284,13 @@ const en = {
       retentionDays: 'Session Retention Days',
       retentionDaysDesc: 'Remove empty sessions older than this (default 30)',
     },
+    fsCapability: {
+      heading: 'File System Access',
+      mode: 'FS Capability Mode',
+      modeDesc: 'Allow OpenCode agent to read files from your vault',
+      enabled: 'Enabled — agent can read vault files',
+      disabled: 'Disabled — no file system access',
+    },
   },
 };
 
