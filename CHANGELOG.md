@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.0.39 - 2026-05-30
+
+### Fixed
+- Fix session stability: `send()` no longer shows error UI when connection is already lost.
+- Fix session stability: reconnect now shows a recovery prompt instead of silently losing the in-flight message.
+- Fix session stability: `ensureRuntimeSession` falls back to creating a new session when sync fails.
+- Fix abort race condition in `AcpJsonRpcTransport` — abort handler checks if request is still pending.
+- Fix token usage tracking: enhanced `parseSessionUpdate` field fallback for different server versions.
+- Remove dead `response.usage` code path (opencode returns empty object from prompt).
+
+### Changed
+- Toolbar split into two rows: top row (model selector + mode buttons), bottom row (effort + context meter + permission + send).
+- Idle timeout now disabled when set to 0 (short-circuit instead of wrapping in timeout logic).
+- Added debug logging for `usage_update` notifications.
+
 ## 0.0.38 - 2026-05-30
 
 ### Added

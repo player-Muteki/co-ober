@@ -54,23 +54,29 @@ export class InputToolbar {
     container.addClass('copsidian-toolbar');
     onLocaleChange(() => this.refreshLocale());
 
+    // ── Top row: model selector + mode buttons ──
+    const topRow = container.createDiv({ cls: 'copsidian-toolbar-row copsidian-toolbar-top' });
+
     // Custom model selector (hover dropdown)
-    this.modelSelectorEl = container.createDiv({ cls: 'copsidian-model-selector' });
+    this.modelSelectorEl = topRow.createDiv({ cls: 'copsidian-model-selector' });
     this.modelBtnEl = this.modelSelectorEl.createDiv({ cls: 'copsidian-model-btn' });
     this.modelLabelEl = this.modelBtnEl.createSpan({ cls: 'copsidian-model-label' });
     this.modelLabelEl.setText(t().toolbar.noModels);
     this.modelDropdownEl = this.modelSelectorEl.createDiv({ cls: 'copsidian-model-dropdown' });
 
     // Mode segmented buttons
-    this.modeGroupEl = container.createDiv({ cls: 'copsidian-mode-group' });
+    this.modeGroupEl = topRow.createDiv({ cls: 'copsidian-mode-group' });
+
+    // ── Bottom row: effort + meter + permission + sending + send ──
+    const bottomRow = container.createDiv({ cls: 'copsidian-toolbar-row copsidian-toolbar-bottom' });
 
     // Effort dropdown
-    this.effortSelect = container.createEl('select', { cls: 'copsidian-dropdown tb-select tb-effort' });
+    this.effortSelect = bottomRow.createEl('select', { cls: 'copsidian-dropdown tb-select tb-effort' });
     this.effortSelect.title = t().toolbar.effortTitle;
     this.effortSelect.onchange = () => this.callbacks.onEffortChange?.(this.effortSelect.value);
 
     // Context meter
-    this.meterEl = container.createDiv({ cls: 'copsidian-meter' });
+    this.meterEl = bottomRow.createDiv({ cls: 'copsidian-meter' });
     this.meterTrackEl = this.meterEl.createDiv({ cls: 'copsidian-meter-track' });
     this.meterFillEl = this.meterTrackEl.createDiv({ cls: 'copsidian-meter-fill' });
     this.meterGlowEl = this.meterTrackEl.createDiv({ cls: 'copsidian-meter-glow' });
@@ -79,17 +85,17 @@ export class InputToolbar {
     this.meterEl.addClass('empty');
 
     // Permission toggle
-    this.permToggleEl = container.createDiv({ cls: 'copsidian-perm-toggle' });
+    this.permToggleEl = bottomRow.createDiv({ cls: 'copsidian-perm-toggle' });
     this.permLabelEl = this.permToggleEl.createSpan({ cls: 'copsidian-perm-label' });
     this.permSwitchEl = this.permToggleEl.createDiv({ cls: 'copsidian-perm-switch' });
     this.permToggleEl.addEventListener('click', () => this.cyclePermission());
 
     // Sending indicator
-    this.sendingEl = container.createSpan({ cls: 'copsidian-toolbar-sending' });
+    this.sendingEl = bottomRow.createSpan({ cls: 'copsidian-toolbar-sending' });
     this.sendingEl.style.display = 'none';
 
     // Send/Stop button
-    this.sendBtn = container.createEl('button', { text: t().toolbar.send, cls: 'copsidian-send-btn' });
+    this.sendBtn = bottomRow.createEl('button', { text: t().toolbar.send, cls: 'copsidian-send-btn' });
     this.sendBtn.onclick = () => this.handleSendClick();
 
     this.updatePermissionDisplay();

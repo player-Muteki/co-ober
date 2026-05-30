@@ -29,7 +29,7 @@ import type { NormalizedUpdate } from '../types';
 import { FsDelegate } from './fsDelegate';
 import { TerminalManager } from './terminalManager';
 
-export const CLIENT_VERSION = '0.0.38';
+export const CLIENT_VERSION = '0.0.39';
 
 export interface AcpSessionMeta {
   availableCommands: AvailableCommand[];
@@ -68,7 +68,7 @@ export function parseSessionUpdate(u: Record<string, unknown> | undefined | null
     case 'available_commands_update':
       return { sessionUpdate: 'available_commands_update', availableCommands: (u.availableCommands ?? []) as import('../types').AvailableCommand[] };
     case 'usage_update':
-      return { sessionUpdate: 'usage_update', used: u.used as number, size: u.size as number, cost: u.cost as { amount: number; currency: string }, totalTokens: u.totalTokens as number, inputTokens: u.inputTokens as number, outputTokens: u.outputTokens as number, thoughtTokens: u.thoughtTokens as number };
+      return { sessionUpdate: 'usage_update', used: (u.used as number) ?? (u.totalTokens as number), size: (u.size as number) ?? (u.contextWindow as number), cost: u.cost as { amount: number; currency: string }, totalTokens: (u.totalTokens as number) ?? (u.used as number), inputTokens: (u.inputTokens as number) ?? 0, outputTokens: (u.outputTokens as number) ?? 0, thoughtTokens: (u.thoughtTokens as number) ?? 0 };
     case 'current_mode_update':
       return { sessionUpdate: 'current_mode_update', currentModeId: u.currentModeId as string, availableModes: u.availableModes as import('../types').ModeOption[] };
     case 'current_model_update':
@@ -276,17 +276,20 @@ export class AcpClient implements OpencodeClient {
 				maxOutputBytes: 100000, // Will be updated when settings are applied
 			});
 
-			transport.onNotification('session/update', (params) => {
-				const p = params as Record<string, unknown> | undefined;
-				const update = this.parseUpdate(p?.update as Record<string, unknown> | undefined);
-				if (update) {
-					this.applySessionUpdate(update);
-					if (this.chunkHandler) {
-						const norm = this.normalizer.normalize(update);
-						if (norm) this.chunkHandler(norm);
-					}
+		transport.onNotification('session/update', (params) => {
+			const p = params as Record<string, unknown> | undefined;
+			const update = this.parseUpdate(p?.update as Record<string, unknown> | undefined);
+			if (update) {
+				if (update.sessionUpdate === 'usage_update') {
+					console.debug('[copsidian] usage_update:', JSON.stringify(update));
 				}
-			});
+				this.applySessionUpdate(update);
+				if (this.chunkHandler) {
+					const norm = this.normalizer.normalize(update);
+					if (norm) this.chunkHandler(norm);
+				}
+			}
+		});
 
 			transport.onRequest('request_permission', (params) => {
 				return this.handleServerRequestPermission(params as Record<string, unknown>);

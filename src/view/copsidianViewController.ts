@@ -147,6 +147,14 @@ export class CopsidianViewController {
 					console.error('[copsidian] session resync:', e);
 				}
 				this.loadToolbarOptions();
+				if (this.busy) {
+					this.busy = false;
+					this.state.isStreaming = false;
+					this.deps.input.setStreaming(false);
+					this.deps.toolbar.setSending(false);
+					this.deps.renderer.removeAssistantPlaceholder();
+					this.deps.renderer.addError(t().error.reconnected);
+				}
 			},
 			onPermissionRequest: async (req) => (
 				client.permissionMode === 'safe'
@@ -265,9 +273,14 @@ export class CopsidianViewController {
 		if (!client) return null;
 
 		if (this.state.sessionId) {
-			await this.syncRuntimeSession(this.state.sessionId);
+			try {
+				await this.syncRuntimeSession(this.state.sessionId);
+			} catch (e) {
+				console.error('[copsidian] session sync failed, creating new session:', e);
+				this.state.sessionId = null;
+			}
 			this.loadToolbarOptions();
-			return this.state.sessionId;
+			if (this.state.sessionId) return this.state.sessionId;
 		}
 
 		try {
@@ -370,21 +383,12 @@ export class CopsidianViewController {
 			const parts = await this.buildParts(text, refs);
 			if (this.state.sessionId !== sessionId || !this.busy) return;
 			this.callbacks.onClearPendingImageChips();
-			const response = await c.sendMessage(sessionId, parts, (ch: NormalizedUpdate) => {
+			await c.sendMessage(sessionId, parts, (ch: NormalizedUpdate) => {
 				if (!this.busy || this.state.sessionId !== sessionId) return;
 				this.streamCtrl.handleChunk(ch);
 			});
-			if (response?.usage) {
-				this.state.usage = {
-					totalTokens: response.usage.totalTokens ?? 0,
-					inputTokens: response.usage.inputTokens ?? 0,
-					outputTokens: response.usage.outputTokens ?? 0,
-					thoughtTokens: response.usage.thoughtTokens,
-					cost: this.state.usage?.cost,
-				};
-				this.deps.toolbar.updateContextMeter(this.state.usage);
-			}
 		} catch (e: unknown) {
+			if (!this.state.isConnected) return;
 			if (this.state.sessionId === sessionId) {
 				if (e instanceof AcpAbortError) {
 					// User cancelled, don't show error

@@ -257,14 +257,28 @@
   color: var(--text-error);
 }
 
-/* Toolbar (below input) */
+/* Toolbar (below input) — two rows */
 .copsidian-toolbar {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 4px;
   padding: 4px 8px 6px;
   flex-shrink: 0;
   background: var(--background-primary);
+}
+
+.copsidian-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.copsidian-toolbar-top {
+  /* model selector takes available space, mode buttons on the right */
+}
+
+.copsidian-toolbar-bottom {
+  /* compact row: effort, meter, permission, send */
 }
 
 .copsidian-toolbar .tb-select {

@@ -73,6 +73,7 @@ export class AcpJsonRpcTransport {
         }
         abortHandler = () => {
           if (timeout) clearTimeout(timeout);
+          if (!this.pending.has(id)) return;
           this.pending.delete(id);
           reject(new AcpAbortError(method));
         };
