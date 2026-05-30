@@ -11,15 +11,24 @@
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--background-modifier-border);
+  flex-shrink: 0;
+}
+
+.copsidian-header .copsidian-arc-meter {
   flex-shrink: 0;
 }
 
 .copsidian-header-title {
   font-weight: 600;
   font-size: var(--font-ui-medium);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .copsidian-header-actions {
@@ -257,11 +266,9 @@
   color: var(--text-error);
 }
 
-/* Toolbar (below input) — two rows */
+/* Toolbar (below input) — single row */
 .copsidian-toolbar {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
   padding: 4px 8px 6px;
   flex-shrink: 0;
   background: var(--background-primary);
@@ -271,18 +278,15 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
 }
 
-.copsidian-toolbar-top .copsidian-model-selector {
+.copsidian-toolbar-row .copsidian-model-selector {
   flex: 1;
   min-width: 0;
 }
 
-.copsidian-toolbar-top .copsidian-mode-group {
-  flex-shrink: 0;
-}
-
-.copsidian-toolbar-bottom .copsidian-perm-toggle {
+.copsidian-toolbar-row .copsidian-send-btn {
   margin-left: auto;
 }
 
@@ -370,7 +374,7 @@
 .copsidian-model-selector {
   position: relative;
   flex: 1;
-  max-width: 50%;
+  min-width: 0;
 }
 
 .copsidian-model-btn {
@@ -473,37 +477,32 @@
   pointer-events: none;
 }
 
-/* Mode segmented buttons */
-.copsidian-mode-group {
+/* Mode cycle button */
+.copsidian-mode-cycle {
   display: flex;
+  align-items: center;
+  padding: 2px 10px;
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
-  overflow: hidden;
+  background: var(--background-secondary);
+  cursor: pointer;
+  font-size: var(--font-smaller);
+  color: var(--text-muted);
+  transition: color 0.1s ease, border-color 0.1s ease;
+  white-space: nowrap;
   flex-shrink: 0;
 }
 
-.copsidian-mode-btn {
-  padding: 2px 10px;
-  font-size: var(--font-smaller);
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: background 0.1s ease, color 0.1s ease;
-  white-space: nowrap;
-  border-right: 1px solid var(--background-modifier-border);
-}
-
-.copsidian-mode-btn:last-child {
-  border-right: none;
-}
-
-.copsidian-mode-btn:hover {
-  background: var(--background-modifier-hover);
+.copsidian-mode-cycle:hover {
   color: var(--text-normal);
+  border-color: var(--text-accent);
 }
 
-.copsidian-mode-btn.active {
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
+.copsidian-mode-cycle.has-options {
+  cursor: pointer;
+}
+
+.copsidian-mode-cycle-label {
   font-weight: 500;
 }
 
@@ -516,7 +515,7 @@
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
   cursor: pointer;
-  transition: border-color 0.1s ease;
+  transition: border-color 0.1s ease, color 0.1s ease;
   flex-shrink: 0;
 }
 
@@ -524,29 +523,22 @@
   border-color: var(--text-accent);
 }
 
+.copsidian-perm-toggle.mod-safe {
+  color: var(--text-success);
+}
+
+.copsidian-perm-toggle.mod-plan {
+  color: var(--text-accent);
+}
+
+.copsidian-perm-toggle.mod-yolo {
+  color: var(--text-warning);
+}
+
 .copsidian-perm-label {
   font-size: var(--font-smaller);
-  color: var(--text-muted);
+  color: inherit;
   white-space: nowrap;
-}
-
-.copsidian-perm-switch {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  transition: background 0.1s ease;
-}
-
-.copsidian-perm-switch.mod-safe {
-  background: var(--text-success);
-}
-
-.copsidian-perm-switch.mod-plan {
-  background: var(--text-accent);
-}
-
-.copsidian-perm-switch.mod-yolo {
-  background: var(--text-warning);
 }
 
 /* Context arc meter — semicircle gauge */
@@ -625,10 +617,10 @@
 .copsidian-arc-meter[data-tooltip]:hover::after {
   content: attr(data-tooltip);
   position: absolute;
-  bottom: 100%;
+  top: 100%;
   left: 50%;
   transform: translateX(-50%);
-  margin-bottom: 8px;
+  margin-top: 8px;
   padding: 6px 10px;
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
@@ -642,22 +634,7 @@
   pointer-events: none;
 }
 
-.copsidian-toolbar .copsidian-toolbar-sending {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--text-accent);
-  animation: copsidian-pulse 1s ease-in-out infinite;
-  flex-shrink: 0;
-}
-
-@keyframes copsidian-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
-
 .copsidian-toolbar .copsidian-send-btn {
-  margin-left: auto;
   background: var(--interactive-accent);
   color: var(--text-on-accent);
   border: none;

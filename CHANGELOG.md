@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.0 - 2026-05-30
+
+First public beta release.
+
+### Changed
+- Toolbar redesigned as single row: model selector, mode cycle button, effort dropdown, permission cycle, send button.
+- Context arc meter moved to header bar (left of title), freeing toolbar space.
+- Mode selector changed from segmented button group to single click-to-cycle button.
+- Permission toggle uses color-coded border (green/amber/orange) instead of dot indicator.
+- Sending indicator merged into send button (button turns red "Stop" during generation).
+
 ## 0.0.41 - 2026-05-30
 
 ### Changed

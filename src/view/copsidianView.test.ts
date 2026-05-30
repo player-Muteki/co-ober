@@ -158,6 +158,7 @@ function createController(plugin: CopsidianPlugin): CopsidianViewController {
     } as unknown as ControllerDeps['sessionStore'],
     welcomeView: { show: noop, hide: noop, updateStatus: noop } as unknown as ControllerDeps['welcomeView'],
     plugin,
+    updateContextMeter: noop,
   };
   const callbacks: ControllerCallbacks = {
     onShowWelcome: noop, onHideWelcome: noop, onShowReconnectBtn: noop, onHideReconnectBtn: noop,

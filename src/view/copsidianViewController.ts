@@ -49,6 +49,7 @@ export interface ControllerDeps {
 	sessionStore: SessionStore;
 	welcomeView: WelcomeView;
 	plugin: CopsidianPlugin;
+	updateContextMeter: (usage: import('../chat/toolbar').UsageInfo | null) => void;
 }
 
 export class CopsidianViewController {
@@ -72,7 +73,7 @@ export class CopsidianViewController {
 			onModeUpdate: (modeId, modes) => this.applyModeUpdate(modeId, modes),
 			onModelsUpdate: (modelId, models) => this.applyModelUpdate(modelId, models),
 			onCommandsUpdate: () => {},
-			onUsageUpdate: () => this.deps.toolbar.updateContextMeter(this.state.usage),
+			onUsageUpdate: () => this.deps.updateContextMeter(this.state.usage),
 			onSyncFailure: (message) => deps.renderer.addError(message),
 		});
 	}
@@ -172,7 +173,7 @@ export class CopsidianViewController {
 		this.busy = false;
 		this.state.isStreaming = false;
 		this.state.usage = null;
-		this.deps.toolbar.updateContextMeter(null);
+		this.deps.updateContextMeter(null);
 		this.state.lastError = null;
 		this.state.needsAttention = false;
 		this.deps.input.setStreaming(false);
@@ -397,7 +398,7 @@ export class CopsidianViewController {
 					contextWindow: this.state.usage?.contextWindow,
 					contextTokens: this.state.usage?.contextTokens,
 				};
-				this.deps.toolbar.updateContextMeter(this.state.usage);
+				this.deps.updateContextMeter(this.state.usage);
 			}
 		} catch (e: unknown) {
 			if (!this.state.isConnected) return;
@@ -624,7 +625,7 @@ export class CopsidianViewController {
 		this.busy = false;
 		this.state.isStreaming = false;
 		this.state.usage = null;
-		this.deps.toolbar.updateContextMeter(null);
+		this.deps.updateContextMeter(null);
 		this.state.lastError = null;
 		this.state.needsAttention = false;
 		this.deps.input.setStreaming(false);

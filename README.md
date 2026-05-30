@@ -4,6 +4,8 @@
 ![GitHub release](https://img.shields.io/github/v/release/player-Muteki/copsidian)
 ![License](https://img.shields.io/github/license/player-Muteki/copsidian)
 
+> Beta — currently in public testing.
+
 > English | [中文](#中文)
 
 An Obsidian plugin that embeds the complete [OpenCode](https://opencode.ai) AI Agent in your vault. Your notes become the agent's context — ask, summarize, organize, and create content without ever leaving Obsidian.
@@ -24,7 +26,7 @@ Existing AI plugins for Obsidian fall into two categories: those that require th
 
 **Multi-Session Management** — Run multiple conversations simultaneously. Sessions persist across Obsidian restarts with configurable retention policies.
 
-**Model & Mode Switching** — Switch AI models and Agent modes (`build` / `plan` / `docs`) directly in the UI.
+**Model & Mode Switching** — Switch AI models and Agent modes (`build` / `plan` / `docs`) directly in the toolbar. Mode cycles on click; model opens a hover dropdown.
 
 **Custom Agents & Skills** — Define local agent profiles and reusable skill instructions in Settings, then inject them into new chat prompts.
 
@@ -32,7 +34,7 @@ Existing AI plugins for Obsidian fall into two categories: those that require th
 
 **Sync Engine** — Tool call results (file edits, writes) are automatically written back to Vault notes based on configurable sync rules with filename templates.
 
-**Permission Modes** — Choose your level of control: `yolo` (auto-approve all), `plan` (approve safe operations), or `safe` (confirm every action).
+**Permission Modes** — Choose your level of control: `yolo` (auto-approve all), `plan` (approve safe operations), or `safe` (confirm every action). Permission cycles on click with color-coded borders.
 
 **Auto-Reconnect** — Automatically recovers when the OpenCode process crashes.
 
@@ -260,6 +262,8 @@ Licensed under the [MIT License](LICENSE).
 # 中文
 
 > [English](#copsidian) | 中文
+
+> Beta — 目前处于公开测试阶段。
 
 将完整的 [OpenCode](https://opencode.ai) AI Agent 嵌入 Obsidian 侧边栏。你的笔记就是 Agent 的上下文——在笔记中直接提问、总结、整理和创作。
 

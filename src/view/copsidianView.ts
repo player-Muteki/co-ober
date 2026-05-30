@@ -5,7 +5,7 @@ import type { ContextRef, PromptPart } from '../types';
 import { t } from '../i18n/index';
 import { ChatRenderer } from './renderer';
 import { ChatInput } from '../chat/input';
-import { InputToolbar } from '../chat/toolbar';
+import { InputToolbar, type UsageInfo } from '../chat/toolbar';
 import { ContextMention } from '../context/mention';
 import { ContextResolver } from '../context/resolver';
 import { SyncEngine } from '../sync/engine';
@@ -55,6 +55,11 @@ export class CopsidianView extends ItemView {
 	private newSessionBtnEl: HTMLButtonElement | null = null;
 	private controller!: CopsidianViewController;
 
+	// Context arc meter (in header)
+	private meterEl!: HTMLDivElement;
+	private meterArcFill!: SVGCircleElement;
+	private meterPctEl!: HTMLSpanElement;
+
 	// Event listener references for cleanup on close
 	private scrollHandler: (() => void) | null = null;
 
@@ -91,6 +96,31 @@ export class CopsidianView extends ItemView {
 
 		// ── Header ──
 		const header = el.createDiv({ cls: 'copsidian-header' });
+
+		// Context arc meter (left side of header)
+		this.meterEl = header.createDiv({ cls: 'copsidian-arc-meter' });
+		const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+		svg.setAttribute('viewBox', '0 0 40 24');
+		svg.setAttribute('class', 'copsidian-arc-svg');
+		const R = 18;
+		const C = 20;
+		const ARC_LEN = Math.PI * R;
+		const track = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+		track.setAttribute('d', `M ${C - R} ${C} A ${R} ${R} 0 0 1 ${C + R} ${C}`);
+		track.setAttribute('class', 'copsidian-arc-track');
+		svg.appendChild(track);
+		this.meterArcFill = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+		this.meterArcFill.setAttribute('cx', String(C));
+		this.meterArcFill.setAttribute('cy', String(C));
+		this.meterArcFill.setAttribute('r', String(R));
+		this.meterArcFill.setAttribute('class', 'copsidian-arc-fill');
+		this.meterArcFill.setAttribute('stroke-dasharray', `0 ${ARC_LEN}`);
+		svg.appendChild(this.meterArcFill);
+		this.meterEl.appendChild(svg);
+		this.meterPctEl = this.meterEl.createSpan({ cls: 'copsidian-arc-pct' });
+		this.meterPctEl.setText('—');
+		this.meterEl.addClass('empty');
+
 		this.headerTitleEl = header.createDiv({ text: t().appName, cls: 'copsidian-header-title' });
 		const actions = header.createDiv({ cls: 'copsidian-header-actions' });
 		this.newSessionBtnEl = actions.createEl('button', { text: t().header.new, cls: 'mod-icon' });
@@ -162,6 +192,7 @@ export class CopsidianView extends ItemView {
 			sessionStore: this.sessionStore,
 			welcomeView: this.welcomeView,
 			plugin: this.plugin,
+			updateContextMeter: (usage) => this.updateContextMeter(usage),
 		};
 
 		const savedSessionId = this.sessionStore.activeId;
@@ -571,5 +602,49 @@ export class CopsidianView extends ItemView {
 	async requestInlineEdit(selected: string, editor: import('obsidian').Editor): Promise<void> {
 		const prompt = this.inlineEditPanel.request(selected, editor);
 		await this.send(prompt);
+	}
+
+	// ── Context arc meter (in header) ──
+
+	updateContextMeter(usage: UsageInfo | null): void {
+		const R = 18;
+		const ARC_LEN = Math.PI * R;
+
+		if (!usage || (!usage.contextTokens && usage.totalTokens <= 0)) {
+			this.meterEl.addClass('empty');
+			this.meterEl.removeClass('warning', 'critical');
+			this.meterPctEl.setText('—');
+			this.meterArcFill.setAttribute('stroke-dasharray', `0 ${ARC_LEN}`);
+			this.meterEl.removeAttribute('data-tooltip');
+			return;
+		}
+
+		this.meterEl.removeClass('empty');
+
+		const used = usage.contextTokens ?? usage.totalTokens ?? 0;
+		const contextWindow = usage.contextWindow ?? 0;
+		const pct = contextWindow > 0 ? Math.min(100, Math.round((used / contextWindow) * 100)) : 0;
+
+		const filled = (pct / 100) * ARC_LEN;
+		this.meterArcFill.setAttribute('stroke-dasharray', `${filled} ${ARC_LEN}`);
+
+		this.meterPctEl.setText(`${pct}%`);
+
+		this.meterEl.removeClass('warning', 'critical');
+		if (pct >= 90) {
+			this.meterEl.addClass('critical');
+		} else if (pct >= 75) {
+			this.meterEl.addClass('warning');
+		}
+
+		const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+		const tooltip = [
+			`Context: ${fmt(used)} / ${fmt(contextWindow)} tokens`,
+			`Input: ${fmt(usage.inputTokens)}`,
+			usage.thoughtTokens ? `Thinking: ${fmt(usage.thoughtTokens)}` : '',
+			`Output: ${fmt(usage.outputTokens)}`,
+			pct >= 80 ? '⚠ Approaching limit — run /compact' : '',
+		].filter(Boolean).join('\n');
+		this.meterEl.setAttribute('data-tooltip', tooltip);
 	}
 }

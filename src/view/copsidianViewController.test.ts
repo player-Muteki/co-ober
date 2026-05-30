@@ -15,7 +15,7 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): ControllerDeps
 			addToolCall: noop, updateToolCall: noop, setPlanEntries: noop,
 		} as unknown as ControllerDeps['renderer'],
 		input: { setStreaming: noop, focus: noop, appendValue: noop, triggerSend: noop, triggerStop: noop } as unknown as ControllerDeps['input'],
-		toolbar: { setSending: noop, updateAgents: noop, updateModels: noop, updateEffort: noop, updatePermission: noop, updateContextMeter: noop } as unknown as ControllerDeps['toolbar'],
+		toolbar: { setSending: noop, updateAgents: noop, updateModels: noop, updateEffort: noop, updatePermission: noop } as unknown as ControllerDeps['toolbar'],
 		inlineEditPanel: { clearState: noop, pendingState: null, showDiffFromResponse: noop } as unknown as ControllerDeps['inlineEditPanel'],
 		permissionBanner: { dismiss: noop, show: vi.fn() } as unknown as ControllerDeps['permissionBanner'],
 		mention: { clear: noop, listAllNotes: vi.fn(() => []), addRef: noop, hasRef: vi.fn(() => false), removeRef: noop } as unknown as ControllerDeps['mention'],
@@ -36,6 +36,7 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): ControllerDeps
 			getClient: vi.fn(() => null),
 			initClient: vi.fn().mockResolvedValue(false),
 		} as unknown as ControllerDeps['plugin'],
+		updateContextMeter: noop,
 		...overrides,
 	};
 }
