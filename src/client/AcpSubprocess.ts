@@ -28,7 +28,7 @@ export class AcpSubprocess {
       windowsHide: true,
       shell: false,
     });
-    proc.stdin?.on('error', (e: unknown) => console.error('[copsidian] stdin:', e));
+    proc.stdin?.on('error', (e: unknown) => console.error('[copsilot] stdin:', e));
     proc.stderr?.on('data', (chunk: Buffer | string) => {
       const text = typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
       this.stderrBuffer = `${this.stderrBuffer}${text}`.slice(-STDERR_BUFFER_LIMIT);

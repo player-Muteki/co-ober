@@ -71,7 +71,7 @@ export class DragDropManager {
 
 	private showDragOverlay(): void {
 		if (this.dragOverlayEl) return;
-		const overlay = this.overlayContainerEl.createDiv({ cls: 'copsidian-drag-overlay' });
+		const overlay = this.overlayContainerEl.createDiv({ cls: 'copsilot-drag-overlay' });
 		overlay.createDiv({ text: t().dragOverlay });
 		this.dragOverlayEl = overlay;
 	}
@@ -115,14 +115,14 @@ export class DragDropManager {
 					const data = await this.fileToBase64(file);
 					const imageBytes = file.size;
 					if (this.pendingImageTotalBytes + imageBytes > DragDropManager.MAX_IMAGE_BYTES) {
-						console.warn(`[copsidian] Image "${file.name}" exceeds total size limit (10MB), skipped`);
+						console.warn(`[copsilot] Image "${file.name}" exceeds total size limit (10MB), skipped`);
 						continue;
 					}
 					this.pendingImageTotalBytes += imageBytes;
 
 					this.handlers.onAddImagePart(data, file.type, imageBytes, file.name);
 				} catch (err) {
-					console.error('[copsidian] Failed to read image:', err);
+					console.error('[copsilot] Failed to read image:', err);
 				}
 			}
 		}

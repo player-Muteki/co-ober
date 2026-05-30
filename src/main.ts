@@ -1,10 +1,10 @@
 import { Plugin, Notice } from 'obsidian';
 import { AgentRuntime } from './client/agent';
 import { AcpClient } from './client/acp';
-import { CopsidianView } from './view/copsidianView';
-import { CopsidianSettingsTab } from './settings';
+import { CopsilotView } from './view/copsilotView';
+import { CopsilotSettingsTab } from './settings';
 import { DEFAULT_SETTINGS, VIEW_TYPE } from './types';
-import type { CopsidianSettings, SerializedSession, SerializedMessage, PluginData } from './types';
+import type { CopsilotSettings, SerializedSession, SerializedMessage, PluginData } from './types';
 import { getVaultPath } from './utils/vault';
 import { setLocale, t } from './i18n/index';
 
@@ -16,8 +16,8 @@ interface WorkspaceWithSideLeaf {
   ) => Promise<import('obsidian').WorkspaceLeaf>;
 }
 
-export default class CopsidianPlugin extends Plugin {
-  settings: CopsidianSettings = DEFAULT_SETTINGS;
+export default class CopsilotPlugin extends Plugin {
+  settings: CopsilotSettings = DEFAULT_SETTINGS;
   client: AgentRuntime | null = null;
   sessions: Map<string, SerializedSession> = new Map();
   activeSessionId: string | null = null;
@@ -40,12 +40,12 @@ export default class CopsidianPlugin extends Plugin {
     await this.loadPluginData();
     setLocale(this.settings.language);
 
-    this.registerView(VIEW_TYPE, (leaf) => new CopsidianView(leaf, this));
-    this.deduplicateCopsidianLeaves();
+    this.registerView(VIEW_TYPE, (leaf) => new CopsilotView(leaf, this));
+    this.deduplicateCopsilotLeaves();
     this.addRibbonIcon('terminal-square', 'Open Copsilot', () => this.activateView());
-    this.addSettingTab(new CopsidianSettingsTab(this));
+    this.addSettingTab(new CopsilotSettingsTab(this));
     this.addCommand({
-      id: 'open-copsidian',
+      id: 'open-copsilot',
       name: 'Open Copsilot',
       callback: () => this.activateView(),
     });
@@ -78,7 +78,7 @@ export default class CopsidianPlugin extends Plugin {
     }
 
     return {
-      settings: { ...DEFAULT_SETTINGS, ...(saved as Partial<CopsidianSettings>) },
+      settings: { ...DEFAULT_SETTINGS, ...(saved as Partial<CopsilotSettings>) },
       sessions: [],
       activeSessionId: null,
     };
@@ -156,18 +156,18 @@ export default class CopsidianPlugin extends Plugin {
     }
     await this.activateView();
     const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
-    const copsidianView = leaf?.view as CopsidianView | undefined;
-    if (copsidianView) {
-      await copsidianView.requestInlineEdit(selected, editor);
+    const copsilotView = leaf?.view as CopsilotView | undefined;
+    if (copsilotView) {
+      await copsilotView.requestInlineEdit(selected, editor);
     }
   }
 
   async activateView(): Promise<void> {
-    const existing = this.deduplicateCopsidianLeaves();
+    const existing = this.deduplicateCopsilotLeaves();
     if (existing) {
       await existing.setViewState({ type: VIEW_TYPE, active: true });
       this.app.workspace.revealLeaf(existing);
-      this.deduplicateCopsidianLeaves();
+      this.deduplicateCopsilotLeaves();
       return;
     }
 
@@ -183,10 +183,10 @@ export default class CopsidianPlugin extends Plugin {
     if (!leaf) return;
     await leaf.setViewState({ type: VIEW_TYPE, active: true });
     this.app.workspace.revealLeaf(leaf);
-    this.deduplicateCopsidianLeaves();
+    this.deduplicateCopsilotLeaves();
   }
 
-  private deduplicateCopsidianLeaves(): import('obsidian').WorkspaceLeaf | null {
+  private deduplicateCopsilotLeaves(): import('obsidian').WorkspaceLeaf | null {
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE);
     const [first, ...duplicates] = leaves;
     for (const leaf of duplicates) {
@@ -220,7 +220,7 @@ export default class CopsidianPlugin extends Plugin {
       this._clientReady = false;
       this.client = null;
       this.resolveClientWaiters(false);
-      console.error('[copsidian] Connect failed:', e);
+      console.error('[copsilot] Connect failed:', e);
       new Notice(t().notice.connectFailed);
       return false;
     }

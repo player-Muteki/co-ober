@@ -1,13 +1,13 @@
 /* Copsidian — main styles */
 
-.copsidian-view {
+.copsilot-view {
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
 }
 
-.copsidian-header {
+.copsilot-header {
   position: relative;
   display: flex;
   align-items: center;
@@ -17,24 +17,24 @@
   flex-shrink: 0;
 }
 
-.copsidian-header .copsidian-arc-meter {
+.copsilot-header .copsilot-arc-meter {
   flex-shrink: 0;
 }
 
-.copsidian-header-title {
+.copsilot-header-title {
   font-weight: 600;
   font-size: var(--font-ui-medium);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
-.copsidian-header-actions {
+.copsilot-header-actions {
   display: flex;
   gap: 4px;
   margin-left: auto;
 }
 
-.copsidian-header-actions .mod-icon {
+.copsilot-header-actions .mod-icon {
   background: var(--background-secondary);
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
@@ -43,12 +43,12 @@
   cursor: pointer;
 }
 
-.copsidian-header-actions .mod-icon:hover {
+.copsilot-header-actions .mod-icon:hover {
   background: var(--background-modifier-hover);
 }
 
 /* Messages */
-.copsidian-messages {
+.copsilot-messages {
   flex: 1;
   overflow-y: auto;
   padding: 12px;
@@ -57,13 +57,13 @@
   gap: 12px;
 }
 
-.copsidian-msg {
+.copsilot-msg {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.copsidian-msg.user .copsidian-msg-body {
+.copsilot-msg.user .copsilot-msg-body {
   background: var(--interactive-accent);
   color: var(--text-on-accent);
   padding: 8px 12px;
@@ -73,7 +73,7 @@
   max-width: 90%;
 }
 
-.copsidian-msg.assistant .copsidian-msg-body {
+.copsilot-msg.assistant .copsilot-msg-body {
   background: var(--background-secondary);
   padding: 8px 12px;
   border-radius: var(--radius-s);
@@ -82,13 +82,13 @@
 }
 
 /* Thinking */
-.copsidian-thinking {
+.copsilot-thinking {
   border: 1px dashed var(--background-modifier-border);
   border-radius: var(--radius-s);
   overflow: hidden;
 }
 
-.copsidian-thinking-header {
+.copsilot-thinking-header {
   padding: 4px 10px;
   font-size: var(--font-smaller);
   color: var(--text-muted);
@@ -96,7 +96,7 @@
   user-select: none;
 }
 
-.copsidian-thinking-body {
+.copsilot-thinking-body {
   padding: 8px 10px;
   font-size: var(--font-smaller);
   color: var(--text-muted);
@@ -105,13 +105,13 @@
 }
 
 /* Tool calls */
-.copsidian-tool-call {
+.copsilot-tool-call {
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
   overflow: hidden;
 }
 
-.copsidian-tool-call-header {
+.copsilot-tool-call-header {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -121,7 +121,7 @@
   font-size: var(--font-smaller);
 }
 
-.copsidian-tool-call-header .tc-kind {
+.copsilot-tool-call-header .tc-kind {
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
@@ -130,7 +130,7 @@
   min-width: 32px;
 }
 
-.copsidian-tool-call-header .tc-file {
+.copsilot-tool-call-header .tc-file {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -140,17 +140,17 @@
   font-size: var(--font-smaller);
 }
 
-.copsidian-tool-call-header .tc-stat {
+.copsilot-tool-call-header .tc-stat {
   flex-shrink: 0;
   font-size: 10px;
   color: var(--text-muted);
   font-family: var(--font-monospace);
 }
 
-.copsidian-tool-call-header .tc-stat-done { color: #22c55e; }
-.copsidian-tool-call-header .tc-stat-fail { color: var(--text-error); }
+.copsilot-tool-call-header .tc-stat-done { color: #22c55e; }
+.copsilot-tool-call-header .tc-stat-fail { color: var(--text-error); }
 
-.copsidian-tool-call-body {
+.copsilot-tool-call-body {
   padding: 8px 10px;
   font-size: var(--font-smaller);
   overflow-x: auto;
@@ -160,38 +160,38 @@
 }
 
 /* Plan */
-.copsidian-plan-panel {
+.copsilot-plan-panel {
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
   padding: 8px 12px;
 }
 
-.copsidian-plan-panel .plan-title {
+.copsilot-plan-panel .plan-title {
   font-weight: 600;
   font-size: var(--font-smaller);
   margin-bottom: 6px;
 }
 
-.copsidian-plan-panel .plan-item {
+.copsilot-plan-panel .plan-item {
   font-size: var(--font-smaller);
   padding: 2px 0;
 }
 
-.copsidian-plan-panel .status-completed {
+.copsilot-plan-panel .status-completed {
   color: var(--text-faint);
   text-decoration: line-through;
 }
 
-.copsidian-plan-panel .status-in_progress {
+.copsilot-plan-panel .status-in_progress {
   color: var(--text-accent);
 }
 
-.copsidian-plan-panel .status-todo {
+.copsilot-plan-panel .status-todo {
   color: var(--text-muted);
 }
 
 /* Loading */
-.copsidian-loading {
+.copsilot-loading {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -200,21 +200,21 @@
   font-size: var(--font-smaller);
 }
 
-.copsidian-spinner {
+.copsilot-spinner {
   width: 14px;
   height: 14px;
   border: 2px solid var(--background-modifier-border);
   border-top-color: var(--text-accent);
   border-radius: 50%;
-  animation: copsidian-spin 0.8s linear infinite;
+  animation: copsilot-spin 0.8s linear infinite;
 }
 
-@keyframes copsidian-spin {
+@keyframes copsilot-spin {
   to { transform: rotate(360deg); }
 }
 
 /* Error */
-.copsidian-error {
+.copsilot-error {
   padding: 8px 12px;
   color: var(--text-error);
   font-size: var(--font-smaller);
@@ -223,7 +223,7 @@
 }
 
 /* Context chips */
-.copsidian-context-chips {
+.copsilot-context-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
@@ -233,11 +233,11 @@
   background: var(--background-primary);
 }
 
-.copsidian-context-chips:empty {
+.copsilot-context-chips:empty {
   display: none;
 }
 
-.copsidian-chip {
+.copsilot-chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -249,52 +249,52 @@
   user-select: none;
 }
 
-.copsidian-chip:hover {
+.copsilot-chip:hover {
   background: var(--background-modifier-hover);
 }
 
-.copsidian-chip .chip-remove {
+.copsilot-chip .chip-remove {
   color: var(--text-muted);
   cursor: pointer;
   line-height: 1;
   padding: 0 1px;
 }
 
-.copsidian-chip .chip-remove:hover {
+.copsilot-chip .chip-remove:hover {
   color: var(--text-error);
 }
 
 /* Toolbar (below input) — single row */
-.copsidian-toolbar {
+.copsilot-toolbar {
   display: flex;
   padding: 4px 8px 6px;
   flex-shrink: 0;
   background: var(--background-primary);
 }
 
-.copsidian-toolbar-row {
+.copsilot-toolbar-row {
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
 }
 
-.copsidian-toolbar-row .copsidian-model-selector {
+.copsilot-toolbar-row .copsilot-model-selector {
   flex: 1;
   min-width: 0;
 }
 
-.copsidian-toolbar-row .copsidian-send-btn {
+.copsilot-toolbar-row .copsilot-send-btn {
   margin-left: auto;
 }
 
 /* Effort selector (custom hover dropdown) */
-.copsidian-effort-selector {
+.copsilot-effort-selector {
   position: relative;
   flex-shrink: 0;
 }
 
-.copsidian-effort-btn {
+.copsilot-effort-btn {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -306,16 +306,16 @@
   transition: color 0.1s ease;
 }
 
-.copsidian-effort-btn:hover {
+.copsilot-effort-btn:hover {
   color: var(--text-normal);
 }
 
-.copsidian-effort-label {
+.copsilot-effort-label {
   font-weight: 500;
   white-space: nowrap;
 }
 
-.copsidian-effort-dropdown {
+.copsilot-effort-dropdown {
   position: absolute;
   bottom: 100%;
   left: 0;
@@ -336,12 +336,12 @@
   transition: opacity 0.15s ease, visibility 0.15s ease;
 }
 
-.copsidian-effort-selector:hover .copsidian-effort-dropdown {
+.copsilot-effort-selector:hover .copsilot-effort-dropdown {
   opacity: 1;
   visibility: visible;
 }
 
-.copsidian-effort-option {
+.copsilot-effort-option {
   padding: 3px 8px;
   cursor: pointer;
   font-size: 11px;
@@ -351,31 +351,31 @@
   white-space: nowrap;
 }
 
-.copsidian-effort-option:hover {
+.copsilot-effort-option:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
-.copsidian-effort-option.selected {
+.copsilot-effort-option.selected {
   background: rgba(var(--interactive-accent-rgb), 0.15);
   color: var(--text-accent);
   font-weight: 500;
 }
 
-.copsidian-effort-option.empty {
+.copsilot-effort-option.empty {
   color: var(--text-faint);
   cursor: default;
   pointer-events: none;
 }
 
 /* Model selector (custom dropdown) */
-.copsidian-model-selector {
+.copsilot-model-selector {
   position: relative;
   flex: 1;
   min-width: 0;
 }
 
-.copsidian-model-btn {
+.copsilot-model-btn {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -389,19 +389,19 @@
   transition: color 0.1s ease, border-color 0.1s ease;
 }
 
-.copsidian-model-btn:hover {
+.copsilot-model-btn:hover {
   color: var(--text-normal);
   border-color: var(--text-accent);
 }
 
-.copsidian-model-label {
+.copsilot-model-label {
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.copsidian-model-dropdown {
+.copsilot-model-dropdown {
   position: absolute;
   bottom: 100%;
   left: 0;
@@ -424,12 +424,12 @@
   transition: opacity 0.15s ease, visibility 0.15s ease;
 }
 
-.copsidian-model-selector:hover .copsidian-model-dropdown {
+.copsilot-model-selector:hover .copsilot-model-dropdown {
   opacity: 1;
   visibility: visible;
 }
 
-.copsidian-model-group {
+.copsilot-model-group {
   padding: 3px 8px;
   font-size: 10px;
   font-weight: 600;
@@ -439,13 +439,13 @@
   pointer-events: none;
 }
 
-.copsidian-model-group:not(:first-child) {
+.copsilot-model-group:not(:first-child) {
   margin-top: 4px;
   border-top: 1px solid var(--background-modifier-border);
   padding-top: 6px;
 }
 
-.copsidian-model-option {
+.copsilot-model-option {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -458,25 +458,25 @@
   white-space: nowrap;
 }
 
-.copsidian-model-option:hover {
+.copsilot-model-option:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
-.copsidian-model-option.selected {
+.copsilot-model-option.selected {
   background: rgba(var(--interactive-accent-rgb), 0.15);
   color: var(--text-accent);
   font-weight: 500;
 }
 
-.copsidian-model-option.empty {
+.copsilot-model-option.empty {
   color: var(--text-faint);
   cursor: default;
   pointer-events: none;
 }
 
 /* Mode cycle button */
-.copsidian-mode-cycle {
+.copsilot-mode-cycle {
   display: flex;
   align-items: center;
   padding: 2px 10px;
@@ -491,21 +491,21 @@
   flex-shrink: 0;
 }
 
-.copsidian-mode-cycle:hover {
+.copsilot-mode-cycle:hover {
   color: var(--text-normal);
   border-color: var(--text-accent);
 }
 
-.copsidian-mode-cycle.has-options {
+.copsilot-mode-cycle.has-options {
   cursor: pointer;
 }
 
-.copsidian-mode-cycle-label {
+.copsilot-mode-cycle-label {
   font-weight: 500;
 }
 
 /* Permission toggle */
-.copsidian-perm-toggle {
+.copsilot-perm-toggle {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -517,30 +517,30 @@
   flex-shrink: 0;
 }
 
-.copsidian-perm-toggle:hover {
+.copsilot-perm-toggle:hover {
   border-color: var(--text-accent);
 }
 
-.copsidian-perm-toggle.mod-safe {
+.copsilot-perm-toggle.mod-safe {
   color: var(--text-success);
 }
 
-.copsidian-perm-toggle.mod-plan {
+.copsilot-perm-toggle.mod-plan {
   color: var(--text-accent);
 }
 
-.copsidian-perm-toggle.mod-yolo {
+.copsilot-perm-toggle.mod-yolo {
   color: var(--text-warning);
 }
 
-.copsidian-perm-label {
+.copsilot-perm-label {
   font-size: var(--font-smaller);
   color: inherit;
   white-space: nowrap;
 }
 
 /* Context arc meter — semicircle gauge */
-.copsidian-arc-meter {
+.copsilot-arc-meter {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -549,24 +549,24 @@
   transition: opacity 0.2s ease;
 }
 
-.copsidian-arc-meter.empty {
+.copsilot-arc-meter.empty {
   opacity: 0.4;
 }
 
-.copsidian-arc-svg {
+.copsilot-arc-svg {
   width: 32px;
   height: 20px;
   overflow: visible;
 }
 
-.copsidian-arc-track {
+.copsilot-arc-track {
   fill: none;
   stroke: var(--background-modifier-border);
   stroke-width: 3;
   stroke-linecap: round;
 }
 
-.copsidian-arc-fill {
+.copsilot-arc-fill {
   fill: none;
   stroke: #2dd4bf;
   stroke-width: 3;
@@ -576,7 +576,7 @@
   transition: stroke-dasharray 0.4s cubic-bezier(0.4, 0, 0.2, 1), stroke 0.2s ease;
 }
 
-.copsidian-arc-pct {
+.copsilot-arc-pct {
   font-size: 10px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -587,32 +587,32 @@
 }
 
 /* Warning state (75-89%) */
-.copsidian-arc-meter.warning .copsidian-arc-fill {
+.copsilot-arc-meter.warning .copsilot-arc-fill {
   stroke: #fbbf24;
 }
 
-.copsidian-arc-meter.warning .copsidian-arc-pct {
+.copsilot-arc-meter.warning .copsilot-arc-pct {
   color: var(--text-warning);
 }
 
 /* Critical state (90%+) */
-.copsidian-arc-meter.critical .copsidian-arc-fill {
+.copsilot-arc-meter.critical .copsilot-arc-fill {
   stroke: #f87171;
-  animation: copsidian-arc-pulse 1.5s ease-in-out infinite;
+  animation: copsilot-arc-pulse 1.5s ease-in-out infinite;
 }
 
-.copsidian-arc-meter.critical .copsidian-arc-pct {
+.copsilot-arc-meter.critical .copsilot-arc-pct {
   color: var(--text-error);
   font-weight: 700;
 }
 
-@keyframes copsidian-arc-pulse {
+@keyframes copsilot-arc-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.7; }
 }
 
 /* Tooltip on hover */
-.copsidian-arc-meter[data-tooltip]:hover::after {
+.copsilot-arc-meter[data-tooltip]:hover::after {
   content: attr(data-tooltip);
   position: absolute;
   top: 100%;
@@ -632,7 +632,7 @@
   pointer-events: none;
 }
 
-.copsidian-toolbar .copsidian-send-btn {
+.copsilot-toolbar .copsilot-send-btn {
   background: var(--interactive-accent);
   color: var(--text-on-accent);
   border: none;
@@ -644,12 +644,12 @@
   flex-shrink: 0;
 }
 
-.copsidian-toolbar .copsidian-send-btn:hover { opacity: 0.85; }
-.copsidian-toolbar .copsidian-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.copsidian-toolbar .copsidian-send-btn.mod-stop { background: var(--text-error); }
+.copsilot-toolbar .copsilot-send-btn:hover { opacity: 0.85; }
+.copsilot-toolbar .copsilot-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.copsilot-toolbar .copsilot-send-btn.mod-stop { background: var(--text-error); }
 
 /* Input */
-.copsidian-input-area {
+.copsilot-input-area {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -660,27 +660,27 @@
   position: relative;
 }
 
-.copsidian-input-resize-handle {
+.copsilot-input-resize-handle {
   height: 5px;
   cursor: ns-resize;
   background: transparent;
   flex-shrink: 0;
 }
 
-.copsidian-input-resize-handle:hover,
-.copsidian-input-resize-handle.dragging {
+.copsilot-input-resize-handle:hover,
+.copsilot-input-resize-handle.dragging {
   background: var(--text-accent);
   opacity: 0.4;
 }
 
-.copsidian-input-row {
+.copsilot-input-row {
   display: flex;
   padding: 6px 8px 4px;
   flex: 1;
   min-height: 0;
 }
 
-.copsidian-input-area .copsidian-input {
+.copsilot-input-area .copsilot-input {
   flex: 1;
   resize: none;
   border: none;
@@ -695,7 +695,7 @@
 }
 
 /* Autocomplete dropdown */
-.copsidian-ac-dropdown {
+.copsilot-ac-dropdown {
   position: absolute;
   bottom: calc(100% + 6px);
   left: 8px;
@@ -710,7 +710,7 @@
   font-size: var(--font-smaller);
 }
 
-.copsidian-ac-dropdown .copsidian-ac-item {
+.copsilot-ac-dropdown .copsilot-ac-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -718,17 +718,17 @@
   cursor: pointer;
 }
 
-.copsidian-ac-dropdown .copsidian-ac-item.selected {
+.copsilot-ac-dropdown .copsilot-ac-item.selected {
   background: var(--background-modifier-hover);
 }
 
-.copsidian-ac-dropdown .ac-label {
+.copsilot-ac-dropdown .ac-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.copsidian-ac-dropdown .ac-desc {
+.copsilot-ac-dropdown .ac-desc {
   color: var(--text-muted);
   font-size: var(--font-smaller);
   margin-left: 8px;
@@ -736,7 +736,7 @@
 }
 
 /* Session list */
-.copsidian-session-list {
+.copsilot-session-list {
   position: absolute;
   top: 100%;
   right: 0;
@@ -751,7 +751,7 @@
   padding: 4px 0;
 }
 
-.copsidian-session-item {
+.copsilot-session-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -760,16 +760,16 @@
   font-size: var(--font-smaller);
 }
 
-.copsidian-session-item .session-label {
+.copsilot-session-item .session-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
 }
 
-.copsidian-session-item .session-fork,
-.copsidian-session-item .session-resume,
-.copsidian-session-item .session-delete {
+.copsilot-session-item .session-fork,
+.copsilot-session-item .session-resume,
+.copsilot-session-item .session-delete {
   opacity: 0;
   margin-left: 8px;
   color: var(--text-muted);
@@ -780,34 +780,34 @@
   flex-shrink: 0;
 }
 
-.copsidian-session-item .session-delete {
+.copsilot-session-item .session-delete {
   color: var(--text-error);
   font-weight: bold;
 }
 
-.copsidian-session-item .is-disabled {
+.copsilot-session-item .is-disabled {
   cursor: not-allowed;
   opacity: 0.4;
 }
 
-.copsidian-session-item:hover .session-fork,
-.copsidian-session-item:hover .session-resume,
-.copsidian-session-item:hover .session-delete {
+.copsilot-session-item:hover .session-fork,
+.copsilot-session-item:hover .session-resume,
+.copsilot-session-item:hover .session-delete {
   opacity: 1;
 }
 
-.copsidian-session-item:hover {
+.copsilot-session-item:hover {
   background: var(--background-modifier-hover);
 }
 
-.copsidian-session-item.active {
+.copsilot-session-item.active {
   background: var(--background-modifier-hover);
   font-weight: 500;
 }
 
 /* Settings enhancements */
-.copsidian-sync-rule,
-.copsidian-mcp-server {
+.copsilot-sync-rule,
+.copsilot-mcp-server {
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
   padding: 8px;
@@ -815,14 +815,14 @@
   background: var(--background-secondary);
 }
 
-.copsidian-sync-rule strong,
-.copsidian-mcp-server strong {
+.copsilot-sync-rule strong,
+.copsilot-mcp-server strong {
   display: block;
   margin-bottom: 8px;
 }
 
-.copsidian-sync-rule .mod-warning,
-.copsidian-mcp-server .mod-warning {
+.copsilot-sync-rule .mod-warning,
+.copsilot-mcp-server .mod-warning {
   background: var(--background-modifier-error);
   color: var(--text-on-accent);
   border: none;
@@ -833,11 +833,11 @@
   margin-top: 8px;
 }
 
-.copsidian-mcp-args {
+.copsilot-mcp-args {
   font-family: var(--font-monospace);
 }
 
-.copsidian-reconnect-btn {
+.copsilot-reconnect-btn {
   position: sticky;
   top: 0;
   z-index: 10;
@@ -851,38 +851,38 @@
   text-align: center;
 }
 
-.copsidian-reconnect-btn:disabled {
+.copsilot-reconnect-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
 /* Permission banner */
-.copsidian-permission-banner {
+.copsilot-permission-banner {
   border: 1px solid var(--text-accent);
   border-radius: var(--radius-s);
   padding: 10px 12px;
   background: var(--background-secondary);
 }
 
-.copsidian-permission-banner .perm-title {
+.copsilot-permission-banner .perm-title {
   font-weight: 600;
   font-size: var(--font-ui-small);
   margin-bottom: 4px;
 }
 
-.copsidian-permission-banner .perm-path {
+.copsilot-permission-banner .perm-path {
   font-size: var(--font-smaller);
   color: var(--text-muted);
   margin-bottom: 8px;
   font-family: var(--font-editor);
 }
 
-.copsidian-permission-banner .perm-actions {
+.copsilot-permission-banner .perm-actions {
   display: flex;
   gap: 6px;
 }
 
-.copsidian-permission-banner .perm-btn {
+.copsilot-permission-banner .perm-btn {
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
   padding: 4px 10px;
@@ -891,26 +891,26 @@
   background: var(--background-primary);
 }
 
-.copsidian-permission-banner .perm-allow_once {
+.copsilot-permission-banner .perm-allow_once {
   background: var(--text-accent);
   color: var(--text-on-accent);
   border-color: var(--text-accent);
 }
 
-.copsidian-permission-banner .perm-allow_always {
+.copsilot-permission-banner .perm-allow_always {
   background: var(--background-primary);
   color: var(--text-accent);
   border-color: var(--text-accent);
 }
 
-.copsidian-permission-banner .perm-reject_once {
+.copsilot-permission-banner .perm-reject_once {
   background: var(--background-primary);
   color: var(--text-error);
   border-color: var(--text-error);
 }
 
 /* Usage stats */
-.copsidian-usage {
+.copsilot-usage {
   text-align: right;
   font-size: 11px;
   color: var(--text-muted);
@@ -919,12 +919,12 @@
   cursor: default;
 }
 
-.copsidian-usage:hover {
+.copsilot-usage:hover {
   color: var(--text-normal);
 }
 
 /* Code block copy button */
-.copsidian-copy-btn {
+.copsilot-copy-btn {
   position: absolute;
   top: 4px;
   right: 4px;
@@ -939,24 +939,24 @@
   transition: opacity 0.15s;
 }
 
-pre:hover .copsidian-copy-btn {
+pre:hover .copsilot-copy-btn {
   opacity: 1;
 }
 
-.copsidian-copy-btn:hover {
+.copsilot-copy-btn:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
 /* Diff rendering */
-.copsidian-diff {
+.copsilot-diff {
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
   margin: 4px 0;
   overflow: hidden;
 }
 
-.copsidian-diff-header {
+.copsilot-diff-header {
   padding: 4px 8px;
   background: var(--background-secondary);
   font-size: var(--font-smaller);
@@ -968,11 +968,11 @@ pre:hover .copsidian-copy-btn {
   white-space: nowrap;
 }
 
-.copsidian-diff-header:hover {
+.copsilot-diff-header:hover {
   background: var(--background-modifier-hover);
 }
 
-.copsidian-diff-body {
+.copsilot-diff-body {
   padding: 4px 0;
   font-size: var(--font-smaller);
   font-family: var(--font-editor);
@@ -1017,7 +1017,7 @@ pre:hover .copsidian-copy-btn {
 }
 
 /* Welcome page */
-.copsidian-welcome {
+.copsilot-welcome {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1028,19 +1028,19 @@ pre:hover .copsidian-copy-btn {
   color: var(--text-muted);
 }
 
-.copsidian-welcome-title {
+.copsilot-welcome-title {
   font-size: 24px;
   font-weight: 600;
   color: var(--text-normal);
   margin-bottom: 4px;
 }
 
-.copsidian-welcome-subtitle {
+.copsilot-welcome-subtitle {
   font-size: var(--font-ui-small);
   margin-bottom: 24px;
 }
 
-.copsidian-welcome-shortcuts {
+.copsilot-welcome-shortcuts {
   font-size: var(--font-smaller);
   line-height: 1.8;
   text-align: left;
@@ -1050,21 +1050,21 @@ pre:hover .copsidian-copy-btn {
   border: 1px solid var(--background-modifier-border);
 }
 
-.copsidian-welcome-status {
+.copsilot-welcome-status {
   margin-top: 16px;
   font-size: var(--font-smaller);
 }
 
-.copsidian-welcome-status span {
+.copsilot-welcome-status span {
   color: var(--text-accent);
 }
 
 /* Message timestamp */
-.copsidian-msg {
+.copsilot-msg {
   position: relative;
 }
 
-.copsidian-msg[data-timestamp]::after {
+.copsilot-msg[data-timestamp]::after {
   content: attr(data-timestamp);
   position: absolute;
   right: 8px;
@@ -1076,12 +1076,12 @@ pre:hover .copsidian-copy-btn {
   pointer-events: none;
 }
 
-.copsidian-msg:hover[data-timestamp]::after {
+.copsilot-msg:hover[data-timestamp]::after {
   opacity: 1;
 }
 
 /* Session search */
-.copsidian-session-search {
+.copsilot-session-search {
   width: 100%;
   padding: 6px 10px;
   border: none;
@@ -1091,16 +1091,16 @@ pre:hover .copsidian-copy-btn {
   outline: none;
 }
 
-.copsidian-session-search:focus {
+.copsilot-session-search:focus {
   background: var(--background-modifier-hover);
 }
 
-.copsidian-session-items {
+.copsilot-session-items {
   max-height: 350px;
   overflow-y: auto;
 }
 
-.copsidian-session-empty {
+.copsilot-session-empty {
   padding: 12px;
   text-align: center;
   color: var(--text-muted);
@@ -1108,7 +1108,7 @@ pre:hover .copsidian-copy-btn {
 }
 
 /* New messages button */
-.copsidian-new-messages-btn {
+.copsilot-new-messages-btn {
   position: sticky;
   bottom: 8px;
   left: 50%;
@@ -1124,12 +1124,12 @@ pre:hover .copsidian-copy-btn {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-.copsidian-new-messages-btn:hover {
+.copsilot-new-messages-btn:hover {
   opacity: 0.9;
 }
 
 /* Drag overlay */
-.copsidian-drag-overlay {
+.copsilot-drag-overlay {
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
@@ -1142,7 +1142,7 @@ pre:hover .copsidian-copy-btn {
   pointer-events: none;
 }
 
-.copsidian-drag-overlay div {
+.copsilot-drag-overlay div {
   background: var(--background-primary);
   padding: 16px 32px;
   border-radius: var(--radius-s);
@@ -1151,7 +1151,7 @@ pre:hover .copsidian-copy-btn {
 }
 
 /* Inline Edit Panel */
-.copsidian-inline-edit-panel {
+.copsilot-inline-edit-panel {
   position: fixed;
   bottom: 16px;
   right: 16px;
@@ -1170,13 +1170,13 @@ pre:hover .copsidian-copy-btn {
   gap: 12px;
 }
 
-.copsidian-inline-edit-title {
+.copsilot-inline-edit-title {
   font-weight: 600;
   font-size: var(--font-ui-medium);
   color: var(--text-normal);
 }
 
-.copsidian-inline-edit-actions {
+.copsilot-inline-edit-actions {
   display: flex;
   gap: 8px;
   justify-content: flex-end;

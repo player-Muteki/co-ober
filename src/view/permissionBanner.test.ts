@@ -20,7 +20,7 @@ describe('PermissionBanner', () => {
 			],
 		} as any);
 
-		const el = container.querySelector('.copsidian-permission-banner');
+		const el = container.querySelector('.copsilot-permission-banner');
 		expect(el).not.toBeNull();
 
 		const title = el?.querySelector('.perm-title');
@@ -50,11 +50,11 @@ describe('PermissionBanner', () => {
 			options: [{ optionId: 'ok', name: 'OK', kind: 'allow_once' }],
 		} as any);
 
-		expect(container.querySelector('.copsidian-permission-banner')).not.toBeNull();
+		expect(container.querySelector('.copsilot-permission-banner')).not.toBeNull();
 
 		banner.dismiss();
 
-		expect(container.querySelector('.copsidian-permission-banner')).toBeNull();
+		expect(container.querySelector('.copsilot-permission-banner')).toBeNull();
 	});
 
 	it('cleans up old banner when show is called consecutively', () => {
@@ -75,7 +75,7 @@ describe('PermissionBanner', () => {
 			options: [{ optionId: 'ok2', name: 'OK2', kind: 'allow_once' }],
 		} as any);
 
-		const banners = container.querySelectorAll('.copsidian-permission-banner');
+		const banners = container.querySelectorAll('.copsilot-permission-banner');
 		expect(banners.length).toBe(1);
 
 		const title = banners[0].querySelector('.perm-title');

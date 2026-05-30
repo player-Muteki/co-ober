@@ -1,7 +1,7 @@
 import { PluginSettingTab, Setting, Notice } from 'obsidian';
 import { existsSync } from 'fs';
 import { delimiter, isAbsolute } from 'path';
-import CopsidianPlugin from './main';
+import CopsilotPlugin from './main';
 import { VIEW_TYPE } from './types';
 import type { AgentCapabilities, AvailableCommand, CustomAgentDefinition, CustomSkillDefinition, McpServerConfig, ModeOption, ModelOption, PermissionLevel, SyncRule, FsCapabilityMode, TerminalCapabilityMode } from './types';
 import type { OpencodeClient } from './client';
@@ -27,7 +27,7 @@ interface PathDiagnostic {
   detail: string;
 }
 
-export class CopsidianSettingsTab extends PluginSettingTab {
+export class CopsilotSettingsTab extends PluginSettingTab {
   private runtimeAgents: ModeOption[] = [];
   private runtimeModels: ModelOption[] = [];
   private runtimeSkills: AvailableCommand[] = [];
@@ -36,7 +36,7 @@ export class CopsidianSettingsTab extends PluginSettingTab {
   private diagnosticsRunning = false;
   private diagnosticsResults: DiagnosticResult[] = [];
 
-  constructor(private plugin: CopsidianPlugin) {
+  constructor(private plugin: CopsilotPlugin) {
     super(plugin.app, plugin);
   }
 
@@ -136,7 +136,7 @@ export class CopsidianSettingsTab extends PluginSettingTab {
         c.setValue(s.systemPrompt);
         c.setPlaceholder(labels.systemPrompt.placeholder);
         c.inputEl.rows = 6;
-        c.inputEl.classList.add('copsidian-prompt-input');
+        c.inputEl.classList.add('copsilot-prompt-input');
         c.onChange(async (v) => {
           s.systemPrompt = v;
           await this.save();
@@ -441,7 +441,7 @@ export class CopsidianSettingsTab extends PluginSettingTab {
 
   private addSyncRuleBlock(containerEl: HTMLElement, rule: SyncRule): void {
     const labels = locale().settings.sync;
-    const block = containerEl.createDiv({ cls: 'copsidian-sync-rule' });
+    const block = containerEl.createDiv({ cls: 'copsilot-sync-rule' });
     block.createEl('strong', { text: labels.label.replace('{tool}', rule.toolName) });
 
     new Setting(block)
@@ -582,7 +582,7 @@ export class CopsidianSettingsTab extends PluginSettingTab {
 
   private addCustomAgentBlock(containerEl: HTMLElement, agent: CustomAgentDefinition): void {
     const labels = locale().settings.customAgents;
-    const block = containerEl.createDiv({ cls: 'copsidian-custom-agent' });
+    const block = containerEl.createDiv({ cls: 'copsilot-custom-agent' });
     block.createEl('strong', { text: labels.label.replace('{name}', agent.name || agent.id) });
 
     new Setting(block)
@@ -642,7 +642,7 @@ export class CopsidianSettingsTab extends PluginSettingTab {
 
   private addCustomSkillBlock(containerEl: HTMLElement, skill: CustomSkillDefinition): void {
     const labels = locale().settings.customSkills;
-    const block = containerEl.createDiv({ cls: 'copsidian-custom-skill' });
+    const block = containerEl.createDiv({ cls: 'copsilot-custom-skill' });
     block.createEl('strong', { text: labels.label.replace('{name}', skill.name || skill.id) });
 
     new Setting(block)
@@ -709,7 +709,7 @@ export class CopsidianSettingsTab extends PluginSettingTab {
 
   private addMcpServerBlock(containerEl: HTMLElement, server: McpServerConfig): void {
     const labels = locale().settings.mcp;
-    const block = containerEl.createDiv({ cls: 'copsidian-mcp-server' });
+    const block = containerEl.createDiv({ cls: 'copsilot-mcp-server' });
     block.createEl('strong', { text: labels.label.replace('{name}', server.name || labels.unnamed) });
 
     new Setting(block)
@@ -770,22 +770,22 @@ export class CopsidianSettingsTab extends PluginSettingTab {
         .addTextArea((text) => {
           text.setValue((stdioServer.args ?? []).join('\n'));
           text.inputEl.rows = 4;
-          text.inputEl.classList.add('copsidian-mcp-args');
+          text.inputEl.classList.add('copsilot-mcp-args');
           text.onChange(async (value) => {
             stdioServer.args = value.split('\n').map((arg) => arg.trim()).filter(Boolean);
             await this.save();
           });
         });
 
-      const envDetails = block.createEl('details', { cls: 'copsidian-mcp-env-details' });
+      const envDetails = block.createEl('details', { cls: 'copsilot-mcp-env-details' });
       envDetails.createEl('summary', { text: labels.env });
 
       const renderEnvVars = () => {
-        envDetails.querySelectorAll('.copsidian-mcp-env-var, .copsidian-mcp-env-add').forEach((el) => el.remove());
+        envDetails.querySelectorAll('.copsilot-mcp-env-var, .copsilot-mcp-env-add').forEach((el) => el.remove());
         const envVars = stdioServer.env ?? [];
         for (let i = 0; i < envVars.length; i++) {
           const envVar = envVars[i];
-          const row = envDetails.createDiv({ cls: 'copsidian-mcp-env-var' });
+          const row = envDetails.createDiv({ cls: 'copsilot-mcp-env-var' });
           row.style.display = 'flex';
           row.style.gap = '8px';
           row.style.marginBottom = '8px';
@@ -814,7 +814,7 @@ export class CopsidianSettingsTab extends PluginSettingTab {
           };
         }
 
-        const addRow = envDetails.createDiv({ cls: 'copsidian-mcp-env-add' });
+        const addRow = envDetails.createDiv({ cls: 'copsilot-mcp-env-add' });
         new Setting(addRow)
           .setName('')
           .addButton((b) => b.setButtonText(labels.envAdd)
@@ -834,15 +834,15 @@ export class CopsidianSettingsTab extends PluginSettingTab {
         .addText((text) => text.setValue(httpServer.url ?? '')
           .onChange(async (value) => { httpServer.url = value.trim(); await this.save(); }));
 
-      const headersDetails = block.createEl('details', { cls: 'copsidian-mcp-headers-details' });
+      const headersDetails = block.createEl('details', { cls: 'copsilot-mcp-headers-details' });
       headersDetails.createEl('summary', { text: 'Headers' });
 
       const renderHeaders = () => {
-        headersDetails.querySelectorAll('.copsidian-mcp-header-var, .copsidian-mcp-header-add').forEach((el) => el.remove());
+        headersDetails.querySelectorAll('.copsilot-mcp-header-var, .copsilot-mcp-header-add').forEach((el) => el.remove());
         const headersVars = httpServer.headers ?? [];
         for (let i = 0; i < headersVars.length; i++) {
           const headerVar = headersVars[i];
-          const row = headersDetails.createDiv({ cls: 'copsidian-mcp-header-var' });
+          const row = headersDetails.createDiv({ cls: 'copsilot-mcp-header-var' });
           row.style.display = 'flex';
           row.style.gap = '8px';
           row.style.marginBottom = '8px';
@@ -871,7 +871,7 @@ export class CopsidianSettingsTab extends PluginSettingTab {
           };
         }
 
-        const addRow = headersDetails.createDiv({ cls: 'copsidian-mcp-header-add' });
+        const addRow = headersDetails.createDiv({ cls: 'copsilot-mcp-header-add' });
         new Setting(addRow)
           .setName('')
           .addButton((b) => b.setButtonText('+ Add Header')

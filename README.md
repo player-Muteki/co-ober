@@ -12,7 +12,7 @@ An Obsidian plugin that embeds the complete [OpenCode](https://opencode.ai) AI A
 
 ## Why Copsilot
 
-Existing AI plugins for Obsidian fall into two categories: those that require third-party API keys (incurring ongoing token costs) and those that rely on middleware layers (increasing token consumption). Copsidian connects directly to your local OpenCode CLI, which provides free token quotas sufficient for most note-taking users. No API keys, no middlemen — just direct, lightweight Agent access.
+Existing AI plugins for Obsidian fall into two categories: those that require third-party API keys (incurring ongoing token costs) and those that rely on middleware layers (increasing token consumption). Copsilot connects directly to your local OpenCode CLI, which provides free token quotas sufficient for most note-taking users. No API keys, no middlemen — just direct, lightweight Agent access.
 
 ## Features
 
@@ -40,7 +40,7 @@ Existing AI plugins for Obsidian fall into two categories: those that require th
 
 **i18n (Internationalization)** — Switch between English and Chinese UI in Settings → Appearance. Community translations welcome.
 
-Language changes apply immediately to the settings tab and open Copsidian views, including notices, toolbar labels, inline edit UI, and runtime error messages. The selected language persists across plugin restarts.
+Language changes apply immediately to the settings tab and open Copsilot views, including notices, toolbar labels, inline edit UI, and runtime error messages. The selected language persists across plugin restarts.
 
 **MCP Servers** — Configure local MCP servers in Settings and attach them automatically when creating or restoring OpenCode sessions.
 
@@ -73,13 +73,13 @@ Legend: ✅ supported / 🟡 partially supported / ❌ not supported.
 ### Manual (recommended)
 
 1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](../../releases/latest)
-2. Create a folder called `copsidian` in your vault's plugins folder:
+2. Create a folder called `copsilot` in your vault's plugins folder:
    ```
-   /path/to/vault/.obsidian/plugins/copsidian/
+   /path/to/vault/.obsidian/plugins/copsilot/
    ```
-3. Copy the downloaded files into the `copsidian` folder
+3. Copy the downloaded files into the `copsilot` folder
 4. Enable the plugin in Obsidian:
-   - Settings → Community plugins → Enable "Copsidian"
+   - Settings → Community plugins → Enable "Copsilot"
 
 ### Via BRAT
 
@@ -104,7 +104,7 @@ Legend: ✅ supported / 🟡 partially supported / ❌ not supported.
    ```
 
 3. Enable the plugin in Obsidian:
-   - Settings → Community plugins → Enable "Copsidian"
+   - Settings → Community plugins → Enable "Copsilot"
 
 ## Configuration
 
@@ -124,7 +124,7 @@ Legend: ✅ supported / 🟡 partially supported / ❌ not supported.
 | Sync Rules | Map tool call results to vault notes (tool → folder → filename template) | — |
 | MCP Servers | Local stdio MCP server definitions (name → command → args) passed to new OpenCode sessions | — |
 | Language | UI language (`en` / `zh`) | `en` |
-| Auto Connect | Connect to OpenCode from Copsidian user actions, not during Obsidian startup | `false` |
+| Auto Connect | Connect to OpenCode from Copsilot user actions, not during Obsidian startup | `false` |
 | Idle Timeout | Maximum time (ms) to wait for agent response before timeout | `300000` |
 
 Runtime agents, models, and available commands/skills load from an existing OpenCode connection or after an explicit reconnect. Opening Settings does not start OpenCode or create a metadata session.
@@ -142,7 +142,7 @@ npm run release:check
 
 `npm run release` builds the production plugin files and copies `main.js`, `manifest.json`, and `styles.css` into `release/`. `npm run release:check` verifies the release metadata and generated artifacts.
 
-Publishing is tag-driven. After the local checks pass and the working tree is clean, create and push an annotated `vX.Y.Z` tag. The GitHub Actions release workflow runs on `v*` tags, builds the release, creates the GitHub Release, and uploads `copsidian-vX.Y.Z.zip`, `main.js`, `manifest.json`, and `styles.css`.
+Publishing is tag-driven. After the local checks pass and the working tree is clean, create and push an annotated `vX.Y.Z` tag. The GitHub Actions release workflow runs on `v*` tags, builds the release, creates the GitHub Release, and uploads `copsilot-vX.Y.Z.zip`, `main.js`, `manifest.json`, and `styles.css`.
 
 Do not run `gh release create vX.Y.Z` after pushing the tag. If GitHub reports `Release.tag_name already exists`, the tag-triggered workflow has usually created the release already; verify it with `gh release view vX.Y.Z` and check the uploaded assets instead of deleting or recreating it.
 
@@ -161,8 +161,8 @@ Do not run `gh release create vX.Y.Z` after pushing the tag. If GitHub reports `
 ## Privacy & Data Use
 
 - **Sent to API**: Your input, referenced notes, attached files/images, and tool call outputs. All communication goes through your local OpenCode CLI, which handles provider API calls.
-- **Local storage**: Copsidian settings and session data stored in Obsidian's plugin data (`data.json` within `.obsidian/plugins/copsidian/`). Synced notes are created in your configured folder (default: `opencode-sync/`).
-- **No telemetry**: Copsidian does not send any telemetry or analytics data. Network activity is limited to the OpenCode CLI subprocess communicating with AI providers.
+- **Local storage**: Copsilot settings and session data stored in Obsidian's plugin data (`data.json` within `.obsidian/plugins/copsilot/`). Synced notes are created in your configured folder (default: `opencode-sync/`).
+- **No telemetry**: Copsilot does not send any telemetry or analytics data. Network activity is limited to the OpenCode CLI subprocess communicating with AI providers.
 - **Environment**: The OpenCode subprocess inherits the Obsidian process environment for PATH resolution and proxy configuration.
 
 ## Troubleshooting
@@ -207,7 +207,7 @@ src/
 │   └── index.ts                 # Module exports
 │
 ├── view/                        # Sidebar chat view
-│   ├── copsidianView.ts         # Main view component: session tabs, input, message list
+│   ├── copsilotView.ts         # Main view component: session tabs, input, message list
 │   └── renderer.ts              # Message rendering: markdown, tool calls, thinking blocks
 │
 ├── context/                     # Vault context management
@@ -267,9 +267,9 @@ Licensed under the [MIT License](LICENSE).
 
 将完整的 [OpenCode](https://opencode.ai) AI Agent 嵌入 Obsidian 侧边栏。你的笔记就是 Agent 的上下文——在笔记中直接提问、总结、整理和创作。
 
-## 为什么做 Copsidian
+## 为什么做 Copsilot
 
-现有的 Obsidian AI 插件大致分两类：需要自行配置第三方 API Key（长期产生 Token 费用）或依赖中间层中转（增加 Token 消耗）。Copsidian 直连本地 OpenCode CLI，而 OpenCode 本身提供免费 Token 额度，对绝大多数笔记用户完全够用。无需 API Key，无需中间层——直接、轻量、零成本。
+现有的 Obsidian AI 插件大致分两类：需要自行配置第三方 API Key（长期产生 Token 费用）或依赖中间层中转（增加 Token 消耗）。Copsilot 直连本地 OpenCode CLI，而 OpenCode 本身提供免费 Token 额度，对绝大多数笔记用户完全够用。无需 API Key，无需中间层——直接、轻量、零成本。
 
 ## 功能特性
 
@@ -297,7 +297,7 @@ Licensed under the [MIT License](LICENSE).
 
 **国际化（i18n）** — 在设置 → 外观中切换中英文界面，社区翻译欢迎提交 PR。
 
-语言切换会立即应用到设置页和已打开的 Copsidian 视图，包括通知、工具栏文案、行内编辑界面和运行时错误提示。所选语言会在插件重启后保持生效。
+语言切换会立即应用到设置页和已打开的 Copsilot 视图，包括通知、工具栏文案、行内编辑界面和运行时错误提示。所选语言会在插件重启后保持生效。
 
 **MCP 服务器** — 在设置中配置本地 MCP 服务器，新建或恢复 OpenCode 会话时自动附加。
 
@@ -330,13 +330,13 @@ Licensed under the [MIT License](LICENSE).
 ### 手动安装（推荐）
 
 1. 从[最新 Release](../../releases/latest) 下载 `main.js`、`manifest.json` 和 `styles.css`
-2. 在 Vault 的插件目录中创建 `copsidian` 文件夹：
+2. 在 Vault 的插件目录中创建 `copsilot` 文件夹：
    ```
-   /path/to/vault/.obsidian/plugins/copsidian/
+   /path/to/vault/.obsidian/plugins/copsilot/
    ```
-3. 将下载的文件复制到 `copsidian` 文件夹
+3. 将下载的文件复制到 `copsilot` 文件夹
 4. 在 Obsidian 中启用插件：
-   - 设置 → 第三方插件 → 启用 "Copsidian"
+   - 设置 → 第三方插件 → 启用 "Copsilot"
 
 ### 通过 BRAT 安装
 
@@ -361,7 +361,7 @@ Licensed under the [MIT License](LICENSE).
    ```
 
 3. 在 Obsidian 中启用插件：
-   - 设置 → 第三方插件 → 启用 "Copsidian"
+   - 设置 → 第三方插件 → 启用 "Copsilot"
 
 ## 配置说明
 
@@ -381,7 +381,7 @@ Licensed under the [MIT License](LICENSE).
 | 同步规则 | 将工具调用结果映射为 Vault 笔记（工具 → 文件夹 → 文件名模板） | — |
 | MCP 服务器 | 本地 stdio MCP 服务器定义（名称 → 命令 → 参数），用于新建 OpenCode 会话 | — |
 | 界面语言 | UI 语言（`en` / `zh`） | `en` |
-| 自动连接 | 在 Copsidian 用户操作时连接 OpenCode，而非 Obsidian 启动时 | `false` |
+| 自动连接 | 在 Copsilot 用户操作时连接 OpenCode，而非 Obsidian 启动时 | `false` |
 | 空闲超时 | 等待 Agent 响应的最大时间（毫秒） | `300000` |
 
 运行时 Agent、模型和可用命令/技能从已有的 OpenCode 连接中加载，或在手动重连后加载。打开设置页不会启动 OpenCode 或创建元数据会话。
@@ -399,7 +399,7 @@ npm run release:check
 
 `npm run release` 会构建生产版插件文件，并将 `main.js`、`manifest.json` 和 `styles.css` 复制到 `release/`。`npm run release:check` 会校验发布元数据和生成的发布产物。
 
-对外发布由 tag 触发。本地检查通过且工作区干净后，创建并推送 annotated `vX.Y.Z` tag。GitHub Actions 的 release workflow 会在 `v*` tag 上运行，重新构建发布产物、创建 GitHub Release，并上传 `copsidian-vX.Y.Z.zip`、`main.js`、`manifest.json` 和 `styles.css`。
+对外发布由 tag 触发。本地检查通过且工作区干净后，创建并推送 annotated `vX.Y.Z` tag。GitHub Actions 的 release workflow 会在 `v*` tag 上运行，重新构建发布产物、创建 GitHub Release，并上传 `copsilot-vX.Y.Z.zip`、`main.js`、`manifest.json` 和 `styles.css`。
 
 推送 tag 后不要再运行 `gh release create vX.Y.Z`。如果 GitHub 返回 `Release.tag_name already exists`，通常说明 tag 触发的 workflow 已经创建了 release；此时应使用 `gh release view vX.Y.Z` 检查现有 release 和已上传资产，不要直接删除或重建。
 
@@ -418,8 +418,8 @@ npm run release:check
 ## 隐私与数据
 
 - **发送至 API**：你的输入、引用的笔记、附加的文件/图片以及工具调用结果。所有通信都经过本地 OpenCode CLI，由它处理与 AI 提供商的 API 调用。
-- **本地存储**：Copsidian 的设置和会话数据存储在 Obsidian 的插件数据中（`.obsidian/plugins/copsidian/data.json`）。同步的笔记保存在你配置的文件夹中（默认：`opencode-sync/`）。
-- **无遥测**：Copsidian 不发送任何遥测或分析数据。网络活动仅限于 OpenCode CLI 子进程与 AI 提供商的通信。
+- **本地存储**：Copsilot 的设置和会话数据存储在 Obsidian 的插件数据中（`.obsidian/plugins/copsilot/data.json`）。同步的笔记保存在你配置的文件夹中（默认：`opencode-sync/`）。
+- **无遥测**：Copsilot 不发送任何遥测或分析数据。网络活动仅限于 OpenCode CLI 子进程与 AI 提供商的通信。
 - **环境变量**：OpenCode 子进程继承 Obsidian 进程的环境变量，用于 PATH 解析和代理配置。
 
 ## 故障排除
@@ -464,7 +464,7 @@ src/
 │   └── index.ts                 # 模块导出
 │
 ├── view/                        # 侧边栏对话视图
-│   ├── copsidianView.ts         # 主视图组件：会话标签、输入框、消息列表
+│   ├── copsilotView.ts         # 主视图组件：会话标签、输入框、消息列表
 │   └── renderer.ts              # 消息渲染：Markdown、工具调用、思考块
 │
 ├── context/                     # Vault 上下文管理

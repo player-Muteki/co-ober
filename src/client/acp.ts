@@ -281,7 +281,7 @@ export class AcpClient implements OpencodeClient {
 			const update = this.parseUpdate(p?.update as Record<string, unknown> | undefined);
 			if (update) {
 				if (update.sessionUpdate === 'usage_update') {
-					console.debug('[copsidian] usage_update:', JSON.stringify(update));
+					console.debug('[copsilot] usage_update:', JSON.stringify(update));
 				}
 				this.applySessionUpdate(update);
 				if (this.chunkHandler) {
@@ -337,7 +337,7 @@ export class AcpClient implements OpencodeClient {
 
 			const response = await this.request('initialize', {
 				protocolVersion: 1,
-				clientInfo: { name: 'copsidian', version: CLIENT_VERSION },
+				clientInfo: { name: 'copsilot', version: CLIENT_VERSION },
 				clientCapabilities,
 			}) as Record<string, unknown>;
 			this.agentCapabilities = (response.agentCapabilities as AgentCapabilities) ?? null;
@@ -554,7 +554,7 @@ export class AcpClient implements OpencodeClient {
 			handler(req).then((decision: string) => {
 				resolve({ sessionId: params.sessionId, decision: { optionId: decision } });
 			}).catch((error: unknown) => {
-				console.error('[copsidian] permission request failed:', error);
+				console.error('[copsilot] permission request failed:', error);
 				// Fallback to default handler on failure
 				this.requestPermission(req).then((decision: string) => {
 					resolve({ sessionId: params.sessionId, decision: { optionId: decision } });
@@ -796,9 +796,9 @@ export class AcpClient implements OpencodeClient {
     const stderrMsg = subprocess.getStderrSnapshot() || '';
     const closeError = error ?? new Error(t().acp.processExited.replace('{code}', t().acp.unknownCode));
     if (error) {
-      console.error('[copsidian] process error:', error, 'stderr:', stderrMsg);
+      console.error('[copsilot] process error:', error, 'stderr:', stderrMsg);
     } else {
-      console.error('[copsidian] process exited. stderr:', stderrMsg);
+      console.error('[copsilot] process exited. stderr:', stderrMsg);
     }
 
     void this.disposeConnection(closeError).then(() => {

@@ -1,20 +1,20 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
-import { CopsidianSettingsTab } from './settings';
+import { CopsilotSettingsTab } from './settings';
 import { DEFAULT_SETTINGS, VIEW_TYPE } from './types';
 import { setLocale } from './i18n/index';
 import { installObsidianDomHelpers } from './test/domHelpers';
-import type CopsidianPlugin from './main';
-import type { CopsidianSettings } from './types';
+import type CopsilotPlugin from './main';
+import type { CopsilotSettings } from './types';
 
 installObsidianDomHelpers();
 
-describe('CopsidianSettingsTab locale refresh', () => {
+describe('CopsilotSettingsTab locale refresh', () => {
   it('redraws settings labels and refreshes open chat views when language changes', async () => {
     setLocale('en');
     const refreshedView = { refreshLocale: vi.fn() };
     const plugin = createPlugin(refreshedView);
-    const tab = new CopsidianSettingsTab(plugin);
+    const tab = new CopsilotSettingsTab(plugin);
 
     tab.display();
     expect(tab.containerEl.textContent).toContain('Connection');
@@ -38,7 +38,7 @@ describe('CopsidianSettingsTab locale refresh', () => {
   it('adds custom agents and skills from settings', async () => {
     setLocale('en');
     const plugin = createPlugin({ refreshLocale: vi.fn() });
-    const tab = new CopsidianSettingsTab(plugin);
+    const tab = new CopsilotSettingsTab(plugin);
 
     tab.display();
     const addAgent = [...tab.containerEl.querySelectorAll('button')]
@@ -72,7 +72,7 @@ describe('CopsidianSettingsTab locale refresh', () => {
       skillIds: ['writer'],
     });
     plugin.settings.activeCustomAgentId = 'planner';
-    const tab = new CopsidianSettingsTab(plugin);
+    const tab = new CopsilotSettingsTab(plugin);
 
     tab.display();
     const inputs = [...tab.containerEl.querySelectorAll('input')];
@@ -104,7 +104,7 @@ describe('CopsidianSettingsTab locale refresh', () => {
       { id: 'planner', enabled: true, name: 'Planner', description: '', instructions: 'Plan.', skillIds: ['writer'] },
       { id: 'researcher', enabled: true, name: 'Researcher', description: '', instructions: 'Research.', skillIds: [] },
     );
-    const tab = new CopsidianSettingsTab(plugin);
+    const tab = new CopsilotSettingsTab(plugin);
 
     tab.display();
     const inputs = [...tab.containerEl.querySelectorAll('input')];
@@ -139,7 +139,7 @@ describe('CopsidianSettingsTab locale refresh', () => {
         { name: 'skill-writer', description: 'Write with context' },
       ],
     });
-    const tab = new CopsidianSettingsTab(plugin);
+    const tab = new CopsilotSettingsTab(plugin);
 
     tab.display();
     const selects = [...tab.containerEl.querySelectorAll('select')];
@@ -171,7 +171,7 @@ describe('CopsidianSettingsTab locale refresh', () => {
       availableCommands: [{ name: 'compact', description: 'Compact' }],
     });
     plugin.settings.mcpServers.push({ type: 'stdio', id: 'fs', enabled: true, name: 'filesystem', command: 'npx', args: ['-y'], env: [] });
-    const tab = new CopsidianSettingsTab(plugin);
+    const tab = new CopsilotSettingsTab(plugin);
 
     tab.display();
     const diagnosticsButton = [...tab.containerEl.querySelectorAll('button')]
@@ -195,7 +195,7 @@ describe('CopsidianSettingsTab locale refresh', () => {
     const plugin = createPlugin({ refreshLocale: vi.fn() }, {
       availableModes: [{ id: 'build', name: 'Build' }],
     });
-    const tab = new CopsidianSettingsTab(plugin);
+    const tab = new CopsilotSettingsTab(plugin);
 
     tab.display();
     vi.mocked(plugin.initClient).mockClear();
@@ -217,7 +217,7 @@ describe('CopsidianSettingsTab locale refresh', () => {
       availableModels: [{ modelId: 'openai/gpt', name: 'GPT' }],
       availableCommands: [{ name: 'skill-writer', description: 'Write with context' }],
     });
-    const tab = new CopsidianSettingsTab(plugin);
+    const tab = new CopsilotSettingsTab(plugin);
 
     tab.display();
     const diagnosticsButton = [...tab.containerEl.querySelectorAll('button')]
@@ -238,7 +238,7 @@ describe('CopsidianSettingsTab locale refresh', () => {
     const plugin = createPlugin({ refreshLocale: vi.fn() }, {
       availableModes: [{ id: 'build', name: 'Build' }],
     });
-    const tab = new CopsidianSettingsTab(plugin);
+    const tab = new CopsilotSettingsTab(plugin);
 
     tab.display();
     await flushPromises();
@@ -263,7 +263,7 @@ describe('CopsidianSettingsTab locale refresh', () => {
     const plugin = createPlugin({ refreshLocale: vi.fn() }, {}, {}, false);
     plugin.settings.opencodePath = '';
     plugin.settings.defaultNoteFolder = '';
-    const tab = new CopsidianSettingsTab(plugin);
+    const tab = new CopsilotSettingsTab(plugin);
 
     tab.display();
     const diagnosticsButton = [...tab.containerEl.querySelectorAll('button')]
@@ -286,7 +286,7 @@ describe('CopsidianSettingsTab locale refresh', () => {
     setLocale('en');
     const refreshedView = { refreshLocale: vi.fn() };
     const plugin = createPlugin(refreshedView);
-    const tab = new CopsidianSettingsTab(plugin);
+    const tab = new CopsilotSettingsTab(plugin);
 
     tab.display();
     expect(tab.containerEl.textContent).toContain('Diagnostics');
@@ -310,7 +310,7 @@ describe('CopsidianSettingsTab locale refresh', () => {
       availableModels: [{ modelId: 'openai/gpt', name: 'GPT' }],
       availableCommands: [{ name: 'skill-writer', description: 'Write with context' }],
     });
-    const tab = new CopsidianSettingsTab(plugin);
+    const tab = new CopsilotSettingsTab(plugin);
 
     tab.display();
     expect(tab.containerEl.textContent).not.toContain('skill-writer');
@@ -328,7 +328,7 @@ describe('CopsidianSettingsTab locale refresh', () => {
     setLocale('en');
     const plugin = createPlugin({ refreshLocale: vi.fn() }, {}, {}, true, { mcpCapabilities: { http: false } });
     plugin.settings.mcpServers.push({ type: 'stdio', id: 'fs', enabled: true, name: 'filesystem', command: 'npx', args: [], env: [] });
-    const tab = new CopsidianSettingsTab(plugin);
+    const tab = new CopsilotSettingsTab(plugin);
 
     tab.display();
 
@@ -351,8 +351,8 @@ function createPlugin(
   runtimeOptions = snapshot,
   initClientResult = true,
   capabilities: Record<string, unknown> | null = null,
-): CopsidianPlugin {
-  const settings: CopsidianSettings = {
+): CopsilotPlugin {
+  const settings: CopsilotSettings = {
     ...DEFAULT_SETTINGS,
     syncRules: DEFAULT_SETTINGS.syncRules.map((rule) => ({ ...rule })),
     mcpServers: [],
@@ -392,7 +392,7 @@ function createPlugin(
     initClient: vi.fn().mockResolvedValue(initClientResult),
     getClient: vi.fn(() => client),
     client: null,
-  } as unknown as CopsidianPlugin;
+  } as unknown as CopsilotPlugin;
 }
 
 function flushPromises(): Promise<void> {

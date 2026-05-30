@@ -1,5 +1,5 @@
 import type { NormalizedUpdate, ContextRef, PromptPart, SessionConfigOption, ModeOption, ModelOption } from '../types';
-import type CopsidianPlugin from '../main';
+import type CopsilotPlugin from '../main';
 import { t } from '../i18n/index';
 import type { ChatRenderer } from './renderer';
 import type { ChatInput } from '../chat/input';
@@ -47,11 +47,11 @@ export interface ControllerDeps {
 	syncEngine: SyncEngine;
 	sessionStore: SessionStore;
 	welcomeView: WelcomeView;
-	plugin: CopsidianPlugin;
+	plugin: CopsilotPlugin;
 	updateContextMeter: (usage: import('../chat/toolbar').UsageInfo | null) => void;
 }
 
-export class CopsidianViewController {
+export class CopsilotViewController {
 	private sessionMutex = new Mutex();
 	readonly state = new ChatState();
 	private streamCtrl!: StreamController;
@@ -125,7 +125,7 @@ export class CopsidianViewController {
 			try {
 				await this.syncRuntimeSession(this.state.sessionId);
 			} catch (e) {
-				console.error('[copsidian] session sync on connect:', e);
+				console.error('[copsilot] session sync on connect:', e);
 			}
 		}
 		this.loadToolbarOptions();
@@ -144,7 +144,7 @@ export class CopsidianViewController {
 				try {
 					await this.syncRuntimeSession(this.state.sessionId);
 				} catch (e) {
-					console.error('[copsidian] session resync:', e);
+					console.error('[copsilot] session resync:', e);
 				}
 				this.loadToolbarOptions();
 				if (this.busy) {
@@ -189,14 +189,14 @@ export class CopsidianViewController {
 			try {
 				await this.syncRuntimeSession(this.state.sessionId);
 			} catch (e) {
-				console.error('[copsidian] session resync:', e);
+				console.error('[copsilot] session resync:', e);
 			}
 			this.loadToolbarOptions();
 			this.state.isConnected = true;
 			this.deps.welcomeView.updateStatus(true);
 			this.callbacks.onHideReconnectBtn();
 		} catch (e) {
-			console.error('[copsidian] reconnect failed:', e);
+			console.error('[copsilot] reconnect failed:', e);
 			throw e;
 		}
 	}
@@ -219,7 +219,7 @@ export class CopsidianViewController {
 		try {
 			await client.cancel(this.state.sessionId);
 		} catch (e) {
-			console.error('[copsidian] cancel:', e);
+			console.error('[copsilot] cancel:', e);
 		}
 	}
 
@@ -247,7 +247,7 @@ export class CopsidianViewController {
 			this.callbacks.onShowWelcome(this.deps.plugin.getClient() !== null);
 			this.callbacks.onAutoRefActiveFile();
 		} catch (e) {
-			console.error('[copsidian] newSession:', e);
+			console.error('[copsilot] newSession:', e);
 		}
 	}
 
@@ -276,7 +276,7 @@ export class CopsidianViewController {
 			try {
 				await this.syncRuntimeSession(this.state.sessionId);
 			} catch (e) {
-				console.error('[copsidian] session sync failed, creating new session:', e);
+				console.error('[copsilot] session sync failed, creating new session:', e);
 				this.state.sessionId = null;
 			}
 			this.loadToolbarOptions();
@@ -297,7 +297,7 @@ export class CopsidianViewController {
 			this.loadToolbarOptions();
 			return this.state.sessionId;
 		} catch (e) {
-			console.error('[copsidian] session init:', e);
+			console.error('[copsilot] session init:', e);
 			return null;
 		}
 	}
@@ -313,7 +313,7 @@ export class CopsidianViewController {
 		try {
 			await this.syncRuntimeSession(sessionId);
 		} catch (e) {
-			console.error('[copsidian] session switch sync:', e);
+			console.error('[copsilot] session switch sync:', e);
 		}
 		await this.restoreSession();
 		this.deps.sessionStore.setActive(sessionId);
@@ -456,7 +456,7 @@ export class CopsidianViewController {
 			// The abort signal will handle the cancellation
 			c.abort();
 		} catch (e) {
-			console.error('[copsidian] abort:', e);
+			console.error('[copsilot] abort:', e);
 		}
 	}
 

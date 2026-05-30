@@ -28,7 +28,7 @@ export class PermissionBanner {
 			this.el = null;
 		}
 
-		const banner = this.containerEl.createDiv({ cls: 'copsidian-permission-banner' });
+		const banner = this.containerEl.createDiv({ cls: 'copsilot-permission-banner' });
 		this.el = banner;
 
 		// Tool kind badge

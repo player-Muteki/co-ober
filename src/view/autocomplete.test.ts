@@ -32,13 +32,13 @@ describe('Autocomplete', () => {
   describe('open', () => {
     it('creates dropdown element', () => {
       autocomplete.open(sampleItems, '@');
-      const dropdown = container.querySelector('.copsidian-ac-dropdown');
+      const dropdown = container.querySelector('.copsilot-ac-dropdown');
       expect(dropdown).not.toBeNull();
     });
 
     it('renders all items', () => {
       autocomplete.open(sampleItems, '@');
-      const items = container.querySelectorAll('.copsidian-ac-item');
+      const items = container.querySelectorAll('.copsilot-ac-item');
       expect(items.length).toBe(3);
     });
 
@@ -59,14 +59,14 @@ describe('Autocomplete', () => {
 
     it('selects first item by default', () => {
       autocomplete.open(sampleItems, '@');
-      const selected = container.querySelector('.copsidian-ac-item.selected');
+      const selected = container.querySelector('.copsilot-ac-item.selected');
       expect(selected).not.toBeNull();
       expect(selected?.querySelector('.ac-label')?.textContent).toBe('File 1');
     });
 
     it('shows no matches message when empty', () => {
       autocomplete.open([], '@');
-      const item = container.querySelector('.copsidian-ac-item');
+      const item = container.querySelector('.copsilot-ac-item');
       expect(item?.textContent).toBe('No matches');
     });
   });
@@ -75,7 +75,7 @@ describe('Autocomplete', () => {
     it('removes dropdown element', () => {
       autocomplete.open(sampleItems, '@');
       autocomplete.close();
-      const dropdown = container.querySelector('.copsidian-ac-dropdown');
+      const dropdown = container.querySelector('.copsilot-ac-dropdown');
       expect(dropdown).toBeNull();
     });
 
@@ -106,7 +106,7 @@ describe('Autocomplete', () => {
     it('selects next item on ArrowDown', () => {
       autocomplete.open(sampleItems, '@');
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
-      const selected = container.querySelector('.copsidian-ac-item.selected');
+      const selected = container.querySelector('.copsilot-ac-item.selected');
       expect(selected?.querySelector('.ac-label')?.textContent).toBe('File 2');
     });
 
@@ -115,7 +115,7 @@ describe('Autocomplete', () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
-      const selected = container.querySelector('.copsidian-ac-item.selected');
+      const selected = container.querySelector('.copsilot-ac-item.selected');
       expect(selected?.querySelector('.ac-label')?.textContent).toBe('File 1');
     });
 
@@ -123,14 +123,14 @@ describe('Autocomplete', () => {
       autocomplete.open(sampleItems, '@');
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }));
-      const selected = container.querySelector('.copsidian-ac-item.selected');
+      const selected = container.querySelector('.copsilot-ac-item.selected');
       expect(selected?.querySelector('.ac-label')?.textContent).toBe('File 1');
     });
 
     it('wraps to last item on ArrowUp at start', () => {
       autocomplete.open(sampleItems, '@');
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }));
-      const selected = container.querySelector('.copsidian-ac-item.selected');
+      const selected = container.querySelector('.copsilot-ac-item.selected');
       expect(selected?.querySelector('.ac-label')?.textContent).toBe('File 3');
     });
 
@@ -155,7 +155,7 @@ describe('Autocomplete', () => {
     it('filters items on typing', () => {
       autocomplete.open(sampleItems, '@');
       document.dispatchEvent(new KeyboardEvent('keydown', { key: '2' }));
-      const items = container.querySelectorAll('.copsidian-ac-item');
+      const items = container.querySelectorAll('.copsilot-ac-item');
       expect(items.length).toBe(1);
       expect(items[0].querySelector('.ac-label')?.textContent).toBe('File 2');
     });
@@ -164,7 +164,7 @@ describe('Autocomplete', () => {
       autocomplete.open(sampleItems, '@');
       document.dispatchEvent(new KeyboardEvent('keydown', { key: '2' }));
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace' }));
-      const items = container.querySelectorAll('.copsidian-ac-item');
+      const items = container.querySelectorAll('.copsilot-ac-item');
       expect(items.length).toBe(3);
     });
 
@@ -178,7 +178,7 @@ describe('Autocomplete', () => {
   describe('mouse interactions', () => {
     it('selects item on click', () => {
       autocomplete.open(sampleItems, '@');
-      const items = container.querySelectorAll('.copsidian-ac-item');
+      const items = container.querySelectorAll('.copsilot-ac-item');
       (items[1] as HTMLElement).click();
       expect(callbacks.onSelect).toHaveBeenCalledWith('file2', '@');
     });

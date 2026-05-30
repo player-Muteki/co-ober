@@ -51,40 +51,40 @@ export class InputToolbar {
   private currentPermission: string = 'safe';
 
   constructor(container: HTMLDivElement, private callbacks: ToolbarCallbacks) {
-    container.addClass('copsidian-toolbar');
+    container.addClass('copsilot-toolbar');
     onLocaleChange(() => this.refreshLocale());
 
     // ── Single row ──
-    const row = container.createDiv({ cls: 'copsidian-toolbar-row' });
+    const row = container.createDiv({ cls: 'copsilot-toolbar-row' });
 
     // Custom model selector (hover dropdown)
-    this.modelSelectorEl = row.createDiv({ cls: 'copsidian-model-selector' });
-    this.modelBtnEl = this.modelSelectorEl.createDiv({ cls: 'copsidian-model-btn' });
-    this.modelLabelEl = this.modelBtnEl.createSpan({ cls: 'copsidian-model-label' });
+    this.modelSelectorEl = row.createDiv({ cls: 'copsilot-model-selector' });
+    this.modelBtnEl = this.modelSelectorEl.createDiv({ cls: 'copsilot-model-btn' });
+    this.modelLabelEl = this.modelBtnEl.createSpan({ cls: 'copsilot-model-label' });
     this.modelLabelEl.setText(t().toolbar.noModels);
-    this.modelDropdownEl = this.modelSelectorEl.createDiv({ cls: 'copsidian-model-dropdown' });
+    this.modelDropdownEl = this.modelSelectorEl.createDiv({ cls: 'copsilot-model-dropdown' });
 
     // Mode cycle button (click to cycle)
-    this.modeCycleEl = row.createDiv({ cls: 'copsidian-mode-cycle' });
-    this.modeCycleLabelEl = this.modeCycleEl.createSpan({ cls: 'copsidian-mode-cycle-label' });
+    this.modeCycleEl = row.createDiv({ cls: 'copsilot-mode-cycle' });
+    this.modeCycleLabelEl = this.modeCycleEl.createSpan({ cls: 'copsilot-mode-cycle-label' });
     this.modeCycleLabelEl.setText('—');
     this.modeCycleEl.addEventListener('click', () => this.cycleMode());
 
     // Custom effort selector (hover dropdown)
-    this.effortSelectorEl = row.createDiv({ cls: 'copsidian-effort-selector' });
-    this.effortBtnEl = this.effortSelectorEl.createDiv({ cls: 'copsidian-effort-btn' });
-    this.effortLabelEl = this.effortBtnEl.createSpan({ cls: 'copsidian-effort-label' });
+    this.effortSelectorEl = row.createDiv({ cls: 'copsilot-effort-selector' });
+    this.effortBtnEl = this.effortSelectorEl.createDiv({ cls: 'copsilot-effort-btn' });
+    this.effortLabelEl = this.effortBtnEl.createSpan({ cls: 'copsilot-effort-label' });
     this.effortLabelEl.setText('—');
-    this.effortDropdownEl = this.effortSelectorEl.createDiv({ cls: 'copsidian-effort-dropdown' });
+    this.effortDropdownEl = this.effortSelectorEl.createDiv({ cls: 'copsilot-effort-dropdown' });
 
     // Permission toggle (click to cycle)
-    this.permToggleEl = row.createDiv({ cls: 'copsidian-perm-toggle' });
-    this.permLabelEl = this.permToggleEl.createSpan({ cls: 'copsidian-perm-label' });
+    this.permToggleEl = row.createDiv({ cls: 'copsilot-perm-toggle' });
+    this.permLabelEl = this.permToggleEl.createSpan({ cls: 'copsilot-perm-label' });
     this.permToggleEl.addEventListener('click', () => this.cyclePermission());
     this.updatePermissionDisplay();
 
     // Send/Stop button
-    this.sendBtn = row.createEl('button', { text: t().toolbar.send, cls: 'copsidian-send-btn' });
+    this.sendBtn = row.createEl('button', { text: t().toolbar.send, cls: 'copsilot-send-btn' });
     this.sendBtn.onclick = () => this.handleSendClick();
   }
 
@@ -135,7 +135,7 @@ export class InputToolbar {
     const options = this.modelOptions;
 
     if (options.length === 0) {
-      const emptyEl = this.modelDropdownEl.createDiv({ cls: 'copsidian-model-option empty' });
+      const emptyEl = this.modelDropdownEl.createDiv({ cls: 'copsilot-model-option empty' });
       emptyEl.setText(t().toolbar.noModels);
       return;
     }
@@ -151,11 +151,11 @@ export class InputToolbar {
 
     for (const [group, groupOptions] of groups) {
       if (group && groups.size > 1) {
-        const separator = this.modelDropdownEl.createDiv({ cls: 'copsidian-model-group' });
+        const separator = this.modelDropdownEl.createDiv({ cls: 'copsilot-model-group' });
         separator.setText(group);
       }
       for (const opt of groupOptions) {
-        const optionEl = this.modelDropdownEl.createDiv({ cls: 'copsidian-model-option' });
+        const optionEl = this.modelDropdownEl.createDiv({ cls: 'copsilot-model-option' });
         if (opt.value === this.currentModel) {
           optionEl.addClass('selected');
         }
@@ -190,13 +190,13 @@ export class InputToolbar {
     const options = this.effortOptions;
 
     if (options.length === 0) {
-      const emptyEl = this.effortDropdownEl.createDiv({ cls: 'copsidian-effort-option empty' });
+      const emptyEl = this.effortDropdownEl.createDiv({ cls: 'copsilot-effort-option empty' });
       emptyEl.setText('—');
       return;
     }
 
     for (const opt of options) {
-      const optionEl = this.effortDropdownEl.createDiv({ cls: 'copsidian-effort-option' });
+      const optionEl = this.effortDropdownEl.createDiv({ cls: 'copsilot-effort-option' });
       if (opt.value === this.currentEffort) {
         optionEl.addClass('selected');
       }
@@ -235,7 +235,7 @@ export class InputToolbar {
     };
     this.permLabelEl.setText(labels[this.currentPermission] ?? '🔒 Safe');
     this.permToggleEl.setAttribute('title', `Permission: ${this.currentPermission} (click to switch)`);
-    this.permToggleEl.className = 'copsidian-perm-toggle';
+    this.permToggleEl.className = 'copsilot-perm-toggle';
     this.permToggleEl.addClass(`mod-${this.currentPermission}`);
   }
 

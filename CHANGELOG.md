@@ -3,7 +3,7 @@
 ## 0.1.1 - 2026-05-30
 
 ### Changed
-- Context arc meter moved to right of "Copsidian" title in header (was left of title).
+- Context arc meter moved to right of "Copsilot" title in header (was left of title).
 - All slash commands now route through ACP agent — removed local `compact` interception.
 - `isBuiltInCommand()` always returns false; no commands are handled locally.
 
@@ -166,12 +166,12 @@ First public beta release.
 - Error messages now show contextual action buttons (retry for timeout, restart for process exit).
 
 ### Tested
-- Updated tests for `ChatState`, `AcpClient`, and `CopsidianViewController` to reflect new abort behavior.
+- Updated tests for `ChatState`, `AcpClient`, and `CopsilotViewController` to reflect new abort behavior.
 
 ## 0.0.28 - 2026-05-26
 
 ### Changed
-- Extracted business/session/streaming logic from `CopsidianView` into new `CopsidianViewController` class.
+- Extracted business/session/streaming logic from `CopsilotView` into new `CopsilotViewController` class.
 - View now handles only DOM creation, UI event binding, and Obsidian lifecycle hooks.
 - Controller owns connection management, session lifecycle, message sending, toolbar sync, and state.
 - View delegates all operations to controller via `ControllerDeps` and `ControllerCallbacks` interfaces.
@@ -288,13 +288,13 @@ First public beta release.
 ## 0.0.16 - 2026-05-25
 
 ### Added
-- Extract WelcomeView component from CopsidianView for welcome page rendering and connection status display.
+- Extract WelcomeView component from CopsilotView for welcome page rendering and connection status display.
 - Add event-driven i18n locale change mechanism (`onLocaleChange`) so child components self-manage locale updates instead of relying on parent imperative calls.
 - Add unit tests for DragDropManager (6 tests), PermissionBanner (3 tests), InlineEditPanel (5 tests), and Mutex (3 tests).
 
 ### Changed
 - ChatInput, InputToolbar, ChatRenderer, InlineEditPanel, DragDropManager, PermissionBanner, and WelcomeView register their own locale change listeners in constructors.
-- Simplify CopsidianView.refreshLocale() by removing manual child component locale update calls.
+- Simplify CopsilotView.refreshLocale() by removing manual child component locale update calls.
 
 ## 0.0.15 - 2026-05-25
 
@@ -331,8 +331,8 @@ First public beta release.
 ### Fixed
 - Preserve configured MCP servers when restoring existing OpenCode sessions.
 - Initialize autocomplete after the chat input area is created.
-- Deduplicate Copsidian side leaves during plugin reload/open stress scenarios.
-- Make Copsidian view cleanup safe before the view finishes opening.
+- Deduplicate Copsilot side leaves during plugin reload/open stress scenarios.
+- Make Copsilot view cleanup safe before the view finishes opening.
 
 ### Tested
 - Add regression coverage for MCP session restore, autocomplete initialization, side leaf deduplication, and early view cleanup.
@@ -375,7 +375,7 @@ First public beta release.
 ## 0.0.8 - 2026-05-21
 
 ### Fixed
-- Apply saved English/Chinese language settings on plugin startup and refresh both the plugin settings tab and open Copsidian views immediately after changing language in Settings.
+- Apply saved English/Chinese language settings on plugin startup and refresh both the plugin settings tab and open Copsilot views immediately after changing language in Settings.
 - Complete i18n coverage for runtime notices, toolbar tooltips, inline edit UI and prompt, usage tooltips, sync failure messages, ACP errors, and default session titles.
 - Harden permission handling so `safe` mode does not auto-approve tool requests when no UI permission handler is available.
 - Prevent connection failures from blocking sidebar initialization, and avoid false “connected” states after failed reconnect attempts.

@@ -72,7 +72,7 @@ export class StreamController {
 								.replace('{error}', failure.error.message));
 						}
 					}).catch(e => {
-						console.error('[copsidian] sync failed:', e);
+						console.error('[copsilot] sync failed:', e);
 						this.deps.onSyncFailure?.(e instanceof Error ? e.message : String(e));
 					});
 				}

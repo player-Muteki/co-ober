@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { applyDefaultSessionSettings } from './sessionDefaults';
-import type { CopsidianSettings, SessionConfigOption } from '../types';
+import type { CopsilotSettings, SessionConfigOption } from '../types';
 
 describe('applyDefaultSessionSettings', () => {
   it('applies configured default agent, model, and effort to a new session', async () => {
@@ -13,7 +13,7 @@ describe('applyDefaultSessionSettings', () => {
       defaultAgent: 'docs',
       defaultModel: 'openai/gpt',
       defaultEffort: 'high',
-    } as CopsidianSettings;
+    } as CopsilotSettings;
 
     await applyDefaultSessionSettings(client, 'session-1', settings);
 
@@ -32,7 +32,7 @@ describe('applyDefaultSessionSettings', () => {
       defaultAgent: '',
       defaultModel: '',
       defaultEffort: 'default',
-    } as CopsidianSettings;
+    } as CopsilotSettings;
 
     await applyDefaultSessionSettings(client, 'session-1', settings);
 

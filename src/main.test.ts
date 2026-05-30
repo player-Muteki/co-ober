@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
-import CopsidianPlugin from './main';
+import CopsilotPlugin from './main';
 import { VIEW_TYPE } from './types';
 
-describe('CopsidianPlugin view activation', () => {
+describe('CopsilotPlugin view activation', () => {
   it('does not connect to OpenCode while loading the plugin', async () => {
     const workspace = {
       getLeavesOfType: vi.fn(() => []),
@@ -17,7 +17,7 @@ describe('CopsidianPlugin view activation', () => {
     expect(plugin.initClient).not.toHaveBeenCalled();
   });
 
-  it('reuses one Copsidian leaf and detaches duplicates', async () => {
+  it('reuses one Copsilot leaf and detaches duplicates', async () => {
     const leaves: ReturnType<typeof createLeaf>[] = [];
     const existing = createLeaf();
     const duplicate = createLeaf(() => leaves.splice(leaves.indexOf(duplicate), 1));
@@ -64,8 +64,8 @@ function createLeaf(onDetach?: () => void) {
   };
 }
 
-function createPlugin(workspace: unknown): CopsidianPlugin {
-  const plugin = Object.create(CopsidianPlugin.prototype) as CopsidianPlugin;
+function createPlugin(workspace: unknown): CopsilotPlugin {
+  const plugin = Object.create(CopsilotPlugin.prototype) as CopsilotPlugin;
   Object.assign(plugin, {
     app: { workspace },
     settings: {
@@ -76,7 +76,7 @@ function createPlugin(workspace: unknown): CopsidianPlugin {
     activeSessionId: null,
     loadPluginData: vi.fn().mockResolvedValue(undefined),
     registerView: vi.fn(),
-    deduplicateCopsidianLeaves: CopsidianPlugin.prototype['deduplicateCopsidianLeaves'],
+    deduplicateCopsilotLeaves: CopsilotPlugin.prototype['deduplicateCopsilotLeaves'],
     addRibbonIcon: vi.fn(),
     addSettingTab: vi.fn(),
     addCommand: vi.fn(),

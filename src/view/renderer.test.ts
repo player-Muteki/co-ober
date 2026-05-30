@@ -39,14 +39,14 @@ describe('ChatRenderer', () => {
   describe('addUserMessage', () => {
     it('adds user message to container', () => {
       renderer.addUserMessage('Hello world');
-      const msg = container.querySelector('.copsidian-msg.user');
+      const msg = container.querySelector('.copsilot-msg.user');
       expect(msg).not.toBeNull();
-      expect(msg?.querySelector('.copsidian-msg-body')?.textContent).toBe('Hello world');
+      expect(msg?.querySelector('.copsilot-msg-body')?.textContent).toBe('Hello world');
     });
 
     it('adds timestamp', () => {
       renderer.addUserMessage('Hello', 1234567890000);
-      const msg = container.querySelector('.copsidian-msg.user') as HTMLElement;
+      const msg = container.querySelector('.copsilot-msg.user') as HTMLElement;
       expect(msg?.dataset.timestamp).toBeDefined();
     });
   });
@@ -54,21 +54,21 @@ describe('ChatRenderer', () => {
   describe('assistant placeholder', () => {
     it('adds placeholder', () => {
       renderer.addAssistantPlaceholder();
-      const placeholder = container.querySelector('.copsidian-loading');
+      const placeholder = container.querySelector('.copsilot-loading');
       expect(placeholder).not.toBeNull();
     });
 
     it('removes placeholder', () => {
       renderer.addAssistantPlaceholder();
       renderer.removeAssistantPlaceholder();
-      const placeholder = container.querySelector('.copsidian-loading');
+      const placeholder = container.querySelector('.copsilot-loading');
       expect(placeholder).toBeNull();
     });
 
     it('does not create duplicate placeholders', () => {
       renderer.addAssistantPlaceholder();
       renderer.addAssistantPlaceholder();
-      const placeholders = container.querySelectorAll('.copsidian-loading');
+      const placeholders = container.querySelectorAll('.copsilot-loading');
       expect(placeholders.length).toBe(1);
     });
   });
@@ -76,7 +76,7 @@ describe('ChatRenderer', () => {
   describe('appendText', () => {
     it('creates assistant message element', () => {
       renderer.appendText('Hello');
-      const msg = container.querySelector('.copsidian-msg.assistant');
+      const msg = container.querySelector('.copsilot-msg.assistant');
       expect(msg).not.toBeNull();
     });
 
@@ -84,13 +84,13 @@ describe('ChatRenderer', () => {
       renderer.appendText('Hello', 'msg-1');
       renderer.appendText(' world', 'msg-1');
       // The text is accumulated and rendered asynchronously
-      expect(container.querySelector('.copsidian-msg.assistant')).not.toBeNull();
+      expect(container.querySelector('.copsilot-msg.assistant')).not.toBeNull();
     });
 
     it('creates new element for different message id', () => {
       renderer.appendText('Hello', 'msg-1');
       renderer.appendText('World', 'msg-2');
-      const msgs = container.querySelectorAll('.copsidian-msg.assistant');
+      const msgs = container.querySelectorAll('.copsilot-msg.assistant');
       expect(msgs.length).toBe(2);
     });
   });
@@ -98,26 +98,26 @@ describe('ChatRenderer', () => {
   describe('appendThinking', () => {
     it('creates thinking block', () => {
       renderer.appendThinking('Thinking...');
-      const thinking = container.querySelector('.copsidian-thinking');
+      const thinking = container.querySelector('.copsilot-thinking');
       expect(thinking).not.toBeNull();
     });
 
     it('creates header', () => {
       renderer.appendThinking('Thinking...');
-      const header = container.querySelector('.copsidian-thinking-header');
+      const header = container.querySelector('.copsilot-thinking-header');
       expect(header).not.toBeNull();
     });
 
     it('collapses by default', () => {
       renderer.appendThinking('Thinking...');
-      const body = container.querySelector('.copsidian-thinking-body') as HTMLElement;
+      const body = container.querySelector('.copsilot-thinking-body') as HTMLElement;
       expect(body?.style.display).toBe('none');
     });
 
     it('toggles on header click', () => {
       renderer.appendThinking('Thinking...');
-      const header = container.querySelector('.copsidian-thinking-header') as HTMLElement;
-      const body = container.querySelector('.copsidian-thinking-body') as HTMLElement;
+      const header = container.querySelector('.copsilot-thinking-header') as HTMLElement;
+      const body = container.querySelector('.copsilot-thinking-body') as HTMLElement;
 
       header.click();
       expect(body.style.display).toBe('block');
@@ -130,7 +130,7 @@ describe('ChatRenderer', () => {
   describe('addToolCall', () => {
     it('creates tool call element', () => {
       renderer.addToolCall('call-1', 'Search', 'search', { q: 'test' });
-      const toolCall = container.querySelector('.copsidian-tool-call');
+      const toolCall = container.querySelector('.copsilot-tool-call');
       expect(toolCall).not.toBeNull();
     });
 
@@ -148,8 +148,8 @@ describe('ChatRenderer', () => {
 
     it('toggles body on header click', () => {
       renderer.addToolCall('call-1', 'Search', 'search', { q: 'test' });
-      const header = container.querySelector('.copsidian-tool-call-header') as HTMLElement;
-      const body = container.querySelector('.copsidian-tool-call-body') as HTMLElement;
+      const header = container.querySelector('.copsilot-tool-call-header') as HTMLElement;
+      const body = container.querySelector('.copsilot-tool-call-body') as HTMLElement;
 
       expect(body.style.display).toBe('none');
       header.click();
@@ -194,7 +194,7 @@ describe('ChatRenderer', () => {
         oldText: 'old',
         newText: 'new',
       }]);
-      const diff = container.querySelector('.copsidian-diff');
+      const diff = container.querySelector('.copsilot-diff');
       expect(diff).not.toBeNull();
     });
   });
@@ -202,7 +202,7 @@ describe('ChatRenderer', () => {
   describe('setPlanEntries', () => {
     it('creates plan panel', () => {
       renderer.setPlanEntries([{ content: 'Task 1', status: 'pending' }]);
-      const plan = container.querySelector('.copsidian-plan-panel');
+      const plan = container.querySelector('.copsilot-plan-panel');
       expect(plan).not.toBeNull();
     });
 
@@ -228,7 +228,7 @@ describe('ChatRenderer', () => {
   describe('addError', () => {
     it('adds error message', () => {
       renderer.addError('Something went wrong');
-      const error = container.querySelector('.copsidian-error');
+      const error = container.querySelector('.copsilot-error');
       expect(error).not.toBeNull();
       expect(error?.textContent).toBe('Something went wrong');
     });
@@ -236,7 +236,7 @@ describe('ChatRenderer', () => {
     it('removes placeholder', () => {
       renderer.addAssistantPlaceholder();
       renderer.addError('Error');
-      const placeholder = container.querySelector('.copsidian-loading');
+      const placeholder = container.querySelector('.copsilot-loading');
       expect(placeholder).toBeNull();
     });
   });
@@ -250,7 +250,7 @@ describe('ChatRenderer', () => {
         outputTokens: 50,
         modelId: 'claude-3-sonnet',
       });
-      const usage = container.querySelector('.copsidian-usage');
+      const usage = container.querySelector('.copsilot-usage');
       expect(usage).not.toBeNull();
       expect(usage?.textContent).toContain('claude-3-sonnet');
     });
@@ -263,7 +263,7 @@ describe('ChatRenderer', () => {
         outputTokens: 50,
         cost: { amount: 0.0012, currency: 'USD' },
       });
-      const usage = container.querySelector('.copsidian-usage');
+      const usage = container.querySelector('.copsilot-usage');
       expect(usage?.textContent).toContain('$0.0012');
     });
 
@@ -275,7 +275,7 @@ describe('ChatRenderer', () => {
         outputTokens: 50,
         elapsedMs: 2500,
       });
-      const usage = container.querySelector('.copsidian-usage');
+      const usage = container.querySelector('.copsilot-usage');
       expect(usage?.textContent).toContain('2.5s');
     });
   });

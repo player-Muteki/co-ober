@@ -236,12 +236,12 @@ export interface SerializedSession {
 }
 
 export interface PluginData {
-  settings: CopsidianSettings;
+  settings: CopsilotSettings;
   sessions: SerializedSession[];
   activeSessionId: string | null;
 }
 
-export interface CopsidianSettings {
+export interface CopsilotSettings {
 	opencodePath: string;
 	defaultAgent: string;
 	defaultModel: string;
@@ -268,7 +268,7 @@ export interface CopsidianSettings {
 	idleTimeoutMs?: number;
 }
 
-export const DEFAULT_SETTINGS: CopsidianSettings = {
+export const DEFAULT_SETTINGS: CopsilotSettings = {
 	opencodePath: 'opencode',
 	defaultAgent: 'build',
 	defaultModel: '',

@@ -19,12 +19,12 @@ export class ChatInput {
     container: HTMLDivElement,
     private callbacks: InputCallbacks,
   ) {
-    const handle = container.createDiv({ cls: 'copsidian-input-resize-handle' });
+    const handle = container.createDiv({ cls: 'copsilot-input-resize-handle' });
     this.setupResizeHandle(handle, container);
 
-    const row = container.createDiv({ cls: 'copsidian-input-row' });
+    const row = container.createDiv({ cls: 'copsilot-input-row' });
     this.textarea = row.createEl('textarea', { placeholder: t().input.placeholder });
-    this.textarea.addClass('copsidian-input');
+    this.textarea.addClass('copsilot-input');
     onLocaleChange(() => this.refreshLocale());
 
     this.textarea.addEventListener('keydown', (e: KeyboardEvent) => {

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { CopsidianViewController } from './copsidianViewController';
-import type { ControllerCallbacks, ControllerDeps } from './copsidianViewController';
+import { CopsilotViewController } from './copsilotViewController';
+import type { ControllerCallbacks, ControllerDeps } from './copsilotViewController';
 import { setLocale } from '../i18n/index';
 
 setLocale('en');
@@ -75,15 +75,15 @@ function createMockClient(overrides: Record<string, unknown> = {}) {
 	};
 }
 
-describe('CopsidianViewController', () => {
+describe('CopsilotViewController', () => {
 	let deps: ControllerDeps;
 	let callbacks: ReturnType<typeof createMockCallbacks>;
-	let controller: CopsidianViewController;
+	let controller: CopsilotViewController;
 
 	beforeEach(() => {
 		deps = createMockDeps();
 		callbacks = createMockCallbacks();
-		controller = new CopsidianViewController(deps, callbacks);
+		controller = new CopsilotViewController(deps, callbacks);
 	});
 
 	describe('initialization', () => {

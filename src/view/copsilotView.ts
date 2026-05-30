@@ -1,5 +1,5 @@
 import { ItemView, WorkspaceLeaf, TFile } from 'obsidian';
-import type CopsidianPlugin from '../main';
+import type CopsilotPlugin from '../main';
 import { VIEW_TYPE } from '../types';
 import type { ContextRef, PromptPart } from '../types';
 import { t } from '../i18n/index';
@@ -18,15 +18,15 @@ import { PermissionBanner } from './permissionBanner';
 import { InlineEditPanel } from './inlineEditPanel';
 import { WelcomeView } from './welcomeView';
 import { KeybindingManager } from './keybindingManager';
-import { CopsidianViewController } from './copsidianViewController';
-import type { ControllerCallbacks, ControllerDeps } from './copsidianViewController';
+import { CopsilotViewController } from './copsilotViewController';
+import type { ControllerCallbacks, ControllerDeps } from './copsilotViewController';
 
 interface MarkdownFileView {
 	getViewType(): string;
 	file?: TFile | null;
 }
 
-export class CopsidianView extends ItemView {
+export class CopsilotView extends ItemView {
 	private messagesEl!: HTMLDivElement;
 	private contextChipsEl!: HTMLDivElement;
 	private renderer!: ChatRenderer;
@@ -53,7 +53,7 @@ export class CopsidianView extends ItemView {
 	private lastAutoRefId: string | null = null;
 	private headerTitleEl: HTMLDivElement | null = null;
 	private newSessionBtnEl: HTMLButtonElement | null = null;
-	private controller!: CopsidianViewController;
+	private controller!: CopsilotViewController;
 
 	// Context arc meter (in header)
 	private meterEl!: HTMLDivElement;
@@ -65,7 +65,7 @@ export class CopsidianView extends ItemView {
 
 	constructor(
 		leaf: WorkspaceLeaf,
-		private plugin: CopsidianPlugin,
+		private plugin: CopsilotPlugin,
 	) { super(leaf); }
 
 	override getViewType(): string { return VIEW_TYPE; }
@@ -74,7 +74,7 @@ export class CopsidianView extends ItemView {
 
 	override async onOpen(): Promise<void> {
 		const el = this.contentEl;
-		el.addClass('copsidian-view');
+		el.addClass('copsilot-view');
 
 		// Init core modules
 		this.mention = new ContextMention(this.plugin.app.vault);
@@ -95,40 +95,40 @@ export class CopsidianView extends ItemView {
 		}
 
 		// ── Header ──
-		const header = el.createDiv({ cls: 'copsidian-header' });
+		const header = el.createDiv({ cls: 'copsilot-header' });
 
-		this.headerTitleEl = header.createDiv({ text: t().appName, cls: 'copsidian-header-title' });
+		this.headerTitleEl = header.createDiv({ text: t().appName, cls: 'copsilot-header-title' });
 
 		// Context arc meter (right of title)
-		this.meterEl = header.createDiv({ cls: 'copsidian-arc-meter' });
+		this.meterEl = header.createDiv({ cls: 'copsilot-arc-meter' });
 		const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
 		svg.setAttribute('viewBox', '0 0 40 24');
-		svg.setAttribute('class', 'copsidian-arc-svg');
+		svg.setAttribute('class', 'copsilot-arc-svg');
 		const R = 18;
 		const C = 20;
 		const ARC_LEN = Math.PI * R;
 		const track = document.createElementNS('http://www.w3.org/2000/svg', 'path');
 		track.setAttribute('d', `M ${C - R} ${C} A ${R} ${R} 0 0 1 ${C + R} ${C}`);
-		track.setAttribute('class', 'copsidian-arc-track');
+		track.setAttribute('class', 'copsilot-arc-track');
 		svg.appendChild(track);
 		this.meterArcFill = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
 		this.meterArcFill.setAttribute('cx', String(C));
 		this.meterArcFill.setAttribute('cy', String(C));
 		this.meterArcFill.setAttribute('r', String(R));
-		this.meterArcFill.setAttribute('class', 'copsidian-arc-fill');
+		this.meterArcFill.setAttribute('class', 'copsilot-arc-fill');
 		this.meterArcFill.setAttribute('stroke-dasharray', `0 ${ARC_LEN}`);
 		svg.appendChild(this.meterArcFill);
 		this.meterEl.appendChild(svg);
-		this.meterPctEl = this.meterEl.createSpan({ cls: 'copsidian-arc-pct' });
+		this.meterPctEl = this.meterEl.createSpan({ cls: 'copsilot-arc-pct' });
 		this.meterPctEl.setText('—');
 		this.meterEl.addClass('empty');
 
-		const actions = header.createDiv({ cls: 'copsidian-header-actions' });
+		const actions = header.createDiv({ cls: 'copsilot-header-actions' });
 		this.newSessionBtnEl = actions.createEl('button', { text: t().header.new, cls: 'mod-icon' });
 		this.sessionButtonEl = actions.createEl('button', { text: '⋯', cls: 'mod-icon' });
 
 		// ── Messages ──
-		this.messagesEl = el.createDiv({ cls: 'copsidian-messages' });
+		this.messagesEl = el.createDiv({ cls: 'copsilot-messages' });
 		this.renderer = new ChatRenderer(this.messagesEl, this.plugin.app, () => this.controller?.state.autoScrollEnabled ?? true);
 
 		this.permissionBanner = new PermissionBanner(this.messagesEl);
@@ -136,10 +136,10 @@ export class CopsidianView extends ItemView {
 		this.welcomeView = new WelcomeView(this.messagesEl, () => this.plugin.getClient()?.getAgentCapabilities() ?? null);
 
 		// ── Context chips ──
-		this.contextChipsEl = el.createDiv({ cls: 'copsidian-context-chips' });
+		this.contextChipsEl = el.createDiv({ cls: 'copsilot-context-chips' });
 
 		// ── Input ──
-		this.inputAreaEl = el.createDiv({ cls: 'copsidian-input-area' });
+		this.inputAreaEl = el.createDiv({ cls: 'copsilot-input-area' });
 		this.input = new ChatInput(this.inputAreaEl, {
 			onSend: (text: string) => this.send(text),
 			onStop: () => this.stopGeneration(),
@@ -153,7 +153,7 @@ export class CopsidianView extends ItemView {
 		});
 
 		// ── Toolbar (below input) ──
-		const tbEl = el.createDiv({ cls: 'copsidian-toolbar' });
+		const tbEl = el.createDiv({ cls: 'copsilot-toolbar' });
 		this.toolbar = new InputToolbar(tbEl, {
 			onAgentChange: (agent: string) => {
 				const client = this.plugin.getClient();
@@ -223,7 +223,7 @@ export class CopsidianView extends ItemView {
 			onAutoRefActiveFile: () => this.autoRefActiveFile(),
 		};
 
-		this.controller = new CopsidianViewController(deps, callbacks);
+		this.controller = new CopsilotViewController(deps, callbacks);
 
 		// Restore session ID into controller state
 		if (savedSessionId) {
@@ -267,7 +267,7 @@ export class CopsidianView extends ItemView {
 		if (this.controller.state.isConnected) {
 			this.controller.bindClientHandlers();
 			void this.controller.syncRuntimeSession(this.controller.getSessionId()).catch((e) => {
-				console.error('[copsidian] session sync:', e);
+				console.error('[copsilot] session sync:', e);
 			});
 		} else {
 			// Always try to connect when view opens, not just when autoConnect is true
@@ -308,7 +308,7 @@ export class CopsidianView extends ItemView {
 			onAddImagePart: (data, mimeType, size, name) => {
 				this.pendingImageParts.push({ type: 'image', mimeType, data });
 				const chip = this.contextChipsEl.createDiv({
-					cls: 'copsidian-chip',
+					cls: 'copsilot-chip',
 					text: `🖼 ${name}`,
 				});
 				chip.dataset.kind = 'image';
@@ -374,7 +374,7 @@ export class CopsidianView extends ItemView {
 	private showNewMessagesBtn(): void {
 		if (this.newMessagesBtn) return;
 		const btn = this.messagesEl.createEl('button', {
-			cls: 'copsidian-new-messages-btn',
+			cls: 'copsilot-new-messages-btn',
 			text: t().newMessages,
 		});
 		btn.onclick = () => {
@@ -411,7 +411,7 @@ export class CopsidianView extends ItemView {
 	private showReconnectBtn(): void {
 		if (this.reconnectBtn) return;
 		this.reconnectBtn = this.contentEl.createEl('button', {
-			cls: 'copsidian-reconnect-btn',
+			cls: 'copsilot-reconnect-btn',
 			text: t().reconnect.text,
 		});
 		this.reconnectBtn.onclick = () => this.reconnect();
@@ -443,7 +443,7 @@ export class CopsidianView extends ItemView {
 	private clearPendingImageChips(): void {
 		this.pendingImageParts = [];
 		if (this.dragDropManager) this.dragDropManager.resetBytes();
-		this.contextChipsEl.querySelectorAll('.copsidian-chip').forEach((el) => {
+		this.contextChipsEl.querySelectorAll('.copsilot-chip').forEach((el) => {
 			if ((el as HTMLDivElement).dataset.kind === 'image') el.remove();
 		});
 	}
@@ -499,7 +499,7 @@ export class CopsidianView extends ItemView {
 			this.manualRefs.add(ref.id);
 			if (this.lastAutoRefId === ref.id) this.lastAutoRefId = null;
 		}
-		const chip = this.contextChipsEl.createDiv({ cls: 'copsidian-chip' });
+		const chip = this.contextChipsEl.createDiv({ cls: 'copsilot-chip' });
 		chip.dataset.refId = ref.id;
 		chip.title = ref.path;
 		chip.createSpan({ text: `@${ref.name}` });
@@ -511,7 +511,7 @@ export class CopsidianView extends ItemView {
 		this.currentRefs = this.currentRefs.filter(r => r.id !== id);
 		if (this.mention.hasRef(id)) this.mention.removeRef(id);
 		this.manualRefs.delete(id);
-		this.contextChipsEl.querySelectorAll('.copsidian-chip').forEach(el => {
+		this.contextChipsEl.querySelectorAll('.copsilot-chip').forEach(el => {
 			if ((el as HTMLDivElement).dataset.refId === id) el.remove();
 		});
 	}

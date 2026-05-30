@@ -1,16 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createSessionStore } from './session';
-import type CopsidianPlugin from '../main';
+import type CopsilotPlugin from '../main';
 import type { SerializedSession, SerializedMessage } from '../types';
 import { setLocale } from '../i18n/index';
 
-function createMockPlugin(): CopsidianPlugin {
+function createMockPlugin(): CopsilotPlugin {
   return {
     sessions: new Map<string, SerializedSession>(),
     activeSessionId: null,
     savePluginData: vi.fn().mockResolvedValue(undefined),
     loadPluginData: vi.fn().mockResolvedValue(undefined),
-  } as unknown as CopsidianPlugin;
+  } as unknown as CopsilotPlugin;
 }
 
 describe('SessionStore', () => {

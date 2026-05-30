@@ -27,11 +27,11 @@ describe('ChatInput', () => {
 	});
 
 	it('initializes textarea and resize handle', () => {
-		const handle = container.querySelector('.copsidian-input-resize-handle');
+		const handle = container.querySelector('.copsilot-input-resize-handle');
 		const textarea = container.querySelector('textarea');
 		expect(handle).not.toBeNull();
 		expect(textarea).not.toBeNull();
-		expect(textarea?.classList.contains('copsidian-input')).toBe(true);
+		expect(textarea?.classList.contains('copsilot-input')).toBe(true);
 	});
 
 	it('triggerSend calls onSend and clears textarea', () => {
@@ -157,7 +157,7 @@ describe('ChatInput', () => {
 	});
 
 	it('handles resize via mouse events', () => {
-		const handle = container.querySelector('.copsidian-input-resize-handle') as HTMLDivElement;
+		const handle = container.querySelector('.copsilot-input-resize-handle') as HTMLDivElement;
 
 		// Set initial height
 		Object.defineProperty(container, 'offsetHeight', { value: 200, configurable: true });

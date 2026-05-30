@@ -1,4 +1,4 @@
-# Copsidian 架构审查与后续开发计划
+# Copsilot 架构审查与后续开发计划
 
 日期：2026-05-29
 
@@ -18,10 +18,10 @@
   - JSON-RPC 传输层；处理请求队列、超时/abort、通知与反向请求。
 
 ### 1.3 UI 视图与控制器
-- `src/view/copsidianView.ts`：
+- `src/view/copsilotView.ts`：
   - 组装 UI（消息区、输入、工具栏、会话下拉、权限横幅、欢迎页）。
   - 负责交互细节（拖拽、自动滚动、快捷键、@/slash 自动补全）。
-- `src/view/copsidianViewController.ts`：
+- `src/view/copsilotViewController.ts`：
   - 统一会话生命周期、发送流程、错误处理、工具栏同步。
   - 维护 `ChatState` 与 `StreamController` 的串流状态。
 
@@ -65,7 +65,7 @@
 
 ### 4.3 对照结论
 - 参考实现中，“超时”主要是**请求级超时**（transport）或**显式 abort**（会话级），不存在前端空闲计时导致的“软中断”。
-- Copsidian 当前的 5 分钟空闲超时更接近 UI 层的“自我中断”，与参考实现路径不一致；建议改为可配置或迁移为显式 cancel/abort 路径，避免静默丢输出。
+- Copsilot 当前的 5 分钟空闲超时更接近 UI 层的“自我中断”，与参考实现路径不一致；建议改为可配置或迁移为显式 cancel/abort 路径，避免静默丢输出。
 
 ## 5. 会话中断问题排查（2026-05-29）
 
@@ -75,7 +75,7 @@
 
 ### 5.2 根因判断
 - `AgentRuntime.sendMessage` 存在 5 分钟空闲超时，只在收到 chunk 时重置计时（src/client/agent.ts）。
-- 超时触发后抛出 `AcpTimeoutError`，`CopsidianViewController.send` 进入 catch/finally，结束流式状态并清理占位符（src/view/copsidianViewController.ts）。
+- 超时触发后抛出 `AcpTimeoutError`，`CopsilotViewController.send` 进入 catch/finally，结束流式状态并清理占位符（src/view/copsilotViewController.ts）。
 - `AcpClient.sendMessage` 在 finally 中清空 `chunkHandler/activeStreamSessionId`，导致超时后即使服务端继续输出，客户端也不会再分发更新（src/client/acp.ts）。
 - 传输层 abort 不发送 cancel，服务端可能继续运行，但输出被忽略（src/client/AcpJsonRpcTransport.ts）。
 

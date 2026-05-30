@@ -23,7 +23,7 @@ export class Autocomplete {
 	open(items: ACItem[], mode: '@' | '/'): void {
 		this.close();
 
-		const ac = this.container.createDiv({ cls: 'copsidian-ac-dropdown' });
+		const ac = this.container.createDiv({ cls: 'copsilot-ac-dropdown' });
 		this.dropdownEl = ac;
 
 		let selIdx = 0;
@@ -43,11 +43,11 @@ export class Autocomplete {
 		const render = () => {
 			ac.empty();
 			if (filtered.length === 0) {
-				ac.createDiv({ cls: 'copsidian-ac-item', text: t().autocomplete.noMatches });
+				ac.createDiv({ cls: 'copsilot-ac-item', text: t().autocomplete.noMatches });
 				return;
 			}
 			for (let i = 0; i < filtered.length; i++) {
-				const el = ac.createDiv({ cls: `copsidian-ac-item${i === selIdx ? ' selected' : ''}` });
+				const el = ac.createDiv({ cls: `copsilot-ac-item${i === selIdx ? ' selected' : ''}` });
 				el.createSpan({ text: filtered[i].label, cls: 'ac-label' });
 				if (filtered[i].description) el.createSpan({ text: filtered[i].description, cls: 'ac-desc' });
 				el.onclick = () => {
