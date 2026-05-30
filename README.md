@@ -53,10 +53,10 @@ Language changes apply immediately to the settings tab and open Copsidian views,
 | MCP http / sse | ✅ | Introduced in v0.0.22 |
 | promptCapabilities.image | ✅ | Drag-drop support |
 | promptCapabilities.audio | 🟡 | Types defined, UI not implemented |
-| terminal/* (create/output/kill/wait_for_exit/release) | ❌ | Planned (v0.0.31) |
-| fs/read_text_file / fs/write_text_file | ❌ | Planned (v0.0.30) |
+| terminal/* (create/output/kill/wait_for_exit/release) | ✅ | Introduced in v0.0.31 |
+| fs/read_text_file / fs/write_text_file | ✅ | Introduced in v0.0.30/v0.0.32 |
 | authMethods | 🟡 | Prompt only; login terminal not implemented |
-| agentCapabilities negotiation-driven UI | 🟡 | Landing in v0.0.24 |
+| agentCapabilities negotiation-driven UI | ✅ | Introduced in v0.0.24 |
 
 Legend: ✅ supported / 🟡 partially supported / ❌ not supported.
 
@@ -123,6 +123,7 @@ Legend: ✅ supported / 🟡 partially supported / ❌ not supported.
 | MCP Servers | Local stdio MCP server definitions (name → command → args) passed to new OpenCode sessions | — |
 | Language | UI language (`en` / `zh`) | `en` |
 | Auto Connect | Connect to OpenCode from Copsidian user actions, not during Obsidian startup | `false` |
+| Idle Timeout | Maximum time (ms) to wait for agent response before timeout | `300000` |
 
 Runtime agents, models, and available commands/skills load from an existing OpenCode connection or after an explicit reconnect. Opening Settings does not start OpenCode or create a metadata session.
 
@@ -307,10 +308,10 @@ Licensed under the [MIT License](LICENSE).
 | MCP http / sse | ✅ | v0.0.22 引入 |
 | promptCapabilities.image | ✅ | drag-drop 支持 |
 | promptCapabilities.audio | 🟡 | 类型已定义，UI 未实现 |
-| terminal/*（create/output/kill/wait_for_exit/release） | ❌ | 规划中（v0.0.31） |
-| fs/read_text_file / fs/write_text_file | ❌ | 规划中（v0.0.30） |
+| terminal/*（create/output/kill/wait_for_exit/release） | ✅ | v0.0.31 引入 |
+| fs/read_text_file / fs/write_text_file | ✅ | v0.0.30/v0.0.32 引入 |
 | authMethods | 🟡 | 仅显示提示，未实现登录终端 |
-| agentCapabilities 协商驱动 UI | 🟡 | v0.0.24 落地中 |
+| agentCapabilities 协商驱动 UI | ✅ | v0.0.24 引入 |
 
 图例：✅ 已支持 / 🟡 部分支持 / ❌ 未支持。
 
@@ -377,6 +378,7 @@ Licensed under the [MIT License](LICENSE).
 | MCP 服务器 | 本地 stdio MCP 服务器定义（名称 → 命令 → 参数），用于新建 OpenCode 会话 | — |
 | 界面语言 | UI 语言（`en` / `zh`） | `en` |
 | 自动连接 | 在 Copsidian 用户操作时连接 OpenCode，而非 Obsidian 启动时 | `false` |
+| 空闲超时 | 等待 Agent 响应的最大时间（毫秒） | `300000` |
 
 运行时 Agent、模型和可用命令/技能从已有的 OpenCode 连接中加载，或在手动重连后加载。打开设置页不会启动 OpenCode 或创建元数据会话。
 
