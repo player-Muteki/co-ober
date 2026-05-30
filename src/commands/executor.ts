@@ -24,9 +24,10 @@ export function parseSlashCommand(input: string): ParsedCommand | null {
   return { name, args, raw: `/${name}${args ? ' ' + args : ''}` };
 }
 
-// Check if a command is built-in (compact)
-export function isBuiltInCommand(name: string): boolean {
-  return name === 'compact';
+// Check if a command is built-in (handled locally instead of ACP)
+// All commands now route through ACP agent — no local interception
+export function isBuiltInCommand(_name: string): boolean {
+  return false;
 }
 
 // Format command for display in toolbar

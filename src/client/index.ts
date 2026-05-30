@@ -41,7 +41,6 @@ export interface OpencodeClient {
 
   sendMessage(sessionId: SessionId, parts: PromptPart[], onChunk: (chunk: NormalizedUpdate) => void): Promise<AcpResponse>;
   cancel(sessionId: SessionId): Promise<void>;
-  compact(sessionId: SessionId): Promise<void>;
   abort(): void;
 
   requestPermission(req: PermissionRequest): Promise<string>;

@@ -97,7 +97,9 @@ export class CopsidianView extends ItemView {
 		// ── Header ──
 		const header = el.createDiv({ cls: 'copsidian-header' });
 
-		// Context arc meter (left side of header)
+		this.headerTitleEl = header.createDiv({ text: t().appName, cls: 'copsidian-header-title' });
+
+		// Context arc meter (right of title)
 		this.meterEl = header.createDiv({ cls: 'copsidian-arc-meter' });
 		const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
 		svg.setAttribute('viewBox', '0 0 40 24');
@@ -121,7 +123,6 @@ export class CopsidianView extends ItemView {
 		this.meterPctEl.setText('—');
 		this.meterEl.addClass('empty');
 
-		this.headerTitleEl = header.createDiv({ text: t().appName, cls: 'copsidian-header-title' });
 		const actions = header.createDiv({ cls: 'copsidian-header-actions' });
 		this.newSessionBtnEl = actions.createEl('button', { text: t().header.new, cls: 'mod-icon' });
 		this.sessionButtonEl = actions.createEl('button', { text: '⋯', cls: 'mod-icon' });

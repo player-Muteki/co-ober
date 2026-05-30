@@ -11,8 +11,7 @@ export type AcpLogicalMethod =
   | 'closeSession'
   | 'forkSession'
   | 'resumeSession'
-  | 'setModel'
-  | 'compact';
+  | 'setModel';
 
 const ACP_METHOD_CANDIDATES: Record<AcpLogicalMethod, readonly string[]> = {
   initialize: ['initialize'],
@@ -28,7 +27,6 @@ const ACP_METHOD_CANDIDATES: Record<AcpLogicalMethod, readonly string[]> = {
   forkSession: ['session/unstable_fork', 'forkSession'],
   resumeSession: ['session/resume', 'resumeSession'],
   setModel: ['session/set_model', 'setSessionModel'],
-  compact: ['session/compact', 'compactSession'],
 } as const;
 
 export const ACP_SERVER_NOTIFICATION_ALIASES = {

@@ -106,11 +106,6 @@ describe('AgentRuntime', () => {
       expect(mockAcp.cancel).toHaveBeenCalledWith('session-1');
     });
 
-    it('compact delegates to acp', async () => {
-      await runtime.compact('session-1');
-      expect(mockAcp.compact).toHaveBeenCalledWith('session-1');
-    });
-
     it('getAgentCapabilities delegates to acp', () => {
       runtime.getAgentCapabilities();
       expect(mockAcp.getAgentCapabilities).toHaveBeenCalled();

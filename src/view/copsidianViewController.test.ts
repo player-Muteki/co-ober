@@ -60,7 +60,6 @@ function createMockClient(overrides: Record<string, unknown> = {}) {
 		setConfigOption: vi.fn().mockResolvedValue([]),
 		sendMessage: vi.fn().mockResolvedValue({ stopReason: 'end_turn', usage: { totalTokens: 10, inputTokens: 5, outputTokens: 5 } }),
 		cancel: vi.fn().mockResolvedValue(undefined),
-		compact: vi.fn().mockResolvedValue(undefined),
 		abort: vi.fn(),
 		forkSession: vi.fn().mockResolvedValue('forked-session'),
 		resumeSession: vi.fn().mockResolvedValue(undefined),
@@ -274,15 +273,14 @@ describe('CopsidianViewController', () => {
 			expect(controller.isBusy()).toBe(false);
 		});
 
-		it('handles built-in /compact command', async () => {
+		it('sends /compact through ACP prompt (not local interception)', async () => {
 			const client = createMockClient();
 			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
 			(deps.plugin.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
 
 			await controller.send('/compact', []);
 
-			expect(client.sendMessage).not.toHaveBeenCalled();
-			expect(client.compact).toHaveBeenCalled();
+			expect(client.sendMessage).toHaveBeenCalled();
 		});
 
 		it('handles send errors', async () => {

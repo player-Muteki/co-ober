@@ -34,16 +34,9 @@ describe('parseSlashCommand', () => {
 });
 
 describe('isBuiltInCommand', () => {
-  it('should recognize compact as built-in', () => {
-    expect(isBuiltInCommand('compact')).toBe(true);
-  });
-
-  it('should reject unknown commands', () => {
-    expect(isBuiltInCommand('search')).toBe(false);
-    expect(isBuiltInCommand('random123')).toBe(false);
-  });
-
-  it('should be case sensitive', () => {
-    expect(isBuiltInCommand('Compact')).toBe(false);
+  it('should return false for all commands (all route through ACP)', () => {
+    expect(isBuiltInCommand('compact')).toBe(false);
+    expect(isBuiltInCommand('init')).toBe(false);
+    expect(isBuiltInCommand('review')).toBe(false);
   });
 });

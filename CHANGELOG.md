@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1 - 2026-05-30
+
+### Changed
+- Context arc meter moved to right of "Copsidian" title in header (was left of title).
+- All slash commands now route through ACP agent — removed local `compact` interception.
+- `isBuiltInCommand()` always returns false; no commands are handled locally.
+
 ## 0.1.0 - 2026-05-30
 
 First public beta release.

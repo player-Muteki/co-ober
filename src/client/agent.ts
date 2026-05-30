@@ -81,7 +81,6 @@ export class AgentRuntime implements OpencodeClient {
   }
 
   cancel(id: string): Promise<void> { return this.acp.cancel(id); }
-  compact(id: string): Promise<void> { return this.acp.compact(id); }
   abort(): void { this.acp.abort(); }
 
   async requestPermission(req: PermissionRequest): Promise<string> {

@@ -29,7 +29,7 @@ import type { NormalizedUpdate } from '../types';
 import { FsDelegate } from './fsDelegate';
 import { TerminalManager } from './terminalManager';
 
-export const CLIENT_VERSION = '0.1.0';
+export const CLIENT_VERSION = '0.1.1';
 
 export interface AcpSessionMeta {
   availableCommands: AvailableCommand[];
@@ -438,10 +438,6 @@ export class AcpClient implements OpencodeClient {
       }
     }
     return this.requestWithFallback('cancel', { sessionId: id }).then(() => {}).catch(() => {});
-  }
-
-  compact(id: string): Promise<void> {
-    return this.requestWithFallback('compact', { sessionId: id }).then(() => {}).catch(() => {});
   }
 
   async requestPermission(req: PermissionRequest): Promise<string> {

@@ -10,7 +10,6 @@ import type { SyncEngine } from '../sync/engine';
 import type { SessionStore } from '../chat/session';
 import { ChatState } from '../chat/chatState';
 import { StreamController } from '../chat/streamController';
-import { parseSlashCommand, isBuiltInCommand } from '../commands/executor';
 import { buildCustomAgentPrompt, getValidActiveCustomAgent } from '../agents/custom';
 import { filterCommonModelOptions } from './modelFilter';
 import { applyDefaultSessionSettings } from './sessionDefaults';
@@ -364,12 +363,6 @@ export class CopsidianViewController {
 
 		this.callbacks.onHideWelcome();
 
-		const cmd = parseSlashCommand(text);
-		if (cmd && isBuiltInCommand(cmd.name)) {
-			await this.executeBuiltIn(cmd.name, cmd.args);
-			return;
-		}
-
 		this.busy = true;
 		this.state.isStreaming = true;
 		this.deps.input.setStreaming(true);
@@ -447,30 +440,6 @@ export class CopsidianViewController {
 					}
 				}
 				this.deps.inlineEditPanel.pendingState = null;
-			}
-		}
-	}
-
-	async executeBuiltIn(name: string, _args: string): Promise<void> {
-		const sessionId = await this.ensureRuntimeSession();
-		const c = this.deps.plugin.getClient();
-		if (!c || !sessionId) return;
-
-		if (name === 'compact') {
-			this.deps.renderer.addUserMessage('/compact');
-			this.streamCtrl.saveMessage('user', '/compact', 'text');
-			try {
-				await this.syncRuntimeSession(sessionId);
-				if (this.state.sessionId !== sessionId) return;
-				await c.compact(sessionId);
-				if (this.state.sessionId !== sessionId) return;
-				const message = t().message.compacted;
-				this.deps.renderer.appendText(message, `compact-${Date.now()}`);
-				this.streamCtrl.saveMessage('assistant', message, 'text');
-			} catch (e) {
-				if (this.state.sessionId === sessionId) {
-					this.deps.renderer.addError(e instanceof Error ? e.message : t().error.compact);
-				}
 			}
 		}
 	}

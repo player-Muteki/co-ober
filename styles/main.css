@@ -24,16 +24,14 @@
 .copsidian-header-title {
   font-weight: 600;
   font-size: var(--font-ui-medium);
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .copsidian-header-actions {
   display: flex;
   gap: 4px;
+  margin-left: auto;
 }
 
 .copsidian-header-actions .mod-icon {
