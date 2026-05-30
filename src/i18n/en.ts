@@ -1,5 +1,5 @@
 const en = {
-  appName: 'Copsidian',
+  appName: 'Copsilot',
   appSubtitle: 'OpenCode Agent in Obsidian',
 
   welcome: {
@@ -12,7 +12,7 @@ const en = {
     connected: '● Connected',
     disconnected: '○ Disconnected',
     authMethodsHint: 'OpenCode reported available authentication methods:',
-    authLoginCommand: 'Run `opencode auth login` in a terminal, then reconnect Copsidian.',
+    authLoginCommand: 'Run `opencode auth login` in a terminal, then reconnect Copsilot.',
   },
 
   sessionDropdown: {
@@ -110,7 +110,7 @@ const en = {
 
   notice: {
     noSelection: 'No text selected',
-    connected: 'Copsidian connected',
+    connected: 'Copsilot connected',
     connectFailed: 'Failed to connect to OpenCode',
   },
 
@@ -154,12 +154,12 @@ const en = {
       failed: 'Failed to reconnect',
     },
     autostart: {
-      name: 'Auto-connect in Copsidian',
-      desc: 'Connect to OpenCode from Copsidian user actions, never during Obsidian startup',
+      name: 'Auto-connect in Copsilot',
+      desc: 'Connect to OpenCode from Copsilot user actions, never during Obsidian startup',
     },
     diagnostics: {
       heading: 'Diagnostics',
-      description: 'Check the local OpenCode environment and Copsidian runtime metadata',
+      description: 'Check the local OpenCode environment and Copsilot runtime metadata',
       run: 'Run Diagnostics',
       running: 'Running…',
       pass: 'Pass:',

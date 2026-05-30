@@ -1,4 +1,4 @@
-# Copsidian
+# Copsilot
 
 ![GitHub stars](https://img.shields.io/github/stars/player-Muteki/copsidian?style=social)
 ![GitHub release](https://img.shields.io/github/v/release/player-Muteki/copsidian)
@@ -10,7 +10,7 @@
 
 An Obsidian plugin that embeds the complete [OpenCode](https://opencode.ai) AI Agent in your vault. Your notes become the agent's context — ask, summarize, organize, and create content without ever leaving Obsidian.
 
-## Why Copsidian
+## Why Copsilot
 
 Existing AI plugins for Obsidian fall into two categories: those that require third-party API keys (incurring ongoing token costs) and those that rely on middleware layers (increasing token consumption). Copsidian connects directly to your local OpenCode CLI, which provides free token quotas sufficient for most note-taking users. No API keys, no middlemen — just direct, lightweight Agent access.
 
@@ -259,7 +259,7 @@ Licensed under the [MIT License](LICENSE).
 
 ---
 
-# 中文
+# Copsilot 中文说明
 
 > [English](#copsidian) | 中文
 

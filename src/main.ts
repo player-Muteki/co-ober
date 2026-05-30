@@ -42,11 +42,11 @@ export default class CopsidianPlugin extends Plugin {
 
     this.registerView(VIEW_TYPE, (leaf) => new CopsidianView(leaf, this));
     this.deduplicateCopsidianLeaves();
-    this.addRibbonIcon('terminal-square', 'Open Copsidian', () => this.activateView());
+    this.addRibbonIcon('terminal-square', 'Open Copsilot', () => this.activateView());
     this.addSettingTab(new CopsidianSettingsTab(this));
     this.addCommand({
       id: 'open-copsidian',
-      name: 'Open Copsidian',
+      name: 'Open Copsilot',
       callback: () => this.activateView(),
     });
     this.addCommand({

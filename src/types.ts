@@ -298,4 +298,4 @@ export const DEFAULT_SETTINGS: CopsidianSettings = {
 	idleTimeoutMs: 300000,
 };
 
-export const VIEW_TYPE = 'copsidian-view';
+export const VIEW_TYPE = 'copsilot-view';

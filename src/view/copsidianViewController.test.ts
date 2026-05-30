@@ -443,7 +443,7 @@ describe('CopsidianViewController', () => {
 	describe('buildParts', () => {
 		it('builds parts with text only', async () => {
 			const parts = await controller.buildParts('hello', []);
-			expect(parts).toEqual([{ type: 'text', text: expect.stringContaining('Copsidian') }, { type: 'text', text: 'hello' }]);
+			expect(parts).toEqual([{ type: 'text', text: expect.stringContaining('Copsilot') }, { type: 'text', text: 'hello' }]);
 		});
 
 		it('resolves context refs', async () => {
