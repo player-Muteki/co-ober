@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.0.37 - 2026-05-30
+
+### Changed
+- Agent mode selector now uses segmented button group instead of native `<select>`.
+- Added permission mode toggle in toolbar (safe → plan → yolo cycle).
+- Permission toggle shows color indicator (green/yellow/orange) for current mode.
+
 ## 0.0.36 - 2026-05-30
 
 ### Fixed

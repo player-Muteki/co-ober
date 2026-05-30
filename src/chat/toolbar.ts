@@ -4,12 +4,12 @@ export interface ToolbarCallbacks {
   onAgentChange?: (agent: string) => void;
   onModelChange?: (model: string) => void;
   onEffortChange?: (effort: string) => void;
+  onPermissionChange?: (mode: string) => void;
   onSend?: () => void;
   onStop?: () => void;
 }
 
 export class InputToolbar {
-  private agentSelect: HTMLSelectElement;
   private effortSelect: HTMLSelectElement;
   private sendBtn: HTMLButtonElement;
   private sendingEl: HTMLSpanElement;
@@ -23,6 +23,17 @@ export class InputToolbar {
   private modelOptions: Array<{ value: string; label: string }> = [];
   private currentModel: string | undefined;
 
+  // Mode segmented buttons
+  private modeGroupEl: HTMLDivElement;
+  private modeOptions: Array<{ value: string; label: string }> = [];
+  private currentMode: string | undefined;
+
+  // Permission toggle
+  private permToggleEl: HTMLDivElement;
+  private permLabelEl: HTMLSpanElement;
+  private permSwitchEl: HTMLDivElement;
+  private currentPermission: string = 'safe';
+
   constructor(container: HTMLDivElement, private callbacks: ToolbarCallbacks) {
     container.addClass('copsidian-toolbar');
     onLocaleChange(() => this.refreshLocale());
@@ -34,19 +45,29 @@ export class InputToolbar {
     this.modelLabelEl.setText(t().toolbar.noModels);
     this.modelDropdownEl = this.modelSelectorEl.createDiv({ cls: 'copsidian-model-dropdown' });
 
-    this.agentSelect = container.createEl('select', { cls: 'copsidian-dropdown tb-select tb-agent' });
-    this.agentSelect.title = t().toolbar.agentTitle;
-    this.agentSelect.onchange = () => this.callbacks.onAgentChange?.(this.agentSelect.value);
+    // Mode segmented buttons
+    this.modeGroupEl = container.createDiv({ cls: 'copsidian-mode-group' });
 
+    // Effort dropdown
     this.effortSelect = container.createEl('select', { cls: 'copsidian-dropdown tb-select tb-effort' });
     this.effortSelect.title = t().toolbar.effortTitle;
     this.effortSelect.onchange = () => this.callbacks.onEffortChange?.(this.effortSelect.value);
 
+    // Permission toggle
+    this.permToggleEl = container.createDiv({ cls: 'copsidian-perm-toggle' });
+    this.permLabelEl = this.permToggleEl.createSpan({ cls: 'copsidian-perm-label' });
+    this.permSwitchEl = this.permToggleEl.createDiv({ cls: 'copsidian-perm-switch' });
+    this.permToggleEl.addEventListener('click', () => this.cyclePermission());
+
+    // Sending indicator
     this.sendingEl = container.createSpan({ cls: 'copsidian-toolbar-sending' });
     this.sendingEl.style.display = 'none';
 
+    // Send/Stop button
     this.sendBtn = container.createEl('button', { text: t().toolbar.send, cls: 'copsidian-send-btn' });
     this.sendBtn.onclick = () => this.handleSendClick();
+
+    this.updatePermissionDisplay();
   }
 
   private handleSendClick(): void {
@@ -57,22 +78,39 @@ export class InputToolbar {
     }
   }
 
+  // ── Mode (Agent) segmented buttons ──
+
   updateAgents(options: Array<{ value: string; label: string }>, current?: string): void {
-    this.agentSelect.empty();
-    if (options.length === 0) {
-      this.agentSelect.createEl('option', { text: '—', value: '' });
-    } else {
-      for (const o of options) this.agentSelect.createEl('option', { text: o.label, value: o.value });
-      if (current) this.agentSelect.value = current;
+    this.modeOptions = [...options];
+    this.currentMode = current;
+    this.renderModeButtons();
+  }
+
+  private renderModeButtons(): void {
+    this.modeGroupEl.empty();
+    if (this.modeOptions.length === 0) return;
+
+    for (const opt of this.modeOptions) {
+      const btn = this.modeGroupEl.createDiv({ cls: 'copsidian-mode-btn' });
+      btn.setText(opt.label);
+      if (opt.value === this.currentMode) {
+        btn.addClass('active');
+      }
+      btn.addEventListener('click', () => {
+        this.callbacks.onAgentChange?.(opt.value);
+        this.currentMode = opt.value;
+        this.renderModeButtons();
+      });
     }
   }
+
+  // ── Model custom dropdown ──
 
   updateModels(options: Array<{ value: string; label: string }>, current?: string): void {
     this.modelOptions = [...options];
     this.currentModel = current;
     this.renderModelDropdown();
 
-    // Update button label
     if (options.length === 0) {
       this.modelLabelEl.setText(t().toolbar.noModels);
     } else {
@@ -91,7 +129,7 @@ export class InputToolbar {
       return;
     }
 
-    // Group by provider (split on first '/')
+    // Group by provider
     const groups = new Map<string, Array<{ value: string; label: string }>>();
     for (const opt of options) {
       const parts = opt.value.split('/');
@@ -121,11 +159,45 @@ export class InputToolbar {
     }
   }
 
+  // ── Effort ──
+
   updateEffort(options: Array<{ value: string; label: string }>, current?: string): void {
     this.effortSelect.empty();
     for (const o of options) this.effortSelect.createEl('option', { text: o.label, value: o.value });
     if (current) this.effortSelect.value = current;
   }
+
+  // ── Permission toggle ──
+
+  updatePermission(mode: string): void {
+    this.currentPermission = mode;
+    this.updatePermissionDisplay();
+  }
+
+  private cyclePermission(): void {
+    const modes = ['safe', 'plan', 'yolo'];
+    const idx = modes.indexOf(this.currentPermission);
+    const next = modes[(idx + 1) % modes.length];
+    this.currentPermission = next;
+    this.updatePermissionDisplay();
+    this.callbacks.onPermissionChange?.(next);
+  }
+
+  private updatePermissionDisplay(): void {
+    const labels: Record<string, string> = {
+      safe: '🔒 Safe',
+      plan: '📋 Plan',
+      yolo: '⚡ Yolo',
+    };
+    this.permLabelEl.setText(labels[this.currentPermission] ?? '🔒 Safe');
+    this.permToggleEl.setAttribute('title', `Permission: ${this.currentPermission} (click to switch)`);
+
+    // Visual state
+    this.permSwitchEl.className = 'copsidian-perm-switch';
+    this.permSwitchEl.addClass(`mod-${this.currentPermission}`);
+  }
+
+  // ── Sending state ──
 
   setSending(on: boolean): void {
     this.sending = on;
@@ -135,15 +207,18 @@ export class InputToolbar {
     this.sendBtn.disabled = false;
   }
 
+  // ── Locale refresh ──
+
   refreshLocale(): void {
     this.modelLabelEl.setText(
       this.currentModel
         ? (this.modelOptions.find(o => o.value === this.currentModel)?.label ?? t().toolbar.noModels)
         : t().toolbar.noModels
     );
-    this.agentSelect.title = t().toolbar.agentTitle;
     this.effortSelect.title = t().toolbar.effortTitle;
     this.renderModelDropdown();
+    this.renderModeButtons();
+    this.updatePermissionDisplay();
     this.updateEffort([
       { value: 'default', label: t().toolbar.effort.default },
       { value: 'low', label: t().toolbar.effort.low },

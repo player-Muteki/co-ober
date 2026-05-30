@@ -139,6 +139,12 @@ export class CopsidianView extends ItemView {
 				if (!this.controller?.getSessionId() || !client) return;
 				void client.setConfigOption(this.controller.getSessionId()!, 'effort', effort).then(() => this.controller.loadToolbarOptions()).catch(() => {});
 			},
+			onPermissionChange: (mode: string) => {
+				this.plugin.settings.permissionMode = mode as import('../types').PermissionLevel;
+				void this.plugin.savePluginData();
+				const client = this.plugin.getClient();
+				if (client) client.permissionMode = mode;
+			},
 			onSend: () => this.input.triggerSend(),
 			onStop: () => this.input.triggerStop(),
 		});

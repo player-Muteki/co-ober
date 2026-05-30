@@ -550,6 +550,7 @@ export class CopsidianViewController {
 			efforts,
 			effortConfig?.currentValue ?? this.deps.plugin.settings.defaultEffort,
 		);
+		this.deps.toolbar.updatePermission(this.deps.plugin.settings.permissionMode);
 	}
 
 	applyConfigOptions(opts: SessionConfigOption[]): void {

@@ -23,7 +23,6 @@ describe('InputToolbar locale refresh', () => {
     toolbar.refreshLocale();
 
     expect(container.querySelector('.copsidian-model-label')?.textContent).toBe('无可用模型');
-    expect(container.querySelector('.tb-agent')?.getAttribute('title')).toBe('Agent 模式');
     expect(container.querySelector('.tb-effort')?.getAttribute('title')).toBe('思考强度');
     expect(container.querySelector('.tb-effort option')?.textContent).toBe('默认');
     expect(container.querySelector('.copsidian-send-btn')?.textContent).toBe('停止');
