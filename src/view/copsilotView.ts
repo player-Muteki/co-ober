@@ -115,8 +115,9 @@ export class CopsilotView extends ItemView {
 		const clipPath = document.createElementNS('http://www.w3.org/2000/svg', 'clipPath');
 		clipPath.setAttribute('id', 'arc-clip');
 		const clipRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+		clipRect.setAttribute('y', '20');
 		clipRect.setAttribute('width', '40');
-		clipRect.setAttribute('height', '20');
+		clipRect.setAttribute('height', '24');
 		clipPath.appendChild(clipRect);
 		defs.appendChild(clipPath);
 		svg.appendChild(defs);
