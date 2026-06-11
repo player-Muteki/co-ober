@@ -3,16 +3,12 @@
 ## 0.1.6 - 2026-06-11
 
 ### Features
-- Enhanced Copsilot agent identity: 4 tone modes (Concise, Detailed, Academic, Casual) selectable in settings, with vault-aware personality that understands Obsidian's bi-directional linking, graph view, tags, daily notes, and templates.
+- Enhanced agent identity: Copsilot now understands Obsidian's bi-directional linking, graph view, backlinks, tags, daily notes, and templates — speaks naturally as an Obsidian-native AI partner.
 - Plugin detection: automatically detects enabled Obsidian plugins (Dataview, Tasks, Calendar, Templater, Kanban) and injects awareness into agent system prompt.
 - Workflow fluency: agent scans vault structure (Daily/Journal, Templates, Projects folders) and adapts responses based on user's organizational patterns.
 - Contextual awareness: agent knows which heading/section the user's cursor is in and whether they're inside a task list, bullet list, blockquote, table, or code block.
-- Conversational memory: `UserPreferenceStore` learns user's writing style and preferences over time, adapting response style accordingly.
+- Conversational memory: learns user's writing style and preferences over time, adapting response tone accordingly.
 - Intelligent sync placement: new "Intelligent Placement" toggle on sync rules routes AI output to smart folders (Meetings, Tasks, Journal, Learning) based on content analysis.
-- Agent Identity Tone dropdown in Settings &gt; System Prompt allows choosing communication style.
-
-### Fixed
-- Graceful fallback when `savePluginData` is unavailable in test environment.
 
 ## 0.1.5 - 2026-06-11
 
