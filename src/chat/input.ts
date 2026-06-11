@@ -21,7 +21,7 @@ export class ChatInput {
     container: HTMLDivElement,
     private callbacks: InputCallbacks,
   ) {
-    this.doc = container.ownerDocument ?? document;
+    this.doc = container.ownerDocument ?? activeDocument;
     const handle = container.createDiv({ cls: 'copsilot-input-resize-handle' });
     this.setupResizeHandle(handle, container);
 

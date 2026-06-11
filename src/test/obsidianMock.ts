@@ -60,6 +60,8 @@ export class Notice {
   }
 }
 
+export const activeDocument: Document = typeof document !== 'undefined' ? document : ({} as Document);
+
 export function setIcon(_el: HTMLElement, _icon: string): void {
   // no-op mock
 }

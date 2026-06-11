@@ -20,7 +20,7 @@ export class Autocomplete {
 		private container: HTMLElement,
 		private callbacks: AutocompleteCallbacks,
 	) {
-		this.doc = container.ownerDocument ?? document;
+		this.doc = container.ownerDocument ?? activeDocument;
 	}
 
 	open(items: ACItem[], mode: '@' | '/'): void {

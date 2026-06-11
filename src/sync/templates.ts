@@ -30,7 +30,9 @@ export function sanitizeVaultPath(folder: string, filename: string): { folder: s
     if (part === '.' || part === '..') return null;
     // Reject characters illegal in most filesystems
     if (/[<>:"|?*]/.test(part)) return null;
-    if (/[\x00-\x1f]/.test(part)) return null;
+    for (let i = 0; i < part.length; i++) {
+      if (part.charCodeAt(i) < 32) return null;
+    }
     // Reject trailing dots/spaces (Windows)
     if (/[. ]$/.test(part)) return null;
   }

@@ -49,7 +49,7 @@ export class ChatRenderer {
   constructor(container: HTMLDivElement, app: App, shouldAutoScroll: () => boolean = () => true) {
     this.container = container;
     this.app = app;
-    this.doc = container.ownerDocument ?? document;
+    this.doc = container.ownerDocument ?? activeDocument;
     this.shouldAutoScroll = shouldAutoScroll;
     onLocaleChange(() => this.refreshLocale());
   }

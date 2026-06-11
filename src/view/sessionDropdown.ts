@@ -23,7 +23,7 @@ export class SessionDropdown {
 		private callbacks: SessionDropdownCallbacks,
 		private getAgentCapabilities: () => AgentCapabilities | null = () => null,
 	) {
-		this.doc = container.ownerDocument ?? document;
+		this.doc = container.ownerDocument ?? activeDocument;
 	}
 
 	open(): void {

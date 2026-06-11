@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.5 - 2026-06-11
+
+### Fixed
+- Pass Obsidian plugin review v2: replace bare `document` fallback with `activeDocument` global for popout window compatibility (5 files).
+- Eliminate remaining control-character regex by using charCodeAt loop instead of regex literal.
+
 ## 0.1.4 - 2026-06-11
 
 ### Fixed

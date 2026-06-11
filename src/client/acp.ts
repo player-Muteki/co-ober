@@ -24,7 +24,7 @@ import { SessionUpdateNormalizer } from './sessionUpdateNormalizer';
 import type { NormalizedUpdate } from '../types';
 import { AcpRequestHandler } from './AcpRequestHandler';
 
-export const CLIENT_VERSION = '0.1.4';
+export const CLIENT_VERSION = '0.1.5';
 
 export interface AcpSessionMeta {
   availableCommands: AvailableCommand[];

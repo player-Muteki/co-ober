@@ -63,7 +63,7 @@ export class CopsilotView extends ItemView {
 	// Event listener references for cleanup on close
 	private scrollHandler: (() => void) | null = null;
 
-	private get doc(): Document { return this.contentEl?.ownerDocument ?? document; }
+	private get doc(): Document { return this.contentEl?.ownerDocument ?? activeDocument; }
 
 	constructor(
 		leaf: WorkspaceLeaf,
