@@ -18,7 +18,6 @@ import { getVaultPath } from '../utils/vault';
 import type { WelcomeView } from './welcomeView';
 import type { PermissionBanner } from './permissionBanner';
 import type { InlineEditPanel } from './inlineEditPanel';
-import { ContextInjection as ContextInjectionClass } from '../context/injection';
 import { UserPreferenceStore } from '../memory/preferences';
 import { AcpTimeoutError, AcpProcessExitError, AcpAbortError } from '../client/AcpErrors';
 
@@ -494,21 +493,15 @@ export class CopsilotViewController {
 			const result = await this.deps.resolver.resolveNote(ref.path);
 			if (result) resolved.push(result);
 		}
-		const injection = ContextInjectionClass.build(resolved);
 		const activeAgent = getValidActiveCustomAgent(
 			this.deps.plugin.settings.activeCustomAgentId,
 			this.deps.plugin.settings.customAgents,
 			this.deps.plugin.settings.customSkills,
 		);
 		const customAgentPrompt = buildCustomAgentPrompt(activeAgent, this.deps.plugin.settings.customSkills);
-		const vaultCtx = ContextInjectionClass.vaultContext(this.deps.plugin.app);
-		const pluginNames = ContextInjectionClass.detectPluginsRaw(this.deps.plugin.app);
-		const workflowHints = await ContextInjectionClass.workflowHints(this.deps.plugin.app.vault).catch(() => '');
-		const sectionCtx = ContextInjectionClass.activeSectionContext(this.deps.plugin.app);
-		const enrichedVaultCtx = [vaultCtx, sectionCtx].filter(Boolean).join('\n\n');
-		const sysPrompt = ContextInjectionClass.systemPrompt(this.deps.plugin.settings.systemPrompt, customAgentPrompt, enrichedVaultCtx, pluginNames, workflowHints);
+		const sysPrompt = [this.deps.plugin.settings.systemPrompt, customAgentPrompt].filter(Boolean).join('\n\n');
 		const prefFragment = this.prefStore.toPromptFragment();
-		const combined = [sysPrompt, injection, prefFragment].filter(Boolean).join('\n\n');
+		const combined = [sysPrompt, prefFragment].filter(Boolean).join('\n\n');
 		if (combined) parts.push({ type: 'text', text: combined });
 
 		parts.push({ type: 'text', text });

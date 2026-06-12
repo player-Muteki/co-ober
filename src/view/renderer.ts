@@ -1,6 +1,5 @@
 import type { App } from 'obsidian';
 import { MarkdownRenderer, setIcon, type Component } from 'obsidian';
-import { ContextInjection } from '../context/injection';
 import { t, onLocaleChange } from '../i18n/index';
 
 const TOOL_ICONS: Record<string, string> = {
@@ -148,15 +147,9 @@ export class ChatRenderer {
     placeholder.addClass('md-render-subsystem');
     this.currentAssistantEl.appendChild(placeholder);
 
-    // Inject wikilinks for vault file paths
-    const textWithWikilinks = ContextInjection.injectWikilinks(
-      this.currentAssistantText,
-      this.app.vault
-    );
-
     MarkdownRenderer.render(
       this.app,
-      textWithWikilinks,
+      this.currentAssistantText,
       placeholder,
       '',
       this.container as unknown as Component,

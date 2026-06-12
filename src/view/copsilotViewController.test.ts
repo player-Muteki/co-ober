@@ -460,7 +460,7 @@ describe('CopsilotViewController', () => {
 	describe('buildParts', () => {
 		it('builds parts with text only', async () => {
 			const parts = await controller.buildParts('hello', []);
-			expect(parts).toEqual([{ type: 'text', text: expect.stringContaining('Copsilot') }, { type: 'text', text: 'hello' }]);
+			expect(parts).toEqual([{ type: 'text', text: 'hello' }]);
 		});
 
 		it('resolves context refs', async () => {
@@ -469,7 +469,7 @@ describe('CopsilotViewController', () => {
 			const parts = await controller.buildParts('hello', [{ id: 'n1', type: 'note', name: 'note', path: 'note.md' }]);
 
 			expect(deps.resolver.resolveNote).toHaveBeenCalledWith('note.md');
-			expect(parts.length).toBeGreaterThanOrEqual(2);
+			expect(parts.length).toBe(1);
 		});
 	});
 
