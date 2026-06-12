@@ -1,6 +1,19 @@
 # Changelog
 
-## 0.1.6 - 2026-06-11
+## 0.1.7 - 2026-06-12
+
+### Refactoring
+- Strip `injection.ts` to just `BASE_IDENTITY` and `buildSystemPrompt()` — agent now explores vault autonomously using its own tools rather than relying on programmatic context injection.
+- Remove intelligent sync classification (`intelligentFolder`) and its related UI/Settings/i18n.
+- Remove conversational memory system (`UserPreferenceStore`).
+
+### Fixed
+- Restore `@mention` notes content injection that was broken during refactoring.
+
+### Documentation
+- Replace BRAT and manual installation with Obsidian Community Plugins marketplace.
+- Remove ACP capability matrix from README.
+- Polish README tone and formatting.
 
 ### Features
 - Enhanced agent identity: Copsilot now understands Obsidian's bi-directional linking, graph view, backlinks, tags, daily notes, and templates — speaks naturally as an Obsidian-native AI partner.
