@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.11 - 2026-06-14
+
+### Fixed (critical)
+- **Autocomplete popover completely invisible**: `open()` method called `close()` (which nulls `dropdownEl`) but never re-created the dropdown DOM element. `render()` silently returned on the `if (!this.dropdownEl) return;` guard, causing both `/` slash commands and `@` file mentions to be completely non-functional.
+
+## 0.1.10 - 2026-06-14
+
+### Fixed
+- Slash command popover not displaying: replaced dynamic `import()` with static import (esbuild bundle incompatibility).
+- `/` character eaten on input: same root cause — popover now opens correctly, and `/<trigger>` is properly inserted on selection.
+- @mention chip now shows `@name (path)` format for disambiguation.
+- Popover search highlighting: matching keywords wrapped in `<mark>` in @mention mode.
+- Note content caching: same file not re-read across messages in the same session.
+- ContextMention constructor updated from `Vault` to `App` for future metadata cache access.
+
 ## 0.1.9 - 2026-06-14
 
 ### Features

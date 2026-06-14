@@ -40,6 +40,10 @@ export class Autocomplete {
 
   open(items: ACItem[], mode: '@' | '/'): void {
     this.close();
+    // Create the dropdown container element
+    this.dropdownEl = activeDocument.createElement('div');
+    this.dropdownEl.addClass('copsilot-autocomplete');
+    document.body.appendChild(this.dropdownEl);
     this.mode = mode;
     this.allItems = items;
     this.filterText = '';
