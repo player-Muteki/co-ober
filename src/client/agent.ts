@@ -19,7 +19,7 @@ import { AcpClient } from './acp';
 import { AcpTimeoutError } from './AcpErrors';
 
 export class AgentRuntime implements OpencodeClient {
-  permissionMode = 'safe';
+  permissionMode: import('../types').PermissionLevel = 'safe';
   idleTimeoutMs = 5 * 60 * 1000; // 5 minutes default
 
   constructor(private acp: AcpClient) {}

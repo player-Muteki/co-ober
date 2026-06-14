@@ -298,4 +298,21 @@ export const DEFAULT_SETTINGS: CopsilotSettings = {
 	idleTimeoutMs: 300000,
 };
 
+/**
+ * Unified usage / cost tracking info, consolidated from duplicates in
+ * chatState.ts, toolbar.ts, and renderer.ts.
+ */
+export interface UsageInfo {
+  totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  thoughtTokens?: number;
+  cost?: { amount: number; currency: string };
+  contextWindow?: number;
+  contextTokens?: number;
+  percentage?: number;
+  modelId?: string;
+  elapsedMs?: number;
+}
+
 export const VIEW_TYPE = 'copsilot-view';

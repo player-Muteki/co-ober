@@ -5,6 +5,7 @@ import type {
 	ModeOption,
 	AvailableCommand,
 	PermissionRequest,
+	PermissionLevel,
 	NormalizedUpdate,
 	PromptPart,
 	AcpResponse,
@@ -43,8 +44,8 @@ export interface OpencodeClient {
   cancel(sessionId: SessionId): Promise<void>;
   abort(): void;
 
-  requestPermission(req: PermissionRequest): Promise<string>;
-  permissionMode: string;
+  requestPermission?(req: PermissionRequest): Promise<string>;
+  permissionMode: PermissionLevel;
 
   getAvailableAgents(): Promise<ModeOption[]>;
   getAvailableModels(): Promise<ModelOption[]>;

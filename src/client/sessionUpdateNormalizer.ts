@@ -1,4 +1,8 @@
 import type { SessionUpdate, NormalizedUpdate } from '../types';
+import { safeClone } from '../utils/clone';
+
+const MAX_ACCUMULATED_MESSAGES = 200;
+const MAX_TOOL_CALLS = 100;
 
 export class SessionUpdateNormalizer {
   private readonly accumulatedMessages = new Map<string, { role: 'user' | 'agent' | 'thought'; text: string }>();
@@ -9,6 +13,15 @@ export class SessionUpdateNormalizer {
     this.toolCalls.clear();
   }
 
+  /** Evict the oldest entries when the map exceeds the given limit. */
+  private trimMap<K, V>(map: Map<K, V>, maxEntries: number): void {
+    if (map.size <= maxEntries) return;
+    const keysToDelete = [...map.keys()].slice(0, map.size - maxEntries);
+    for (const key of keysToDelete) {
+      map.delete(key);
+    }
+  }
+
   normalize(raw: SessionUpdate): NormalizedUpdate | null {
     switch (raw.sessionUpdate) {
       case 'user_message_chunk': {
@@ -16,6 +29,7 @@ export class SessionUpdateNormalizer {
         const existing = this.accumulatedMessages.get(raw.messageId);
         const accumulatedText = existing ? existing.text + text : text;
         this.accumulatedMessages.set(raw.messageId, { role: 'user', text: accumulatedText });
+        this.trimMap(this.accumulatedMessages, MAX_ACCUMULATED_MESSAGES);
         return { kind: 'message_chunk', role: 'user', messageId: raw.messageId, chunkText: text, accumulatedText };
       }
       case 'agent_message_chunk': {
@@ -23,6 +37,7 @@ export class SessionUpdateNormalizer {
         const existing = this.accumulatedMessages.get(raw.messageId);
         const accumulatedText = existing ? existing.text + text : text;
         this.accumulatedMessages.set(raw.messageId, { role: 'agent', text: accumulatedText });
+        this.trimMap(this.accumulatedMessages, MAX_ACCUMULATED_MESSAGES);
         return { kind: 'message_chunk', role: 'agent', messageId: raw.messageId, chunkText: text, accumulatedText };
       }
       case 'agent_thought_chunk': {
@@ -30,6 +45,7 @@ export class SessionUpdateNormalizer {
         const existing = this.accumulatedMessages.get(raw.messageId);
         const accumulatedText = existing ? existing.text + text : text;
         this.accumulatedMessages.set(raw.messageId, { role: 'thought', text: accumulatedText });
+        this.trimMap(this.accumulatedMessages, MAX_ACCUMULATED_MESSAGES);
         return { kind: 'message_chunk', role: 'thought', messageId: raw.messageId, chunkText: text, accumulatedText };
       }
       case 'tool_call': {
@@ -44,11 +60,12 @@ export class SessionUpdateNormalizer {
           contents: [],
         };
         this.toolCalls.set(raw.toolCallId, snapshot);
-        return structuredClone(snapshot);
+        this.trimMap(this.toolCalls, MAX_TOOL_CALLS);
+        return safeClone(snapshot);
       }
       case 'tool_call_update': {
         const existing = this.toolCalls.get(raw.toolCallId);
-        if (!existing) return null; // should not happen if tool_call was received
+        if (!existing) return null;
 
         if (raw.status) existing.status = raw.status;
         if (raw.title) existing.title = raw.title;
@@ -60,7 +77,9 @@ export class SessionUpdateNormalizer {
           existing.contents = existing.contents.concat(raw.content);
         }
 
-        return structuredClone(existing);
+        // Completed/failed tool calls are no longer needed for state tracking
+        // but keep the latest snapshot for the current stream cycle.
+        return safeClone(existing);
       }
       case 'plan':
         return { kind: 'plan', entries: raw.entries };

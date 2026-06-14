@@ -1,12 +1,13 @@
-import { existsSync } from 'fs';
+import { getSpawnInfo } from '../utils/commandResolution';
 import { AcpSubprocess, type AcpSubprocessLaunchSpec } from './AcpSubprocess';
-import { delimiter, extname } from 'path';
+
 import { type AcpLogicalMethod, getAcpMethodCandidates } from './AcpMethodNames';
 import { AcpProtocolError } from './AcpErrors';
 import type {
 	SessionUpdate,
 	PromptPart,
 	SessionConfigOption,
+	PermissionLevel,
 	PermissionRequest,
 	AvailableCommand,
 	ModelOption,
@@ -175,10 +176,6 @@ export function extractSessionSnapshot(result: Record<string, unknown>): AcpSess
     }
   }
 
-  if (result.sessionInfo) {
-    snapshot.sessionInfo = result.sessionInfo as { sessionId?: string; title?: string; cwd?: string };
-  }
-
   return snapshot;
 }
 
@@ -221,8 +218,8 @@ export class AcpClient implements OpencodeClient {
     this.cwd = cwd;
   }
 
-  get permissionMode(): string { return 'yolo'; }
-  set permissionMode(_v: string) { /* not used at this level */ }
+  get permissionMode(): PermissionLevel { return 'yolo'; }
+  set permissionMode(_v: PermissionLevel) { /* not used at this level */ }
 
   isConnected(): boolean { return this.connected; }
 
@@ -235,7 +232,7 @@ export class AcpClient implements OpencodeClient {
 		const args = ['acp'];
 		const cwd = this.cwd ?? process.cwd();
 
-		const spawnInfo = this.getSpawnInfo(cmd, args);
+		const spawnInfo = getSpawnInfo(cmd, args, process.platform, process.env);
 		const launchSpec: AcpSubprocessLaunchSpec = {
 			command: spawnInfo.command,
 			args: spawnInfo.args,
@@ -269,7 +266,10 @@ export class AcpClient implements OpencodeClient {
 			const update = this.parseUpdate(p?.update as Record<string, unknown> | undefined);
 			if (update) {
 				if (update.sessionUpdate === 'usage_update') {
-					console.debug('[copsilot] usage_update:', JSON.stringify(update));
+					// Usage updates are frequent in long sessions; only log when debug is enabled.
+					if (typeof process.env.DEBUG_COPSILOT !== 'undefined') {
+						console.debug('[copsilot] usage_update:', JSON.stringify(update));
+					}
 				}
 				this.applySessionUpdate(update);
 				if (this.chunkHandler) {
@@ -285,6 +285,7 @@ export class AcpClient implements OpencodeClient {
 				clientCapabilities: this.requestHandler.buildClientCapabilities(),
 			}) as Record<string, unknown>;
 			this.agentCapabilities = (response.agentCapabilities as AgentCapabilities) ?? null;
+			this.methodCache.clear();
 			this.connected = true;
 		} catch (error) {
 			await this.disposeConnection(error instanceof Error ? error : new Error(String(error)), true);
@@ -383,22 +384,19 @@ export class AcpClient implements OpencodeClient {
   }
 
   cancel(id: string): Promise<void> {
-    if (this.activeStreamSessionId === id) {
-      this.activeStreamSessionId = null;
-      this.chunkHandler = null;
-      if (this.activeAbortController) {
-        this.activeAbortController.abort();
-        this.activeAbortController = null;
-      }
-    }
+    // Send RPC cancel first, then clean up local state to avoid a race where
+    // the stream ends between local cleanup and the RPC, leaving a dangling
+    // prompt Promise.
+    // wasActive is intentionally unused — we unconditionally clean up
+    // to avoid the race described below.
+    this.activeStreamSessionId = null;
+    this.chunkHandler = null;
+    this.activeAbortController?.abort();
+    this.activeAbortController = null;
+
     return this.requestWithFallback('cancel', { sessionId: id }).then(() => {}).catch((e) => {
       console.warn('[copsilot] cancel RPC failed:', e);
     });
-  }
-
-  async requestPermission(req: PermissionRequest): Promise<string> {
-    const reject = req.options.find((o) => o.kind === 'reject_once');
-    return reject?.optionId ?? req.options[0]?.optionId ?? 'reject_once';
   }
 
   getAvailableAgents(): Promise<ModeOption[]> { return Promise.resolve([...this.availableModes]); }
@@ -544,6 +542,9 @@ export class AcpClient implements OpencodeClient {
   }
 
   private async disposeConnection(error?: Error, shutdownSubprocess = false): Promise<void> {
+    // Notify listeners before clearing transport so callbacks can inspect state.
+    this.onClose?.();
+
     const transport = this.transport;
     const subprocess = this.subprocess;
     const requestHandler = this.requestHandler;
@@ -551,6 +552,9 @@ export class AcpClient implements OpencodeClient {
     this.subprocess = null;
     this.requestHandler = null;
     this.connected = false;
+
+    // Reset method cache so reconnect picks up fresh method names
+    this.methodCache.clear();
 
     // Clean up terminal processes and FS delegate on disconnect
     requestHandler?.dispose();
@@ -612,59 +616,8 @@ export class AcpClient implements OpencodeClient {
       });
     }, delay);
   }
-
-  private getSpawnInfo(cmd: string, args: string[]): { command: string; args: string[] } {
-    if (process.platform !== 'win32') return { command: cmd, args };
-
-    const resolved = this.resolveWindowsCommand(cmd);
-    if (resolved.useCmdShell) {
-      const commandLine = [this.quoteCmdArg(resolved.command), ...args.map((arg) => this.quoteCmdArg(arg))].join(' ');
-      const comspec = process.env.ComSpec ?? 'cmd.exe';
-      return { command: comspec, args: ['/d', '/s', '/c', commandLine] };
-    }
-
-    return { command: resolved.command, args };
-  }
-
-  private resolveWindowsCommand(cmd: string): { command: string; useCmdShell: boolean } {
-    const ext = extname(cmd).toLowerCase();
-    if (ext === '.cmd' || ext === '.bat') return { command: cmd, useCmdShell: true };
-    if (ext) return { command: cmd, useCmdShell: false };
-
-    if (cmd.includes('\\') || cmd.includes('/')) {
-      const exe = `${cmd}.exe`;
-      if (existsSync(exe)) return { command: exe, useCmdShell: false };
-      const cmdExt = `${cmd}.cmd`;
-      if (existsSync(cmdExt)) return { command: cmdExt, useCmdShell: true };
-      const batExt = `${cmd}.bat`;
-      if (existsSync(batExt)) return { command: batExt, useCmdShell: true };
-      return { command: cmd, useCmdShell: false };
-    }
-
-    const pathExts = (process.env.PATHEXT ?? '.EXE;.CMD;.BAT')
-      .split(';')
-      .map((value) => value.toLowerCase());
-    const pathDirs = (process.env.PATH ?? '').split(delimiter);
-
-    for (const dir of pathDirs) {
-      for (const extPart of pathExts) {
-        const candidate = `${dir}\\${cmd}${extPart}`;
-        if (existsSync(candidate)) {
-          const useCmdShell = extPart === '.cmd' || extPart === '.bat';
-          return { command: candidate, useCmdShell };
-        }
-      }
-    }
-
-    return { command: cmd, useCmdShell: false };
-  }
-
-  private quoteCmdArg(value: string): string {
-    if (!value) return '""';
-    if (!/[\s"]/.test(value)) return value;
-    return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-  }
 }
+
 
 export function buildMcpServers(servers: McpServerConfig[]): AcpMcpServer[] {
   return servers

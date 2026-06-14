@@ -1,4 +1,4 @@
-import type { SerializedMessage, SessionConfigOption, AvailableCommand } from '../types';
+import type { SerializedMessage, SessionConfigOption, AvailableCommand, UsageInfo } from '../types';
 
 export interface PendingToolCall {
 	toolCallId: string;
@@ -10,16 +10,6 @@ export interface PendingToolCall {
 export interface ThinkingState {
 	content: string;
 	collapsed: boolean;
-}
-
-export interface UsageInfo {
-	totalTokens: number;
-	inputTokens: number;
-	outputTokens: number;
-	thoughtTokens?: number;
-	cost?: { amount: number; currency: string };
-	contextWindow?: number;
-	contextTokens?: number;
 }
 
 export class ChatState {

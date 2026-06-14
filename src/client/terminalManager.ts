@@ -25,15 +25,34 @@ export class TerminalError extends Error {
 	}
 }
 
+/**
+ * Extract the base command name from a full command string.
+ * Handles paths with spaces, extensions, and embedded arguments.
+ */
 function getBaseCommand(command: string): string {
-	return command.trim().split(/[\\/]/).pop()?.split(/\s+/)[0]?.toLowerCase() ?? '';
+	const trimmed = command.trim();
+	if (!trimmed) return '';
+
+	// Split on whitespace to get the first token (the command)
+	const firstToken = trimmed.split(/\s+/)[0];
+	if (!firstToken) return '';
+
+	// Extract the filename part from path separators
+	const base = firstToken.split(/[\\/]/).pop() ?? firstToken;
+	return base.replace(/\.(exe|cmd|bat|ps1|sh)$/i, '').toLowerCase();
 }
 
+/**
+ * Check whether a command the Agent wants to run is on the allowlist.
+ *
+ * Note: shell commands (sh, bash, cmd, powershell) are on the allowlist but
+ * their arguments are NOT validated. In safe / plan permission modes the user
+ * will be prompted before execution, which is the intended mitigation.
+ */
 function isAllowedCommand(command: string): boolean {
 	const base = getBaseCommand(command);
 	if (!base) return false;
-	const withoutExt = base.replace(/\.(exe|cmd|bat|ps1|sh)$/i, '');
-	return ALLOWED_COMMANDS.has(withoutExt);
+	return ALLOWED_COMMANDS.has(base);
 }
 
 interface ExitWaiter {
@@ -208,75 +227,77 @@ export class TerminalManager {
 		cwd: string,
 		env?: Record<string, string>,
 	): void {
+		const proc = spawn(command, args, {
+			cwd,
+			stdio: ['pipe', 'pipe', 'pipe'],
+			env: env ? { ...process.env, ...env } : process.env,
+			shell: false,
+		});
+
+		this.processes.set(terminalId, proc);
+
 		const instance = this.terminals.get(terminalId);
-		if (!instance) return;
-
-		try {
-			const useShell = /\.(cmd|bat)$/i.test(command);
-			const proc = spawn(command, args, {
-				cwd,
-				stdio: ['pipe', 'pipe', 'pipe'],
-				windowsHide: true,
-				shell: useShell,
-				env: env ? { ...process.env, ...env } : undefined,
-			});
-
+		if (instance) {
 			instance.pid = proc.pid ?? null;
-			this.processes.set(terminalId, proc);
-
-			// Collect stdout
-			proc.stdout?.on('data', (chunk: Buffer | string) => {
-				const text = typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
-				instance.output = (instance.output + text).slice(-this.maxOutputBytes);
-			});
-
-			// Collect stderr
-			proc.stderr?.on('data', (chunk: Buffer | string) => {
-				const text = typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
-				instance.output = (instance.output + text).slice(-this.maxOutputBytes);
-			});
-
-			proc.on('exit', (code, signal) => {
-				instance.status = 'exited';
-				instance.exitCode = code;
-				instance.signal = signal;
-				this.processes.delete(terminalId);
-
-				const waiter = this.exitWaiters.get(terminalId);
-				if (waiter) {
-					window.clearTimeout(waiter.timeout);
-					this.exitWaiters.delete(terminalId);
-					waiter.resolve({ exitCode: code, signal });
-				}
-			});
-
-			// Handle process error
-			proc.on('error', (err) => {
-				instance.status = 'exited';
-				instance.output += `\nError: ${err.message}`;
-				instance.exitCode = 1;
-				this.processes.delete(terminalId);
-
-				const waiter = this.exitWaiters.get(terminalId);
-				if (waiter) {
-					window.clearTimeout(waiter.timeout);
-					this.exitWaiters.delete(terminalId);
-					waiter.resolve({ exitCode: 1, signal: null });
-				}
-			});
-
-			// Set timeout
-			window.setTimeout(() => {
-				if (instance.status === 'running') {
-					this.kill(terminalId);
-					instance.output += '\n[Process timed out]';
-				}
-			}, this.timeoutMs);
-
-		} catch (err) {
-			instance.status = 'exited';
-			instance.exitCode = 1;
-			instance.output = `Failed to spawn process: ${err instanceof Error ? err.message : String(err)}`;
 		}
+
+		proc.stdout?.on('data', (chunk: Buffer | string) => {
+			const text = typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
+			const term = this.terminals.get(terminalId);
+			if (!term) return;
+
+			// Truncate output to maxOutputBytes
+			const maxBytes = this.maxOutputBytes;
+			if (term.output.length + text.length > maxBytes) {
+				term.output = term.output.slice(-Math.floor(maxBytes * 0.75)) + text;
+			} else {
+				term.output += text;
+			}
+		});
+
+		proc.stderr?.on('data', (chunk: Buffer | string) => {
+			const text = typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
+			const term = this.terminals.get(terminalId);
+			if (!term) return;
+
+			const maxBytes = this.maxOutputBytes;
+			if (term.output.length + text.length > maxBytes) {
+				term.output = term.output.slice(-Math.floor(maxBytes * 0.75)) + text;
+			} else {
+				term.output += text;
+			}
+		});
+
+		proc.on('error', (_err: unknown) => {
+			const term = this.terminals.get(terminalId);
+			if (term) {
+				term.status = 'exited';
+				term.exitCode = null;
+				term.signal = null;
+			}
+			this.processes.delete(terminalId);
+			this.resolveExitWaiter(terminalId);
+		});
+
+		proc.on('exit', (code, signal) => {
+			const term = this.terminals.get(terminalId);
+			if (term) {
+				term.status = 'exited';
+				term.exitCode = code;
+				term.signal = signal;
+			}
+			this.processes.delete(terminalId);
+			this.resolveExitWaiter(terminalId);
+		});
+	}
+
+	private resolveExitWaiter(terminalId: string): void {
+		const waiter = this.exitWaiters.get(terminalId);
+		if (!waiter) return;
+		window.clearTimeout(waiter.timeout);
+		this.exitWaiters.delete(terminalId);
+
+		const instance = this.terminals.get(terminalId);
+		waiter.resolve(instance ? { exitCode: instance.exitCode, signal: instance.signal } : null);
 	}
 }

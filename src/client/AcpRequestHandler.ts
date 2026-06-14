@@ -118,7 +118,9 @@ export class AcpRequestHandler {
 			sessionId: params.sessionId,
 			decision: { optionId: decision },
 		})).catch((error: unknown) => {
-			console.error('[copsilot] permission request failed:', error);
+			// Only fall back to reject if the custom handler threw (e.g. programming error).
+			// The default handler never throws.
+			console.error('[copsilot] permission request handler failed, falling back to reject:', error);
 			return this.requestPermission(req).then((decision: string) => ({
 				sessionId: params.sessionId,
 				decision: { optionId: decision },
@@ -202,7 +204,8 @@ export class AcpRequestHandler {
 			return Promise.resolve({ error: 'Missing required parameter: terminalId' });
 		}
 
-		return Promise.resolve(this.terminalManager.output(terminalId));
+		const result = this.terminalManager.output(terminalId);
+		return Promise.resolve(result);
 	}
 
 	private handleTerminalKill(params: Record<string, unknown>): Promise<unknown> {
@@ -215,7 +218,8 @@ export class AcpRequestHandler {
 			return Promise.resolve({ error: 'Missing required parameter: terminalId' });
 		}
 
-		return Promise.resolve({ success: this.terminalManager.kill(terminalId) });
+		const success = this.terminalManager.kill(terminalId);
+		return Promise.resolve({ success });
 	}
 
 	private handleTerminalRelease(params: Record<string, unknown>): Promise<unknown> {
@@ -228,7 +232,8 @@ export class AcpRequestHandler {
 			return Promise.resolve({ error: 'Missing required parameter: terminalId' });
 		}
 
-		return Promise.resolve({ success: this.terminalManager.release(terminalId) });
+		const success = this.terminalManager.release(terminalId);
+		return Promise.resolve({ success });
 	}
 
 	private handleTerminalWaitForExit(params: Record<string, unknown>): Promise<unknown> {
@@ -241,8 +246,6 @@ export class AcpRequestHandler {
 			return Promise.resolve({ error: 'Missing required parameter: terminalId' });
 		}
 
-		return this.terminalManager.waitForExit(terminalId).then((result) => {
-			return result || { error: 'Terminal not found' };
-		});
+		return this.terminalManager.waitForExit(terminalId).then((result) => result ?? { error: 'Terminal not found' });
 	}
 }

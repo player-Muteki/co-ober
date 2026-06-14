@@ -114,7 +114,7 @@ export class CopsilotSettingsTab extends PluginSettingTab {
         .onChange(async (v) => {
           s.permissionMode = v as PermissionLevel;
           await this.save();
-          if (this.plugin.client) this.plugin.client.permissionMode = v;
+          if (this.plugin.client) this.plugin.client.permissionMode = v as PermissionLevel;
         }));
 
     new Setting(containerEl)

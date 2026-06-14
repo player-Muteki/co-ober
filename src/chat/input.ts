@@ -16,43 +16,57 @@ export class ChatInput {
   private disabled = false;
   private streaming = false;
   private doc: Document;
+  private readonly resizeHandle: HTMLDivElement;
+  private readonly keydownHandler: (e: KeyboardEvent) => void;
+  private readonly mousedownHandler: (e: MouseEvent) => void;
+  private readonly unsubscribeLocale: () => void;
 
   constructor(
     container: HTMLDivElement,
     private callbacks: InputCallbacks,
   ) {
     this.doc = container.ownerDocument ?? activeDocument;
-    const handle = container.createDiv({ cls: 'copsilot-input-resize-handle' });
-    this.setupResizeHandle(handle, container);
+    this.resizeHandle = container.createDiv({ cls: 'copsilot-input-resize-handle' });
 
     const row = container.createDiv({ cls: 'copsilot-input-row' });
     this.textarea = row.createEl('textarea', { placeholder: t().input.placeholder });
     this.textarea.addClass('copsilot-input');
-    onLocaleChange(() => this.refreshLocale());
 
-    this.textarea.addEventListener('keydown', (e: KeyboardEvent) => {
+    this.unsubscribeLocale = onLocaleChange(() => this.refreshLocale());
+
+    this.keydownHandler = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && this.streaming) { e.preventDefault(); this.callbacks.onStop(); return; }
       if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); this.callbacks.onCycleMode?.(1); return; }
       if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); this.callbacks.onCycleMode?.(-1); return; }
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.send(); return; }
       if (e.key === '@' && this.isAtWordBoundary()) { e.preventDefault(); this.callbacks.onToggleMention(); return; }
       if (e.key === '/' && this.isAtWordBoundary()) { e.preventDefault(); this.callbacks.onToggleSlash(); return; }
-    });
-  }
+    };
+    this.textarea.addEventListener('keydown', this.keydownHandler);
 
-  private setupResizeHandle(handle: HTMLDivElement, container: HTMLDivElement): void {
-    let startY = 0, startH = 0;
-    handle.addEventListener('mousedown', (e: MouseEvent) => {
+    this.mousedownHandler = (e: MouseEvent) => {
       e.preventDefault();
-      startY = e.clientY; startH = container.offsetHeight;
-      handle.addClass('dragging');
+      let startY = e.clientY;
+      const startH = container.offsetHeight;
+      this.resizeHandle.addClass('dragging');
       const onMove = (ev: MouseEvent) => {
         container.style.height = Math.min(400, Math.max(144, startH + startY - ev.clientY)) + 'px';
       };
-      const onUp = () => { handle.removeClass('dragging'); this.doc.removeEventListener('mousemove', onMove); this.doc.removeEventListener('mouseup', onUp); };
+      const onUp = () => {
+        this.resizeHandle.removeClass('dragging');
+        this.doc.removeEventListener('mousemove', onMove);
+        this.doc.removeEventListener('mouseup', onUp);
+      };
       this.doc.addEventListener('mousemove', onMove);
       this.doc.addEventListener('mouseup', onUp);
-    });
+    };
+    this.resizeHandle.addEventListener('mousedown', this.mousedownHandler);
+  }
+
+  dispose(): void {
+    this.unsubscribeLocale();
+    this.textarea.removeEventListener('keydown', this.keydownHandler);
+    this.resizeHandle.removeEventListener('mousedown', this.mousedownHandler);
   }
 
   triggerSend(): void { this.send(); }

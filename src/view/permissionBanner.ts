@@ -4,19 +4,28 @@ import { t, onLocaleChange } from '../i18n/index';
 export class PermissionBanner {
 	private el: HTMLDivElement | null = null;
 	private currentReq: { req: PermissionRequest, resolve: (val: string) => void } | null = null;
+	private readonly unsubscribeLocale: () => void;
 
 	constructor(private containerEl: HTMLElement) {
-		onLocaleChange(() => {
+		this.unsubscribeLocale = onLocaleChange(() => {
 			if (!this.el || !this.currentReq) return;
 			this.renderBanner(this.currentReq.req);
 		});
 	}
 
+	dispose(): void {
+		this.unsubscribeLocale();
+		this.dismissInternal();
+	}
+
 	show(req: PermissionRequest): Promise<string> {
 		return new Promise((resolve) => {
 			this.currentReq = { req, resolve };
-			this.dismiss();
-			this.currentReq = { req, resolve }; // re-assign after dismiss
+			// Remove existing UI element but keep currentReq intact.
+			if (this.el) {
+				this.el.remove();
+				this.el = null;
+			}
 			this.renderBanner(req);
 			this.containerEl.scrollTop = this.containerEl.scrollHeight;
 		});
@@ -67,7 +76,7 @@ export class PermissionBanner {
 			});
 			btn.onclick = () => {
 				const resolve = this.currentReq?.resolve;
-				this.dismiss();
+				this.dismissInternal();
 				if (resolve) resolve(opt.optionId);
 			};
 		}
@@ -90,11 +99,15 @@ export class PermissionBanner {
 		return parts.join(', ');
 	}
 
-	dismiss(): void {
+	private dismissInternal(): void {
 		if (this.el) {
 			this.el.remove();
 			this.el = null;
 		}
 		this.currentReq = null;
+	}
+
+	dismiss(): void {
+		this.dismissInternal();
 	}
 }

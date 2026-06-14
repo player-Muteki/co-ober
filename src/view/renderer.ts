@@ -1,6 +1,7 @@
 import type { App } from 'obsidian';
 import { MarkdownRenderer, setIcon, type Component } from 'obsidian';
 import { t, onLocaleChange } from '../i18n/index';
+import type { UsageInfo } from '../types';
 
 const TOOL_ICONS: Record<string, string> = {
   read: 'file-text',
@@ -15,16 +16,6 @@ const TOOL_ICONS: Record<string, string> = {
   switch_mode: 'repeat',
   other: 'settings',
 };
-
-export interface UsageDisplay {
-  totalTokens: number;
-  inputTokens: number;
-  outputTokens: number;
-  thoughtTokens?: number;
-  cost?: { amount: number; currency: string };
-  modelId?: string;
-  elapsedMs?: number;
-}
 
 export class ChatRenderer {
   private container: HTMLDivElement;
@@ -45,7 +36,7 @@ export class ChatRenderer {
   private placeholderEl: HTMLDivElement | null = null;
   private renderTimeout: number | null = null;
   private thinkingRenderTimeout: number | null = null;
-  private usageEls = new Map<HTMLDivElement, UsageDisplay>();
+  private usageEls = new Map<HTMLDivElement, UsageInfo>();
   private unsubscribeLocale: () => void;
 
   constructor(container: HTMLDivElement, app: App, shouldAutoScroll: () => boolean = () => true) {
@@ -419,7 +410,7 @@ export class ChatRenderer {
     this.scrollToBottom();
   }
 
-  showUsage(usage: UsageDisplay): void {
+  showUsage(usage: UsageInfo): void {
     // Ensure we have a wrap to attach usage to (may be null if only tool calls, no text)
     if (!this.currentAssistantWrap) {
       const wrap = this.container.createDiv({ cls: 'copsilot-msg assistant' });
@@ -454,7 +445,7 @@ export class ChatRenderer {
     }
   }
 
-  private formatUsageTitle(usage: UsageDisplay): string {
+  private formatUsageTitle(usage: UsageInfo): string {
     const labels = t().usage;
     return `${labels.model}: ${usage.modelId ?? '?'} | ${labels.input}: ${usage.inputTokens}, ${labels.output}: ${usage.outputTokens}${usage.thoughtTokens ? `, ${labels.thinking}: ${usage.thoughtTokens}` : ''}`;
   }

@@ -5,7 +5,8 @@ import type { ContextRef, PromptPart } from '../types';
 import { t } from '../i18n/index';
 import { ChatRenderer } from './renderer';
 import { ChatInput } from '../chat/input';
-import { InputToolbar, type UsageInfo } from '../chat/toolbar';
+import { InputToolbar } from '../chat/toolbar';
+import type { UsageInfo } from '../types';
 import { ContextMention } from '../context/mention';
 import { ContextResolver } from '../context/resolver';
 import { SyncEngine } from '../sync/engine';
@@ -193,7 +194,7 @@ export class CopsilotView extends ItemView {
 				this.plugin.settings.permissionMode = mode as import('../types').PermissionLevel;
 				void this.plugin.savePluginData();
 				const client = this.plugin.getClient();
-				if (client) client.permissionMode = mode;
+				if (client) client.permissionMode = mode as import('../types').PermissionLevel;
 			},
 			onSend: () => this.input.triggerSend(),
 			onStop: () => this.input.triggerStop(),
@@ -345,6 +346,9 @@ export class CopsilotView extends ItemView {
 	override async onClose(): Promise<void> {
 		await this.controller?.stopGeneration();
 		this.controller?.dispose();
+		this.input?.dispose();
+		this.toolbar?.dispose();
+		this.permissionBanner?.dispose();
 		this.renderer?.dispose();
 		this.closeSessionDropdown();
 		this.closeAutocomplete();

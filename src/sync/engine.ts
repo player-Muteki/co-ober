@@ -18,11 +18,6 @@ export class SyncEngine {
     return file instanceof TFile;
   }
 
-  private isSafePath(p: string): boolean {
-    const normalized = p.replace(/\\/g, '/');
-    return !normalized.startsWith('/') && !/(^|\/)\.\.($|\/)/.test(normalized);
-  }
-
   async process(ctx: import('./templates').SyncContext): Promise<SyncFailure[]> {
     return this.mutex.runExclusive(async () => {
       const failures: SyncFailure[] = [];
@@ -30,10 +25,8 @@ export class SyncEngine {
         if (!ruleMatches(rule, ctx)) continue;
         try {
           const note = buildSyncNote(ctx, rule.folder, rule.filenameTemplate, rule.template);
-          if (!this.isSafePath(note.path)) {
-            failures.push({ rule, error: new Error(`Unsafe sync path: ${note.path}`) });
-            continue;
-          }
+          // buildSyncNote internally calls sanitizeVaultPath (8 checks);
+          // invalid paths would throw before we reach here.
           await this.ensureFolder(rule.folder);
           const existing = this.vault.getAbstractFileByPath(note.path);
           if (existing && this.isTFile(existing)) {

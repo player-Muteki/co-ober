@@ -1,15 +1,5 @@
 import { t, onLocaleChange } from '../i18n/index';
 
-export interface UsageInfo {
-  totalTokens: number;
-  inputTokens: number;
-  outputTokens: number;
-  thoughtTokens?: number;
-  contextWindow?: number;
-  contextTokens?: number;
-  percentage?: number;
-}
-
 export interface ToolbarCallbacks {
   onAgentChange?: (agent: string) => void;
   onModelChange?: (model: string) => void;
@@ -50,9 +40,11 @@ export class InputToolbar {
   private permLabelEl: HTMLSpanElement;
   private currentPermission: string = 'safe';
 
+  private readonly unsubscribeLocale: () => void;
+
   constructor(container: HTMLDivElement, private callbacks: ToolbarCallbacks) {
     container.addClass('copsilot-toolbar');
-    onLocaleChange(() => this.refreshLocale());
+    this.unsubscribeLocale = onLocaleChange(() => this.refreshLocale());
 
     // ── Single row ──
     const row = container.createDiv({ cls: 'copsilot-toolbar-row' });
@@ -86,6 +78,10 @@ export class InputToolbar {
     // Send/Stop button
     this.sendBtn = row.createEl('button', { text: t().toolbar.send, cls: 'copsilot-send-btn' });
     this.sendBtn.onclick = () => this.handleSendClick();
+  }
+
+  dispose(): void {
+    this.unsubscribeLocale();
   }
 
   private handleSendClick(): void {

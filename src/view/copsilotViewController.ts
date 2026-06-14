@@ -48,7 +48,7 @@ export interface ControllerDeps {
 	sessionStore: SessionStore;
 	welcomeView: WelcomeView;
 	plugin: CopsilotPlugin;
-	updateContextMeter: (usage: import('../chat/toolbar').UsageInfo | null) => void;
+	updateContextMeter: (usage: import('../types').UsageInfo | null) => void;
 }
 
 export class CopsilotViewController {

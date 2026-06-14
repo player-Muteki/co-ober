@@ -89,7 +89,8 @@ export default class CopsilotPlugin extends Plugin {
   }
 
   async savePluginData(): Promise<void> {
-    this.pruneSessions();
+    // Defer prune so it doesn't block the save IO.
+    setTimeout(() => this.pruneSessions(), 0);
     await super.saveData(this.buildPluginData());
   }
 
