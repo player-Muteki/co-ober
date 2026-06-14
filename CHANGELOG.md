@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.12 - 2026-06-14
+
+### Fixed
+- **CSS class name mismatch**: dropdown container used class `copsilot-autocomplete` but all CSS rules expected `copsilot-ac-dropdown`. The autocomplete popup (`/` and `@`) was completely unstyled and invisible.
+- **Dropdown attached to `document.body`**: changed to mount inside the view's `inputAreaEl` container for correct positioning within Obsidian's iframe layout.
+- **Missing CSS styles**: added rules for `ac-badge`, `ac-header`, `ac-separator`, and `<mark>` highlight in the dropdown.
+
 ## 0.1.11 - 2026-06-14
 
 ### Fixed (critical)

@@ -32,18 +32,18 @@ export class Autocomplete {
   private filterText = '';
 
   constructor(
-    _container: HTMLElement,
+    private container: HTMLElement,
     private callbacks: AutocompleteCallbacks,
   ) {
-    this.doc = _container.ownerDocument ?? activeDocument;
+    this.doc = container.ownerDocument ?? activeDocument;
   }
 
   open(items: ACItem[], mode: '@' | '/'): void {
     this.close();
     // Create the dropdown container element
-    this.dropdownEl = activeDocument.createElement('div');
-    this.dropdownEl.addClass('copsilot-autocomplete');
-    document.body.appendChild(this.dropdownEl);
+    this.dropdownEl = this.doc.createElement('div');
+    this.dropdownEl.addClass('copsilot-ac-dropdown');
+    this.container.appendChild(this.dropdownEl);
     this.mode = mode;
     this.allItems = items;
     this.filterText = '';
