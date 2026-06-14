@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.14 - 2026-06-14
+
+### Fixed
+- **@mention popup simplified**: each item shows only `@filename` with optional ✓ badge. Removed path prefix and secondary description text.
+- CSS layout: replaced `space-between` with `gap`, added `flex: 1` to `.ac-label` so filename fills the row.
+- Removed `.ac-desc` CSS (no longer used by @ items).
+
 ## 0.1.13 - 2026-06-14
 
 ### Improved

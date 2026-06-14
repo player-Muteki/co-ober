@@ -588,12 +588,9 @@ export class CopsilotView extends ItemView {
 			const selectedRefs = this.mention.getAllRefs();
 			const selectedPaths = new Set(selectedRefs.map(r => r.id));
 			for (const n of notes) {
-				const folder = n.path.includes('/') ? n.path.split('/').slice(0, -1).join('/') : '';
 				allItems.push({
 					value: n.path,
-					label: `${folder ? folder + '/' : ''}@${n.name}`,
-					description: n.name,
-					category: folder || 'root',
+					label: `@${n.name}`,
 					badge: selectedPaths.has(n.path) ? '✓' : undefined,
 				});
 			}

@@ -165,21 +165,9 @@ export class Autocomplete {
     }
 
     if (this.mode === '@') {
-      // Grouped by folder (same pattern as slash commands)
-      const groups = new Map<string, ACItem[]>();
-      for (const item of this.filtered) {
-        const cat = item.category ?? 'root';
-        if (!groups.has(cat)) groups.set(cat, []);
-        groups.get(cat)!.push(item);
-      }
-      let firstInGroup = true;
-      for (const [cat, items] of groups) {
-        if (!firstInGroup) ac.createDiv({ cls: 'copsilot-ac-separator' });
-        firstInGroup = false;
-        ac.createDiv({ cls: 'copsilot-ac-header', text: cat === 'root' ? '/' : '/' + cat });
-        for (let i = 0; i < items.length; i++) {
-          this.renderItem(ac, items[i], this.filtered.indexOf(items[i]));
-        }
+      // Flat list — only @name label, no description, just optional ✓ badge
+      for (let i = 0; i < this.filtered.length; i++) {
+        this.renderItem(ac, this.filtered[i], i);
       }
       return;
     }
