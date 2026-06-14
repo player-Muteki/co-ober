@@ -22,7 +22,9 @@ export class ContextMention {
    */
   listAllNotes(): ContextRef[] {
     const vault = this.app.vault;
-    const files = vault.getMarkdownFiles().map((f: TFile) => ({
+    const files = vault.getMarkdownFiles()
+      .sort((a, b) => (b.stat?.mtime ?? 0) - (a.stat?.mtime ?? 0))
+      .map((f: TFile) => ({
       id: f.path,
       type: 'note' as const,
       name: f.basename,

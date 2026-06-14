@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.13 - 2026-06-14
+
+### Improved
+- **@ mention popup**: files sorted by last modified time (most recent first), grouped by folder, selected notes marked with ✓ badge.
+- **Popover layout**: dropdown width matches input area, filename no longer hidden by long path, badge pushed to the right.
+
 ## 0.1.12 - 2026-06-14
 
 ### Fixed

@@ -1,13 +1,12 @@
 import { t } from '../i18n/index';
-import type { SlashCategory } from '../commands/registry';
 
 export interface ACItem {
   value: string;
   label: string;
   description?: string;
-  /** For slash commands: which group section the item belongs to. */
-  category?: SlashCategory;
-  /** For slash commands: the type badge text (Builtin / ACP / Custom). */
+  /** Group section: SlashCategory for / commands, folder path for @ mentions. */
+  category?: string;
+  /** Badge text (Builtin / ACP / ✓ for selected). */
   badge?: string;
 }
 
@@ -166,9 +165,21 @@ export class Autocomplete {
     }
 
     if (this.mode === '@') {
-      // Flat list for @mentions
-      for (let i = 0; i < this.filtered.length; i++) {
-        this.renderItem(ac, this.filtered[i], i);
+      // Grouped by folder (same pattern as slash commands)
+      const groups = new Map<string, ACItem[]>();
+      for (const item of this.filtered) {
+        const cat = item.category ?? 'root';
+        if (!groups.has(cat)) groups.set(cat, []);
+        groups.get(cat)!.push(item);
+      }
+      let firstInGroup = true;
+      for (const [cat, items] of groups) {
+        if (!firstInGroup) ac.createDiv({ cls: 'copsilot-ac-separator' });
+        firstInGroup = false;
+        ac.createDiv({ cls: 'copsilot-ac-header', text: cat === 'root' ? '/' : '/' + cat });
+        for (let i = 0; i < items.length; i++) {
+          this.renderItem(ac, items[i], this.filtered.indexOf(items[i]));
+        }
       }
       return;
     }

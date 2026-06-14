@@ -581,12 +581,21 @@ export class CopsilotView extends ItemView {
 
 	private showAC(mode: '@' | '/'): void {
 		this.closeAutocomplete();
-		const allItems: Array<{ value: string; label: string; description?: string; category?: 'session' | 'view' | 'agent'; badge?: string }> = [];
+		const allItems: Array<{ value: string; label: string; description?: string; category?: string; badge?: string }> = [];
 
 		if (mode === '@') {
 			const notes = this.mention.listAllNotes();
+			const selectedRefs = this.mention.getAllRefs();
+			const selectedPaths = new Set(selectedRefs.map(r => r.id));
 			for (const n of notes) {
-				allItems.push({ value: n.path, label: `@${n.name}`, description: n.path });
+				const folder = n.path.includes('/') ? n.path.split('/').slice(0, -1).join('/') : '';
+				allItems.push({
+					value: n.path,
+					label: `${folder ? folder + '/' : ''}@${n.name}`,
+					description: n.name,
+					category: folder || 'root',
+					badge: selectedPaths.has(n.path) ? '✓' : undefined,
+				});
 			}
 		} else {
 			// Use the command registry (builtins + ACP synced)
