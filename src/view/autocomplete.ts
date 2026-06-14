@@ -1,147 +1,216 @@
 import { t } from '../i18n/index';
+import type { SlashCategory } from '../commands/registry';
 
 export interface ACItem {
-	value: string;
-	label: string;
-	description?: string;
+  value: string;
+  label: string;
+  description?: string;
+  /** For slash commands: which group section the item belongs to. */
+  category?: SlashCategory;
+  /** For slash commands: the type badge text (Builtin / ACP / Custom). */
+  badge?: string;
 }
 
 export interface AutocompleteCallbacks {
-	onSelect(value: string, mode: '@' | '/'): void;
+  onSelect(value: string, mode: '@' | '/'): void;
 }
 
 export class Autocomplete {
-	private dropdownEl: HTMLDivElement | null = null;
-	private outsideHandler: ((e: MouseEvent) => void) | null = null;
-	private keyHandler: ((e: KeyboardEvent) => void) | null = null;
-	private doc: Document;
+  private dropdownEl: HTMLDivElement | null = null;
+  private outsideHandler: ((e: MouseEvent) => void) | null = null;
+  private keyHandler: ((e: KeyboardEvent) => void) | null = null;
+  private doc: Document;
+  /** Current mode (for filtering the right item list). */
+  private mode: '@' | '/' = '@';
+  /** All available items for the current mode. */
+  private allItems: ACItem[] = [];
+  /** Filtered (visible) items after applying the query. */
+  private filtered: ACItem[] = [];
+  /** Current selection index within filtered. */
+  private selIdx = 0;
+  /** Characters typed after triggering the popover. */
+  private filterText = '';
 
-	constructor(
-		private container: HTMLElement,
-		private callbacks: AutocompleteCallbacks,
-	) {
-		this.doc = container.ownerDocument ?? activeDocument;
-	}
+  constructor(
+    _container: HTMLElement,
+    private callbacks: AutocompleteCallbacks,
+  ) {
+    this.doc = _container.ownerDocument ?? activeDocument;
+  }
 
-	open(items: ACItem[], mode: '@' | '/'): void {
-		this.close();
+  open(items: ACItem[], mode: '@' | '/'): void {
+    this.close();
+    this.mode = mode;
+    this.allItems = items;
+    this.filterText = '';
+    this.selIdx = 0;
+    this.applyFilter();
+    this.render();
 
-		const ac = this.container.createDiv({ cls: 'copsilot-ac-dropdown' });
-		this.dropdownEl = ac;
+    this.keyHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        this.close();
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        this.selIdx = Math.min(this.selIdx + 1, Math.max(0, this.filtered.length - 1));
+        this.render();
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        this.selIdx = Math.max(0, this.selIdx - 1);
+        this.render();
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (e.key === 'Enter') {
+        if (this.filtered.length > 0) {
+          this.callbacks.onSelect(this.filtered[this.selIdx].value, mode);
+        }
+        this.close();
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (e.key === 'Backspace') {
+        if (this.filterText.length > 0) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.filterText = this.filterText.slice(0, -1);
+          this.applyFilter();
+          this.render();
+        } else {
+          this.close();
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.filterText += e.key;
+        this.applyFilter();
+        this.render();
+      }
+    };
+    this.doc.addEventListener('keydown', this.keyHandler, true);
 
-		let selIdx = 0;
-		let filterText = '';
-		let filtered = items;
+    this.outsideHandler = (evt: MouseEvent) => {
+      const target = evt.target as Node;
+      if (this.dropdownEl?.contains(target)) return;
+      this.close();
+    };
+    this.doc.addEventListener('mousedown', this.outsideHandler, true);
+  }
 
-		const applyFilter = () => {
-			if (!filterText) {
-				filtered = items;
-			} else {
-				const lower = filterText.toLowerCase();
-				filtered = items.filter(it => it.label.toLowerCase().includes(lower) || it.description?.toLowerCase().includes(lower));
-			}
-			selIdx = 0;
-		};
+  close(): void {
+    if (this.dropdownEl) {
+      this.dropdownEl.remove();
+      this.dropdownEl = null;
+    }
+    if (this.outsideHandler) {
+      this.doc.removeEventListener('mousedown', this.outsideHandler, true);
+      this.outsideHandler = null;
+    }
+    if (this.keyHandler) {
+      this.doc.removeEventListener('keydown', this.keyHandler, true);
+      this.keyHandler = null;
+    }
+    this.allItems = [];
+    this.filtered = [];
+  }
 
-		const render = () => {
-			ac.empty();
-			if (filtered.length === 0) {
-				ac.createDiv({ cls: 'copsilot-ac-item', text: t().autocomplete.noMatches });
-				return;
-			}
-			for (let i = 0; i < filtered.length; i++) {
-				const el = ac.createDiv({ cls: `copsilot-ac-item${i === selIdx ? ' selected' : ''}` });
-				el.createSpan({ text: filtered[i].label, cls: 'ac-label' });
-				if (filtered[i].description) el.createSpan({ text: filtered[i].description, cls: 'ac-desc' });
-				el.onclick = () => {
-					this.callbacks.onSelect(filtered[i].value, mode);
-				};
-			}
-		};
-		render();
+  isOpen(): boolean {
+    return this.dropdownEl !== null;
+  }
 
-		this.keyHandler = (e: KeyboardEvent) => {
-			if (e.key === 'Escape') {
-				this.close();
-				e.preventDefault();
-				e.stopPropagation();
-				return;
-			}
-			if (e.key === 'ArrowDown') {
-				selIdx = (selIdx + 1) % Math.max(1, filtered.length);
-				render();
-				e.preventDefault();
-				e.stopPropagation();
-				return;
-			}
-			if (e.key === 'ArrowUp') {
-				selIdx = (selIdx - 1 + filtered.length) % Math.max(1, filtered.length);
-				render();
-				e.preventDefault();
-				e.stopPropagation();
-				return;
-			}
-			if (e.key === 'Enter') {
-				if (filtered.length > 0) {
-					this.callbacks.onSelect(filtered[selIdx].value, mode);
-				}
-				this.close();
-				e.preventDefault();
-				e.stopPropagation();
-				return;
-			}
-			if (e.key === 'Backspace') {
-				if (filterText.length > 0) {
-					e.preventDefault();
-					e.stopPropagation();
-					filterText = filterText.slice(0, -1);
-					applyFilter();
-					render();
-				} else {
-					this.close();
-					e.preventDefault();
-					e.stopPropagation();
-				}
-				return;
-			}
-			if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
-				e.preventDefault();
-				e.stopPropagation();
-				filterText += e.key;
-				applyFilter();
-				render();
-			}
-		};
-		this.doc.addEventListener('keydown', this.keyHandler, true);
+  destroy(): void {
+    this.close();
+  }
 
-		this.outsideHandler = (evt: MouseEvent) => {
-			const target = evt.target as Node;
-			if (ac.contains(target)) return;
-			this.close();
-		};
-		this.doc.addEventListener('mousedown', this.outsideHandler, true);
-	}
+  // ── Private ──
 
-	close(): void {
-		if (this.dropdownEl) {
-			this.dropdownEl.remove();
-			this.dropdownEl = null;
-		}
-		if (this.outsideHandler) {
-			this.doc.removeEventListener('mousedown', this.outsideHandler, true);
-			this.outsideHandler = null;
-		}
-		if (this.keyHandler) {
-			this.doc.removeEventListener('keydown', this.keyHandler, true);
-			this.keyHandler = null;
-		}
-	}
+  private applyFilter(): void {
+    if (!this.filterText) {
+      this.filtered = [...this.allItems];
+    } else {
+      const lower = this.filterText.toLowerCase();
+      this.filtered = this.allItems.filter(
+        (it) =>
+          it.label.toLowerCase().includes(lower) ||
+          it.description?.toLowerCase().includes(lower),
+      );
+    }
+    this.selIdx = 0;
+  }
 
-	isOpen(): boolean {
-		return this.dropdownEl !== null;
-	}
+  /** Render the dropdown with grouped sections for slash commands. */
+  private render(): void {
+    if (!this.dropdownEl) return;
+    const ac = this.dropdownEl;
+    ac.empty();
 
-	destroy(): void {
-		this.close();
-	}
+    if (this.filtered.length === 0) {
+      ac.createDiv({ cls: 'copsilot-ac-item empty', text: t().autocomplete.noMatches });
+      return;
+    }
+
+    if (this.mode === '@') {
+      // Flat list for @mentions
+      for (let i = 0; i < this.filtered.length; i++) {
+        this.renderItem(ac, this.filtered[i], i);
+      }
+      return;
+    }
+
+    // Grouped rendering for slash commands (mode === '/')
+    const groups = new Map<string, ACItem[]>();
+    for (const item of this.filtered) {
+      const cat = item.category ?? 'agent';
+      if (!groups.has(cat)) groups.set(cat, []);
+      groups.get(cat)!.push(item);
+    }
+
+    let firstInGroup = true;
+    for (const [cat, items] of groups) {
+      if (!firstInGroup) {
+        ac.createDiv({ cls: 'copsilot-ac-separator' });
+      }
+      firstInGroup = false;
+
+      // Section header
+      const headerLabel = ((t() as unknown) as Record<string, Record<string, string>>).slashCategory?.[cat] ?? cat;
+      ac.createDiv({ cls: 'copsilot-ac-header', text: headerLabel });
+
+      for (let i = 0; i < items.length; i++) {
+        this.renderItem(ac, items[i], this.filtered.indexOf(items[i]));
+      }
+    }
+  }
+
+  private renderItem(ac: HTMLDivElement, item: ACItem, idx: number): void {
+    const el = ac.createDiv({
+      cls: `copsilot-ac-item${idx === this.selIdx ? ' selected' : ''}`,
+    });
+    el.createSpan({ text: item.label, cls: 'ac-label' });
+
+    if (item.badge) {
+      el.createSpan({ text: item.badge, cls: 'ac-badge' });
+    }
+
+    if (item.description) {
+      el.createSpan({ text: item.description, cls: 'ac-desc' });
+    }
+
+    el.onclick = () => {
+      this.callbacks.onSelect(item.value, this.mode);
+      this.close();
+    };
+  }
 }

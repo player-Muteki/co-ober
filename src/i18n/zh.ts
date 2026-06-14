@@ -88,7 +88,15 @@ const zh: Locale = {
   },
 
   slash: {
-    compact: '压缩会话',
+    compact: '用 AI 摘要压缩会话',
+    new: '开始新会话',
+    clear: '清空对话显示',
+    help: '显示所有可用的斜杠命令',
+  },
+  slashCategory: {
+    session: '会话',
+    view: '视图',
+    agent: 'Agent 命令',
   },
 
   autocomplete: {

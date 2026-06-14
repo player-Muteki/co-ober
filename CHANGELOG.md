@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.9 - 2026-06-14
+
+### Features
+- Slash command system overhaul: `CommandRegistry` with builtin + ACP proxy commands.
+- New builtin slash commands: `/new` (new session), `/clear` (clear display), `/help` (show all commands).
+- ACP `available_commands_update` notifications now sync into the registry automatically.
+- Popover UI (`Autocomplete`) upgraded with category grouping, type badges (ACP/Builtin), and improved keyboard navigation.
+- Command alias support (`/summarize` → `/compact`).
+- `addSystemMessage()` renderer method for richly formatted system messages.
+- Slash command interception in `send()` — builtin commands execute locally without ACP round-trip.
+
+### Housekeeping
+- Remove dead `isBuiltInCommand()` from executor (replaced by `CommandRegistry.isBuiltin()`).
+- Import cleanup: inline `import('../types')` replaced with proper top-level imports.
+
 ## 0.1.8 - 2026-06-14
 
 ### Refactoring

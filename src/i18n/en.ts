@@ -86,7 +86,15 @@ const en = {
   },
 
   slash: {
-    compact: 'compact the session',
+    compact: 'compact the session with an AI summary',
+    new: 'start a new session',
+    clear: 'clear the conversation display',
+    help: 'show all available slash commands',
+  },
+  slashCategory: {
+    session: 'Session',
+    view: 'View',
+    agent: 'Agent Commands',
   },
 
   autocomplete: {

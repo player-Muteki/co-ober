@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseSlashCommand, isBuiltInCommand } from './executor';
+import { parseSlashCommand } from './executor';
 
 describe('parseSlashCommand', () => {
   it('should parse a simple slash command', () => {
@@ -30,13 +30,5 @@ describe('parseSlashCommand', () => {
   it('should handle slash-only input', () => {
     const result = parseSlashCommand('/');
     expect(result).toBeNull();
-  });
-});
-
-describe('isBuiltInCommand', () => {
-  it('should return false for all commands (all route through ACP)', () => {
-    expect(isBuiltInCommand('compact')).toBe(false);
-    expect(isBuiltInCommand('init')).toBe(false);
-    expect(isBuiltInCommand('review')).toBe(false);
   });
 });

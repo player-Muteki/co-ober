@@ -577,9 +577,9 @@ export class CopsilotView extends ItemView {
 
 	// ── Autocomplete ──
 
-	private showAC(mode: '@' | '/'): void {
+	private async showAC(mode: '@' | '/'): Promise<void> {
 		this.closeAutocomplete();
-		const allItems: Array<{ value: string; label: string; description?: string }> = [];
+		const allItems: Array<{ value: string; label: string; description?: string; category?: import('../commands/registry').SlashCategory; badge?: string }> = [];
 
 		if (mode === '@') {
 			const notes = this.mention.listAllNotes();
@@ -587,8 +587,23 @@ export class CopsilotView extends ItemView {
 				allItems.push({ value: n.path, label: `@${n.name}`, description: n.path });
 			}
 		} else {
-			for (const cmd of this.controller.state.availableCommands) {
-				allItems.push({ value: cmd.name, label: `/${cmd.name}`, description: cmd.description });
+			// Use the command registry (builtins + ACP synced)
+			const reg = (await import('../commands/registry')).commandRegistry;
+			const all = reg.getAll();
+			for (const cmd of all) {
+				allItems.push({
+					value: cmd.trigger,
+					label: `/${cmd.trigger}`,
+					description: cmd.description,
+					category: cmd.type === 'builtin' ? cmd.category : 'agent',
+					badge: cmd.type === 'builtin' ? undefined : cmd.type.toUpperCase(),
+				});
+			}
+			// Fallback: show ACP available commands not yet in registry
+			if (all.length === 0) {
+				for (const cmd of this.controller.state.availableCommands) {
+					allItems.push({ value: cmd.name, label: `/${cmd.name}`, description: cmd.description });
+				}
 			}
 			if (allItems.length === 0) {
 				allItems.push({ value: 'compact', label: '/compact', description: t().slash.compact });

@@ -1,13 +1,17 @@
 import type { AvailableCommand } from '../types';
 
-// Parse slash command from prompt text
+/** Result of parsing a candidate slash command from user input. */
 export interface ParsedCommand {
   name: string;
   args: string;
   raw: string;
 }
 
-// Try to parse a /command from the prompt text
+/**
+ * Try to parse a /command from the beginning of the input string.
+ *
+ * Returns null when the input is a plain message, not a slash command.
+ */
 export function parseSlashCommand(input: string): ParsedCommand | null {
   const trimmed = input.trimStart();
   if (!trimmed.startsWith('/')) return null;
@@ -24,13 +28,9 @@ export function parseSlashCommand(input: string): ParsedCommand | null {
   return { name, args, raw: `/${name}${args ? ' ' + args : ''}` };
 }
 
-// Check if a command is built-in (handled locally instead of ACP)
-// All commands now route through ACP agent — no local interception
-export function isBuiltInCommand(_name: string): boolean {
-  return false;
-}
-
-// Format command for display in toolbar
+/**
+ * Format a command for display in the popover / toolbar.
+ */
 export function formatCommandDisplayName(cmd: AvailableCommand): string {
   return `/${cmd.name}`;
 }

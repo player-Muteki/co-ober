@@ -20,6 +20,8 @@ import type { PermissionBanner } from './permissionBanner';
 import type { InlineEditPanel } from './inlineEditPanel';
 import { buildSystemPrompt } from '../context/injection';
 import { AcpTimeoutError, AcpProcessExitError, AcpAbortError } from '../client/AcpErrors';
+import { commandRegistry } from '../commands/registry';
+import { parseSlashCommand } from '../commands/executor';
 
 export interface ControllerCallbacks {
 	onShowWelcome(connected: boolean): void;
@@ -73,9 +75,64 @@ export class CopsilotViewController {
 			onConfigUpdate: (opts) => this.applyConfigOptions(opts),
 			onModeUpdate: (modeId, modes) => this.applyModeUpdate(modeId, modes),
 			onModelsUpdate: (modelId, models) => this.applyModelUpdate(modelId, models),
-			onCommandsUpdate: () => {},
+			onCommandsUpdate: (commands) => commandRegistry.updateAcpCommands(commands),
 			onUsageUpdate: () => this.deps.updateContextMeter(this.state.usage),
 			onSyncFailure: (message) => deps.renderer.addError(message),
+		});
+
+		// Register builtin slash commands
+		this.registerBuiltinCommands();
+	}
+
+	private registerBuiltinCommands(): void {
+		const registry = commandRegistry;
+		registry.registerBuiltin({
+			id: 'compact',
+			trigger: 'compact',
+			aliases: ['summarize'],
+			title: 'Compact Session',
+			description: t().slash.compact,
+			category: 'session',
+			type: 'builtin',
+			run: async () => { await this.compactSession(); },
+		});
+		registry.registerBuiltin({
+			id: 'new',
+			trigger: 'new',
+			title: 'New Session',
+			description: t().slash.new,
+			category: 'session',
+			type: 'builtin',
+			run: async () => { await this.createNewSession(); },
+		});
+		registry.registerBuiltin({
+			id: 'clear',
+			trigger: 'clear',
+			title: 'Clear Screen',
+			description: t().slash.clear,
+			category: 'view',
+			type: 'builtin',
+			run: async () => {
+				this.state.clear();
+				this.deps.renderer.clear();
+				this.callbacks.onShowWelcome(true);
+			},
+		});
+		registry.registerBuiltin({
+			id: 'help',
+			trigger: 'help',
+			title: 'Help',
+			description: t().slash.help,
+			category: 'view',
+			type: 'builtin',
+			run: async () => {
+				const cmds = registry.getAll();
+				const helpText = cmds.map((c) =>
+					`- **/${c.trigger}**${c.aliases?.length ? ` (${c.aliases.join(', ')})` : ''}: ${c.description}`
+				).join('\n');
+				this.deps.renderer.addUserMessage('/help');
+				this.deps.renderer.addSystemMessage(`### Available Commands\n\n${helpText}`);
+			},
 		});
 	}
 
@@ -231,6 +288,22 @@ export class CopsilotViewController {
 		}
 	}
 
+	async compactSession(): Promise<void> {
+		// Cancel any active generation, then send /compact through the ACP agent
+		await this.cancelActiveGeneration();
+		const client = this.deps.plugin.getClient();
+		if (!client || !this.state.sessionId) return;
+		try {
+			await client.cancel(this.state.sessionId);
+		} catch {
+			// Ignore cancel errors
+		}
+	}
+
+	async createNewSession(): Promise<void> {
+		await this.newSession();
+	}
+
 	async newSession(): Promise<void> {
 		await this.deps.sessionStore.save();
 		const connected = await this.ensureClientConnected();
@@ -365,6 +438,17 @@ export class CopsilotViewController {
 		if (this.busy) {
 			this.promptQueue.push({ text, refs });
 			return;
+		}
+		// Intercept builtin slash commands before routing to ACP agent
+		const parsed = parseSlashCommand(text);
+		if (parsed && commandRegistry.isBuiltin(parsed.name)) {
+			const def = commandRegistry.find(parsed.name);
+			if (def) {
+				this.deps.renderer.addUserMessage(text);
+				this.streamCtrl.saveMessage('user', text, 'text');
+				await def.run(parsed.args);
+				return;
+			}
 		}
 		const sessionId = await this.ensureRuntimeSession();
 		const c = this.deps.plugin.getClient();

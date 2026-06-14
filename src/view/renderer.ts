@@ -88,6 +88,13 @@ export class ChatRenderer {
     });
   }
 
+  addSystemMessage(text: string): void {
+    const wrap = this.container.createDiv({ cls: 'copsilot-msg system' });
+    const body = wrap.createDiv({ cls: 'copsilot-msg-body' });
+    MarkdownRenderer.renderMarkdown(text, body, '', this.app as unknown as Component);
+    this.scrollToBottom();
+  }
+
   addUserMessage(text: string, timestamp?: number): void {
     const wrap = this.container.createDiv({ cls: 'copsilot-msg user' });
     wrap.dataset.timestamp = this.formatTimestamp(timestamp ?? Date.now());
