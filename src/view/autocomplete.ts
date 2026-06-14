@@ -198,7 +198,26 @@ export class Autocomplete {
     const el = ac.createDiv({
       cls: `copsilot-ac-item${idx === this.selIdx ? ' selected' : ''}`,
     });
-    el.createSpan({ text: item.label, cls: 'ac-label' });
+
+    // Highlight matching portion of the label when filtering @mentions
+    if (this.filterText && this.filterText.length > 0 && this.mode === '@') {
+      const lower = item.label.toLowerCase();
+      const q = this.filterText.toLowerCase();
+      const pos = lower.indexOf(q);
+      if (pos >= 0) {
+        const before = item.label.slice(0, pos);
+        const match = item.label.slice(pos, pos + q.length);
+        const after = item.label.slice(pos + q.length);
+        const labelEl = el.createSpan({ cls: 'ac-label' });
+        labelEl.createSpan({ text: before });
+        labelEl.createEl('mark', { text: match });
+        labelEl.createSpan({ text: after });
+      } else {
+        el.createSpan({ text: item.label, cls: 'ac-label' });
+      }
+    } else {
+      el.createSpan({ text: item.label, cls: 'ac-label' });
+    }
 
     if (item.badge) {
       el.createSpan({ text: item.badge, cls: 'ac-badge' });

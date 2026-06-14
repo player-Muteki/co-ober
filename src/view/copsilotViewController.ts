@@ -567,11 +567,26 @@ export class CopsilotViewController {
 		}
 	}
 
+	/** Cache note content by path to avoid re-reading the same file. */
+	private noteContentCache = new Map<string, { name: string; content: string }>();
+	private cacheSessionId: string | null = null;
+
 	async buildParts(text: string, refs: ContextRef[]): Promise<PromptPart[]> {
 		const parts: PromptPart[] = [];
 
+		// Clear stale cache on session change
+		if (this.cacheSessionId && this.cacheSessionId !== this.state.sessionId) {
+			this.noteContentCache.clear();
+		}
+		this.cacheSessionId = this.state.sessionId;
+
 		const resolved: Array<{ name: string; content: string }> = [];
 		for (const ref of refs) {
+			const cached = this.noteContentCache.get(ref.path);
+			if (cached) {
+				resolved.push(cached);
+				continue;
+			}
 			const result = await this.deps.resolver.resolveNote(ref.path);
 			if (result) resolved.push(result);
 		}

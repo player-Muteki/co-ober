@@ -13,6 +13,7 @@ import { SyncEngine } from '../sync/engine';
 import { createSessionStore } from '../chat/session';
 import type { SessionStore } from '../chat/session';
 import { SessionDropdown } from './sessionDropdown';
+import { commandRegistry } from '../commands/registry';
 import { Autocomplete } from './autocomplete';
 import { DragDropManager } from './dragDropManager';
 import { PermissionBanner } from './permissionBanner';
@@ -81,7 +82,7 @@ export class CopsilotView extends ItemView {
 		el.addClass('copsilot-view');
 
 		// Init core modules
-		this.mention = new ContextMention(this.plugin.app.vault);
+		this.mention = new ContextMention(this.plugin.app);
 		this.resolver = new ContextResolver(this.plugin.app.vault, this.plugin.settings.maxNoteSize);
 		this.syncEngine = new SyncEngine(this.plugin.app.vault, this.plugin.settings.syncRules);
 		this.sessionStore = createSessionStore(this.plugin);
@@ -527,7 +528,8 @@ export class CopsilotView extends ItemView {
 		const chip = this.contextChipsEl.createDiv({ cls: 'copsilot-chip' });
 		chip.dataset.refId = ref.id;
 		chip.title = ref.path;
-		chip.createSpan({ text: `@${ref.name}` });
+		const label = ref.path !== ref.name ? `${ref.name} (${ref.path})` : ref.name;
+		chip.createSpan({ text: `@${label}` });
 		const x = chip.createSpan({ cls: 'chip-remove', text: '×' });
 		x.onclick = (e: MouseEvent) => { e.stopPropagation(); this.removeChip(ref.id); };
 	}
@@ -577,9 +579,9 @@ export class CopsilotView extends ItemView {
 
 	// ── Autocomplete ──
 
-	private async showAC(mode: '@' | '/'): Promise<void> {
+	private showAC(mode: '@' | '/'): void {
 		this.closeAutocomplete();
-		const allItems: Array<{ value: string; label: string; description?: string; category?: import('../commands/registry').SlashCategory; badge?: string }> = [];
+		const allItems: Array<{ value: string; label: string; description?: string; category?: 'session' | 'view' | 'agent'; badge?: string }> = [];
 
 		if (mode === '@') {
 			const notes = this.mention.listAllNotes();
@@ -588,8 +590,7 @@ export class CopsilotView extends ItemView {
 			}
 		} else {
 			// Use the command registry (builtins + ACP synced)
-			const reg = (await import('../commands/registry')).commandRegistry;
-			const all = reg.getAll();
+			const all = commandRegistry.getAll();
 			for (const cmd of all) {
 				allItems.push({
 					value: cmd.trigger,

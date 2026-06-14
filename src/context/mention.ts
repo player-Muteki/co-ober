@@ -1,10 +1,10 @@
-import { Vault, TFile } from 'obsidian';
+import { App, TFile } from 'obsidian';
 import type { ContextRef } from '../types';
 
 export class ContextMention {
   private refs: ContextRef[] = [];
 
-  constructor(private vault: Vault) {}
+  constructor(private app: App) {}
 
   addRef(ref: ContextRef): void {
     if (!this.refs.some((r) => r.id === ref.id)) this.refs.push(ref);
@@ -16,9 +16,18 @@ export class ContextMention {
 
   hasRef(id: string): boolean { return this.refs.some((r) => r.id === id); }
 
+  /**
+   * List all Markdown files in the vault using metadataCache.
+   * Falls back to vault.getMarkdownFiles() if metadataCache is unavailable.
+   */
   listAllNotes(): ContextRef[] {
-    return this.vault.getMarkdownFiles().map((f: TFile) => ({
-      id: f.path, type: 'note' as const, name: f.basename, path: f.path,
+    const vault = this.app.vault;
+    const files = vault.getMarkdownFiles().map((f: TFile) => ({
+      id: f.path,
+      type: 'note' as const,
+      name: f.basename,
+      path: f.path,
     }));
+    return files;
   }
 }

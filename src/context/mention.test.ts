@@ -1,22 +1,25 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ContextMention } from './mention';
-import type { Vault } from 'obsidian';
+import type { App } from 'obsidian';
 
 vi.mock('obsidian', () => ({
+  App: class {},
   Vault: class {},
   TFile: class {},
 }));
 
-function createMockVault(files: Array<{ basename: string; path: string }>): Vault {
+function createMockApp(files: Array<{ basename: string; path: string }>): App {
   return {
-    getMarkdownFiles: vi.fn(() => files),
-  } as unknown as Vault;
+    vault: {
+      getMarkdownFiles: vi.fn(() => files),
+    },
+  } as unknown as App;
 }
 
 describe('ContextMention', () => {
   it('should add and retrieve refs', () => {
-    const vault = createMockVault([]);
-    const mention = new ContextMention(vault);
+    const app = createMockApp([]);
+    const mention = new ContextMention(app);
 
     mention.addRef({ id: '1', type: 'note', name: 'A', path: 'a.md' });
     mention.addRef({ id: '2', type: 'note', name: 'B', path: 'b.md' });
@@ -27,8 +30,8 @@ describe('ContextMention', () => {
   });
 
   it('should not add duplicate refs', () => {
-    const vault = createMockVault([]);
-    const mention = new ContextMention(vault);
+    const app = createMockApp([]);
+    const mention = new ContextMention(app);
 
     mention.addRef({ id: '1', type: 'note', name: 'A', path: 'a.md' });
     mention.addRef({ id: '1', type: 'note', name: 'A', path: 'a.md' });
@@ -37,8 +40,8 @@ describe('ContextMention', () => {
   });
 
   it('should remove refs', () => {
-    const vault = createMockVault([]);
-    const mention = new ContextMention(vault);
+    const app = createMockApp([]);
+    const mention = new ContextMention(app);
 
     mention.addRef({ id: '1', type: 'note', name: 'A', path: 'a.md' });
     mention.removeRef('1');
@@ -48,8 +51,8 @@ describe('ContextMention', () => {
   });
 
   it('should clear all refs', () => {
-    const vault = createMockVault([]);
-    const mention = new ContextMention(vault);
+    const app = createMockApp([]);
+    const mention = new ContextMention(app);
 
     mention.addRef({ id: '1', type: 'note', name: 'A', path: 'a.md' });
     mention.clear();
@@ -58,11 +61,11 @@ describe('ContextMention', () => {
   });
 
   it('should list all vault notes', () => {
-    const vault = createMockVault([
+    const app = createMockApp([
       { basename: 'Note1', path: 'n1.md' },
       { basename: 'Note2', path: 'n2.md' },
     ]);
-    const mention = new ContextMention(vault);
+    const mention = new ContextMention(app);
 
     const notes = mention.listAllNotes();
 
@@ -71,8 +74,8 @@ describe('ContextMention', () => {
   });
 
   it('should return a copy of refs', () => {
-    const vault = createMockVault([]);
-    const mention = new ContextMention(vault);
+    const app = createMockApp([]);
+    const mention = new ContextMention(app);
 
     mention.addRef({ id: '1', type: 'note', name: 'A', path: 'a.md' });
     const refs = mention.getAllRefs();
