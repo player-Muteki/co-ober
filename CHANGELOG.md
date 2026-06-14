@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.1.8 - 2026-06-14
+
+### Refactoring
+- Comprehensive architecture review: unified types, security hardening, memory lifecycle management.
+- Extract Windows command resolution to dedicated utility module.
+- safeClone polyfill for structuredClone cross-environment compatibility.
+- SyncEngine path security: deduplicate redundant isSafePath check.
+- TerminalManager: robust command parsing with proper token splitting, stderr capture, output truncation.
+
+### Fixed
+- Cancel race condition: send RPC before clearing local streaming state.
+- PermissionBanner show() semantics: eliminate fragile double-assignment pattern.
+- disposeConnection ordering: notify onClose before clearing transport.
+- methodCache cleared on reconnect to avoid stale method names.
+- console.debug usage_update noise: conditional on DEBUG_COPSILOT env var.
+- Remove duplicate sessionInfo parsing in extractSessionSnapshot.
+- Remove dead code AcpClient.requestPermission (unused, handled by AcpRequestHandler).
+- SessionUpdateNormalizer memory leak: add trimMap eviction (200/100 entry caps).
+- ChatInput: add dispose() with global event listener cleanup + locale unsubscribe.
+- InputToolbar: add dispose() with locale unsubscribe.
+- PermissionBanner: add dispose() with locale unsubscribe.
+- copsilotView.onClose: integrate input/toolbar/permissionBanner dispose().
+- pruneSessions deferred via setTimeout to avoid blocking save IO.
+
+### Housekeeping
+- Unified UsageInfo type definition, removed 3 duplicate interfaces.
+- OpencodeClient.permissionMode typed as PermissionLevel (was string).
+- AgentRuntime.permissionMode explicitly typed.
+- Inline import('../types') references replaced with top-level imports.
+
 ## 0.1.7 - 2026-06-12
 
 ### Refactoring
