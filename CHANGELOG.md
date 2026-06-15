@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.15 - 2026-06-15
+
+### Added
+- **Multi-source command architecture**: `CommandSource` abstraction with pluggable sources (builtin, ACP, file, skill, MCP).
+- **File-based commands**: `.opencode/commands/*.md` auto-discovery with YAML frontmatter parsing and vault file watching.
+- **Template expansion**: `$ARGUMENTS`, `$1`-`$9` placeholder substitution for file commands.
+- **New builtin commands**: `/add-dir [path]`, `/resume`, `/fork`, `/model <id>`, `/mode <id>` with capability gating via `enabled()`.
+- **Enhanced autocomplete**: two-row rendering (argument hint in grey italic + description), color-coded source badges (Builtin/ACP/Custom/MCP/Skill).
+- **Command visibility gating**: `enabled()` function on `SlashCommandDef` filters commands dynamically based on provider capabilities.
+- `commandRegistry.subscribe()` for live UI refresh on command list changes.
+- `commandRegistry.getGrouped()` for category-grouped access.
+- FrontmatterParser: supports scalars, inline arrays, block arrays, and nested mappings in YAML frontmatter.
+
+### Fixed
+- `/compact` now actually sends the compact request to the ACP agent instead of silently doing nothing.
+
+### Changed
+- `SlashCommandDef.type` renamed to `source` with expanded `CommandSourceType` union (`builtin` | `acp` | `file` | `mcp` | `skill`).
+- Autocomplete items use flex-column layout with `.ac-row` containers for multi-line support.
+- Badge CSS classes: `.ac-badge-builtin`, `.ac-badge-acp`, `.ac-badge-custom`, `.ac-badge-mcp`, `.ac-badge-skill`.
+
 ## 0.1.14 - 2026-06-14
 
 ### Fixed
