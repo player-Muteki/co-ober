@@ -14,6 +14,7 @@ import { createSessionStore } from '../chat/session';
 import type { SessionStore } from '../chat/session';
 import { SessionDropdown } from './sessionDropdown';
 import { commandRegistry } from '../commands/registry';
+import { FileCommandStorage } from '../commands/storage/FileCommandStorage';
 import { Autocomplete } from './autocomplete';
 import { DragDropManager } from './dragDropManager';
 import { PermissionBanner } from './permissionBanner';
@@ -87,6 +88,10 @@ export class CopsilotView extends ItemView {
 		this.syncEngine = new SyncEngine(this.plugin.app.vault, this.plugin.settings.syncRules);
 		this.sessionStore = createSessionStore(this.plugin);
 		await this.sessionStore.load();
+
+		// Register file-based commands from .opencode/commands/*.md
+		const fileStorage = new FileCommandStorage(this.plugin.app.vault);
+		commandRegistry.registerSource(fileStorage);
 
 		// Restore active session
 		const savedId = this.plugin.activeSessionId;
@@ -581,7 +586,7 @@ export class CopsilotView extends ItemView {
 
 	private showAC(mode: '@' | '/'): void {
 		this.closeAutocomplete();
-		const allItems: Array<{ value: string; label: string; description?: string; category?: string; badge?: string }> = [];
+		const allItems: Array<{ value: string; label: string; description?: string; category?: string; badge?: string; argumentHint?: string }> = [];
 
 		if (mode === '@') {
 			const notes = this.mention.listAllNotes();
@@ -595,23 +600,28 @@ export class CopsilotView extends ItemView {
 				});
 			}
 		} else {
-			// Use the command registry (builtins + ACP synced)
+			// Use the command registry (builtins + ACP synced + file commands)
 			const all = commandRegistry.getAll();
+			const badgeLabel: Record<string, string> = {
+				builtin: 'Builtin',
+				acp: 'ACP',
+				file: 'Custom',
+				mcp: 'MCP',
+				skill: 'Skill',
+			};
 			for (const cmd of all) {
 				allItems.push({
 					value: cmd.trigger,
 					label: `/${cmd.trigger}`,
 					description: cmd.description,
-					category: cmd.type === 'builtin' ? cmd.category : 'agent',
-					badge: cmd.type === 'builtin' ? undefined : cmd.type.toUpperCase(),
+					category: cmd.source === 'builtin' ? cmd.category : 'agent',
+					badge: badgeLabel[cmd.source] ?? cmd.source.toUpperCase(),
+					argumentHint: cmd.argumentHint,
 				});
 			}
-			// Fallback: show ACP available commands not yet in registry
-			if (all.length === 0) {
-				for (const cmd of this.controller.state.availableCommands) {
-					allItems.push({ value: cmd.name, label: `/${cmd.name}`, description: cmd.description });
-				}
-			}
+			// For ACP commands that arrive mid-stream via onCommandsUpdate:
+			// the registry already picks them up, so the loop above covers them.
+			// The fallback below only triggers when the registry is empty (first load).
 			if (allItems.length === 0) {
 				allItems.push({ value: 'compact', label: '/compact', description: t().slash.compact });
 			}

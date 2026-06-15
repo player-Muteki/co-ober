@@ -86,6 +86,9 @@ export class CopsilotViewController {
 
 	private registerBuiltinCommands(): void {
 		const registry = commandRegistry;
+		const client = () => this.deps.plugin.getClient();
+		const caps = () => client()?.getAgentCapabilities?.();
+
 		registry.registerBuiltin({
 			id: 'compact',
 			trigger: 'compact',
@@ -93,7 +96,7 @@ export class CopsilotViewController {
 			title: 'Compact Session',
 			description: t().slash.compact,
 			category: 'session',
-			type: 'builtin',
+			source: 'builtin',
 			run: async () => { await this.compactSession(); },
 		});
 		registry.registerBuiltin({
@@ -102,7 +105,7 @@ export class CopsilotViewController {
 			title: 'New Session',
 			description: t().slash.new,
 			category: 'session',
-			type: 'builtin',
+			source: 'builtin',
 			run: async () => { await this.createNewSession(); },
 		});
 		registry.registerBuiltin({
@@ -111,7 +114,7 @@ export class CopsilotViewController {
 			title: 'Clear Screen',
 			description: t().slash.clear,
 			category: 'view',
-			type: 'builtin',
+			source: 'builtin',
 			run: async () => {
 				this.state.clear();
 				this.deps.renderer.clear();
@@ -124,7 +127,7 @@ export class CopsilotViewController {
 			title: 'Help',
 			description: t().slash.help,
 			category: 'view',
-			type: 'builtin',
+			source: 'builtin',
 			run: async () => {
 				const cmds = registry.getAll();
 				const helpText = cmds.map((c) =>
@@ -132,6 +135,93 @@ export class CopsilotViewController {
 				).join('\n');
 				this.deps.renderer.addUserMessage('/help');
 				this.deps.renderer.addSystemMessage(`### Available Commands\n\n${helpText}`);
+			},
+		});
+		registry.registerBuiltin({
+			id: 'add-dir',
+			trigger: 'add-dir',
+			title: 'Add Context Directory',
+			description: t().slash.addDir,
+			argumentHint: '[path/to/directory]',
+			category: 'session',
+			source: 'builtin',
+			enabled: () => client() !== null,
+			run: async (args: string) => {
+				const c = client();
+				if (!c || !this.state.sessionId) return;
+				const path = args.trim() || this.getVaultCwd();
+				await this.sendTextToAgent(`/add-dir ${path}`);
+			},
+		});
+		registry.registerBuiltin({
+			id: 'resume',
+			trigger: 'resume',
+			title: 'Resume Session',
+			description: t().slash.resume,
+			category: 'session',
+			source: 'builtin',
+			enabled: () => caps()?.sessionCapabilities?.resume ?? false,
+			run: async () => {
+				// Handled by the session dropdown UI, not text input.
+			},
+		});
+		registry.registerBuiltin({
+			id: 'fork',
+			trigger: 'fork',
+			title: 'Fork Session',
+			description: t().slash.fork,
+			category: 'session',
+			source: 'builtin',
+			enabled: () => caps()?.sessionCapabilities?.fork ?? false,
+			run: async () => {
+				if (!this.state.sessionId) return;
+				await this.forkSession(this.state.sessionId);
+			},
+		});
+		registry.registerBuiltin({
+			id: 'model',
+			trigger: 'model',
+			title: 'Switch Model',
+			description: t().slash.model,
+			argumentHint: '<model-id>',
+			category: 'agent',
+			source: 'builtin',
+			enabled: () => client() !== null && this.state.sessionId !== null,
+			run: async (args: string) => {
+				const modelId = args.trim();
+				if (!modelId) {
+					this.deps.renderer.addSystemMessage(
+						`Available models:\n${this.state.availableModels.map((m) => `- \`${m.modelId}\`: ${m.name}`).join('\n')}`
+					);
+					return;
+				}
+				const c = client();
+				if (!c || !this.state.sessionId) return;
+				await c.setModel(this.state.sessionId, modelId);
+				this.deps.renderer.addSystemMessage(`Switched to model: \`${modelId}\``);
+			},
+		});
+		registry.registerBuiltin({
+			id: 'mode',
+			trigger: 'mode',
+			title: 'Switch Mode/Agent',
+			description: t().slash.mode,
+			argumentHint: '<mode-id>',
+			category: 'agent',
+			source: 'builtin',
+			enabled: () => client() !== null && this.state.sessionId !== null,
+			run: async (args: string) => {
+				const modeId = args.trim();
+				if (!modeId) {
+					this.deps.renderer.addSystemMessage(
+						`Available modes:\n${this.state.availableModes.map((m) => `- \`${m.id}\`: ${m.name}`).join('\n')}`
+					);
+					return;
+				}
+				const c = client();
+				if (!c || !this.state.sessionId) return;
+				await c.setMode(this.state.sessionId, modeId);
+				this.deps.renderer.addSystemMessage(`Switched to mode: \`${modeId}\``);
 			},
 		});
 	}
@@ -291,13 +381,7 @@ export class CopsilotViewController {
 	async compactSession(): Promise<void> {
 		// Cancel any active generation, then send /compact through the ACP agent
 		await this.cancelActiveGeneration();
-		const client = this.deps.plugin.getClient();
-		if (!client || !this.state.sessionId) return;
-		try {
-			await client.cancel(this.state.sessionId);
-		} catch {
-			// Ignore cancel errors
-		}
+		await this.sendTextToAgent('/compact');
 	}
 
 	async createNewSession(): Promise<void> {
@@ -439,15 +523,23 @@ export class CopsilotViewController {
 			this.promptQueue.push({ text, refs });
 			return;
 		}
-		// Intercept builtin slash commands before routing to ACP agent
+		// Intercept slash commands before routing to ACP agent
 		const parsed = parseSlashCommand(text);
-		if (parsed && commandRegistry.isBuiltin(parsed.name)) {
+		if (parsed) {
 			const def = commandRegistry.find(parsed.name);
 			if (def) {
-				this.deps.renderer.addUserMessage(text);
-				this.streamCtrl.saveMessage('user', text, 'text');
-				await def.run(parsed.args);
-				return;
+				if (def.source === 'builtin') {
+					this.deps.renderer.addUserMessage(text);
+					this.streamCtrl.saveMessage('user', text, 'text');
+					await def.run(parsed.args);
+					return;
+				}
+				if (def.source === 'file' && def.template) {
+					const { templateExpander } = await import('../commands/templateExpander');
+					const expanded = templateExpander.buildPrompt(def, parsed.args);
+					await this.sendTextToAgent(expanded, refs);
+					return;
+				}
 			}
 		}
 		const sessionId = await this.ensureRuntimeSession();
@@ -540,6 +632,88 @@ export class CopsilotViewController {
 					this.deps.inlineEditPanel.pendingState = null;
 				}
 				void this.drainQueue();
+			}
+		}
+	}
+
+	/**
+	 * Send raw text directly to the ACP agent, bypassing builtin
+	 * command interception and template expansion.
+	 *
+	 * Used by builtin commands (e.g. /add-dir) that forward text
+	 * to the agent without the normal send() processing.
+	 */
+	private async sendTextToAgent(text: string, refs?: ContextRef[]): Promise<void> {
+		const sessionId = await this.ensureRuntimeSession();
+		const c = this.deps.plugin.getClient();
+		if (!c || !sessionId) return;
+
+		const currentGen = ++this.genId;
+		this.callbacks.onHideWelcome();
+
+		this.busy = true;
+		this.state.isStreaming = true;
+		this.deps.input.setStreaming(true);
+		this.deps.toolbar.setSending(true);
+		this.sendStartTime = Date.now();
+		this.deps.renderer.addAssistantPlaceholder();
+
+		try {
+			await this.syncRuntimeSession(sessionId);
+			if (this.state.sessionId !== sessionId || !this.busy) return;
+			const parts = refs && refs.length > 0
+				? await this.buildParts(text, refs)
+				: [{ type: 'text' as const, text }];
+			if (this.state.sessionId !== sessionId || !this.busy) return;
+			this.callbacks.onClearPendingImageChips();
+			const response = await c.sendMessage(sessionId, parts, (ch: NormalizedUpdate) => {
+				if (!this.busy || this.state.sessionId !== sessionId) return;
+				this.streamCtrl.handleChunk(ch);
+			});
+			if (response?.usage) {
+				this.state.usage = {
+					totalTokens: response.usage.totalTokens ?? 0,
+					inputTokens: response.usage.inputTokens ?? 0,
+					outputTokens: response.usage.outputTokens ?? 0,
+					thoughtTokens: response.usage.thoughtTokens,
+					cost: this.state.usage?.cost,
+					contextWindow: this.state.usage?.contextWindow,
+					contextTokens: this.state.usage?.contextTokens,
+				};
+				this.deps.updateContextMeter(this.state.usage);
+			}
+		} catch (e: unknown) {
+			if (!this.state.isConnected) return;
+			if (this.state.sessionId === sessionId) {
+				if (e instanceof AcpAbortError) {
+					// User cancelled, don't show error
+				} else if (e instanceof AcpTimeoutError) {
+					this.deps.renderer.addError(
+						t().error.timeout,
+						'retry',
+						() => this.sendTextToAgent(text, refs)
+					);
+				} else if (e instanceof AcpProcessExitError) {
+					this.deps.renderer.addError(
+						t().error.processExit,
+						'restart',
+						async () => {
+							await this.reconnect();
+							await this.sendTextToAgent(text, refs);
+						}
+					);
+				} else {
+					this.deps.renderer.addError(e instanceof Error ? e.message : String(e));
+				}
+			}
+		} finally {
+			this.deps.renderer.removeAssistantPlaceholder();
+			if (this.genId === currentGen) {
+				this.busy = false;
+				this.state.isStreaming = false;
+				this.deps.input.setStreaming(false);
+				this.deps.toolbar.setSending(false);
+				this.deps.input.focus();
 			}
 		}
 	}

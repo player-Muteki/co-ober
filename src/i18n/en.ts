@@ -90,6 +90,16 @@ const en = {
     new: 'start a new session',
     clear: 'clear the conversation display',
     help: 'show all available slash commands',
+    addDir: 'add external context directory',
+    resume: 'resume a previous conversation',
+    fork: 'fork entire conversation to new session',
+    model: 'switch AI model',
+    mode: 'switch agent mode',
+  },
+  badge: {
+    builtin: 'Builtin',
+    custom: 'Custom',
+    skill: 'Skill',
   },
   slashCategory: {
     session: 'Session',

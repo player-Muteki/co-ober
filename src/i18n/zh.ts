@@ -92,6 +92,16 @@ const zh: Locale = {
     new: '开始新会话',
     clear: '清空对话显示',
     help: '显示所有可用的斜杠命令',
+    addDir: '添加外部上下文目录',
+    resume: '恢复之前的对话',
+    fork: '将会话分叉到新会话',
+    model: '切换 AI 模型',
+    mode: '切换 Agent 模式',
+  },
+  badge: {
+    builtin: '内置',
+    custom: '自定义',
+    skill: '技能',
   },
   slashCategory: {
     session: '会话',

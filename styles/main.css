@@ -711,7 +711,7 @@
   bottom: calc(100% + 6px);
   left: 8px;
   right: 8px;
-  max-height: 240px;
+  max-height: 280px;
   overflow-y: auto;
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
@@ -722,9 +722,6 @@
 }
 
 .copsilot-ac-dropdown .copsilot-ac-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   padding: 4px 10px;
   cursor: pointer;
 }
@@ -733,17 +730,67 @@
   background: var(--background-modifier-hover);
 }
 
+.copsilot-ac-dropdown .ac-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.copsilot-ac-dropdown .ac-row-sub {
+  margin-top: 1px;
+  font-size: calc(var(--font-smaller) - 1px);
+}
+
 .copsilot-ac-dropdown .ac-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
 }
 
 .copsilot-ac-dropdown .ac-desc {
   color: var(--text-muted);
-  font-size: var(--font-smaller);
-  margin-left: 8px;
+  font-size: calc(var(--font-smaller) - 1px);
   flex-shrink: 0;
+}
+
+.copsilot-ac-dropdown .ac-arg-hint {
+  color: var(--text-faint);
+  font-style: italic;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+.copsilot-ac-dropdown .ac-badge {
+  font-size: calc(var(--font-smaller) - 1px);
+  padding: 0 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.copsilot-ac-dropdown .ac-badge-builtin {
+  color: var(--text-muted);
+  background: var(--background-modifier-border);
+}
+
+.copsilot-ac-dropdown .ac-badge-acp {
+  color: var(--text-accent);
+  background: var(--tag-background);
+}
+
+.copsilot-ac-dropdown .ac-badge-custom {
+  color: var(--color-green);
+  background: var(--tag-background);
+}
+
+.copsilot-ac-dropdown .ac-badge-mcp {
+  color: var(--color-orange);
+  background: var(--tag-background);
+}
+
+.copsilot-ac-dropdown .ac-badge-skill {
+  color: var(--color-purple);
+  background: var(--tag-background);
 }
 
 /* Session list */

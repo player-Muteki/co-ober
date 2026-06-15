@@ -8,6 +8,8 @@ export interface ACItem {
   category?: string;
   /** Badge text (Builtin / ACP / ✓ for selected). */
   badge?: string;
+  /** Argument hint displayed in grey (e.g. "[path/to/dir]"). */
+  argumentHint?: string;
 }
 
 export interface AutocompleteCallbacks {
@@ -202,6 +204,9 @@ export class Autocomplete {
       cls: `copsilot-ac-item${idx === this.selIdx ? ' selected' : ''}`,
     });
 
+    // First row: label + badge
+    const row1 = el.createDiv({ cls: 'ac-row' });
+
     // Highlight matching portion of the label when filtering @mentions
     if (this.filterText && this.filterText.length > 0 && this.mode === '@') {
       const lower = item.label.toLowerCase();
@@ -211,23 +216,30 @@ export class Autocomplete {
         const before = item.label.slice(0, pos);
         const match = item.label.slice(pos, pos + q.length);
         const after = item.label.slice(pos + q.length);
-        const labelEl = el.createSpan({ cls: 'ac-label' });
+        const labelEl = row1.createSpan({ cls: 'ac-label' });
         labelEl.createSpan({ text: before });
         labelEl.createEl('mark', { text: match });
         labelEl.createSpan({ text: after });
       } else {
-        el.createSpan({ text: item.label, cls: 'ac-label' });
+        row1.createSpan({ text: item.label, cls: 'ac-label' });
       }
     } else {
-      el.createSpan({ text: item.label, cls: 'ac-label' });
+      row1.createSpan({ text: item.label, cls: 'ac-label' });
     }
 
     if (item.badge) {
-      el.createSpan({ text: item.badge, cls: 'ac-badge' });
+      row1.createSpan({ text: item.badge, cls: `ac-badge ac-badge-${item.badge.toLowerCase()}` });
     }
 
-    if (item.description) {
-      el.createSpan({ text: item.description, cls: 'ac-desc' });
+    // Second row: argument hint + description
+    if (item.argumentHint || item.description) {
+      const row2 = el.createDiv({ cls: 'ac-row ac-row-sub' });
+      if (item.argumentHint) {
+        row2.createSpan({ text: item.argumentHint, cls: 'ac-arg-hint' });
+      }
+      if (item.description) {
+        row2.createSpan({ text: item.description, cls: 'ac-desc' });
+      }
     }
 
     el.onclick = () => {
