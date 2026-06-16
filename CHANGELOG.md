@@ -37,7 +37,7 @@
 ## 0.1.12 - 2026-06-14
 
 ### Fixed
-- **CSS class name mismatch**: dropdown container used class `copsilot-autocomplete` but all CSS rules expected `copsilot-ac-dropdown`. The autocomplete popup (`/` and `@`) was completely unstyled and invisible.
+- **CSS class name mismatch**: dropdown container used class `co-ober-autocomplete` but all CSS rules expected `co-ober-ac-dropdown`. The autocomplete popup (`/` and `@`) was completely unstyled and invisible.
 - **Dropdown attached to `document.body`**: changed to mount inside the view's `inputAreaEl` container for correct positioning within Obsidian's iframe layout.
 - **Missing CSS styles**: added rules for `ac-badge`, `ac-header`, `ac-separator`, and `<mark>` highlight in the dropdown.
 
@@ -85,14 +85,14 @@
 - PermissionBanner show() semantics: eliminate fragile double-assignment pattern.
 - disposeConnection ordering: notify onClose before clearing transport.
 - methodCache cleared on reconnect to avoid stale method names.
-- console.debug usage_update noise: conditional on DEBUG_COPSILOT env var.
+- console.debug usage_update noise: conditional on DEBUG_CO_OBER env var.
 - Remove duplicate sessionInfo parsing in extractSessionSnapshot.
 - Remove dead code AcpClient.requestPermission (unused, handled by AcpRequestHandler).
 - SessionUpdateNormalizer memory leak: add trimMap eviction (200/100 entry caps).
 - ChatInput: add dispose() with global event listener cleanup + locale unsubscribe.
 - InputToolbar: add dispose() with locale unsubscribe.
 - PermissionBanner: add dispose() with locale unsubscribe.
-- copsilotView.onClose: integrate input/toolbar/permissionBanner dispose().
+- CoOberView.onClose: integrate input/toolbar/permissionBanner dispose().
 - pruneSessions deferred via setTimeout to avoid blocking save IO.
 
 ### Housekeeping
@@ -117,7 +117,7 @@
 - Polish README tone and formatting.
 
 ### Features
-- Enhanced agent identity: Copsilot now understands Obsidian's bi-directional linking, graph view, backlinks, tags, daily notes, and templates — speaks naturally as an Obsidian-native AI partner.
+- Enhanced agent identity: Co-Ober now understands Obsidian's bi-directional linking, graph view, backlinks, tags, daily notes, and templates — speaks naturally as an Obsidian-native AI partner.
 - Plugin detection: automatically detects enabled Obsidian plugins (Dataview, Tasks, Calendar, Templater, Kanban) and injects awareness into agent system prompt.
 - Workflow fluency: agent scans vault structure (Daily/Journal, Templates, Projects folders) and adapts responses based on user's organizational patterns.
 - Contextual awareness: agent knows which heading/section the user's cursor is in and whether they're inside a task list, bullet list, blockquote, table, or code block.
@@ -157,10 +157,10 @@
 ### Fixed
 - Windows command injection: `quoteCmdArg` now escapes backslashes before quotes, preventing cmd.exe quote boundary bypass.
 - `AcpSubprocess.shutdown` now sends SIGKILL after timeout (previously only resolved the promise) and sets `closed = true` to prevent spurious close-listener calls.
-- Inverted condition in `copsilotViewController.send()` — `inlineEditPanel.clearState()` was called when there was no pending edit instead of when there was one.
+- Inverted condition in `CoOberViewController.send()` — `inlineEditPanel.clearState()` was called when there was no pending edit instead of when there was one.
 - `stopGeneration` now clears the prompt queue before aborting, preventing queued messages from resuming after the user requests a stop.
 - `onClose` now awaits `stopGeneration()` to cancel in-flight generation and prevent post-destroy DOM/timer writes.
-- SVG arc-meter clip-path ID is now unique per view instance, fixing clipping when multiple Copsilot leaves are open simultaneously.
+- SVG arc-meter clip-path ID is now unique per view instance, fixing clipping when multiple Co-Ober leaves are open simultaneously.
 - `SyncEngine.isTFile` uses `instanceof TFile` instead of duck-type property checks.
 - Sync engine validates that resolved note paths do not contain path traversal sequences before writing.
 
@@ -192,7 +192,7 @@
 First public beta release.
 
 ### Changed
-- Context arc meter moved to right of "Copsilot" title in header.
+- Context arc meter moved to right of "Co-Ober" title in header.
 - All slash commands now route through ACP agent — removed local `compact` interception.
 - `isBuiltInCommand()` always returns false; no commands are handled locally.
 - Toolbar redesigned as single row: model selector, mode cycle button, effort dropdown, permission cycle, send button.
@@ -349,12 +349,12 @@ First public beta release.
 - Error messages now show contextual action buttons (retry for timeout, restart for process exit).
 
 ### Tested
-- Updated tests for `ChatState`, `AcpClient`, and `CopsilotViewController` to reflect new abort behavior.
+- Updated tests for `ChatState`, `AcpClient`, and `CoOberViewController` to reflect new abort behavior.
 
 ## 0.0.28 - 2026-05-26
 
 ### Changed
-- Extracted business/session/streaming logic from `CopsilotView` into new `CopsilotViewController` class.
+- Extracted business/session/streaming logic from `CoOberView` into new `CoOberViewController` class.
 - View now handles only DOM creation, UI event binding, and Obsidian lifecycle hooks.
 - Controller owns connection management, session lifecycle, message sending, toolbar sync, and state.
 - View delegates all operations to controller via `ControllerDeps` and `ControllerCallbacks` interfaces.
@@ -471,13 +471,13 @@ First public beta release.
 ## 0.0.16 - 2026-05-25
 
 ### Added
-- Extract WelcomeView component from CopsilotView for welcome page rendering and connection status display.
+- Extract WelcomeView component from CoOberView for welcome page rendering and connection status display.
 - Add event-driven i18n locale change mechanism (`onLocaleChange`) so child components self-manage locale updates instead of relying on parent imperative calls.
 - Add unit tests for DragDropManager (6 tests), PermissionBanner (3 tests), InlineEditPanel (5 tests), and Mutex (3 tests).
 
 ### Changed
 - ChatInput, InputToolbar, ChatRenderer, InlineEditPanel, DragDropManager, PermissionBanner, and WelcomeView register their own locale change listeners in constructors.
-- Simplify CopsilotView.refreshLocale() by removing manual child component locale update calls.
+- Simplify CoOberView.refreshLocale() by removing manual child component locale update calls.
 
 ## 0.0.15 - 2026-05-25
 
@@ -514,8 +514,8 @@ First public beta release.
 ### Fixed
 - Preserve configured MCP servers when restoring existing OpenCode sessions.
 - Initialize autocomplete after the chat input area is created.
-- Deduplicate Copsilot side leaves during plugin reload/open stress scenarios.
-- Make Copsilot view cleanup safe before the view finishes opening.
+- Deduplicate Co-Ober side leaves during plugin reload/open stress scenarios.
+- Make Co-Ober view cleanup safe before the view finishes opening.
 
 ### Tested
 - Add regression coverage for MCP session restore, autocomplete initialization, side leaf deduplication, and early view cleanup.
@@ -558,7 +558,7 @@ First public beta release.
 ## 0.0.8 - 2026-05-21
 
 ### Fixed
-- Apply saved English/Chinese language settings on plugin startup and refresh both the plugin settings tab and open Copsilot views immediately after changing language in Settings.
+- Apply saved English/Chinese language settings on plugin startup and refresh both the plugin settings tab and open Co-Ober views immediately after changing language in Settings.
 - Complete i18n coverage for runtime notices, toolbar tooltips, inline edit UI and prompt, usage tooltips, sync failure messages, ACP errors, and default session titles.
 - Harden permission handling so `safe` mode does not auto-approve tool requests when no UI permission handler is available.
 - Prevent connection failures from blocking sidebar initialization, and avoid false “connected” states after failed reconnect attempts.

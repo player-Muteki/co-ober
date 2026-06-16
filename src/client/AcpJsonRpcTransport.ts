@@ -130,7 +130,7 @@ export class AcpJsonRpcTransport {
     try {
       this.streams.output.write(JSON.stringify(msg) + '\n');
     } catch (e) {
-      console.error('[copsilot] send error:', e);
+      console.error('[co-ober] send error:', e);
       this.dispose(e instanceof Error ? e : new AcpTransportError('JSON-RPC output write failed'));
     }
   }
@@ -174,10 +174,10 @@ export class AcpJsonRpcTransport {
         for (const handler of handlers) {
           try {
             Promise.resolve(handler((parsed as { params?: unknown }).params)).catch((error: unknown) =>
-              console.error('[copsilot] notification handler failed:', error),
+              console.error('[co-ober] notification handler failed:', error),
             );
           } catch (error) {
-            console.error('[copsilot] notification handler failed:', error);
+            console.error('[co-ober] notification handler failed:', error);
           }
         }
       }

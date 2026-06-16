@@ -267,8 +267,8 @@ export class AcpClient implements OpencodeClient {
 			if (update) {
 				if (update.sessionUpdate === 'usage_update') {
 					// Usage updates are frequent in long sessions; only log when debug is enabled.
-					if (typeof process.env.DEBUG_COPSILOT !== 'undefined') {
-						console.debug('[copsilot] usage_update:', JSON.stringify(update));
+					if (typeof process.env.DEBUG_CO_OBER !== 'undefined') {
+						console.debug('[co-ober] usage_update:', JSON.stringify(update));
 					}
 				}
 				this.applySessionUpdate(update);
@@ -281,7 +281,7 @@ export class AcpClient implements OpencodeClient {
 
 			const response = await this.requestWithFallback('initialize', {
 				protocolVersion: 1,
-				clientInfo: { name: 'copsilot', version: CLIENT_VERSION },
+				clientInfo: { name: 'co-ober', version: CLIENT_VERSION },
 				clientCapabilities: this.requestHandler.buildClientCapabilities(),
 			}) as Record<string, unknown>;
 			this.agentCapabilities = (response.agentCapabilities as AgentCapabilities) ?? null;
@@ -340,7 +340,7 @@ export class AcpClient implements OpencodeClient {
     try {
       await this.requestWithFallback('closeSession', { sessionId: id });
     } catch (e) {
-      console.warn(`[copsilot] failed to close session ${id}:`, e);
+      console.warn(`[co-ober] failed to close session ${id}:`, e);
     }
   }
 
@@ -395,7 +395,7 @@ export class AcpClient implements OpencodeClient {
     this.activeAbortController = null;
 
     return this.requestWithFallback('cancel', { sessionId: id }).then(() => {}).catch((e) => {
-      console.warn('[copsilot] cancel RPC failed:', e);
+      console.warn('[co-ober] cancel RPC failed:', e);
     });
   }
 
@@ -578,9 +578,9 @@ export class AcpClient implements OpencodeClient {
     const stderrMsg = subprocess.getStderrSnapshot() || '';
     const closeError = error ?? new Error(t().acp.processExited.replace('{code}', t().acp.unknownCode));
     if (error) {
-      console.error('[copsilot] process error:', error, 'stderr:', stderrMsg);
+      console.error('[co-ober] process error:', error, 'stderr:', stderrMsg);
     } else {
-      console.error('[copsilot] process exited. stderr:', stderrMsg);
+      console.error('[co-ober] process exited. stderr:', stderrMsg);
     }
 
     void this.disposeConnection(closeError).then(() => {

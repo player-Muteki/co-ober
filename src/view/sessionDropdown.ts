@@ -35,7 +35,7 @@ export class SessionDropdown {
 		const capabilities = this.getAgentCapabilities()?.sessionCapabilities;
 		const canList = capabilities?.list !== false;
 		const list = this.getRenderableSessions(this.sessionStore.list(), canList);
-		const dd = this.container.createDiv({ cls: 'copsilot-session-list' });
+		const dd = this.container.createDiv({ cls: 'co-ober-session-list' });
 
 		const rect = this.anchorEl.getBoundingClientRect();
 		dd.setCssProps({
@@ -45,12 +45,12 @@ export class SessionDropdown {
 
 		const searchInput = canList
 			? dd.createEl('input', {
-				cls: 'copsilot-session-search',
+				cls: 'co-ober-session-search',
 				attr: { placeholder: t().session.search, type: 'text' },
 			})
 			: null;
 
-		const itemsContainer = dd.createDiv({ cls: 'copsilot-session-items' });
+		const itemsContainer = dd.createDiv({ cls: 'co-ober-session-items' });
 
 		const renderItems = (filter: string) => {
 			itemsContainer.empty();
@@ -60,7 +60,7 @@ export class SessionDropdown {
 
 			if (filtered.length === 0) {
 				itemsContainer.createDiv({
-					cls: 'copsilot-session-empty',
+					cls: 'co-ober-session-empty',
 					text: t().session.empty,
 				});
 				return;
@@ -69,7 +69,7 @@ export class SessionDropdown {
 			const currentId = this.getCurrentSessionId();
 			for (const s of filtered) {
 				const it = itemsContainer.createDiv({
-					cls: `copsilot-session-item${s.sessionId === currentId ? ' active' : ''}`,
+					cls: `co-ober-session-item${s.sessionId === currentId ? ' active' : ''}`,
 				});
 				it.createSpan({ text: s.title || s.sessionId, cls: 'session-label' });
 				this.createActionButton(it, 'session-fork', '⎇', capabilities?.fork === true, t().sessionDropdown.forkDisabled, async () => {

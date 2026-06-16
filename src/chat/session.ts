@@ -1,4 +1,4 @@
-import type CopsilotPlugin from '../main';
+import type CoOberPlugin from '../main';
 import type { SessionMeta, SerializedMessage, SerializedSession } from '../types';
 import { t } from '../i18n/index';
 
@@ -16,7 +16,7 @@ export interface SessionStore {
   remove(id: string): void;
 }
 
-export function createSessionStore(plugin: CopsilotPlugin): SessionStore {
+export function createSessionStore(plugin: CoOberPlugin): SessionStore {
   const store: SessionStore = {
     sessions: plugin.sessions,
     activeId: plugin.activeSessionId,

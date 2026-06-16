@@ -1,15 +1,15 @@
-import { Plugin, Notice } from 'obsidian';
+﻿import { Plugin, Notice } from 'obsidian';
 import { AgentRuntime } from './client/agent';
 import { AcpClient } from './client/acp';
-import { CopsilotView } from './view/copsilotView';
-import { CopsilotSettingsTab } from './settings';
+import { CoOberView } from './view/CoOberView';
+import { CoOberSettingsTab } from './settings';
 import { DEFAULT_SETTINGS, VIEW_TYPE } from './types';
-import type { CopsilotSettings, SerializedSession, SerializedMessage, PluginData } from './types';
+import type { CoOberSettings, SerializedSession, SerializedMessage, PluginData } from './types';
 import { getVaultPath } from './utils/vault';
 import { setLocale, t } from './i18n/index';
 
-export default class CopsilotPlugin extends Plugin {
-  settings: CopsilotSettings = DEFAULT_SETTINGS;
+export default class CoOberPlugin extends Plugin {
+  settings: CoOberSettings = DEFAULT_SETTINGS;
   client: AgentRuntime | null = null;
   sessions: Map<string, SerializedSession> = new Map();
   activeSessionId: string | null = null;
@@ -32,10 +32,10 @@ export default class CopsilotPlugin extends Plugin {
     await this.loadPluginData();
     setLocale(this.settings.language);
 
-    this.registerView(VIEW_TYPE, (leaf) => new CopsilotView(leaf, this));
-    this.deduplicateCopsilotLeaves();
-    this.addRibbonIcon('terminal-square', 'Open Copsilot', () => this.activateView());
-    this.addSettingTab(new CopsilotSettingsTab(this));
+    this.registerView(VIEW_TYPE, (leaf) => new CoOberView(leaf, this));
+    this.deduplicateCoOberLeaves();
+    this.addRibbonIcon('terminal-square', 'Open Co-Ober', () => this.activateView());
+    this.addSettingTab(new CoOberSettingsTab(this));
     this.addCommand({
       id: 'open',
       name: 'Open',
@@ -70,7 +70,7 @@ export default class CopsilotPlugin extends Plugin {
     }
 
     return {
-      settings: { ...DEFAULT_SETTINGS, ...(saved as Partial<CopsilotSettings>) },
+      settings: { ...DEFAULT_SETTINGS, ...(saved as Partial<CoOberSettings>) },
       sessions: [],
       activeSessionId: null,
     };
@@ -150,18 +150,18 @@ export default class CopsilotPlugin extends Plugin {
     }
     await this.activateView();
     const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
-    const copsilotView = leaf?.view as CopsilotView | undefined;
-    if (copsilotView) {
-      await copsilotView.requestInlineEdit(selected, editor);
+    const coOberView = leaf?.view as CoOberView | undefined;
+    if (coOberView) {
+      await coOberView.requestInlineEdit(selected, editor);
     }
   }
 
   async activateView(): Promise<void> {
-    const existing = this.deduplicateCopsilotLeaves();
+    const existing = this.deduplicateCoOberLeaves();
     if (existing) {
       await existing.setViewState({ type: VIEW_TYPE, active: true });
       void this.app.workspace.revealLeaf(existing);
-      this.deduplicateCopsilotLeaves();
+      this.deduplicateCoOberLeaves();
       return;
     }
 
@@ -170,10 +170,10 @@ export default class CopsilotPlugin extends Plugin {
     if (!leaf) return;
     await leaf.setViewState({ type: VIEW_TYPE, active: true });
     void this.app.workspace.revealLeaf(leaf);
-    this.deduplicateCopsilotLeaves();
+    this.deduplicateCoOberLeaves();
   }
 
-  private deduplicateCopsilotLeaves(): import('obsidian').WorkspaceLeaf | null {
+  private deduplicateCoOberLeaves(): import('obsidian').WorkspaceLeaf | null {
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE);
     const [first, ...duplicates] = leaves;
     for (const leaf of duplicates) {
@@ -208,7 +208,7 @@ export default class CopsilotPlugin extends Plugin {
       this._clientReady = false;
       this.client = null;
       this.resolveClientWaiters(false);
-      console.error('[copsilot] Connect failed:', e);
+      console.error('[co-ober] Connect failed:', e);
       new Notice(t().notice.connectFailed);
       return false;
     }

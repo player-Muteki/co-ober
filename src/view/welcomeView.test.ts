@@ -13,20 +13,20 @@ describe('WelcomeView', () => {
 
 		view.show(true);
 
-		const el = container.querySelector('.copsilot-welcome');
+		const el = container.querySelector('.co-ober-welcome');
 		expect(el).not.toBeNull();
 
-		const title = el?.querySelector('.copsilot-welcome-title');
+		const title = el?.querySelector('.co-ober-welcome-title');
 		expect(title?.textContent).toBe(t().appName);
 
-		const subtitle = el?.querySelector('.copsilot-welcome-subtitle');
+		const subtitle = el?.querySelector('.co-ober-welcome-subtitle');
 		expect(subtitle?.textContent).toBe(t().appSubtitle);
 
-		const shortcuts = el?.querySelectorAll('.copsilot-welcome-shortcuts div');
+		const shortcuts = el?.querySelectorAll('.co-ober-welcome-shortcuts div');
 		expect(shortcuts?.length).toBe(4);
 		expect(shortcuts?.[0].textContent).toBe(t().welcome.shortcuts.enter);
 
-		const status = el?.querySelector('.copsilot-welcome-status span');
+		const status = el?.querySelector('.co-ober-welcome-status span');
 		expect(status?.textContent).toBe(t().welcome.connected);
 	});
 
@@ -36,7 +36,7 @@ describe('WelcomeView', () => {
 
 		view.show(true);
 
-		const status = container.querySelector('.copsilot-welcome-status span');
+		const status = container.querySelector('.co-ober-welcome-status span');
 		expect(status?.textContent).toBe(t().welcome.connected);
 	});
 
@@ -46,7 +46,7 @@ describe('WelcomeView', () => {
 
 		view.show(true);
 
-		expect(container.querySelector('.copsilot-welcome-auth-methods')).toBeNull();
+		expect(container.querySelector('.co-ober-welcome-auth-methods')).toBeNull();
 	});
 
 	it('renders auth methods and login command when authMethods is non-empty', () => {
@@ -57,7 +57,7 @@ describe('WelcomeView', () => {
 
 		view.show(true);
 
-		const auth = container.querySelector('.copsilot-welcome-auth-methods');
+		const auth = container.querySelector('.co-ober-welcome-auth-methods');
 		expect(auth).not.toBeNull();
 		expect(auth?.textContent).toContain(t().welcome.authMethodsHint);
 		expect(auth?.textContent).toContain('github: GitHub');
@@ -70,7 +70,7 @@ describe('WelcomeView', () => {
 
 		view.show(false);
 
-		const status = container.querySelector('.copsilot-welcome-status span');
+		const status = container.querySelector('.co-ober-welcome-status span');
 		expect(status?.textContent).toBe(t().welcome.disconnected);
 	});
 
@@ -79,10 +79,10 @@ describe('WelcomeView', () => {
 		const view = new WelcomeView(container);
 
 		view.show(true);
-		expect(container.querySelector('.copsilot-welcome')).not.toBeNull();
+		expect(container.querySelector('.co-ober-welcome')).not.toBeNull();
 
 		view.hide();
-		expect(container.querySelector('.copsilot-welcome')).toBeNull();
+		expect(container.querySelector('.co-ober-welcome')).toBeNull();
 	});
 
 	it('updateStatus() updates existing status text', () => {
@@ -90,7 +90,7 @@ describe('WelcomeView', () => {
 		const view = new WelcomeView(container);
 
 		view.show(false);
-		const statusParent = container.querySelector('.copsilot-welcome-status');
+		const statusParent = container.querySelector('.co-ober-welcome-status');
 		const statusSpan = statusParent?.querySelector('span');
 		expect(statusSpan?.textContent).toBe(t().welcome.disconnected);
 
@@ -118,10 +118,10 @@ describe('WelcomeView', () => {
 		view.show(true);
 		view.show(false);
 
-		const elements = container.querySelectorAll('.copsilot-welcome');
+		const elements = container.querySelectorAll('.co-ober-welcome');
 		expect(elements.length).toBe(1);
 
-		const status = elements[0].querySelector('.copsilot-welcome-status span');
+		const status = elements[0].querySelector('.co-ober-welcome-status span');
 		expect(status?.textContent).toBe(t().welcome.disconnected);
 	});
 });

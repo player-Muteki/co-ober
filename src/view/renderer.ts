@@ -89,25 +89,25 @@ export class ChatRenderer {
   }
 
   addSystemMessage(text: string): void {
-    const wrap = this.container.createDiv({ cls: 'copsilot-msg system' });
-    const body = wrap.createDiv({ cls: 'copsilot-msg-body' });
+    const wrap = this.container.createDiv({ cls: 'co-ober-msg system' });
+    const body = wrap.createDiv({ cls: 'co-ober-msg-body' });
     MarkdownRenderer.renderMarkdown(text, body, '', this.app as unknown as Component);
     this.scrollToBottom();
   }
 
   addUserMessage(text: string, timestamp?: number): void {
-    const wrap = this.container.createDiv({ cls: 'copsilot-msg user' });
+    const wrap = this.container.createDiv({ cls: 'co-ober-msg user' });
     wrap.dataset.timestamp = this.formatTimestamp(timestamp ?? Date.now());
-    const body = wrap.createDiv({ cls: 'copsilot-msg-body' });
+    const body = wrap.createDiv({ cls: 'co-ober-msg-body' });
     body.textContent = text;
     this.scrollToBottom();
   }
 
   addAssistantPlaceholder(): void {
     if (this.placeholderEl) return;
-    const wrap = this.container.createDiv({ cls: 'copsilot-msg assistant' });
-    const el = wrap.createDiv({ cls: 'copsilot-loading' });
-    el.createDiv({ cls: 'copsilot-spinner' });
+    const wrap = this.container.createDiv({ cls: 'co-ober-msg assistant' });
+    const el = wrap.createDiv({ cls: 'co-ober-loading' });
+    el.createDiv({ cls: 'co-ober-spinner' });
     el.createSpan({ text: t().loading.thinking });
     this.placeholderEl = wrap;
     this.scrollToBottom();
@@ -134,10 +134,10 @@ export class ChatRenderer {
     }
     this.currentAssistantText += text;
     if (!this.currentAssistantEl) {
-      const wrap = this.container.createDiv({ cls: 'copsilot-msg assistant' });
+      const wrap = this.container.createDiv({ cls: 'co-ober-msg assistant' });
       wrap.dataset.timestamp = this.formatTimestamp(timestamp ?? Date.now());
       this.currentAssistantWrap = wrap;
-      this.currentAssistantEl = wrap.createDiv({ cls: 'copsilot-msg-body' });
+      this.currentAssistantEl = wrap.createDiv({ cls: 'co-ober-msg-body' });
     }
     if (this.renderTimeout !== null) window.clearTimeout(this.renderTimeout);
     this.renderTimeout = window.setTimeout(() => {
@@ -174,10 +174,10 @@ export class ChatRenderer {
     const codeBlocks = container.querySelectorAll('pre > code');
     codeBlocks.forEach((codeEl) => {
       const pre = codeEl.parentElement;
-      if (!pre || pre.querySelector('.copsilot-copy-btn')) return;
+      if (!pre || pre.querySelector('.co-ober-copy-btn')) return;
 
       const btn = this.doc.createElement('button');
-      btn.className = 'copsilot-copy-btn';
+      btn.className = 'co-ober-copy-btn';
       btn.textContent = t().copy.button;
       btn.onclick = () => {
         const text = codeEl.textContent || '';
@@ -185,7 +185,7 @@ export class ChatRenderer {
         btn.textContent = t().copy.copied;
         window.setTimeout(() => { btn.textContent = t().copy.button; }, 1500);
       };
-      pre.classList.add('copsilot-code-block');
+      pre.classList.add('co-ober-code-block');
       pre.appendChild(btn);
     });
   }
@@ -202,12 +202,12 @@ export class ChatRenderer {
       this.currentAssistantType = 'thinking';
     }
     if (!this.thinkingEl) {
-      const wrap = this.container.createDiv({ cls: 'copsilot-msg assistant' });
+      const wrap = this.container.createDiv({ cls: 'co-ober-msg assistant' });
       wrap.dataset.timestamp = this.formatTimestamp(timestamp ?? Date.now());
-      const box = wrap.createDiv({ cls: 'copsilot-thinking is-collapsed' });
+      const box = wrap.createDiv({ cls: 'co-ober-thinking is-collapsed' });
       this.thinkingWrapEl = box;
-      const hdr = box.createDiv({ cls: 'copsilot-thinking-header', text: t().thinking.header });
-      this.thinkingEl = box.createDiv({ cls: 'copsilot-thinking-body' });
+      const hdr = box.createDiv({ cls: 'co-ober-thinking-header', text: t().thinking.header });
+      this.thinkingEl = box.createDiv({ cls: 'co-ober-thinking-body' });
       hdr.onclick = () => {
         this.thinkingCollapsed = !this.thinkingCollapsed;
         this.thinkingWrapEl?.classList.toggle('is-collapsed');
@@ -241,11 +241,11 @@ export class ChatRenderer {
   }
 
   addToolCall(id: string, title: string, kind: string, input: Record<string, unknown> | undefined, locations?: { path: string }[]): void {
-    const wrap = this.container.createDiv({ cls: 'copsilot-msg assistant' });
-    const box = wrap.createDiv({ cls: 'copsilot-tool-call' });
+    const wrap = this.container.createDiv({ cls: 'co-ober-msg assistant' });
+    const box = wrap.createDiv({ cls: 'co-ober-tool-call' });
     box.dataset.toolId = id;
 
-    const hdr = box.createDiv({ cls: 'copsilot-tool-call-header' });
+    const hdr = box.createDiv({ cls: 'co-ober-tool-call-header' });
 
     const iconEl = hdr.createSpan({ cls: 'tc-icon' });
     setIcon(iconEl, TOOL_ICONS[kind] || 'tool');
@@ -259,7 +259,7 @@ export class ChatRenderer {
 
     hdr.createSpan({ text: '…', cls: 'tc-stat' });
 
-    box.createDiv({ cls: 'copsilot-tool-call-body' });
+    box.createDiv({ cls: 'co-ober-tool-call-body' });
     box.classList.add('is-collapsed');
 
     hdr.onclick = () => { box.classList.toggle('is-collapsed'); };
@@ -278,7 +278,7 @@ export class ChatRenderer {
   ): void {
     const box = this.toolEls.get(id);
     if (!box) return;
-    const hdr = box.querySelector('.copsilot-tool-call-header') as HTMLElement;
+    const hdr = box.querySelector('.co-ober-tool-call-header') as HTMLElement;
     const statEl = hdr.querySelector('.tc-stat') as HTMLElement;
 
     // Update filename when rawInput/locations become available (in_progress event)
@@ -293,7 +293,7 @@ export class ChatRenderer {
       }
     }
 
-    const body = box.querySelector('.copsilot-tool-call-body') as HTMLElement;
+    const body = box.querySelector('.co-ober-tool-call-body') as HTMLElement;
 
     if (status === 'completed' && content) {
       body.empty();
@@ -328,11 +328,11 @@ export class ChatRenderer {
 
   private renderDiff(path: string, oldText: string, newText: string): HTMLElement {
     const container = this.doc.createElement('div');
-    container.className = 'copsilot-diff';
+    container.className = 'co-ober-diff';
 
-    const header = container.createDiv({ cls: 'copsilot-diff-header', text: path });
+    const header = container.createDiv({ cls: 'co-ober-diff-header', text: path });
 
-    const body = container.createDiv({ cls: 'copsilot-diff-body' });
+    const body = container.createDiv({ cls: 'co-ober-diff-body' });
 
     const oldLines = oldText.split('\n');
     const newLines = newText.split('\n');
@@ -378,7 +378,7 @@ export class ChatRenderer {
 
   setPlanEntries(entries: Array<{ content: string; status: string; priority?: string }>): void {
     if (!this.planEl) {
-      this.planEl = this.container.createDiv({ cls: 'copsilot-plan-panel' });
+      this.planEl = this.container.createDiv({ cls: 'co-ober-plan-panel' });
       this.planEl.createDiv({ cls: 'plan-title', text: t().plan.title });
     }
     this.planEl.querySelectorAll('.plan-item').forEach((el) => el.remove());
@@ -391,13 +391,13 @@ export class ChatRenderer {
 
   addError(text: string, actionLabel?: string, actionCallback?: () => void | Promise<void>): void {
     this.removeAssistantPlaceholder();
-    const wrap = this.container.createDiv({ cls: 'copsilot-msg assistant' });
-    const errorEl = wrap.createDiv({ cls: 'copsilot-error' });
-    errorEl.createSpan({ cls: 'copsilot-error-text', text });
+    const wrap = this.container.createDiv({ cls: 'co-ober-msg assistant' });
+    const errorEl = wrap.createDiv({ cls: 'co-ober-error' });
+    errorEl.createSpan({ cls: 'co-ober-error-text', text });
 
     if (actionLabel && actionCallback) {
       const btn = errorEl.createEl('button', {
-        cls: 'copsilot-error-action',
+        cls: 'co-ober-error-action',
         text: actionLabel,
       });
       btn.onclick = () => {
@@ -420,13 +420,13 @@ export class ChatRenderer {
   showUsage(usage: UsageInfo): void {
     // Ensure we have a wrap to attach usage to (may be null if only tool calls, no text)
     if (!this.currentAssistantWrap) {
-      const wrap = this.container.createDiv({ cls: 'copsilot-msg assistant' });
+      const wrap = this.container.createDiv({ cls: 'co-ober-msg assistant' });
       this.currentAssistantWrap = wrap;
     }
     const target = this.currentAssistantWrap;
 
-    target.querySelector('.copsilot-usage')?.remove();
-    const el = target.createDiv({ cls: 'copsilot-usage' });
+    target.querySelector('.co-ober-usage')?.remove();
+    const el = target.createDiv({ cls: 'co-ober-usage' });
 
     const parts: string[] = [];
     if (usage.modelId) parts.push(usage.modelId.split('/').pop() ?? usage.modelId);

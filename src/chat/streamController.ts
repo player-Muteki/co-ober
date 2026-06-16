@@ -83,7 +83,7 @@ export class StreamController {
 						}
 					}).catch(e => {
 						if (this.disposed) return;
-						console.error('[copsilot] sync failed:', e);
+						console.error('[co-ober] sync failed:', e);
 						this.deps.onSyncFailure?.(e instanceof Error ? e.message : String(e));
 					});
 				}

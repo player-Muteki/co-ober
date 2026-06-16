@@ -1,7 +1,7 @@
 import type { Locale } from './index';
 
 const zh: Locale = {
-  appName: 'Copsilot',
+  appName: 'Co-Ober',
   appSubtitle: 'OpenCode Agent 在 Obsidian',
 
   welcome: {
@@ -14,7 +14,7 @@ const zh: Locale = {
     connected: '● 已连接',
     disconnected: '○ 未连接',
     authMethodsHint: 'OpenCode 返回了可用的认证方式：',
-    authLoginCommand: '请在终端运行 `opencode auth login`，然后重新连接 Copsilot。',
+    authLoginCommand: '请在终端运行 `opencode auth login`，然后重新连接 Co-Ober。',
   },
 
   sessionDropdown: {
@@ -130,7 +130,7 @@ const zh: Locale = {
 
   notice: {
     noSelection: '未选择文本',
-    connected: 'Copsilot 已连接',
+    connected: 'Co-Ober 已连接',
     connectFailed: '连接 OpenCode 失败',
   },
 
@@ -174,12 +174,12 @@ const zh: Locale = {
       failed: '重新连接失败',
     },
     autostart: {
-      name: '在 Copsilot 中自动连接',
-      desc: '仅在 Copsilot 用户操作时连接 OpenCode，不在 Obsidian 启动时连接',
+      name: '在 Co-Ober 中自动连接',
+      desc: '仅在 Co-Ober 用户操作时连接 OpenCode，不在 Obsidian 启动时连接',
     },
     diagnostics: {
       heading: '诊断',
-      description: '检查本地 OpenCode 环境和 Copsilot 运行时元数据',
+      description: '检查本地 OpenCode 环境和 Co-Ober 运行时元数据',
       run: '运行诊断',
       running: '诊断中…',
       pass: '通过：',

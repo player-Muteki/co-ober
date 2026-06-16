@@ -43,7 +43,7 @@ export class Autocomplete {
     this.close();
     // Create the dropdown container element
     this.dropdownEl = this.doc.createElement('div');
-    this.dropdownEl.addClass('copsilot-ac-dropdown');
+    this.dropdownEl.addClass('co-ober-ac-dropdown');
     this.container.appendChild(this.dropdownEl);
     this.mode = mode;
     this.allItems = items;
@@ -162,7 +162,7 @@ export class Autocomplete {
     ac.empty();
 
     if (this.filtered.length === 0) {
-      ac.createDiv({ cls: 'copsilot-ac-item empty', text: t().autocomplete.noMatches });
+      ac.createDiv({ cls: 'co-ober-ac-item empty', text: t().autocomplete.noMatches });
       return;
     }
 
@@ -185,13 +185,13 @@ export class Autocomplete {
     let firstInGroup = true;
     for (const [cat, items] of groups) {
       if (!firstInGroup) {
-        ac.createDiv({ cls: 'copsilot-ac-separator' });
+        ac.createDiv({ cls: 'co-ober-ac-separator' });
       }
       firstInGroup = false;
 
       // Section header
       const headerLabel = ((t() as unknown) as Record<string, Record<string, string>>).slashCategory?.[cat] ?? cat;
-      ac.createDiv({ cls: 'copsilot-ac-header', text: headerLabel });
+      ac.createDiv({ cls: 'co-ober-ac-header', text: headerLabel });
 
       for (let i = 0; i < items.length; i++) {
         this.renderItem(ac, items[i], this.filtered.indexOf(items[i]));
@@ -201,7 +201,7 @@ export class Autocomplete {
 
   private renderItem(ac: HTMLDivElement, item: ACItem, idx: number): void {
     const el = ac.createDiv({
-      cls: `copsilot-ac-item${idx === this.selIdx ? ' selected' : ''}`,
+      cls: `co-ober-ac-item${idx === this.selIdx ? ' selected' : ''}`,
     });
 
     // First row: label + badge

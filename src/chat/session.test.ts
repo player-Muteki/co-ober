@@ -1,16 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createSessionStore } from './session';
-import type CopsilotPlugin from '../main';
+import type CoOberPlugin from '../main';
 import type { SerializedSession, SerializedMessage } from '../types';
 import { setLocale } from '../i18n/index';
 
-function createMockPlugin(): CopsilotPlugin {
+function createMockPlugin(): CoOberPlugin {
   return {
     sessions: new Map<string, SerializedSession>(),
     activeSessionId: null,
     savePluginData: vi.fn().mockResolvedValue(undefined),
     loadPluginData: vi.fn().mockResolvedValue(undefined),
-  } as unknown as CopsilotPlugin;
+  } as unknown as CoOberPlugin;
 }
 
 describe('SessionStore', () => {

@@ -9,7 +9,7 @@ export type SlashCategory = 'session' | 'view' | 'agent';
 /**
  * Full definition of a single slash command.
  *
- * Mirrors the shape used by the ACP protocol but extended for copsilot's
+ * Mirrors the shape used by the ACP protocol but extended for co-ober's
  * multi-source (builtin + ACP + file + MCP + skill) execution model.
  */
 export interface SlashCommandDef {
@@ -127,7 +127,7 @@ export class CommandRegistry {
       this.ingestSourceDefs(source.type, defs);
       this.rebuildOrder();
     } catch (e) {
-      console.error(`[copsilot] failed to reload source ${source.type}:`, e);
+      console.error(`[co-ober] failed to reload source ${source.type}:`, e);
     }
   }
 

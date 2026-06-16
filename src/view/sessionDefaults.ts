@@ -1,4 +1,4 @@
-import type { CopsilotSettings, SessionConfigOption } from '../types';
+import type { CoOberSettings, SessionConfigOption } from '../types';
 
 export interface DefaultSessionClient {
   setMode(sessionId: string, modeId: string): Promise<void>;
@@ -9,7 +9,7 @@ export interface DefaultSessionClient {
 export async function applyDefaultSessionSettings(
   client: DefaultSessionClient,
   sessionId: string,
-  settings: CopsilotSettings,
+  settings: CoOberSettings,
 ): Promise<void> {
   if (settings.defaultAgent) await client.setMode(sessionId, settings.defaultAgent);
   if (settings.defaultModel) await client.setModel(sessionId, settings.defaultModel);

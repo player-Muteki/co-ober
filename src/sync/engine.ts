@@ -35,7 +35,7 @@ export class SyncEngine {
             await this.vault.create(note.path, note.content);
           }
         } catch (e) {
-          console.error('[copsilot] sync rule failed:', rule.toolName, e);
+          console.error('[co-ober] sync rule failed:', rule.toolName, e);
           failures.push({ rule, error: e instanceof Error ? e : new Error(String(e)) });
         }
       }

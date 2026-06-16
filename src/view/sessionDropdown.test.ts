@@ -57,26 +57,26 @@ describe('SessionDropdown', () => {
   describe('open', () => {
     it('creates dropdown element', () => {
       dropdown.open();
-      const dropdownEl = container.querySelector('.copsilot-session-list');
+      const dropdownEl = container.querySelector('.co-ober-session-list');
       expect(dropdownEl).not.toBeNull();
     });
 
     it('creates search input', () => {
       dropdown.open();
-      const search = container.querySelector('.copsilot-session-search') as HTMLInputElement;
+      const search = container.querySelector('.co-ober-session-search') as HTMLInputElement;
       expect(search).not.toBeNull();
       expect(search.placeholder).toBe('Search sessions…');
     });
 
     it('renders all sessions', () => {
       dropdown.open();
-      const items = container.querySelectorAll('.copsilot-session-item');
+      const items = container.querySelectorAll('.co-ober-session-item');
       expect(items.length).toBe(3);
     });
 
     it('marks current session as active', () => {
       dropdown.open();
-      const activeItem = container.querySelector('.copsilot-session-item.active');
+      const activeItem = container.querySelector('.co-ober-session-item.active');
       expect(activeItem).not.toBeNull();
       expect(activeItem?.querySelector('.session-label')?.textContent).toBe('Chat 1');
     });
@@ -84,7 +84,7 @@ describe('SessionDropdown', () => {
     it('shows empty message when no sessions', () => {
       sessionStore.list.mockReturnValue([]);
       dropdown.open();
-      const empty = container.querySelector('.copsilot-session-empty');
+      const empty = container.querySelector('.co-ober-session-empty');
       expect(empty).not.toBeNull();
       expect(empty?.textContent).toBe('No sessions found');
     });
@@ -92,7 +92,7 @@ describe('SessionDropdown', () => {
     it('closes if already open', () => {
       dropdown.open();
       dropdown.open();
-      const items = container.querySelectorAll('.copsilot-session-list');
+      const items = container.querySelectorAll('.co-ober-session-list');
       expect(items.length).toBe(0);
     });
 
@@ -123,8 +123,8 @@ describe('SessionDropdown', () => {
     it('shows only current session and no search when list capability is false', () => {
       dropdown = new SessionDropdown(container, anchor, sessionStore as any, () => 'session-2', callbacks as any, () => ({ sessionCapabilities: { list: false, close: true, fork: true, resume: true } }));
       dropdown.open();
-      expect(container.querySelector('.copsilot-session-search')).toBeNull();
-      const items = container.querySelectorAll('.copsilot-session-item');
+      expect(container.querySelector('.co-ober-session-search')).toBeNull();
+      const items = container.querySelectorAll('.co-ober-session-item');
       expect(items.length).toBe(1);
       expect(items[0].querySelector('.session-label')?.textContent).toBe('Chat 2');
     });
@@ -134,7 +134,7 @@ describe('SessionDropdown', () => {
     it('removes dropdown element', () => {
       dropdown.open();
       dropdown.close();
-      const dropdownEl = container.querySelector('.copsilot-session-list');
+      const dropdownEl = container.querySelector('.co-ober-session-list');
       expect(dropdownEl).toBeNull();
     });
 
@@ -164,7 +164,7 @@ describe('SessionDropdown', () => {
   describe('session interactions', () => {
     it('calls onSwitch when clicking a session', async () => {
       dropdown.open();
-      const items = container.querySelectorAll('.copsilot-session-item');
+      const items = container.querySelectorAll('.co-ober-session-item');
       (items[1] as HTMLElement).click();
       await new Promise(r => setTimeout(r, 10));
       expect(callbacks.onSwitch).toHaveBeenCalledWith('session-2');
@@ -172,7 +172,7 @@ describe('SessionDropdown', () => {
 
     it('calls onNewSession when deleting current session', async () => {
       dropdown.open();
-      const deleteBtn = container.querySelector('.copsilot-session-item.active .session-delete') as HTMLElement;
+      const deleteBtn = container.querySelector('.co-ober-session-item.active .session-delete') as HTMLElement;
       deleteBtn.click();
       await new Promise(r => setTimeout(r, 10));
       expect(callbacks.onDelete).toHaveBeenCalledWith('session-1');
@@ -180,7 +180,7 @@ describe('SessionDropdown', () => {
 
     it('does not call onNewSession when deleting non-current session', async () => {
       dropdown.open();
-      const items = container.querySelectorAll('.copsilot-session-item');
+      const items = container.querySelectorAll('.co-ober-session-item');
       const deleteBtn = items[1].querySelector('.session-delete') as HTMLElement;
       deleteBtn.click();
       await new Promise(r => setTimeout(r, 10));
@@ -192,31 +192,31 @@ describe('SessionDropdown', () => {
   describe('search filtering', () => {
     it('filters sessions by title', () => {
       dropdown.open();
-      const search = container.querySelector('.copsilot-session-search') as HTMLInputElement;
+      const search = container.querySelector('.co-ober-session-search') as HTMLInputElement;
       search.value = 'Chat 2';
       search.dispatchEvent(new Event('input'));
-      const items = container.querySelectorAll('.copsilot-session-item');
+      const items = container.querySelectorAll('.co-ober-session-item');
       expect(items.length).toBe(1);
       expect(items[0].querySelector('.session-label')?.textContent).toBe('Chat 2');
     });
 
     it('shows empty message when no matches', () => {
       dropdown.open();
-      const search = container.querySelector('.copsilot-session-search') as HTMLInputElement;
+      const search = container.querySelector('.co-ober-session-search') as HTMLInputElement;
       search.value = 'nonexistent';
       search.dispatchEvent(new Event('input'));
-      const empty = container.querySelector('.copsilot-session-empty');
+      const empty = container.querySelector('.co-ober-session-empty');
       expect(empty).not.toBeNull();
     });
 
     it('shows all sessions when search is cleared', () => {
       dropdown.open();
-      const search = container.querySelector('.copsilot-session-search') as HTMLInputElement;
+      const search = container.querySelector('.co-ober-session-search') as HTMLInputElement;
       search.value = 'Chat 2';
       search.dispatchEvent(new Event('input'));
       search.value = '';
       search.dispatchEvent(new Event('input'));
-      const items = container.querySelectorAll('.copsilot-session-item');
+      const items = container.querySelectorAll('.co-ober-session-item');
       expect(items.length).toBe(3);
     });
   });

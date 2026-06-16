@@ -227,7 +227,7 @@ describe('AcpSubprocess', () => {
       const errorEvent = new Error('stdin write error');
       mockStdin.emit('error', errorEvent);
 
-      expect(consoleSpy).toHaveBeenCalledWith('[copsilot] stdin:', errorEvent);
+      expect(consoleSpy).toHaveBeenCalledWith('[co-ober] stdin:', errorEvent);
       consoleSpy.mockRestore();
   });
 

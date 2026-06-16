@@ -1,5 +1,5 @@
 import { ItemView, WorkspaceLeaf, TFile } from 'obsidian';
-import type CopsilotPlugin from '../main';
+import type CoOberPlugin from '../main';
 import { VIEW_TYPE } from '../types';
 import type { ContextRef, PromptPart } from '../types';
 import { t } from '../i18n/index';
@@ -21,15 +21,15 @@ import { PermissionBanner } from './permissionBanner';
 import { InlineEditPanel } from './inlineEditPanel';
 import { WelcomeView } from './welcomeView';
 import { KeybindingManager } from './keybindingManager';
-import { CopsilotViewController } from './copsilotViewController';
-import type { ControllerCallbacks, ControllerDeps } from './copsilotViewController';
+import { CoOberViewController } from './CoOberViewController';
+import type { ControllerCallbacks, ControllerDeps } from './CoOberViewController';
 
 interface MarkdownFileView {
 	getViewType(): string;
 	file?: TFile | null;
 }
 
-export class CopsilotView extends ItemView {
+export class CoOberView extends ItemView {
 	private static clipIdCounter = 0;
 	private messagesEl!: HTMLDivElement;
 	private contextChipsEl!: HTMLDivElement;
@@ -57,7 +57,7 @@ export class CopsilotView extends ItemView {
 	private lastAutoRefId: string | null = null;
 	private headerTitleEl: HTMLDivElement | null = null;
 	private newSessionBtnEl: HTMLButtonElement | null = null;
-	private controller!: CopsilotViewController;
+	private controller!: CoOberViewController;
 
 	// Context arc meter (in header)
 	private meterEl!: HTMLDivElement;
@@ -71,7 +71,7 @@ export class CopsilotView extends ItemView {
 
 	constructor(
 		leaf: WorkspaceLeaf,
-		private plugin: CopsilotPlugin,
+		private plugin: CoOberPlugin,
 	) { super(leaf); }
 
 	override getViewType(): string { return VIEW_TYPE; }
@@ -80,7 +80,7 @@ export class CopsilotView extends ItemView {
 
 	override async onOpen(): Promise<void> {
 		const el = this.contentEl;
-		el.addClass('copsilot-view');
+		el.addClass('co-ober-view');
 
 		// Init core modules
 		this.mention = new ContextMention(this.plugin.app);
@@ -105,25 +105,25 @@ export class CopsilotView extends ItemView {
 		}
 
 		// ── Header ──
-		const header = el.createDiv({ cls: 'copsilot-header' });
+		const header = el.createDiv({ cls: 'co-ober-header' });
 
-		this.headerTitleEl = header.createDiv({ text: t().appName, cls: 'copsilot-header-title' });
+		this.headerTitleEl = header.createDiv({ text: t().appName, cls: 'co-ober-header-title' });
 
 		// Context arc meter (right of title)
-		this.meterEl = header.createDiv({ cls: 'copsilot-arc-meter' });
+		this.meterEl = header.createDiv({ cls: 'co-ober-arc-meter' });
 		const svg = this.doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
 		svg.setAttribute('viewBox', '0 0 40 24');
-		svg.setAttribute('class', 'copsilot-arc-svg');
+		svg.setAttribute('class', 'co-ober-arc-svg');
 		const R = 18;
 		const C = 20;
 		const ARC_LEN = Math.PI * R;
 		const track = this.doc.createElementNS('http://www.w3.org/2000/svg', 'path');
 		track.setAttribute('d', `M ${C - R} ${C} A ${R} ${R} 0 0 1 ${C + R} ${C}`);
-		track.setAttribute('class', 'copsilot-arc-track');
+		track.setAttribute('class', 'co-ober-arc-track');
 		svg.appendChild(track);
 		const defs = this.doc.createElementNS('http://www.w3.org/2000/svg', 'defs');
 		const clipPath = this.doc.createElementNS('http://www.w3.org/2000/svg', 'clipPath');
-		const arcClipId = `arc-clip-${CopsilotView.clipIdCounter++}`;
+		const arcClipId = `arc-clip-${CoOberView.clipIdCounter++}`;
 		clipPath.setAttribute('id', arcClipId);
 		const clipRect = this.doc.createElementNS('http://www.w3.org/2000/svg', 'rect');
 		clipRect.setAttribute('y', '20');
@@ -136,21 +136,21 @@ export class CopsilotView extends ItemView {
 		this.meterArcFill.setAttribute('cx', String(C));
 		this.meterArcFill.setAttribute('cy', String(C));
 		this.meterArcFill.setAttribute('r', String(R));
-		this.meterArcFill.setAttribute('class', 'copsilot-arc-fill');
+		this.meterArcFill.setAttribute('class', 'co-ober-arc-fill');
 		this.meterArcFill.setAttribute('stroke-dasharray', `0 ${ARC_LEN}`);
 		this.meterArcFill.setAttribute('clip-path', `url(#${arcClipId})`);
 		svg.appendChild(this.meterArcFill);
 		this.meterEl.appendChild(svg);
-		this.meterPctEl = this.meterEl.createSpan({ cls: 'copsilot-arc-pct' });
+		this.meterPctEl = this.meterEl.createSpan({ cls: 'co-ober-arc-pct' });
 		this.meterPctEl.setText('—');
 		this.meterEl.addClass('empty');
 
-		const actions = header.createDiv({ cls: 'copsilot-header-actions' });
+		const actions = header.createDiv({ cls: 'co-ober-header-actions' });
 		this.newSessionBtnEl = actions.createEl('button', { text: t().header.new, cls: 'mod-icon' });
 		this.sessionButtonEl = actions.createEl('button', { text: '⋯', cls: 'mod-icon' });
 
 		// ── Messages ──
-		this.messagesEl = el.createDiv({ cls: 'copsilot-messages' });
+		this.messagesEl = el.createDiv({ cls: 'co-ober-messages' });
 		this.renderer = new ChatRenderer(this.messagesEl, this.plugin.app, () => this.controller?.state.autoScrollEnabled ?? true);
 
 		this.permissionBanner = new PermissionBanner(this.messagesEl);
@@ -158,10 +158,10 @@ export class CopsilotView extends ItemView {
 		this.welcomeView = new WelcomeView(this.messagesEl, () => this.plugin.getClient()?.getAgentCapabilities() ?? null);
 
 		// ── Context chips ──
-		this.contextChipsEl = el.createDiv({ cls: 'copsilot-context-chips' });
+		this.contextChipsEl = el.createDiv({ cls: 'co-ober-context-chips' });
 
 		// ── Input ──
-		this.inputAreaEl = el.createDiv({ cls: 'copsilot-input-area' });
+		this.inputAreaEl = el.createDiv({ cls: 'co-ober-input-area' });
 		this.input = new ChatInput(this.inputAreaEl, {
 			onSend: (text: string) => { void this.send(text); },
 			onStop: () => { void this.stopGeneration(); },
@@ -179,7 +179,7 @@ export class CopsilotView extends ItemView {
 		});
 
 		// ── Toolbar (below input) ──
-		const tbEl = el.createDiv({ cls: 'copsilot-toolbar' });
+		const tbEl = el.createDiv({ cls: 'co-ober-toolbar' });
 		this.toolbar = new InputToolbar(tbEl, {
 			onAgentChange: (agent: string) => {
 				const client = this.plugin.getClient();
@@ -249,7 +249,7 @@ export class CopsilotView extends ItemView {
 			onAutoRefActiveFile: () => this.autoRefActiveFile(),
 		};
 
-		this.controller = new CopsilotViewController(deps, callbacks);
+		this.controller = new CoOberViewController(deps, callbacks);
 
 		// Restore session ID into controller state
 		if (savedSessionId) {
@@ -293,7 +293,7 @@ export class CopsilotView extends ItemView {
 		if (this.controller.state.isConnected) {
 			this.controller.bindClientHandlers();
 			void this.controller.syncRuntimeSession(this.controller.getSessionId()).catch((e) => {
-				console.error('[copsilot] session sync:', e);
+				console.error('[co-ober] session sync:', e);
 			});
 		} else {
 			// Always try to connect when view opens, not just when autoConnect is true
@@ -334,7 +334,7 @@ export class CopsilotView extends ItemView {
 			onAddImagePart: (data, mimeType, size, name) => {
 				this.pendingImageParts.push({ type: 'image', mimeType, data });
 				const chip = this.contextChipsEl.createDiv({
-					cls: 'copsilot-chip',
+					cls: 'co-ober-chip',
 					text: `🖼 ${name}`,
 				});
 				chip.dataset.kind = 'image';
@@ -405,7 +405,7 @@ export class CopsilotView extends ItemView {
 	private showNewMessagesBtn(): void {
 		if (this.newMessagesBtn) return;
 		const btn = this.messagesEl.createEl('button', {
-			cls: 'copsilot-new-messages-btn',
+			cls: 'co-ober-new-messages-btn',
 			text: t().newMessages,
 		});
 		btn.onclick = () => {
@@ -442,7 +442,7 @@ export class CopsilotView extends ItemView {
 	private showReconnectBtn(): void {
 		if (this.reconnectBtn) return;
 		this.reconnectBtn = this.contentEl.createEl('button', {
-			cls: 'copsilot-reconnect-btn',
+			cls: 'co-ober-reconnect-btn',
 			text: t().reconnect.text,
 		});
 		this.reconnectBtn.onclick = () => this.reconnect();
@@ -474,7 +474,7 @@ export class CopsilotView extends ItemView {
 	private clearPendingImageChips(): void {
 		this.pendingImageParts = [];
 		if (this.dragDropManager) this.dragDropManager.resetBytes();
-		this.contextChipsEl.querySelectorAll('.copsilot-chip').forEach((el) => {
+		this.contextChipsEl.querySelectorAll('.co-ober-chip').forEach((el) => {
 			if ((el as HTMLDivElement).dataset.kind === 'image') el.remove();
 		});
 	}
@@ -530,7 +530,7 @@ export class CopsilotView extends ItemView {
 			this.manualRefs.add(ref.id);
 			if (this.lastAutoRefId === ref.id) this.lastAutoRefId = null;
 		}
-		const chip = this.contextChipsEl.createDiv({ cls: 'copsilot-chip' });
+		const chip = this.contextChipsEl.createDiv({ cls: 'co-ober-chip' });
 		chip.dataset.refId = ref.id;
 		chip.title = ref.path;
 		const label = ref.path !== ref.name ? `${ref.name} (${ref.path})` : ref.name;
@@ -543,7 +543,7 @@ export class CopsilotView extends ItemView {
 		this.currentRefs = this.currentRefs.filter(r => r.id !== id);
 		if (this.mention.hasRef(id)) this.mention.removeRef(id);
 		this.manualRefs.delete(id);
-		this.contextChipsEl.querySelectorAll('.copsilot-chip').forEach(el => {
+		this.contextChipsEl.querySelectorAll('.co-ober-chip').forEach(el => {
 			if ((el as HTMLDivElement).dataset.refId === id) el.remove();
 		});
 	}

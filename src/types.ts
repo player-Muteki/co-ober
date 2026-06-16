@@ -236,12 +236,12 @@ export interface SerializedSession {
 }
 
 export interface PluginData {
-  settings: CopsilotSettings;
+  settings: CoOberSettings;
   sessions: SerializedSession[];
   activeSessionId: string | null;
 }
 
-export interface CopsilotSettings {
+export interface CoOberSettings {
 	opencodePath: string;
 	defaultAgent: string;
 	defaultModel: string;
@@ -268,7 +268,7 @@ export interface CopsilotSettings {
 	idleTimeoutMs?: number;
 }
 
-export const DEFAULT_SETTINGS: CopsilotSettings = {
+export const DEFAULT_SETTINGS: CoOberSettings = {
 	opencodePath: 'opencode',
 	defaultAgent: 'build',
 	defaultModel: '',
@@ -315,4 +315,4 @@ export interface UsageInfo {
   elapsedMs?: number;
 }
 
-export const VIEW_TYPE = 'copsilot-view';
+export const VIEW_TYPE = 'co-ober-view';

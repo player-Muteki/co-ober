@@ -26,11 +26,11 @@ export class ChatInput {
     private callbacks: InputCallbacks,
   ) {
     this.doc = container.ownerDocument ?? activeDocument;
-    this.resizeHandle = container.createDiv({ cls: 'copsilot-input-resize-handle' });
+    this.resizeHandle = container.createDiv({ cls: 'co-ober-input-resize-handle' });
 
-    const row = container.createDiv({ cls: 'copsilot-input-row' });
+    const row = container.createDiv({ cls: 'co-ober-input-row' });
     this.textarea = row.createEl('textarea', { placeholder: t().input.placeholder });
-    this.textarea.addClass('copsilot-input');
+    this.textarea.addClass('co-ober-input');
 
     this.unsubscribeLocale = onLocaleChange(() => this.refreshLocale());
 

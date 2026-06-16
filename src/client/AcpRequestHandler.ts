@@ -120,7 +120,7 @@ export class AcpRequestHandler {
 		})).catch((error: unknown) => {
 			// Only fall back to reject if the custom handler threw (e.g. programming error).
 			// The default handler never throws.
-			console.error('[copsilot] permission request handler failed, falling back to reject:', error);
+			console.error('[co-ober] permission request handler failed, falling back to reject:', error);
 			return this.requestPermission(req).then((decision: string) => ({
 				sessionId: params.sessionId,
 				decision: { optionId: decision },

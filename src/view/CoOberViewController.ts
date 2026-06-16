@@ -1,5 +1,5 @@
 import type { NormalizedUpdate, ContextRef, PromptPart, SessionConfigOption, ModeOption, ModelOption } from '../types';
-import type CopsilotPlugin from '../main';
+import type CoOberPlugin from '../main';
 import { t } from '../i18n/index';
 import type { ChatRenderer } from './renderer';
 import type { ChatInput } from '../chat/input';
@@ -49,11 +49,11 @@ export interface ControllerDeps {
 	syncEngine: SyncEngine;
 	sessionStore: SessionStore;
 	welcomeView: WelcomeView;
-	plugin: CopsilotPlugin;
+	plugin: CoOberPlugin;
 	updateContextMeter: (usage: import('../types').UsageInfo | null) => void;
 }
 
-export class CopsilotViewController {
+export class CoOberViewController {
 	private sessionMutex = new Mutex();
 	readonly state = new ChatState();
 	private streamCtrl!: StreamController;
@@ -278,7 +278,7 @@ export class CopsilotViewController {
 			try {
 				await this.syncRuntimeSession(this.state.sessionId);
 			} catch (e) {
-				console.error('[copsilot] session sync on connect:', e);
+				console.error('[co-ober] session sync on connect:', e);
 			}
 		}
 		this.loadToolbarOptions();
@@ -297,7 +297,7 @@ export class CopsilotViewController {
 				try {
 					await this.syncRuntimeSession(this.state.sessionId);
 				} catch (e) {
-					console.error('[copsilot] session resync:', e);
+					console.error('[co-ober] session resync:', e);
 				}
 				this.loadToolbarOptions();
 				if (this.busy) {
@@ -344,14 +344,14 @@ export class CopsilotViewController {
 			try {
 				await this.syncRuntimeSession(this.state.sessionId);
 			} catch (e) {
-				console.error('[copsilot] session resync:', e);
+				console.error('[co-ober] session resync:', e);
 			}
 			this.loadToolbarOptions();
 			this.state.isConnected = true;
 			this.deps.welcomeView.updateStatus(true);
 			this.callbacks.onHideReconnectBtn();
 		} catch (e) {
-			console.error('[copsilot] reconnect failed:', e);
+			console.error('[co-ober] reconnect failed:', e);
 			throw e;
 		}
 	}
@@ -374,7 +374,7 @@ export class CopsilotViewController {
 		try {
 			await client.cancel(this.state.sessionId);
 		} catch (e) {
-			console.error('[copsilot] cancel:', e);
+			console.error('[co-ober] cancel:', e);
 		}
 	}
 
@@ -412,7 +412,7 @@ export class CopsilotViewController {
 			this.callbacks.onShowWelcome(this.deps.plugin.getClient() !== null);
 			this.callbacks.onAutoRefActiveFile();
 		} catch (e) {
-			console.error('[copsilot] newSession:', e);
+			console.error('[co-ober] newSession:', e);
 		}
 	}
 
@@ -441,7 +441,7 @@ export class CopsilotViewController {
 			try {
 				await this.syncRuntimeSession(this.state.sessionId);
 			} catch (e) {
-				console.error('[copsilot] session sync failed, creating new session:', e);
+				console.error('[co-ober] session sync failed, creating new session:', e);
 				this.state.sessionId = null;
 			}
 			this.loadToolbarOptions();
@@ -462,7 +462,7 @@ export class CopsilotViewController {
 			this.loadToolbarOptions();
 			return this.state.sessionId;
 		} catch (e) {
-			console.error('[copsilot] session init:', e);
+			console.error('[co-ober] session init:', e);
 			return null;
 		}
 	}
@@ -478,7 +478,7 @@ export class CopsilotViewController {
 		try {
 			await this.syncRuntimeSession(sessionId);
 		} catch (e) {
-			console.error('[copsilot] session switch sync:', e);
+			console.error('[co-ober] session switch sync:', e);
 		}
 		await this.restoreSession();
 		this.deps.sessionStore.setActive(sessionId);
@@ -737,7 +737,7 @@ export class CopsilotViewController {
 		try {
 			c.abort();
 		} catch (e) {
-			console.error('[copsilot] abort:', e);
+			console.error('[co-ober] abort:', e);
 		}
 	}
 

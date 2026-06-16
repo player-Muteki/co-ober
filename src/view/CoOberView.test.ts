@@ -1,15 +1,15 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
-import { CopsilotView } from './copsilotView';
-import { CopsilotViewController } from './copsilotViewController';
-import type { ControllerCallbacks, ControllerDeps } from './copsilotViewController';
+import { CoOberView } from './CoOberView';
+import { CoOberViewController } from './CoOberViewController';
+import type { ControllerCallbacks, ControllerDeps } from './CoOberViewController';
 import { setLocale } from '../i18n/index';
 import { installObsidianDomHelpers } from '../test/domHelpers';
-import type CopsilotPlugin from '../main';
+import type CoOberPlugin from '../main';
 
 installObsidianDomHelpers();
 
-describe('CopsilotView inline edit preview', () => {
+describe('CoOberView inline edit preview', () => {
   it('renders changed lines and applies edited text to the active editor selection', () => {
     setLocale('en');
     const view = createView();
@@ -22,10 +22,10 @@ describe('CopsilotView inline edit preview', () => {
     expect(texts(view, '.diff-line.removed')).toEqual(['-old line']);
     expect(texts(view, '.diff-line.added')).toEqual(['+new line']);
 
-    click(view, '.copsilot-inline-edit-actions .mod-cta');
+    click(view, '.co-ober-inline-edit-actions .mod-cta');
 
     expect(editor.replaceSelection).toHaveBeenCalledWith('new line');
-    expect(view.contentEl.querySelector('.copsilot-inline-edit-panel')).toBeNull();
+    expect(view.contentEl.querySelector('.co-ober-inline-edit-panel')).toBeNull();
   });
 
   it('discards preview without replacing selected text', () => {
@@ -36,10 +36,10 @@ describe('CopsilotView inline edit preview', () => {
 
     const inlineEditPanel = Reflect.get(view, 'inlineEditPanel') as InlineEditPanel;
     inlineEditPanel.showDiff('original', 'edited');
-    click(view, '.copsilot-inline-edit-actions button:not(.mod-cta)');
+    click(view, '.co-ober-inline-edit-actions button:not(.mod-cta)');
 
     expect(editor.replaceSelection).not.toHaveBeenCalled();
-    expect(view.contentEl.querySelector('.copsilot-inline-edit-panel')).toBeNull();
+    expect(view.contentEl.querySelector('.co-ober-inline-edit-panel')).toBeNull();
   });
 
   it('refreshes inline edit labels when the locale changes', () => {
@@ -49,19 +49,19 @@ describe('CopsilotView inline edit preview', () => {
 
     const inlineEditPanel = Reflect.get(view, 'inlineEditPanel') as InlineEditPanel;
     inlineEditPanel.showDiff('old', 'new');
-    expect(text(view, '.copsilot-inline-edit-title')).toBe('AI Edit Preview');
+    expect(text(view, '.co-ober-inline-edit-title')).toBe('AI Edit Preview');
     expect(text(view, '.mod-cta')).toBe('Apply');
 
     setLocale('zh');
     view.refreshLocale(); // manual trigger of parent since dom relies on it
 
-    expect(text(view, '.copsilot-inline-edit-title')).toBe('AI 编辑预览');
+    expect(text(view, '.co-ober-inline-edit-title')).toBe('AI 编辑预览');
     expect(text(view, '.mod-cta')).toBe('应用');
-    expect(text(view, '.copsilot-inline-edit-actions button:not(.mod-cta)')).toBe('放弃');
+    expect(text(view, '.co-ober-inline-edit-actions button:not(.mod-cta)')).toBe('放弃');
   });
 });
 
-describe('CopsilotView runtime session sync', () => {
+describe('CoOberView runtime session sync', () => {
   it('opens and tries to connect when view opens', async () => {
     setLocale('en');
     const plugin = createPlugin();
@@ -69,9 +69,9 @@ describe('CopsilotView runtime session sync', () => {
 
     await view.onOpen();
 
-    expect(view.contentEl.querySelector('.copsilot-header')).not.toBeNull();
-    expect(view.contentEl.querySelector('.copsilot-input')).not.toBeNull();
-    expect(view.contentEl.querySelector('.copsilot-welcome')).not.toBeNull();
+    expect(view.contentEl.querySelector('.co-ober-header')).not.toBeNull();
+    expect(view.contentEl.querySelector('.co-ober-input')).not.toBeNull();
+    expect(view.contentEl.querySelector('.co-ober-welcome')).not.toBeNull();
     // Now we try to connect when view opens
     expect(plugin.initClient).toHaveBeenCalled();
     expect(plugin.getClient()).toBeNull();
@@ -80,7 +80,7 @@ describe('CopsilotView runtime session sync', () => {
   it('connects and creates a runtime session when sending the first message', async () => {
     setLocale('en');
     const client = createClient();
-    let plugin: CopsilotPlugin;
+    let plugin: CoOberPlugin;
     plugin = createPlugin({
       initClient: vi.fn().mockImplementation(async () => {
         plugin.getClient = vi.fn(() => client) as never;
@@ -114,7 +114,7 @@ describe('CopsilotView runtime session sync', () => {
       app: { vault: { adapter: { getBasePath: () => '/vault' } } },
       settings: { maxNoteSize: 8000, syncRules: [], mcpServers },
       getClient: () => client,
-    } as unknown as CopsilotPlugin;
+    } as unknown as CoOberPlugin;
 
     const controller = createController(plugin);
     await controller.syncRuntimeSession('restored-session');
@@ -123,7 +123,7 @@ describe('CopsilotView runtime session sync', () => {
   });
 });
 
-describe('CopsilotView cleanup', () => {
+describe('CoOberView cleanup', () => {
   it('closes safely before the view finishes opening', async () => {
     const view = createView();
 
@@ -131,13 +131,13 @@ describe('CopsilotView cleanup', () => {
   });
 });
 
-function createView(plugin = createPlugin()): CopsilotView {
-  const view = new CopsilotView({} as never, plugin);
+function createView(plugin = createPlugin()): CoOberView {
+  const view = new CoOberView({} as never, plugin);
   Reflect.set(view, 'registerEvent', vi.fn());
   return view;
 }
 
-function createController(plugin: CopsilotPlugin): CopsilotViewController {
+function createController(plugin: CoOberPlugin): CoOberViewController {
 	const noop = vi.fn();
 	const deps: ControllerDeps = {
     renderer: {
@@ -165,14 +165,14 @@ function createController(plugin: CopsilotPlugin): CopsilotViewController {
     onShowNewMessagesBtn: noop, onHideNewMessagesBtn: noop, onScrollToBottom: noop, onClearUI: noop,
     onClearChips: noop, onClearPendingImageChips: noop, onAutoRefActiveFile: noop,
   };
-  return new CopsilotViewController(deps, callbacks);
+  return new CoOberViewController(deps, callbacks);
 }
 
 function createPlugin(overrides: {
   client?: ReturnType<typeof createClient> | null;
   initClient?: ReturnType<typeof vi.fn>;
   settings?: Record<string, unknown>;
-} = {}): CopsilotPlugin {
+} = {}): CoOberPlugin {
   const client = overrides.client ?? null;
   return {
     app: {
@@ -205,7 +205,7 @@ function createPlugin(overrides: {
     waitForClient: vi.fn().mockResolvedValue(false),
     initClient: overrides.initClient ?? vi.fn().mockResolvedValue(Boolean(client)),
     getClient: vi.fn(() => client),
-  } as unknown as CopsilotPlugin;
+  } as unknown as CoOberPlugin;
 }
 
 function createClient() {
@@ -238,7 +238,7 @@ function createEditor(): { replaceSelection: ReturnType<typeof vi.fn> } {
 import { InlineEditPanel } from './inlineEditPanel';
 
 function setPendingInlineEdit(
-  view: CopsilotView,
+  view: CoOberView,
   original: string,
   editor: { replaceSelection: ReturnType<typeof vi.fn> },
 ): void {
@@ -252,16 +252,16 @@ function setPendingInlineEdit(
   inlineEditPanel.pendingState = { original, editor: editor as any };
 }
 
-function click(view: CopsilotView, selector: string): void {
+function click(view: CoOberView, selector: string): void {
   const button = view.contentEl.querySelector(selector) as HTMLButtonElement | null;
   expect(button).not.toBeNull();
   button?.click();
 }
 
-function text(view: CopsilotView, selector: string): string | null | undefined {
+function text(view: CoOberView, selector: string): string | null | undefined {
   return view.contentEl.querySelector(selector)?.textContent;
 }
 
-function texts(view: CopsilotView, selector: string): string[] {
+function texts(view: CoOberView, selector: string): string[] {
   return [...view.contentEl.querySelectorAll(selector)].map((el) => el.textContent ?? '');
 }

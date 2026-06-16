@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { CopsilotViewController } from './copsilotViewController';
-import type { ControllerCallbacks, ControllerDeps } from './copsilotViewController';
+import { CoOberViewController } from './CoOberViewController';
+import type { ControllerCallbacks, ControllerDeps } from './CoOberViewController';
 import { setLocale } from '../i18n/index';
 
 setLocale('en');
@@ -75,15 +75,15 @@ function createMockClient(overrides: Record<string, unknown> = {}) {
 	};
 }
 
-describe('CopsilotViewController', () => {
+describe('CoOberViewController', () => {
 	let deps: ControllerDeps;
 	let callbacks: ReturnType<typeof createMockCallbacks>;
-	let controller: CopsilotViewController;
+	let controller: CoOberViewController;
 
 	beforeEach(() => {
 		deps = createMockDeps();
 		callbacks = createMockCallbacks();
-		controller = new CopsilotViewController(deps, callbacks);
+		controller = new CoOberViewController(deps, callbacks);
 	});
 
 	describe('initialization', () => {
@@ -460,7 +460,7 @@ describe('CopsilotViewController', () => {
 	describe('buildParts', () => {
 		it('builds parts with text only', async () => {
 			const parts = await controller.buildParts('hello', []);
-			expect(parts).toEqual([{ type: 'text', text: expect.stringContaining('You are Copsilot') }, { type: 'text', text: 'hello' }]);
+			expect(parts).toEqual([{ type: 'text', text: expect.stringContaining('You are Co-Ober') }, { type: 'text', text: 'hello' }]);
 		});
 
 		it('resolves context refs', async () => {

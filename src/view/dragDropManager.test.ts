@@ -66,7 +66,7 @@ describe('DragDropManager', () => {
       Object.defineProperty(event, 'dataTransfer', { value: { dropEffect: '' } });
       dropZone.dispatchEvent(event);
 
-      const overlay = overlayContainer.querySelector('.copsilot-drag-overlay');
+      const overlay = overlayContainer.querySelector('.co-ober-drag-overlay');
       expect(overlay).not.toBeNull();
     });
 
@@ -77,7 +77,7 @@ describe('DragDropManager', () => {
       dropZone.dispatchEvent(event);
       dropZone.dispatchEvent(event);
 
-      const overlays = overlayContainer.querySelectorAll('.copsilot-drag-overlay');
+      const overlays = overlayContainer.querySelectorAll('.co-ober-drag-overlay');
       expect(overlays.length).toBe(1);
     });
 
@@ -91,7 +91,7 @@ describe('DragDropManager', () => {
       Object.defineProperty(leaveEvent, 'relatedTarget', { value: document.body });
       dropZone.dispatchEvent(leaveEvent);
 
-      const overlay = overlayContainer.querySelector('.copsilot-drag-overlay');
+      const overlay = overlayContainer.querySelector('.co-ober-drag-overlay');
       expect(overlay).toBeNull();
     });
 
@@ -108,7 +108,7 @@ describe('DragDropManager', () => {
       Object.defineProperty(leaveEvent, 'relatedTarget', { value: child });
       dropZone.dispatchEvent(leaveEvent);
 
-      const overlay = overlayContainer.querySelector('.copsilot-drag-overlay');
+      const overlay = overlayContainer.querySelector('.co-ober-drag-overlay');
       expect(overlay).not.toBeNull();
     });
   });

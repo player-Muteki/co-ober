@@ -1,8 +1,8 @@
-# Copsilot
+# Co-Ober
 
-![GitHub stars](https://img.shields.io/github/stars/player-Muteki/copsilot?style=social)
-![GitHub release](https://img.shields.io/github/v/release/player-Muteki/copsilot)
-![License](https://img.shields.io/github/license/player-Muteki/copsilot)
+![GitHub stars](https://img.shields.io/github/stars/player-Muteki/co-ober?style=social)
+![GitHub release](https://img.shields.io/github/v/release/player-Muteki/co-ober)
+![License](https://img.shields.io/github/license/player-Muteki/co-ober)
 
 > Beta. Currently in public testing.
 
@@ -10,9 +10,9 @@
 
 An Obsidian plugin that brings the [OpenCode](https://opencode.ai) AI Agent into your vault as a living assistant. It understands your notes, explores your vault structure, and helps you think, write, and organize. All without leaving Obsidian.
 
-## Why Copsilot
+## Why Co-Ober
 
-Most Obsidian AI plugins need third-party API keys (ongoing token costs) or middleware layers (extra token consumption). Copsilot connects directly to your local OpenCode CLI, which provides free token quotas that cover most note-taking use cases. No API keys, no middlemen.
+Most Obsidian AI plugins need third-party API keys (ongoing token costs) or middleware layers (extra token consumption). Co-Ober connects directly to your local OpenCode CLI, which provides free token quotas that cover most note-taking use cases. No API keys, no middlemen.
 
 ## Features
 
@@ -49,26 +49,26 @@ Most Obsidian AI plugins need third-party API keys (ongoing token costs) or midd
 ### Obsidian Community Plugins
 
 1. Open Obsidian Settings → Community plugins → Browse
-2. Search for "Copsilot" and install
+2. Search for "Co-Ober" and install
 3. Enable the plugin in Community plugins settings
 
 ### Manual
 
 1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](../../releases/latest)
-2. Create a folder called `copsilot` in your vault's plugins folder:
+2. Create a folder called `co-ober` in your vault's plugins folder:
    ```
-   /path/to/vault/.obsidian/plugins/copsilot/
+   /path/to/vault/.obsidian/plugins/co-ober/
    ```
-3. Copy the downloaded files into the `copsilot` folder
-4. Enable the plugin in Obsidian: Settings → Community plugins → Enable "Copsilot"
+3. Copy the downloaded files into the `co-ober` folder
+4. Enable the plugin in Obsidian: Settings → Community plugins → Enable "Co-Ober"
 
 ### From source (development)
 
 1. Clone this repository into your vault's plugins folder:
    ```bash
    cd /path/to/vault/.obsidian/plugins
-   git clone https://github.com/player-Muteki/copsilot.git
-   cd copsilot
+   git clone https://github.com/player-Muteki/co-ober.git
+   cd co-ober
    ```
 2. Install dependencies and build:
    ```bash
@@ -76,7 +76,7 @@ Most Obsidian AI plugins need third-party API keys (ongoing token costs) or midd
    npm run build
    ```
 3. Enable the plugin in Obsidian:
-   - Settings → Community plugins → Enable "Copsilot"
+   - Settings → Community plugins → Enable "Co-Ober"
 
 ## Configuration
 
@@ -97,7 +97,7 @@ Most Obsidian AI plugins need third-party API keys (ongoing token costs) or midd
 | MCP Servers | Local stdio MCP server definitions (name → command → args) passed to new OpenCode sessions | — |
 | Language | UI language (`en` / `zh`) | `en` |
 | Auto Scroll | Keep the chat pinned to new streaming output until the user scrolls away | `true` |
-| Auto Connect | Stored setting for connection behavior; the current view opens a connection when Copsilot is opened | `false` |
+| Auto Connect | Stored setting for connection behavior; the current view opens a connection when Co-Ober is opened | `false` |
 | File System Capability | Controls ACP file delegate access: `enabled` / `readonly` / `disabled` | `enabled` |
 | Terminal Capability | Controls ACP terminal delegate access: `enabled` / `disabled` | `enabled` |
 | Terminal Timeout | Maximum terminal wait time before the spawned command is terminated (ms) | `30000` |
@@ -124,8 +124,8 @@ Runtime agents, models, and available commands/skills load from an existing Open
 ## Privacy & Data Use
 
 - **Sent to API**: Your input, referenced notes, attached files/images, and tool call outputs. All communication goes through your local OpenCode CLI, which handles provider API calls.
-- **Local storage**: Copsilot settings and session data are stored in Obsidian's plugin data (`data.json` within `.obsidian/plugins/copsilot/`). Synced notes are created in your configured folder (default: `opencode-sync/`).
-- **No telemetry**: Copsilot does not send telemetry or analytics data. Network activity is limited to the OpenCode CLI subprocess communicating with AI providers.
+- **Local storage**: Co-Ober settings and session data are stored in Obsidian's plugin data (`data.json` within `.obsidian/plugins/co-ober/`). Synced notes are created in your configured folder (default: `opencode-sync/`).
+- **No telemetry**: Co-Ober does not send telemetry or analytics data. Network activity is limited to the OpenCode CLI subprocess communicating with AI providers.
 - **Environment**: The OpenCode subprocess inherits the Obsidian process environment for PATH resolution and proxy configuration.
 
 ## Troubleshooting
@@ -175,8 +175,8 @@ src/
 │   └── index.ts                 # Module exports
 │
 ├── view/                        # Sidebar chat view
-│   ├── copsilotView.ts          # Obsidian ItemView: DOM composition, input, drag/drop, keybindings
-│   ├── copsilotViewController.ts # Connection/session/send orchestration and UI state transitions
+│   ├── CoOberView.ts          # Obsidian ItemView: DOM composition, input, drag/drop, keybindings
+│   ├── CoOberViewController.ts # Connection/session/send orchestration and UI state transitions
 │   ├── renderer.ts              # Message rendering: markdown, tool calls, thinking blocks
 │   ├── permissionBanner.ts      # Safe-mode permission prompts
 │   ├── inlineEditPanel.ts       # Selection edit preview and apply UI
@@ -225,11 +225,11 @@ Licensed under the [MIT License](LICENSE).
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=player-Muteki%2Fcopsilot&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=player-Muteki%2FCo-Ober&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=player-Muteki/copsilot&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=player-Muteki/copsilot&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=player-Muteki/copsilot&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=player-Muteki/co-ober&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=player-Muteki/co-ober&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=player-Muteki/co-ober&type=date&legend=top-left" />
  </picture>
 </a>
 
@@ -240,17 +240,17 @@ Licensed under the [MIT License](LICENSE).
 
 ---
 
-# Copsilot 中文说明
+# Co-Ober 中文说明
 
-> [English](#copsilot) | 中文
+> [English](#co-ober) | 中文
 
 > Beta，目前处于公开测试阶段。
 
 将 [OpenCode](https://opencode.ai) AI Agent 带入你的 Obsidian 仓库，成为一个住在 Vault 里的助手。它能理解你的笔记、探索仓库结构，帮你思考、写作和整理——全程不用离开 Obsidian。
 
-## 为什么做 Copsilot
+## 为什么做 Co-Ober
 
-现有的 Obsidian AI 插件大致分两类：需要自行配置第三方 API Key（长期产生 Token 费用）或依赖中间层中转（增加 Token 消耗）。Copsilot 直连本地 OpenCode CLI，而 OpenCode 本身提供免费 Token 额度，对绝大多数笔记用户完全够用。无需 API Key，也无需中间层。直接使用，轻量，零成本。
+现有的 Obsidian AI 插件大致分两类：需要自行配置第三方 API Key（长期产生 Token 费用）或依赖中间层中转（增加 Token 消耗）。Co-Ober 直连本地 OpenCode CLI，而 OpenCode 本身提供免费 Token 额度，对绝大多数笔记用户完全够用。无需 API Key，也无需中间层。直接使用，轻量，零成本。
 
 ## 功能特性
 
@@ -287,26 +287,26 @@ Licensed under the [MIT License](LICENSE).
 ### Obsidian 官方插件市场
 
 1. 打开 Obsidian 设置 → 第三方插件 → 社区插件市场
-2. 搜索 "Copsilot" 并安装
+2. 搜索 "Co-Ober" 并安装
 3. 在第三方插件设置中启用插件
 
 ### 手动安装
 
 1. 从[最新 Release](../../releases/latest) 下载 `main.js`、`manifest.json` 和 `styles.css`
-2. 在 Vault 的插件目录中创建 `copsilot` 文件夹：
+2. 在 Vault 的插件目录中创建 `co-ober` 文件夹：
    ```
-   /path/to/vault/.obsidian/plugins/copsilot/
+   /path/to/vault/.obsidian/plugins/co-ober/
    ```
-3. 将下载的文件复制到 `copsilot` 文件夹
-4. 在 Obsidian 中启用插件：设置 → 第三方插件 → 启用 "Copsilot"
+3. 将下载的文件复制到 `co-ober` 文件夹
+4. 在 Obsidian 中启用插件：设置 → 第三方插件 → 启用 "Co-Ober"
 
 ### 从源码安装（开发）
 
 1. 将仓库克隆到 Vault 的插件目录：
    ```bash
    cd /path/to/vault/.obsidian/plugins
-   git clone https://github.com/player-Muteki/copsilot.git
-   cd copsilot
+   git clone https://github.com/player-Muteki/co-ober.git
+   cd co-ober
    ```
 2. 安装依赖并构建：
    ```bash
@@ -314,7 +314,7 @@ Licensed under the [MIT License](LICENSE).
    npm run build
    ```
 3. 在 Obsidian 中启用插件：
-   - 设置 → 第三方插件 → 启用 "Copsilot"
+   - 设置 → 第三方插件 → 启用 "Co-Ober"
 
 ## 配置说明
 
@@ -335,7 +335,7 @@ Licensed under the [MIT License](LICENSE).
 | MCP 服务器 | 本地 stdio/http/sse MCP 服务器定义，用于新建 OpenCode 会话 | — |
 | 界面语言 | UI 语言（`en` / `zh`） | `en` |
 | 自动滚动 | 流式输出时保持滚动到底部，用户手动上滑后暂停 | `true` |
-| 自动连接 | 已保存的连接行为设置；当前打开 Copsilot 视图时会建立连接 | `false` |
+| 自动连接 | 已保存的连接行为设置；当前打开 Co-Ober 视图时会建立连接 | `false` |
 | 文件系统能力 | 控制 ACP 文件委托访问：`enabled` / `readonly` / `disabled` | `enabled` |
 | 终端能力 | 控制 ACP 终端委托访问：`enabled` / `disabled` | `enabled` |
 | 终端超时 | 等待终端命令完成的最长时间，超时后终止（毫秒） | `30000` |
@@ -362,8 +362,8 @@ Licensed under the [MIT License](LICENSE).
 ## 隐私与数据
 
 - **发送至 API**：你的输入、引用的笔记、附加的文件/图片以及工具调用结果。所有通信都经过本地 OpenCode CLI，由它处理与 AI 提供商的 API 调用。
-- **本地存储**：Copsilot 的设置和会话数据存储在 Obsidian 的插件数据中（`.obsidian/plugins/copsilot/data.json`）。同步的笔记保存在你配置的文件夹中（默认：`opencode-sync/`）。
-- **无遥测**：Copsilot 不发送任何遥测或分析数据。网络活动仅限于 OpenCode CLI 子进程与 AI 提供商的通信。
+- **本地存储**：Co-Ober 的设置和会话数据存储在 Obsidian 的插件数据中（`.obsidian/plugins/co-ober/data.json`）。同步的笔记保存在你配置的文件夹中（默认：`opencode-sync/`）。
+- **无遥测**：Co-Ober 不发送任何遥测或分析数据。网络活动仅限于 OpenCode CLI 子进程与 AI 提供商的通信。
 - **环境变量**：OpenCode 子进程继承 Obsidian 进程的环境变量，用于 PATH 解析和代理配置。
 
 ## 故障排除
@@ -413,8 +413,8 @@ src/
 │   └── index.ts                 # 模块导出
 │
 ├── view/                        # 侧边栏对话视图
-│   ├── copsilotView.ts          # Obsidian ItemView：DOM 组合、输入、拖拽、快捷键
-│   ├── copsilotViewController.ts # 连接、会话、发送流程和 UI 状态编排
+│   ├── CoOberView.ts          # Obsidian ItemView：DOM 组合、输入、拖拽、快捷键
+│   ├── CoOberViewController.ts # 连接、会话、发送流程和 UI 状态编排
 │   ├── renderer.ts              # 消息渲染：Markdown、工具调用、思考块
 │   ├── permissionBanner.ts      # safe 模式权限确认 UI
 │   ├── inlineEditPanel.ts       # 选区编辑预览和应用 UI
@@ -463,11 +463,11 @@ src/
 
 ## Star 历史
 
-<a href="https://www.star-history.com/?repos=player-Muteki%2Fcopsilot&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=player-Muteki%2FCo-Ober&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=player-Muteki/copsilot&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=player-Muteki/copsilot&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=player-Muteki/copsilot&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=player-Muteki/co-ober&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=player-Muteki/co-ober&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=player-Muteki/co-ober&type=date&legend=top-left" />
  </picture>
 </a>
 

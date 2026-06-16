@@ -3,7 +3,7 @@ import { BASE_IDENTITY, buildSystemPrompt } from './injection';
 
 describe('BASE_IDENTITY', () => {
   it('defines the agent identity string', () => {
-    expect(BASE_IDENTITY).toContain('You are Copsilot');
+    expect(BASE_IDENTITY).toContain('You are Co-Ober');
     expect(BASE_IDENTITY).toContain('Obsidian vault');
     expect(BASE_IDENTITY).toContain('Vault Awareness');
   });

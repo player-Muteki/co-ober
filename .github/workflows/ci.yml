@@ -35,7 +35,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: copsilot-build
+          name: co-ober-build
           path: |
             main.js
             manifest.json

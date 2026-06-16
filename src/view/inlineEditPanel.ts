@@ -27,12 +27,12 @@ export class InlineEditPanel {
 	showDiff(original: string, edited: string): void {
 		this.hideDiff();
 		const editor = this.pendingState?.editor;
-		const panel = this.containerEl.createDiv({ cls: 'copsilot-inline-edit-panel' });
+		const panel = this.containerEl.createDiv({ cls: 'co-ober-inline-edit-panel' });
 		this.el = panel;
 
-		panel.createDiv({ cls: 'copsilot-inline-edit-title', text: t().inlineEdit.title });
+		panel.createDiv({ cls: 'co-ober-inline-edit-title', text: t().inlineEdit.title });
 
-		const diffBody = panel.createDiv({ cls: 'copsilot-diff-body' });
+		const diffBody = panel.createDiv({ cls: 'co-ober-diff-body' });
 		const oldLines = original.split('\n');
 		const newLines = edited.split('\n');
 		const maxLen = Math.max(oldLines.length, newLines.length);
@@ -61,7 +61,7 @@ export class InlineEditPanel {
 			}
 		}
 
-		const actions = panel.createDiv({ cls: 'copsilot-inline-edit-actions' });
+		const actions = panel.createDiv({ cls: 'co-ober-inline-edit-actions' });
 		const applyBtn = actions.createEl('button', { cls: 'mod-cta', text: t().inlineEdit.apply });
 		applyBtn.onclick = () => this.applyEdit(editor, edited);
 		const discardBtn = actions.createEl('button', { text: t().inlineEdit.discard });
@@ -70,11 +70,11 @@ export class InlineEditPanel {
 
 	refreshLocale(): void {
 		if (!this.el) return;
-		const title = this.el.querySelector('.copsilot-inline-edit-title');
+		const title = this.el.querySelector('.co-ober-inline-edit-title');
 		if (title) title.textContent = t().inlineEdit.title;
-		const apply = this.el.querySelector('.copsilot-inline-edit-actions .mod-cta');
+		const apply = this.el.querySelector('.co-ober-inline-edit-actions .mod-cta');
 		if (apply) apply.textContent = t().inlineEdit.apply;
-		const buttons = this.el.querySelectorAll('.copsilot-inline-edit-actions button');
+		const buttons = this.el.querySelectorAll('.co-ober-inline-edit-actions button');
 		const discard = buttons[1];
 		if (discard) discard.textContent = t().inlineEdit.discard;
 	}

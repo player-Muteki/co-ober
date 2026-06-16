@@ -67,7 +67,7 @@ export class FileCommandStorage implements CommandSource {
           },
         });
       } catch (e) {
-        console.error(`[copsilot] failed to read command file ${file.path}:`, e);
+        console.error(`[co-ober] failed to read command file ${file.path}:`, e);
       }
     }
 

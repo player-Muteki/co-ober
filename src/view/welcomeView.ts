@@ -18,19 +18,19 @@ export class WelcomeView {
 	show(isConnected: boolean): void {
 		this.isConnected = isConnected;
 		this.hide();
-		const welcome = this.containerEl.createDiv({ cls: 'copsilot-welcome' });
+		const welcome = this.containerEl.createDiv({ cls: 'co-ober-welcome' });
 		this.welcomeEl = welcome;
 
-		welcome.createDiv({ cls: 'copsilot-welcome-title', text: t().appName });
-		welcome.createDiv({ cls: 'copsilot-welcome-subtitle', text: t().appSubtitle });
+		welcome.createDiv({ cls: 'co-ober-welcome-title', text: t().appName });
+		welcome.createDiv({ cls: 'co-ober-welcome-subtitle', text: t().appSubtitle });
 
-		const shortcuts = welcome.createDiv({ cls: 'copsilot-welcome-shortcuts' });
+		const shortcuts = welcome.createDiv({ cls: 'co-ober-welcome-shortcuts' });
 		shortcuts.createDiv({ text: t().welcome.shortcuts.enter });
 		shortcuts.createDiv({ text: t().welcome.shortcuts.escape });
 		shortcuts.createDiv({ text: t().welcome.shortcuts.at });
 		shortcuts.createDiv({ text: t().welcome.shortcuts.slash });
 
-		const status = welcome.createDiv({ cls: 'copsilot-welcome-status' });
+		const status = welcome.createDiv({ cls: 'co-ober-welcome-status' });
 		status.createSpan({ text: isConnected ? t().welcome.connected : t().welcome.disconnected });
 		this.renderAuthMethods(welcome, isConnected);
 	}
@@ -40,7 +40,7 @@ export class WelcomeView {
 		const authMethods = this.getAgentCapabilities()?.authMethods ?? [];
 		if (authMethods.length === 0) return;
 
-		const authEl = welcome.createDiv({ cls: 'copsilot-welcome-auth-methods' });
+		const authEl = welcome.createDiv({ cls: 'co-ober-welcome-auth-methods' });
 		authEl.createDiv({ text: t().welcome.authMethodsHint });
 		for (const method of authMethods) {
 			authEl.createDiv({ text: `${method.id}: ${method.name}` });
@@ -58,10 +58,10 @@ export class WelcomeView {
 	updateStatus(isConnected: boolean): void {
 		this.isConnected = isConnected;
 		if (!this.welcomeEl) return;
-		const status = this.welcomeEl.querySelector('.copsilot-welcome-status');
+		const status = this.welcomeEl.querySelector('.co-ober-welcome-status');
 		if (!status) return;
 		status.textContent = isConnected ? t().welcome.connected : t().welcome.disconnected;
-		this.welcomeEl.querySelector('.copsilot-welcome-auth-methods')?.remove();
+		this.welcomeEl.querySelector('.co-ober-welcome-auth-methods')?.remove();
 		this.renderAuthMethods(this.welcomeEl, isConnected);
 	}
 

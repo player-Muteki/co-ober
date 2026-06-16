@@ -29,7 +29,7 @@ describe('InlineEditPanel', () => {
 
 		panel.showDiff('old text', 'new text');
 
-		const el = container.querySelector('.copsilot-inline-edit-panel');
+		const el = container.querySelector('.co-ober-inline-edit-panel');
 		expect(el).not.toBeNull();
 
 		const removed = el?.querySelectorAll('.diff-line.removed');
@@ -51,13 +51,13 @@ describe('InlineEditPanel', () => {
 		panel.request('old text', mockEditor);
 		panel.showDiff('old text', 'new text');
 
-		const applyBtn = container.querySelector('.copsilot-inline-edit-actions .mod-cta') as HTMLButtonElement;
+		const applyBtn = container.querySelector('.co-ober-inline-edit-actions .mod-cta') as HTMLButtonElement;
 		expect(applyBtn).not.toBeNull();
 		applyBtn.click();
 
 		expect(mockEditor.replaceSelection).toHaveBeenCalledWith('new text');
 		expect(panel.pendingState).toBeNull();
-		expect(container.querySelector('.copsilot-inline-edit-panel')).toBeNull();
+		expect(container.querySelector('.co-ober-inline-edit-panel')).toBeNull();
 	});
 
 	it('discards edited text and clears state', () => {
@@ -69,13 +69,13 @@ describe('InlineEditPanel', () => {
 		panel.request('old text', mockEditor);
 		panel.showDiff('old text', 'new text');
 
-		const discardBtn = container.querySelector('.copsilot-inline-edit-actions button:not(.mod-cta)') as HTMLButtonElement;
+		const discardBtn = container.querySelector('.co-ober-inline-edit-actions button:not(.mod-cta)') as HTMLButtonElement;
 		expect(discardBtn).not.toBeNull();
 		discardBtn.click();
 
 		expect(mockEditor.replaceSelection).not.toHaveBeenCalled();
 		expect(panel.pendingState).toBeNull();
-		expect(container.querySelector('.copsilot-inline-edit-panel')).toBeNull();
+		expect(container.querySelector('.co-ober-inline-edit-panel')).toBeNull();
 	});
 
 	it('refreshes locale correctly', () => {
@@ -85,9 +85,9 @@ describe('InlineEditPanel', () => {
 
 		panel.showDiff('old', 'new');
 
-		let title = container.querySelector('.copsilot-inline-edit-title');
-		let applyBtn = container.querySelector('.copsilot-inline-edit-actions .mod-cta');
-		let discardBtn = container.querySelector('.copsilot-inline-edit-actions button:not(.mod-cta)');
+		let title = container.querySelector('.co-ober-inline-edit-title');
+		let applyBtn = container.querySelector('.co-ober-inline-edit-actions .mod-cta');
+		let discardBtn = container.querySelector('.co-ober-inline-edit-actions button:not(.mod-cta)');
 
 		expect(title?.textContent).toBe('AI Edit Preview');
 		expect(applyBtn?.textContent).toBe('Apply');
@@ -96,9 +96,9 @@ describe('InlineEditPanel', () => {
 		setLocale('zh');
 		panel.refreshLocale();
 
-		title = container.querySelector('.copsilot-inline-edit-title');
-		applyBtn = container.querySelector('.copsilot-inline-edit-actions .mod-cta');
-		discardBtn = container.querySelector('.copsilot-inline-edit-actions button:not(.mod-cta)');
+		title = container.querySelector('.co-ober-inline-edit-title');
+		applyBtn = container.querySelector('.co-ober-inline-edit-actions .mod-cta');
+		discardBtn = container.querySelector('.co-ober-inline-edit-actions button:not(.mod-cta)');
 
 		expect(title?.textContent).toBe('AI 编辑预览');
 		expect(applyBtn?.textContent).toBe('应用');
