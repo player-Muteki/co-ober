@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.16 - 2026-06-16
+
+### Changed
+- Complete rename from CoPilot to Co-Ober across all files, identifiers, and remote repository.
+
 ## 0.1.15 - 2026-06-15
 
 ### Added
