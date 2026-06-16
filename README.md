@@ -46,12 +46,6 @@ Most Obsidian AI plugins need third-party API keys (ongoing token costs) or midd
 
 ## Installation
 
-### Obsidian Community Plugins
-
-1. Open Obsidian Settings → Community plugins → Browse
-2. Search for "Co-Ober" and install
-3. Enable the plugin in Community plugins settings
-
 ### Manual
 
 1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](../../releases/latest)
@@ -61,6 +55,9 @@ Most Obsidian AI plugins need third-party API keys (ongoing token costs) or midd
    ```
 3. Copy the downloaded files into the `co-ober` folder
 4. Enable the plugin in Obsidian: Settings → Community plugins → Enable "Co-Ober"
+
+> [!NOTE]
+> Community plugin listing is pending review. For now, manual install is required.
 
 ### From source (development)
 
@@ -284,12 +281,6 @@ Licensed under the [MIT License](LICENSE).
 
 ## 安装方式
 
-### Obsidian 官方插件市场
-
-1. 打开 Obsidian 设置 → 第三方插件 → 社区插件市场
-2. 搜索 "Co-Ober" 并安装
-3. 在第三方插件设置中启用插件
-
 ### 手动安装
 
 1. 从[最新 Release](../../releases/latest) 下载 `main.js`、`manifest.json` 和 `styles.css`
@@ -299,6 +290,9 @@ Licensed under the [MIT License](LICENSE).
    ```
 3. 将下载的文件复制到 `co-ober` 文件夹
 4. 在 Obsidian 中启用插件：设置 → 第三方插件 → 启用 "Co-Ober"
+
+> [!NOTE]
+> 社区插件市场审核中，当前仅支持手动安装。
 
 ### 从源码安装（开发）
 
