@@ -12,6 +12,7 @@ import {
   type ThinkingState,
 } from './thinkingBlockRenderer';
 import { collapseElement } from './collapsible';
+import { processFileLinks, registerFileLinkHandler } from '../utils/fileLink';
 import {
   createToolCallElement,
   updateToolCallElement,
@@ -61,6 +62,9 @@ export class ChatRenderer {
     this.doc = container.ownerDocument ?? activeDocument;
     this.shouldAutoScroll = shouldAutoScroll;
     this.unsubscribeLocale = onLocaleChange(() => this.refreshLocale());
+
+    // Register delegated click handler for file links ([[wikilinks]])
+    registerFileLinkHandler(this.app, this.container);
   }
 
   dispose(): void {
@@ -245,6 +249,9 @@ export class ChatRenderer {
           this.app.vault.getRoot().path,
           this.container as unknown as Component,
         );
+
+        // Process wikilink [[file]] references after markdown rendering
+        processFileLinks(this.app, placeholder);
 
         this.addCopyButtons(placeholder);
       }
@@ -771,7 +778,10 @@ export class ChatRenderer {
       placeholder,
       this.app.vault.getRoot().path,
       this.container as unknown as Component,
-    ).catch(() => {
+    ).then(() => {
+      // Process wikilink [[file]] references after markdown rendering
+      processFileLinks(this.app, placeholder);
+    }).catch(() => {
       el.textContent = markdown;
     });
   }
