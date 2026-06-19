@@ -1712,6 +1712,21 @@ body.theme-light .co-ober-msg.user .co-ober-msg-body {
   max-width: 100%;
   align-self: stretch;
   width: 100%;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Force-selectable content inside assistant messages (override Obsidian sidebar user-select: none) */
+.co-ober-msg.assistant * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Tool call bodies — also selectable */
+.co-ober-tool-call-body,
+.co-ober-thinking-body {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* Assistant text block — default font, no background, selectable */
