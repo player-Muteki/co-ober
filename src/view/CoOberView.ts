@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf, TFile } from 'obsidian';
+import { ItemView, WorkspaceLeaf, TFile, setIcon } from 'obsidian';
 import type CoOberPlugin from '../main';
 import { VIEW_TYPE } from '../types';
 import type { ContextRef, PromptPart } from '../types';
@@ -147,7 +147,8 @@ export class CoOberView extends ItemView {
 
 		const actions = header.createDiv({ cls: 'co-ober-header-actions' });
 		this.newSessionBtnEl = actions.createEl('button', { text: t().header.new, cls: 'mod-icon' });
-		this.sessionButtonEl = actions.createEl('button', { text: '⋯', cls: 'mod-icon' });
+		this.sessionButtonEl = actions.createEl('button', { cls: 'mod-icon' });
+			setIcon(this.sessionButtonEl, 'history');
 
 		// ── Messages ──
 		this.messagesEl = el.createDiv({ cls: 'co-ober-messages' });
