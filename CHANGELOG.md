@@ -1,3 +1,9 @@
+## 0.1.23 - 2026-06-19
+
+### Fixed
+- **Plugin loading failure**: `local-resolver` in esbuild.config.mjs was marking all non-relative imports as `external`, causing `zod` / `tslib` to be unresolvable in Obsidian's runtime. Fixed by restricting the resolver to relative/absolute paths only.
+- **Test version drift**: `CLIENT_VERSION` test hardcoded to v0.1.21 now reads from `package.json` dynamically.
+
 ## 0.1.22 - 2026-06-19
 
 ### Added
