@@ -689,13 +689,9 @@ export class CoOberViewController {
 		++this.genId;
 		this.deps.input.setStreaming(false);
 		this.deps.toolbar.setSending(false);
-		try {
-			// Cancel the backend RPC before resetting local state,
-			// so the in-flight handler stops processing chunks immediately.
-			await c.cancel(this.state.sessionId);
-		} catch (e) {
-			console.error('[co-ober] cancel:', e);
-		}
+		// Cancel is fire-and-forget notification (no Promise returned).
+		// AbortSignal already aborted sendMessage() in the cancel() call.
+		c.cancel(this.state.sessionId);
 		// Append "Interrupted" indicator to the current assistant response
 		this.deps.renderer.appendInterruptIndicator();
 		this.deps.renderer.flushTextRender().catch(() => {});

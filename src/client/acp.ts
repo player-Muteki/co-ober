@@ -453,12 +453,16 @@ export class AcpClient implements OpencodeClient {
     const controller = this.activeAbortController;
     this.activeAbortController = null;
     controller?.abort();
+    this.activeAbortController = null;
     this.activeStreamSessionId = null;
     this.chunkHandler = null;
 
-    return this.requestWithFallback('cancel', { sessionId: id }).then(() => {}).catch((e) => {
-      console.warn('[co-ober] cancel RPC failed:', e);
-    });
+    // Cancel is a JSON-RPC NOTIFICATION (fire-and-forget, no id, no response).
+    // Must NOT use requestWithFallback which sends as a request-with-response.
+    // Fan out to ALL method candidates since we can't probe with notifications.
+    const candidates = getAcpMethodCandidates('cancel');
+    for (const methodName of candidates) { this.transport?.notify(methodName, { sessionId: id }); }
+    return Promise.resolve();
   }
 
   getAvailableAgents(): Promise<ModeOption[]> { return Promise.resolve([...this.availableModes]); }

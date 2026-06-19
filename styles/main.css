@@ -1699,6 +1699,14 @@ pre:hover .co-ober-copy-btn {
   border-radius: 8px;
   border-end-end-radius: 4px;
   max-width: 95%;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Force-selectable content inside user messages — same treatment as assistant */
+.co-ober-msg.user * {
+  user-select: text;
+  -webkit-user-select: text;
 }
 body.theme-light .co-ober-msg.user .co-ober-msg-body {
   background: var(--background-modifier-form-field);
