@@ -1,5 +1,6 @@
 import { AcpProtocolError } from './AcpErrors';
 import { describe, it, expect, vi } from 'vitest';
+import pkg from '../../package.json';
 import { AcpClient, CLIENT_VERSION, buildMcpServers, parseSessionUpdate, extractSessionSnapshot, extractConfigMeta, mergeAvailableCommands } from './acp';
 import { AcpRequestHandler } from './AcpRequestHandler';
 import { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
@@ -372,7 +373,7 @@ describe('AcpRequestHandler permission handling', () => {
   });
 
   it('uses the current release version for ACP clientInfo', () => {
-	expect(CLIENT_VERSION).toBe('0.1.21');
+	expect(CLIENT_VERSION).toBe(pkg.version);
   });
 });
 
