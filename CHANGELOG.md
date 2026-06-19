@@ -1,3 +1,13 @@
+## 0.1.25 - 2026-06-19
+
+### Fixed
+- **Stop button not working**: `stopGeneration()` now calls `c.cancel()` before resetting `busy=false`, preventing new sends from starting before the backend agent is properly cancelled.
+- **`cancel()` abort order in ACP**: abort controller fires before clearing `activeStreamSessionId`, so `sendMessage()`'s `.finally()` can properly detect the cancelled state.
+- **Missing "Interrupted" indicator**: when user clicks stop, the assistant message now shows a red "Interrupted · What should I do instead?" badge, matching claudian's UX.
+
+### Added
+- **Queue indicator**: when messages are sent while streaming, a "⌙ N message(s) queued" bar appears above the input area. (claudian parity)
+
 ## 0.1.24 - 2026-06-19
 
 ### Added
