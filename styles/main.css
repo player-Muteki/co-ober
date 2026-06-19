@@ -1177,38 +1177,36 @@ pre:hover .co-ober-copy-btn {
   font-size: var(--font-smaller);
 }
 
-/* New messages button — subtle floating pill */
+/* New messages button — centered floating circle, slides in from left */
 .co-ober-new-messages-btn {
   position: sticky;
   bottom: 12px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 20px;
-  padding: 4px 14px 4px 10px;
-  font-size: 12px;
-  color: var(--text-muted);
-  cursor: pointer;
   z-index: 50;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 4px;
-  transition: opacity 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
-  user-select: none;
-  white-space: nowrap;
+  justify-content: center;
+  transition: opacity 0.2s ease, box-shadow 0.2s ease;
+  animation: co-ober-slide-in-left 0.25s ease-out;
 }
 
 .co-ober-new-messages-btn:hover {
-  color: var(--text-normal);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  opacity: 0.85;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .co-ober-new-messages-btn svg {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
 }
 
 /* Drag overlay */
@@ -1803,18 +1801,15 @@ body.theme-light .co-ober-msg.user .co-ober-msg-body {
 }
 
 /* =============================================
-   New messages button — entrance animation
+   New messages button — slide in from left
    ============================================= */
-@keyframes co-ober-slide-up {
+@keyframes co-ober-slide-in-left {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(8px);
+    transform: translateX(-50%) translateX(-24px);
   }
   to {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translateX(-50%);
   }
-}
-.co-ober-new-messages-btn {
-  animation: co-ober-slide-up 0.25s ease-out;
 }

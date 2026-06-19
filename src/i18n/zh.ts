@@ -43,7 +43,7 @@ const zh: Locale = {
     failed: '连接失败',
   },
 
-  newMessages: '↓ 新消息',
+  newMessages: '新消息',
 
   dragOverlay: '拖放以附加',
 

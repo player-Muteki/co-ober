@@ -410,7 +410,6 @@ export class CoOberView extends ItemView {
 			cls: 'co-ober-new-messages-btn',
 		});
 		setIcon(btn, 'arrow-down');
-		btn.createSpan({ text: t().newMessages });
 		btn.onclick = () => {
 			this.controller.state.autoScrollEnabled = true;
 			this.hideNewMessagesBtn();
@@ -434,9 +433,7 @@ export class CoOberView extends ItemView {
 		if (this.reconnectBtn) {
 			this.reconnectBtn.textContent = this.reconnectBtn.disabled ? t().reconnect.connecting : t().reconnect.text;
 		}
-		if (this.newMessagesBtn) {
-			this.newMessagesBtn.textContent = t().newMessages;
-		}
+		// newMessagesBtn is icon-only, no text to update
 	}
 
 	// ── Reconnect button (view-owned DOM) ──

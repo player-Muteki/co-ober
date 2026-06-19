@@ -41,7 +41,7 @@ const en = {
     failed: 'Reconnect (failed)',
   },
 
-  newMessages: '↓ New messages',
+  newMessages: 'New messages',
 
   dragOverlay: 'Drop to attach',
 
