@@ -735,9 +735,9 @@ export class CoOberViewController {
 		this.deps.toolbar.setSending(false);
 		this.promptQueue.length = 0;
 		try {
-			c.abort();
+			await c.cancel(this.state.sessionId);
 		} catch (e) {
-			console.error('[co-ober] abort:', e);
+			console.error('[co-ober] cancel:', e);
 		}
 	}
 
