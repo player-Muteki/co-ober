@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.19 - 2026-06-19
+
+### Changed
+- **Claudian-inspired visual overhaul**: transparent tool call and thinking block headers (removed card backgrounds), tree-branch style border-inline-start on expanded content, muted user message colors.
+- **Auto-collapse on completion**: thinking blocks and tool call cards now auto-collapse when streaming completes or fails, matching Claudian's post-stream behavior.
+- **Width-constrained expanded content**: expanded tool/thinking bodies are constrained by CSS `max-width` for readability, with no inline `maxHeight`/`overflowY` in JS.
+- **Real-time thinking markdown rendering**: `scheduleThinkingRender()` renders live thinking content through Obsidian's `MarkdownRenderer` via RAF throttle instead of raw text.
+
 ## 0.1.18 - 2026-06-19
 
 ### Added

@@ -86,6 +86,8 @@ export class StreamController {
 					// Flush any buffered pending tools, then update completed/failed
 					this.flushToolBuffer();
 					renderer.updateToolCall(ch.toolCallId, ch.status, ch.rawOutput, ch.contents, ch.rawInput, ch.locations, ch.toolKind);
+					// Safety net: ensure tool is collapsed on final states
+					renderer.collapseToolCall(ch.toolCallId);
 				}
 
 				if ((ch.status === 'completed' || ch.status === 'failed') && !this.syncedToolCalls.has(ch.toolCallId)) {

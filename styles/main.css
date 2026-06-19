@@ -1509,3 +1509,215 @@ pre:hover .co-ober-copy-btn {
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
+
+/* =============================================
+   Claudian-inspired layout — cleaner, lighter
+   ============================================= */
+
+/* Messages container — tighter gap */
+.co-ober-messages {
+  gap: 8px;
+}
+
+/* User message — muted, no accent color clash */
+.co-ober-msg.user .co-ober-msg-body {
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text-normal);
+  padding: 6px 12px;
+  border-radius: 8px;
+  border-end-end-radius: 4px;
+  max-width: 95%;
+}
+body.theme-light .co-ober-msg.user .co-ober-msg-body {
+  background: var(--background-modifier-form-field);
+}
+
+/* Assistant message — transparent, full width, like streaming text */
+.co-ober-msg.assistant .co-ober-msg-body {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  max-width: 100%;
+  align-self: stretch;
+  width: 100%;
+}
+
+/* Assistant text block — default font, no background */
+.co-ober-text-block {
+  font-size: var(--font-ui-small);
+  line-height: 1.6;
+}
+
+/* ----- Thinking block — tree-branch style ----- */
+.co-ober-thinking-block {
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+  margin: 8px 0;
+}
+.co-ober-thinking-block.is-thinking {
+  border: none;
+}
+.co-ober-thinking-block .co-ober-thinking-header {
+  background: transparent;
+  padding: 4px 0;
+  gap: 8px;
+  cursor: pointer;
+}
+.co-ober-thinking-block .co-ober-thinking-header:hover {
+  background: transparent;
+  opacity: 0.85;
+}
+.co-ober-thinking-block .co-ober-thinking-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-accent);
+}
+.co-ober-thinking-block .co-ober-thinking-timer {
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.co-ober-thinking-block .co-ober-thinking-dot {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-accent);
+  letter-spacing: 1px;
+  animation: co-ober-dot-pulse 1.5s ease-in-out infinite;
+}
+/* Thinking body — left-border tree branch */
+.co-ober-thinking-block .co-ober-thinking-body {
+  padding: 4px 0;
+  padding-inline-start: 24px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-height: 400px;
+  overflow-y: auto;
+  overflow-x: auto;
+  border-inline-start: 2px solid var(--background-modifier-border);
+  margin-inline-start: 7px;
+  font-style: normal;
+}
+.co-ober-thinking-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ----- Tool call — tree-branch style ----- */
+.co-ober-tool-call {
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+  margin: 8px 0;
+}
+.co-ober-tool-call.status-running,
+.co-ober-tool-call.status-completed,
+.co-ober-tool-call.status-error,
+.co-ober-tool-call.status-blocked {
+  border: none;
+}
+.co-ober-tool-call-header {
+  background: transparent;
+  padding: 4px 0;
+  cursor: pointer;
+  gap: 8px;
+}
+.co-ober-tool-call-header:hover {
+  opacity: 0.85;
+}
+.co-ober-tool-call-header .tc-icon {
+  color: var(--text-accent);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+.co-ober-tool-call-header .tc-icon svg {
+  width: 14px;
+  height: 14px;
+}
+.co-ober-tool-call-header .tc-kind {
+  font-size: 13px;
+  font-weight: 400;
+  text-transform: none;
+  color: var(--text-normal);
+  font-family: var(--font-monospace);
+  flex-shrink: 0;
+  min-width: auto;
+}
+.co-ober-tool-call-header .tc-file {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-monospace);
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.co-ober-tool-call-header .tc-stat {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.co-ober-tool-call-header .tc-stat.tc-stat-done {
+  color: #22c55e;
+}
+.co-ober-tool-call-header .tc-stat.tc-stat-fail {
+  color: var(--text-error);
+}
+/* Tool body — left-border tree branch */
+.co-ober-tool-call-body {
+  padding: 4px 0;
+  padding-inline-start: 16px;
+  margin-inline-start: 7px;
+  border-inline-start: 2px solid var(--background-modifier-border);
+  max-height: 400px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: var(--font-editor);
+  font-size: var(--font-smaller);
+  line-height: 1.4;
+}
+
+/* Status borders -> left border color on body */
+.co-ober-tool-call.status-running .co-ober-tool-call-body {
+  border-inline-start-color: var(--text-accent);
+}
+.co-ober-tool-call.status-completed .co-ober-tool-call-body {
+  border-inline-start-color: rgba(34, 197, 94, 0.6);
+}
+.co-ober-tool-call.status-error .co-ober-tool-call-body {
+  border-inline-start-color: var(--text-error);
+}
+.co-ober-tool-call.status-blocked .co-ober-tool-call-body {
+  border-inline-start-color: var(--color-orange);
+}
+
+/* Write/edit blocks — same tree-branch style */
+.co-ober-write-edit .co-ober-tool-call-body {
+  border-inline-start: 2px solid var(--background-modifier-border);
+  margin-inline-start: 7px;
+  padding-inline-start: 16px;
+}
+
+/* Plan panel — subtle, inline */
+.co-ober-plan-panel {
+  border: none;
+  padding: 4px 0;
+  margin: 4px 0;
+}
+
+/* =============================================
+   Sibling spacing — thinking + tool + text
+   ============================================= */
+.co-ober-text-block + .co-ober-thinking-block,
+.co-ober-thinking-block + .co-ober-text-block,
+.co-ober-text-block + .co-ober-tool-call,
+.co-ober-tool-call + .co-ober-text-block,
+.co-ober-thinking-block + .co-ober-tool-call,
+.co-ober-tool-call + .co-ober-thinking-block {
+  margin-top: 8px;
+}

@@ -16,6 +16,7 @@ describe('StreamController', () => {
 				finalizeCurrentThinking: vi.fn().mockReturnValue(0),
 				addToolCall: vi.fn(),
 				updateToolCall: vi.fn(),
+				collapseToolCall: vi.fn(),
 				setPlanEntries: vi.fn(),
 				flushThinkingRender: vi.fn().mockResolvedValue(undefined),
 				flushTextRender: vi.fn().mockResolvedValue(undefined),
@@ -98,6 +99,24 @@ describe('StreamController', () => {
 		// Ensure process resolves
 		await Promise.resolve();
 		expect(deps.onSyncFailure).not.toHaveBeenCalled();
+	});
+
+	it('calls collapseToolCall on completed status (safety net)', () => {
+		controller.handleChunk({ kind: 'tool_call_snapshot', toolCallId: 'call-c1', title: 'X', toolKind: 'read', status: 'pending', rawInput: {}, contents: [] });
+		controller.handleChunk({ kind: 'tool_call_snapshot', toolCallId: 'call-c1', title: 'X', toolKind: 'read', status: 'completed', contents: [] });
+		expect(deps.renderer.collapseToolCall).toHaveBeenCalledWith('call-c1');
+	});
+
+	it('calls collapseToolCall on failed status (safety net)', () => {
+		controller.handleChunk({ kind: 'tool_call_snapshot', toolCallId: 'call-f1', title: 'X', toolKind: 'read', status: 'pending', rawInput: {}, contents: [] });
+		controller.handleChunk({ kind: 'tool_call_snapshot', toolCallId: 'call-f1', title: 'X', toolKind: 'read', status: 'failed', contents: [] });
+		expect(deps.renderer.collapseToolCall).toHaveBeenCalledWith('call-f1');
+	});
+
+	it('calls collapseToolCall on in_progress to failed transition', () => {
+		controller.handleChunk({ kind: 'tool_call_snapshot', toolCallId: 'call-pf', title: 'X', toolKind: "execute" as any, status: 'in_progress', rawInput: { command: 'sleep' }, contents: [] });
+		controller.handleChunk({ kind: 'tool_call_snapshot', toolCallId: 'call-pf', title: 'X', toolKind: "execute" as any, status: 'failed', rawOutput: { error: 'timeout' }, contents: [] });
+		expect(deps.renderer.collapseToolCall).toHaveBeenCalledWith('call-pf');
 	});
 
 	it('handles tool_call_snapshot with sync failure', async () => {

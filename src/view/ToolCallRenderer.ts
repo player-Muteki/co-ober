@@ -182,18 +182,6 @@ export function createToolCallElement(
     initiallyExpanded: false,
     baseAriaLabel: `${title}: ${summary || kind}`,
     scrollOnExpand: true,
-    onExpand: () => {
-      // Add scrollable body for long content on expand
-      body.style.maxHeight = '400px';
-      body.style.overflowY = 'auto';
-    },
-    onToggle: (expanded) => {
-      if (!expanded) {
-        // Remove scroll constraints on collapse
-        body.style.maxHeight = '';
-        body.style.overflowY = '';
-      }
-    },
   });
 
   return { wrapper, header, body, iconEl, kindEl, summaryEl, statusEl, collapsibleState };
@@ -297,6 +285,8 @@ export function updateToolCallElement(
       body.empty();
       body.createDiv({ text: JSON.stringify(rawOutput, null, 2) });
     }
+    // Auto-collapse on failure as well
+    collapseElement(wrapper, state.header, state.collapsibleState);
   } else {
     // pending
     statusEl.textContent = '…';

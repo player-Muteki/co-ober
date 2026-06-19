@@ -6,7 +6,8 @@
  * On completion: auto-collapse, label becomes "Thought for 12s"
  * On expand: shows truncated content (first 30 lines) with "Show all" link,
  *            scrolls block into view.
- * Animated dot indicator, auto-expand after 10s if still running.
+ * Animated dot indicator. The block remains collapsed during streaming
+ * — the header timer is the live progress signal.
  *
  * @since Phase 1 (refactored)
  */
@@ -14,7 +15,6 @@
 import { setupCollapsible, collapseElement, type CollapsibleState } from './collapsible';
 
 const ANIMATION_INTERVAL_MS = 500;
-const AUTO_EXPAND_MS = 10_000;
 /** Max lines shown on first expand — beyond this gets truncated with "Show all" */
 const TRUNCATE_LINES = 30;
 
@@ -27,7 +27,6 @@ export interface ThinkingState {
   startTime: number;
   timerInterval: ReturnType<typeof setInterval> | null;
   dotInterval: ReturnType<typeof setInterval> | null;
-  autoExpandTimer: ReturnType<typeof setTimeout> | null;
   collapsibleState: CollapsibleState;
   /** Full (untruncated) thinking text */
   fullText: string;
@@ -80,7 +79,6 @@ export function renderLiveThinkingBlock(
     startTime: Date.now(),
     timerInterval: null,
     dotInterval: null,
-    autoExpandTimer: null,
     collapsibleState,
     fullText: '',
     showingFull: false,
@@ -100,11 +98,6 @@ export function renderLiveThinkingBlock(
     dotEl.textContent = DOT_CHARS[dotIndex];
   }, ANIMATION_INTERVAL_MS);
 
-  // Auto-expand after 10 seconds
-  state.autoExpandTimer = setTimeout(() => {
-    wrapper.removeClass('is-collapsed');
-  }, AUTO_EXPAND_MS);
-
   // Use unified collapsible with scroll-into-view
   setupCollapsible(wrapper, header, body, collapsibleState, {
     initiallyExpanded: false,
@@ -116,7 +109,6 @@ export function renderLiveThinkingBlock(
   state.cleanup = () => {
     if (state.timerInterval !== null) clearInterval(state.timerInterval);
     if (state.dotInterval !== null) clearInterval(state.dotInterval);
-    if (state.autoExpandTimer !== null) clearTimeout(state.autoExpandTimer);
   };
 
   return state;
@@ -137,10 +129,6 @@ function handleThinkingExpand(state: ThinkingState): void {
   } else {
     state.body.textContent = state.fullText;
   }
-
-  // Enable body scrolling for long content
-  state.body.style.maxHeight = '400px';
-  state.body.style.overflowY = 'auto';
 }
 
 /**
@@ -198,10 +186,6 @@ export function finalizeThinkingBlock(state: ThinkingState): number {
   if (state.dotInterval !== null) {
     clearInterval(state.dotInterval);
     state.dotInterval = null;
-  }
-  if (state.autoExpandTimer !== null) {
-    clearTimeout(state.autoExpandTimer);
-    state.autoExpandTimer = null;
   }
 
   const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
@@ -269,9 +253,6 @@ export function renderStoredThinkingBlock(
           body.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         });
       }
-      // Enable scrolling for long content
-      body.style.maxHeight = '400px';
-      body.style.overflowY = 'auto';
     },
   });
 

@@ -61,16 +61,6 @@ export function createWriteEditBlock(
     initiallyExpanded: false,
     baseAriaLabel: `${kind}: ${filePath || 'file'}`,
     scrollOnExpand: true,
-    onExpand: () => {
-      body.style.maxHeight = '400px';
-      body.style.overflowY = 'auto';
-    },
-    onToggle: (expanded) => {
-      if (!expanded) {
-        body.style.maxHeight = '';
-        body.style.overflowY = '';
-      }
-    },
   });
 
   return {
@@ -110,4 +100,19 @@ export function updateWriteEditContent(
 export function finalizeWriteEditBlock(state: WriteEditState): void {
   state.statusEl.textContent = '✓';
   state.statusEl.className = 'tc-stat tc-stat-done';
+  collapseElement(state.wrapper, state.header, state.collapsibleState);
+}
+
+/**
+ * Mark write/edit block as failed and collapse it.
+ */
+export function failWriteEditBlock(state: WriteEditState, errorOutput?: Record<string, unknown>): void {
+  state.statusEl.textContent = '✗';
+  state.statusEl.className = 'tc-stat tc-stat-fail';
+  state.wrapper.classList.add('co-ober-write-edit-error');
+  if (errorOutput) {
+    state.body.empty();
+    state.body.createDiv({ text: JSON.stringify(errorOutput, null, 2) });
+  }
+  collapseElement(state.wrapper, state.header, state.collapsibleState);
 }

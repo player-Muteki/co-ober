@@ -10,6 +10,7 @@ import {
   cleanupThinkingBlock,
   type ThinkingState,
 } from './thinkingBlockRenderer';
+import { collapseElement } from './collapsible';
 import {
   createToolCallElement,
   updateToolCallElement,
@@ -49,6 +50,9 @@ export class ChatRenderer {
 
   // Structured tool call states (new approach)
   private toolCallStates = new Map<string, ToolCallState>();
+
+  // Throttled thinking markdown render (RAF-based, ~16ms between frames)
+  private thinkingRenderFrame: number | null = null;
 
   constructor(container: HTMLDivElement, app: App, shouldAutoScroll: () => boolean = () => true) {
     this.container = container;
@@ -299,6 +303,9 @@ export class ChatRenderer {
     }
 
     appendThinkingContent(this.liveThinkingState, text);
+    // Schedule throttled markdown render so expanded thinking blocks
+    // show formatted content (lists, code blocks) in real time
+    this.scheduleThinkingRender();
     this.scrollToBottom();
   }
 
@@ -313,23 +320,43 @@ export class ChatRenderer {
     return elapsed;
   }
 
-  /**
-   * Schedule thinking markdown render via requestAnimationFrame.
-   * (Kept for backward compat — thinkingBlockRenderer handles its own rendering)
-   */
-  scheduleThinkingRender(): Promise<void> {
-    return Promise.resolve();
-  }
-
-  async flushThinkingRender(): Promise<void> {
-    // No-op: thinkingBlockRenderer updates inline, no MarkdownRenderer needed
-  }
-
   cancelThinkingRender(): void {
+    if (this.thinkingRenderFrame !== null) {
+      window.cancelAnimationFrame(this.thinkingRenderFrame);
+      this.thinkingRenderFrame = null;
+    }
     if (this.liveThinkingState) {
       cleanupThinkingBlock(this.liveThinkingState);
       this.liveThinkingState = null;
     }
+  }
+
+  /**
+   * Schedule a throttled markdown render of the live thinking block body.
+   * Uses RAF (max 1 render per frame, ~16ms min interval between renders).
+   * Falls back to plain text if markdown rendering fails.
+   */
+  scheduleThinkingRender(): void {
+    if (this.thinkingRenderFrame !== null) {
+      window.cancelAnimationFrame(this.thinkingRenderFrame);
+    }
+    this.thinkingRenderFrame = window.requestAnimationFrame(() => {
+      this.thinkingRenderFrame = null;
+      const ts = this.liveThinkingState;
+      if (!ts || !ts.fullText) return;
+      // Only render markdown when the block is expanded to avoid wasted work
+      if (ts.wrapper.classList.contains('is-collapsed')) return;
+      ts.body.empty();
+      MarkdownRenderer.render(
+        this.app,
+        ts.fullText,
+        ts.body,
+        this.app.vault.getRoot().path,
+        this.container as unknown as Component,
+      ).catch(() => {
+        ts.body.textContent = ts.fullText;
+      });
+    });
   }
 
   addToolCall(id: string, title: string, kind: string, input: Record<string, unknown> | undefined, locations?: { path: string }[]): void {
@@ -502,6 +529,16 @@ export class ChatRenderer {
         line.createSpan({ text: oldLines[i] });
       }
     }
+  }
+
+  /**
+   * Collapse a tool call programmatically. Safe to call even if the
+   * tool call doesn't exist or is already collapsed.
+   */
+  collapseToolCall(id: string): void {
+    const toolState = this.toolCallStates.get(id);
+    if (!toolState) return;
+    collapseElement(toolState.wrapper, toolState.header, toolState.collapsibleState);
   }
 
   setPlanEntries(entries: Array<{ content: string; status: string; priority?: string }>): void {
