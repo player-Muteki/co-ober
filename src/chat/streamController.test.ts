@@ -67,6 +67,10 @@ describe('StreamController', () => {
 
 	it('handles tool_call_snapshot pending', () => {
 		controller.handleChunk({ kind: 'tool_call_snapshot', toolCallId: 'call-1', title: 'Search', toolKind: 'search', status: 'pending', rawInput: { q: 'test' }, contents: [] });
+		// Pending tool calls are buffered (Phase 4), not rendered immediately
+		expect(deps.renderer.addToolCall).not.toHaveBeenCalled();
+		// Flushing should render them
+		controller.handleChunk({ kind: 'plan', entries: [] });
 		expect(deps.renderer.addToolCall).toHaveBeenCalledWith('call-1', 'Search', 'search', { q: 'test' }, undefined);
 	});
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.17 - 2026-06-19
+
+### Added
+- **Structured message rendering system**: `ContentBlock` model, `Collapsible` component, `ThinkingBlockRenderer` with live timer, `ToolCallRenderer` with status indicators, `DiffRenderer` for unified diff display.
+- **Tool call buffering**: `pendingToolBuffer` in `StreamController` prevents mid-stream tool call interleaving during streaming responses.
+
+### Changed
+- **renderer.ts** — new `renderStructuredMessage()`, `renderInline()`, `renderCompactBoundary()`, `renderSubagentBlock()`, `addTextCopyButton()`, `formatDuration()` methods. Full backward compatibility maintained.
+- **CSS** — ~255 lines of new styles for structured blocks, thinking block animations, tool status states, compact boundary, response footer, and interrupt badge.
+
+### Fixed
+- `CLIENT_VERSION` in `acp.ts` now correctly matches `package.json` version (previous value `0.1.15` was stale).
+
 ## 0.1.16 - 2026-06-16
 
 ### Changed

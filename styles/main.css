@@ -1239,3 +1239,255 @@ pre:hover .co-ober-copy-btn {
   gap: 8px;
   justify-content: flex-end;
 }
+
+/* =============================================
+   Phase 1+ — Structured message rendering
+   ============================================= */
+
+/* Message content container for structured blocks */
+.co-ober-message-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Plain text block */
+.co-ober-text-block {
+  position: relative;
+  font-size: var(--font-ui-small);
+  line-height: 1.6;
+  padding: 4px 0;
+}
+
+/* Text copy button — shown on hover */
+.co-ober-text-copy-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: none;
+  padding: 2px 6px;
+  font-size: 10px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  color: var(--text-muted);
+  cursor: pointer;
+  z-index: 5;
+  opacity: 0.8;
+  transition: opacity 0.15s;
+}
+.co-ober-text-copy-btn:hover {
+  opacity: 1;
+  color: var(--text-normal);
+}
+.co-ober-text-block:hover .co-ober-text-copy-btn {
+  display: block;
+}
+
+/* Thinking block — new structured variant (complements .co-ober-thinking) */
+.co-ober-thinking-block {
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  overflow: hidden;
+}
+.co-ober-thinking-block.is-thinking {
+  border-color: var(--text-accent);
+  border-style: solid;
+}
+.co-ober-thinking-block.is-collapsed .co-ober-thinking-body {
+  display: none;
+}
+.co-ober-thinking-block .co-ober-thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: var(--font-smaller);
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  background: var(--background-secondary);
+}
+.co-ober-thinking-block .co-ober-thinking-header:hover {
+  background: var(--background-modifier-hover);
+}
+.co-ober-thinking-block .co-ober-thinking-label {
+  font-weight: 500;
+}
+.co-ober-thinking-block .co-ober-thinking-timer {
+  font-family: var(--font-monospace);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.co-ober-thinking-block .co-ober-thinking-dot {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-accent);
+  letter-spacing: 1px;
+  animation: co-ober-dot-pulse 1.5s ease-in-out infinite;
+}
+@keyframes co-ober-dot-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+.co-ober-thinking-block .co-ober-thinking-body {
+  padding: 8px 10px;
+  font-size: var(--font-smaller);
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1.5;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* Tool call card — status augmentations */
+.co-ober-tool-call.status-running {
+  border-color: var(--text-accent);
+}
+.co-ober-tool-call.status-completed {
+  border-color: rgba(34, 197, 94, 0.4);
+}
+.co-ober-tool-call.status-error {
+  border-color: rgba(239, 68, 68, 0.4);
+}
+.co-ober-tool-call.status-blocked {
+  border-color: rgba(234, 179, 8, 0.4);
+}
+
+/* Tool status icons (rendered in header) */
+.co-ober-tool-status {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-size: 12px;
+  width: 16px;
+  height: 16px;
+  justify-content: center;
+}
+.co-ober-tool-status.status-running {
+  color: var(--text-accent);
+  animation: co-ober-spin 1s linear infinite;
+}
+.co-ober-tool-status.status-completed {
+  color: #22c55e;
+}
+.co-ober-tool-status.status-error {
+  color: var(--text-error);
+}
+.co-ober-tool-status.status-blocked {
+  color: #eab308;
+}
+
+/* Diff line additions — diff-line.added/removed/context already exist,
+   add truncated variant and stats label */
+.diff-line.truncated {
+  color: var(--text-faint);
+  font-style: italic;
+  padding: 0 8px;
+  line-height: 1.4;
+}
+.diff-stats {
+  font-family: var(--font-monospace);
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.diff-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.co-ober-diff-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Compact boundary indicator */
+.co-ober-compact-boundary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  margin: 8px 0;
+  color: var(--text-faint);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  user-select: none;
+}
+.co-ober-compact-boundary::before,
+.co-ober-compact-boundary::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--background-modifier-border);
+}
+.co-ober-compact-boundary .compact-icon {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+/* Response footer — duration + token info */
+.co-ober-response-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+.co-ober-response-footer .footer-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  flex-shrink: 0;
+}
+.co-ober-baked-duration {
+  font-family: var(--font-monospace);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+/* Sub-agent block stub */
+.co-ober-subagent-block {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  padding: 6px 10px;
+  font-size: var(--font-smaller);
+  color: var(--text-muted);
+  background: var(--background-secondary);
+}
+.co-ober-subagent-block .subagent-name {
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+/* Baked footer (for historical messages) */
+.co-ober-baked-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 0;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+/* Interrupt indicator */
+.co-ober-interrupt-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 5px;
+  font-size: 9px;
+  border-radius: 3px;
+  background: rgba(234, 179, 8, 0.15);
+  color: #eab308;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}

@@ -1,4 +1,4 @@
-import type { NormalizedUpdate, SessionConfigOption, ModeOption, AvailableCommand, ModelOption } from '../types';
+import type { NormalizedUpdate, SessionConfigOption, ModeOption, AvailableCommand, ModelOption, ToolCallContent, ToolKind } from '../types';
 import type { ChatState } from './chatState';
 import type { ChatRenderer } from '../view/renderer';
 import type { SyncEngine } from '../sync/engine';
@@ -27,6 +27,18 @@ export class StreamController {
 	private saveTimer: number | null = null;
 	private disposed = false;
 
+	// Phase 4 — tool call buffering
+	private pendingToolBuffer: Array<{
+		toolCallId: string;
+		title: string;
+		toolKind: ToolKind;
+		status: 'pending' | 'in_progress' | 'completed' | 'failed';
+		rawInput?: Record<string, unknown>;
+		rawOutput?: Record<string, unknown>;
+		locations?: { path: string }[];
+		contents: ToolCallContent[];
+	}> = [];
+
 	constructor(deps: StreamControllerDeps) {
 		this.deps = deps;
 	}
@@ -42,6 +54,12 @@ export class StreamController {
 	handleChunk(ch: NormalizedUpdate): void {
 		const { state, renderer } = this.deps;
 
+		// Flush any buffered pending tool calls before handling non-tool events,
+		// to keep tool calls from interleaving mid-stream.
+		if (ch.kind !== 'tool_call_snapshot' || (ch.status !== 'pending' && ch.status !== 'in_progress')) {
+			this.flushToolBuffer();
+		}
+
 		switch (ch.kind) {
 			case 'message_chunk': {
 				if (ch.role === 'user') break;
@@ -56,9 +74,13 @@ export class StreamController {
 				break;
 			}
 			case 'tool_call_snapshot': {
-				if (ch.status === 'pending') {
-					renderer.addToolCall(ch.toolCallId, ch.title, ch.toolKind, ch.rawInput, ch.locations);
+				if (ch.status === 'pending' || ch.status === 'in_progress') {
+					// Buffer pending/in_progress tool calls to prevent
+					// interleaving mid-response during streaming.
+					this.pendingToolBuffer.push({ ...ch });
 				} else {
+					// Flush any buffered pending tools, then update completed/failed
+					this.flushToolBuffer();
 					renderer.updateToolCall(ch.toolCallId, ch.status, ch.rawOutput, ch.contents, ch.rawInput, ch.locations, ch.toolKind);
 				}
 
@@ -151,11 +173,26 @@ export class StreamController {
 	reset(): void {
 		this.syncedToolCalls.clear();
 		this.assistantMessageIndex.clear();
+		this.pendingToolBuffer = [];
 		this.deps.state.resetStreamingState();
 		if (this.saveTimer !== null) {
 			window.clearTimeout(this.saveTimer);
 			this.saveTimer = null;
 		}
+	}
+
+	/**
+	 * Flush buffered pending tool calls to the renderer.
+	 * Called before handling any non-pending event so tool calls
+	 * appear in sequence rather than interleaved mid-stream.
+	 */
+	private flushToolBuffer(): void {
+		if (this.pendingToolBuffer.length === 0) return;
+		const { renderer } = this.deps;
+		for (const tc of this.pendingToolBuffer) {
+			renderer.addToolCall(tc.toolCallId, tc.title, tc.toolKind, tc.rawInput, tc.locations);
+		}
+		this.pendingToolBuffer = [];
 	}
 
 	private saveAssistantChunk(messageId: string, accumulatedText: string, type: 'text' | 'thinking'): void {

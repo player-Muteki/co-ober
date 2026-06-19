@@ -1,7 +1,9 @@
 import type { App } from 'obsidian';
 import { MarkdownRenderer, setIcon, type Component } from 'obsidian';
 import { t, onLocaleChange } from '../i18n/index';
-import type { UsageInfo } from '../types';
+import type { UsageInfo, ContentBlock, SerializedMessage } from '../types';
+import { renderStoredThinkingBlock, cleanupThinkingBlock } from './thinkingBlockRenderer';
+import type { ToolCallState } from './ToolCallRenderer';
 
 const TOOL_ICONS: Record<string, string> = {
   read: 'file-text',
@@ -39,6 +41,10 @@ export class ChatRenderer {
   private usageEls = new Map<HTMLDivElement, UsageInfo>();
   private unsubscribeLocale: () => void;
 
+  // Phase 3 — structured rendering state
+  private toolCallStates = new Map<string, ToolCallState>();
+  private thinkingState: import('./thinkingBlockRenderer').ThinkingState | null = null;
+
   constructor(container: HTMLDivElement, app: App, shouldAutoScroll: () => boolean = () => true) {
     this.container = container;
     this.app = app;
@@ -60,6 +66,11 @@ export class ChatRenderer {
     this.currentThinkingText = '';
     this.currentAssistantId = null;
     this.currentAssistantType = 'text';
+    this.toolCallStates.clear();
+    if (this.thinkingState) {
+      cleanupThinkingBlock(this.thinkingState);
+      this.thinkingState = null;
+    }
     this.thinkingWrapEl = null;
     this.thinkingEl = null;
     this.planEl = null;
@@ -460,5 +471,169 @@ export class ChatRenderer {
   private formatTimestamp(ts: number): string {
     const date = new Date(ts);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  // ============================================================
+  // Phase 3 — Structured message rendering
+  // ============================================================
+
+  /**
+   * Render a full structured message using contentBlocks.
+   * Falls back to legacy rendering when contentBlocks is absent.
+   */
+  renderStructuredMessage(msg: SerializedMessage, parentEl?: HTMLElement): HTMLElement {
+    const wrap = parentEl ?? this.container.createDiv({ cls: 'co-ober-msg assistant' });
+
+    // If no contentBlocks, use legacy rendering
+    if (!msg.contentBlocks || msg.contentBlocks.length === 0) {
+      if (msg.content) {
+        const body = wrap.createDiv({ cls: 'co-ober-msg-body' });
+        this.renderInline(body, msg.content);
+      }
+      return wrap;
+    }
+
+    // Duration + interrupt footer
+    if (msg.durationSeconds || msg.isInterrupt) {
+      const footer = wrap.createDiv({ cls: 'co-ober-response-footer' });
+      if (msg.durationSeconds) {
+        footer.createSpan({ cls: 'co-ober-baked-duration', text: this.formatDuration(msg.durationSeconds) });
+      }
+      if (msg.isInterrupt) {
+        if (msg.durationSeconds) footer.createSpan({ cls: 'footer-dot' });
+        footer.createSpan({ cls: 'co-ober-interrupt-badge', text: 'interrupted' });
+      }
+    }
+
+    // Render blocks in order
+    const contentContainer = wrap.createDiv({ cls: 'co-ober-message-content' });
+    for (const block of msg.contentBlocks) {
+      this.renderContentBlock(contentContainer, block);
+    }
+
+    return wrap;
+  }
+
+  /**
+   * Render a single content block into the parent element.
+   */
+  private renderContentBlock(parentEl: HTMLElement, block: ContentBlock): void {
+    switch (block.type) {
+      case 'thinking':
+        renderStoredThinkingBlock(parentEl, block.text ?? '', block.duration);
+        break;
+
+      case 'text': {
+        if (!block.text) break;
+        const textBlock = parentEl.createDiv({ cls: 'co-ober-text-block' });
+        const body = textBlock.createDiv({ cls: 'co-ober-msg-body' });
+        this.renderInline(body, block.text);
+        this.addTextCopyButton(textBlock, block.text);
+        break;
+      }
+
+      case 'tool_use': {
+        // tool_use blocks reference existing tool calls already rendered via addToolCall/updateToolCall.
+        // If the tool call exists in our map, we just ensure it's visible.
+        // Otherwise, render a placeholder.
+        if (block.toolCallId && this.toolEls.has(block.toolCallId)) {
+          const existing = this.toolEls.get(block.toolCallId);
+          if (existing && existing.parentElement !== parentEl) {
+            parentEl.appendChild(existing);
+          }
+        } else if (block.toolCallId) {
+          // Fallback: render a minimal placeholder
+          const placeholder = parentEl.createDiv({ cls: 'co-ober-tool-call' });
+          placeholder.dataset.toolId = block.toolCallId;
+          const hdr = placeholder.createDiv({ cls: 'co-ober-tool-call-header' });
+          hdr.createSpan({ text: `[tool: ${block.toolCallId}]`, cls: 'tc-kind' });
+        }
+        break;
+      }
+
+      case 'context_compacted':
+        this.renderCompactBoundary(parentEl);
+        break;
+
+      case 'subagent':
+        this.renderSubagentBlock(parentEl, block);
+        break;
+    }
+  }
+
+  /**
+   * Render markdown into a container element.
+   * Catches errors and falls back to plain text.
+   */
+  renderInline(el: HTMLElement, markdown: string): void {
+    if (!markdown) return;
+    const placeholder = this.doc.createElement('div');
+    el.appendChild(placeholder);
+    MarkdownRenderer.render(
+      this.app,
+      markdown,
+      placeholder,
+      this.app.vault.getRoot().path,
+      this.container as unknown as Component,
+    ).catch(() => {
+      el.textContent = markdown;
+    });
+  }
+
+  /**
+   * Render a compact boundary visual separator.
+   */
+  renderCompactBoundary(parentEl: HTMLElement): void {
+    const boundary = parentEl.createDiv({ cls: 'co-ober-compact-boundary' });
+    boundary.createSpan({ cls: 'compact-icon', text: '⋯' });
+  }
+
+  /**
+   * Render a sub-agent block (stub).
+   */
+  renderSubagentBlock(parentEl: HTMLElement, block: ContentBlock): void {
+    const info = block.subagentInfo;
+    if (!info) {
+      parentEl.createDiv({ cls: 'co-ober-subagent-block', text: 'sub-agent' });
+      return;
+    }
+    const el = parentEl.createDiv({ cls: 'co-ober-subagent-block' });
+    el.createSpan({ cls: 'subagent-name', text: info.name });
+    if (info.summary) {
+      el.createSpan({ text: ` — ${info.summary}` });
+    }
+    const statusMap: Record<string, string> = { running: '⟳', completed: '✓', failed: '✗' };
+    el.createSpan({ text: ` ${statusMap[info.status] ?? '?'}` });
+  }
+
+  /**
+   * Add a text copy button to a text block (shown on hover).
+   */
+  addTextCopyButton(textEl: HTMLElement, markdown: string): void {
+    const btn = this.doc.createElement('button');
+    btn.className = 'co-ober-text-copy-btn';
+    btn.textContent = t().copy.button;
+    btn.onclick = () => {
+      void navigator.clipboard.writeText(markdown);
+      btn.textContent = t().copy.copied;
+      window.setTimeout(() => { btn.textContent = t().copy.button; }, 1500);
+    };
+    textEl.appendChild(btn);
+  }
+
+  /**
+   * Format seconds into a human-readable duration string.
+   * Examples: "2m 15s", "45s", "1h 30m"
+   */
+  formatDuration(seconds: number): string {
+    if (seconds <= 0) return '0s';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    const parts: string[] = [];
+    if (h > 0) parts.push(`${h}h`);
+    if (m > 0) parts.push(`${m}m`);
+    if (s > 0 || parts.length === 0) parts.push(`${s}s`);
+    return parts.join(' ');
   }
 }

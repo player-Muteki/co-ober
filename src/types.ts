@@ -218,12 +218,75 @@ export interface TerminalInstance {
 	createdAt: number;
 }
 
+// === Structured Content Types (Phase 1) ===
+
+export type ContentBlockType = 'text' | 'thinking' | 'tool_use' | 'context_compacted' | 'subagent';
+
+/** A single block within an assistant message, rendered in order. */
+export interface ContentBlock {
+  type: ContentBlockType;
+  /** Text content for text/thinking blocks */
+  text?: string;
+  /** References the tool call id for tool_use blocks */
+  toolCallId?: string;
+  /** Duration in seconds (populated after completion for thinking blocks) */
+  duration?: number;
+  /** Sub-agent metadata for subagent blocks */
+  subagentInfo?: SubagentInfo;
+}
+
+/** Structured info about a tool call for rendering purposes. */
+export interface ToolCallInfo {
+  name: string;
+  input?: Record<string, unknown>;
+  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  result?: string;
+}
+
+/** Sub-agent tracking info. */
+export interface SubagentInfo {
+  name: string;
+  status: 'running' | 'completed' | 'failed';
+  summary?: string;
+}
+
+/** Image attachment metadata. */
+export interface ImageAttachment {
+  mimeType: string;
+  data: string;
+}
+
+/** Diff line counts. */
+export interface DiffStats {
+  added: number;
+  removed: number;
+}
+
+/** A single diff line. */
+export interface DiffLine {
+  type: 'add' | 'del' | 'ctx';
+  content: string;
+}
+
+/** A file-level diff with stats and lines. */
+export interface FileDiff {
+  path: string;
+  stats: DiffStats;
+  lines: DiffLine[];
+}
+
 export interface SerializedMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   type: 'text' | 'tool-call' | 'tool-result' | 'thinking';
   toolCallId?: string;
   timestamp: number;
+  /** @since Phase 1 — structured content blocks for ordered rendering */
+  contentBlocks?: ContentBlock[];
+  /** @since Phase 1 — total response duration in seconds */
+  durationSeconds?: number;
+  /** @since Phase 1 — whether this message was interrupted mid-generation */
+  isInterrupt?: boolean;
 }
 
 export interface SerializedSession {
