@@ -408,8 +408,9 @@ export class CoOberView extends ItemView {
 		if (this.newMessagesBtn) return;
 		const btn = this.messagesEl.createEl('button', {
 			cls: 'co-ober-new-messages-btn',
-			text: t().newMessages,
 		});
+		setIcon(btn, 'arrow-down');
+		btn.createSpan({ text: t().newMessages });
 		btn.onclick = () => {
 			this.controller.state.autoScrollEnabled = true;
 			this.hideNewMessagesBtn();

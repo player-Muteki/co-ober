@@ -1177,25 +1177,38 @@ pre:hover .co-ober-copy-btn {
   font-size: var(--font-smaller);
 }
 
-/* New messages button */
+/* New messages button — subtle floating pill */
 .co-ober-new-messages-btn {
   position: sticky;
-  bottom: 8px;
+  bottom: 12px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--text-accent);
-  color: var(--text-on-accent);
-  border: none;
-  border-radius: var(--radius-s);
-  padding: 6px 16px;
-  font-size: var(--font-smaller);
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 20px;
+  padding: 4px 14px 4px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
   cursor: pointer;
   z-index: 50;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: opacity 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+  user-select: none;
+  white-space: nowrap;
 }
 
 .co-ober-new-messages-btn:hover {
-  opacity: 0.9;
+  color: var(--text-normal);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.co-ober-new-messages-btn svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
 }
 
 /* Drag overlay */
