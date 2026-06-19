@@ -227,11 +227,12 @@ export class TerminalManager {
 		cwd: string,
 		env?: Record<string, string>,
 	): void {
+		const needsShell = /\.(cmd|bat)$/i.test(command);
 		const proc = spawn(command, args, {
 			cwd,
 			stdio: ['pipe', 'pipe', 'pipe'],
 			env: env ? { ...process.env, ...env } : process.env,
-			shell: false,
+			shell: needsShell,
 		});
 
 		this.processes.set(terminalId, proc);

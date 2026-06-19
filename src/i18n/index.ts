@@ -17,7 +17,9 @@ export function onLocaleChange(listener: LocaleListener): () => void {
 
 export function setLocale(lang: string): void {
   currentLocale = locales[lang] ?? en;
-  for (const listener of listeners) listener();
+  for (const listener of listeners) {
+    try { listener(); } catch (e) { console.error('[co-ober] locale listener error:', e); }
+  }
 }
 
 export function getLocale(): Locale {

@@ -2,6 +2,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { CoOberViewController } from './CoOberViewController';
 import type { ControllerCallbacks, ControllerDeps } from './CoOberViewController';
+import type { ContextRef } from '../types';
 import { setLocale } from '../i18n/index';
 
 setLocale('en');
@@ -334,8 +335,7 @@ describe('CoOberViewController', () => {
 
 			await controller.stopGeneration();
 
-			// Now we only call abort, not cancel
-			expect(client.abort).toHaveBeenCalled();
+			expect(client.cancel).toHaveBeenCalled();
 			expect(controller.isBusy()).toBe(false);
 			expect(controller.state.isStreaming).toBe(false);
 		});
@@ -470,6 +470,58 @@ describe('CoOberViewController', () => {
 
 			expect(deps.resolver.resolveNote).toHaveBeenCalledWith('note.md');
 			expect(parts.length).toBeGreaterThanOrEqual(2);
+		});
+	});
+
+	describe('sendTextToAgent', () => {
+		it('completes successfully without adding user message', async () => {
+			const client = createMockClient();
+			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.plugin.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+			const fn = Reflect.get(controller, 'sendTextToAgent') as (text: string, refs?: ContextRef[]) => Promise<void>;
+
+			await fn.call(controller, 'silent msg');
+
+			expect(client.sendMessage).toHaveBeenCalled();
+			expect(controller.isBusy()).toBe(false);
+		});
+
+		it('uses buildPartsWithRefs when refs provided', async () => {
+			const client = createMockClient();
+			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.plugin.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+			const refs: ContextRef[] = [{ id: 'n1', type: 'note', name: 'note.md', path: 'note.md' }];
+			(deps.resolver.resolveNote as ReturnType<typeof vi.fn>).mockResolvedValue({ name: 'note.md', content: 'note content' });
+			const fn = Reflect.get(controller, 'sendTextToAgent') as (text: string, refs?: ContextRef[]) => Promise<void>;
+
+			await fn.call(controller, 'query', refs);
+
+			expect(deps.resolver.resolveNote).toHaveBeenCalledWith('note.md');
+			expect(client.sendMessage).toHaveBeenCalled();
+		});
+
+		it('sends plain text part when no refs', async () => {
+			const client = createMockClient();
+			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			const fn = Reflect.get(controller, 'sendTextToAgent') as (text: string, refs?: ContextRef[]) => Promise<void>;
+
+			await fn.call(controller, 'plain text', []);
+
+			const callArgs = (client.sendMessage as ReturnType<typeof vi.fn>).mock.calls[0];
+			expect(callArgs[1]).toEqual([{ type: 'text', text: 'plain text' }]);
+		});
+
+		it('handles error in sendTextToAgent', async () => {
+			const client = createMockClient({
+				sendMessage: vi.fn().mockRejectedValue(new Error('send error')),
+			});
+			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			const fn = Reflect.get(controller, 'sendTextToAgent') as (text: string, refs?: ContextRef[]) => Promise<void>;
+
+			await fn.call(controller, 'failing msg');
+
+			expect(deps.renderer.addError).toHaveBeenCalledWith('send error');
+			expect(controller.isBusy()).toBe(false);
 		});
 	});
 

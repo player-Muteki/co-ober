@@ -1,4 +1,4 @@
-import type { NormalizedUpdate, ContextRef, PromptPart, SessionConfigOption, ModeOption, ModelOption } from '../types';
+import type { NormalizedUpdate, ContextRef, PromptPart, SessionConfigOption, ModeOption, ModelOption, AcpResponse } from '../types';
 import type CoOberPlugin from '../main';
 import { t } from '../i18n/index';
 import type { ChatRenderer } from './renderer';
@@ -22,6 +22,7 @@ import { buildSystemPrompt } from '../context/injection';
 import { AcpTimeoutError, AcpProcessExitError, AcpAbortError } from '../client/AcpErrors';
 import { commandRegistry } from '../commands/registry';
 import { parseSlashCommand } from '../commands/executor';
+import { NOTECACHE_MAX_SIZE } from '../constants';
 
 export interface ControllerCallbacks {
 	onShowWelcome(connected: boolean): void;
@@ -116,6 +117,11 @@ export class CoOberViewController {
 			category: 'view',
 			source: 'builtin',
 			run: async () => {
+				await this.cancelActiveGeneration();
+				this.busy = false;
+				++this.genId;
+				this.noteContentCache.clear();
+				this.cacheSessionId = null;
 				this.state.clear();
 				this.deps.renderer.clear();
 				this.callbacks.onShowWelcome(true);
@@ -244,6 +250,8 @@ export class CoOberViewController {
 
 	dispose(): void {
 		this.streamCtrl.dispose();
+		this.noteContentCache.clear();
+		this.cacheSessionId = null;
 	}
 
 	// ── Connection ──
@@ -518,132 +526,18 @@ export class CoOberViewController {
 
 	// ── Sending ──
 
-	async send(text: string, refs: ContextRef[]): Promise<void> {
-		if (this.busy) {
-			this.promptQueue.push({ text, refs });
-			return;
-		}
-		// Intercept slash commands before routing to ACP agent
-		const parsed = parseSlashCommand(text);
-		if (parsed) {
-			const def = commandRegistry.find(parsed.name);
-			if (def) {
-				if (def.source === 'builtin') {
-					this.deps.renderer.addUserMessage(text);
-					this.streamCtrl.saveMessage('user', text, 'text');
-					await def.run(parsed.args);
-					return;
-				}
-				if (def.source === 'file' && def.template) {
-					const { templateExpander } = await import('../commands/templateExpander');
-					const expanded = templateExpander.buildPrompt(def, parsed.args);
-					await this.sendTextToAgent(expanded, refs);
-					return;
-				}
-			}
-		}
-		const sessionId = await this.ensureRuntimeSession();
-		const c = this.deps.plugin.getClient();
-		if (!c || !sessionId) return;
-		const inlineEdit = this.deps.inlineEditPanel.pendingState;
-		if (inlineEdit) this.deps.inlineEditPanel.clearState();
-
-		const currentGen = ++this.genId;
-		this.callbacks.onHideWelcome();
-
-		this.busy = true;
-		this.state.isStreaming = true;
-		this.deps.input.setStreaming(true);
-		this.deps.toolbar.setSending(true);
-		this.sendStartTime = Date.now();
-		this.deps.renderer.addUserMessage(text);
-		this.streamCtrl.saveMessage('user', text, 'text');
-		this.deps.renderer.addAssistantPlaceholder();
-
-		try {
-			await this.syncRuntimeSession(sessionId);
-			if (this.state.sessionId !== sessionId || !this.busy) return;
-			const parts = await this.buildParts(text, refs);
-			if (this.state.sessionId !== sessionId || !this.busy) return;
-			this.callbacks.onClearPendingImageChips();
-			const response = await c.sendMessage(sessionId, parts, (ch: NormalizedUpdate) => {
-				if (!this.busy || this.state.sessionId !== sessionId) return;
-				this.streamCtrl.handleChunk(ch);
-			});
-			if (response?.usage) {
-				this.state.usage = {
-					totalTokens: response.usage.totalTokens ?? 0,
-					inputTokens: response.usage.inputTokens ?? 0,
-					outputTokens: response.usage.outputTokens ?? 0,
-					thoughtTokens: response.usage.thoughtTokens,
-					cost: this.state.usage?.cost,
-					contextWindow: this.state.usage?.contextWindow,
-					contextTokens: this.state.usage?.contextTokens,
-				};
-				this.deps.updateContextMeter(this.state.usage);
-			}
-		} catch (e: unknown) {
-			if (!this.state.isConnected) return;
-			if (this.state.sessionId === sessionId) {
-				if (e instanceof AcpAbortError) {
-					// User cancelled, don't show error
-				} else if (e instanceof AcpTimeoutError) {
-					this.deps.renderer.addError(
-						t().error.timeout,
-						'retry',
-						() => this.send(text, refs)
-					);
-				} else if (e instanceof AcpProcessExitError) {
-					this.deps.renderer.addError(
-						t().error.processExit,
-						'restart',
-						async () => {
-							await this.reconnect();
-							await this.send(text, refs);
-						}
-					);
-				} else {
-					this.deps.renderer.addError(e instanceof Error ? e.message : String(e));
-				}
-			}
-		} finally {
-			this.deps.renderer.removeAssistantPlaceholder();
-			if (this.genId === currentGen) {
-				this.busy = false;
-				this.state.isStreaming = false;
-				this.deps.input.setStreaming(false);
-				this.deps.toolbar.setSending(false);
-				this.deps.input.focus();
-				if (this.state.usage) {
-					this.deps.renderer.showUsage({
-						...this.state.usage,
-						modelId: this.state.currentModelId ?? undefined,
-						elapsedMs: Date.now() - this.sendStartTime,
-					});
-				}
-				if (inlineEdit && this.deps.inlineEditPanel.pendingState === inlineEdit) {
-					const session = this.deps.sessionStore.get(sessionId ?? '');
-					if (session) {
-						const lastMsg = session.messages.slice().reverse().find(m => m.role === 'assistant');
-						if (lastMsg) {
-							this.deps.inlineEditPanel.showDiffFromResponse(inlineEdit.original, lastMsg.content);
-						}
-					}
-					this.deps.inlineEditPanel.pendingState = null;
-				}
-				void this.drainQueue();
-			}
-		}
-	}
-
-	/**
-	 * Send raw text directly to the ACP agent, bypassing builtin
-	 * command interception and template expansion.
-	 *
-	 * Used by builtin commands (e.g. /add-dir) that forward text
-	 * to the agent without the normal send() processing.
-	 */
-	private async sendTextToAgent(text: string, refs?: ContextRef[]): Promise<void> {
+	private async executeAgentCall(
+		text: string,
+		refs: ContextRef[],
+		config: {
+			addUserMessage?: boolean;
+			saveMessage?: boolean;
+			buildPartsWithRefs?: ContextRef[];
+			onAfterResponse?: (response: AcpResponse | undefined) => Promise<void>;
+			onFinally?: () => void;
+			retryFn?: (text: string, refs?: ContextRef[]) => Promise<void>;
+		},
+	): Promise<void> {
 		const sessionId = await this.ensureRuntimeSession();
 		const c = this.deps.plugin.getClient();
 		if (!c || !sessionId) return;
@@ -656,13 +550,15 @@ export class CoOberViewController {
 		this.deps.input.setStreaming(true);
 		this.deps.toolbar.setSending(true);
 		this.sendStartTime = Date.now();
+		if (config.addUserMessage !== false) this.deps.renderer.addUserMessage(text);
+		if (config.saveMessage !== false) this.streamCtrl.saveMessage('user', text, 'text');
 		this.deps.renderer.addAssistantPlaceholder();
 
 		try {
 			await this.syncRuntimeSession(sessionId);
 			if (this.state.sessionId !== sessionId || !this.busy) return;
-			const parts = refs && refs.length > 0
-				? await this.buildParts(text, refs)
+			const parts = config.buildPartsWithRefs
+				? await this.buildParts(text, config.buildPartsWithRefs)
 				: [{ type: 'text' as const, text }];
 			if (this.state.sessionId !== sessionId || !this.busy) return;
 			this.callbacks.onClearPendingImageChips();
@@ -682,26 +578,21 @@ export class CoOberViewController {
 				};
 				this.deps.updateContextMeter(this.state.usage);
 			}
+			if (config.onAfterResponse) await config.onAfterResponse(response);
 		} catch (e: unknown) {
 			if (!this.state.isConnected) return;
 			if (this.state.sessionId === sessionId) {
 				if (e instanceof AcpAbortError) {
 					// User cancelled, don't show error
 				} else if (e instanceof AcpTimeoutError) {
-					this.deps.renderer.addError(
-						t().error.timeout,
-						'retry',
-						() => this.sendTextToAgent(text, refs)
+					this.deps.renderer.addError(t().error.timeout, 'retry', () =>
+						config.retryFn ? config.retryFn(text, refs) : undefined,
 					);
 				} else if (e instanceof AcpProcessExitError) {
-					this.deps.renderer.addError(
-						t().error.processExit,
-						'restart',
-						async () => {
-							await this.reconnect();
-							await this.sendTextToAgent(text, refs);
-						}
-					);
+					this.deps.renderer.addError(t().error.processExit, 'restart', async () => {
+						await this.reconnect();
+						if (config.retryFn) await config.retryFn(text, refs);
+					});
 				} else {
 					this.deps.renderer.addError(e instanceof Error ? e.message : String(e));
 				}
@@ -714,8 +605,70 @@ export class CoOberViewController {
 				this.deps.input.setStreaming(false);
 				this.deps.toolbar.setSending(false);
 				this.deps.input.focus();
+				config.onFinally?.();
 			}
 		}
+	}
+
+	async send(text: string, refs: ContextRef[]): Promise<void> {
+		if (this.busy) {
+			this.promptQueue.push({ text, refs });
+			return;
+		}
+		const parsed = parseSlashCommand(text);
+		if (parsed) {
+			const def = commandRegistry.find(parsed.name);
+			if (def) {
+				if (def.source === 'builtin') {
+					this.deps.renderer.addUserMessage(text);
+					this.streamCtrl.saveMessage('user', text, 'text');
+					await def.run(parsed.args);
+					return;
+				}
+				if (def.source === 'file' && def.template) {
+					const { templateExpander } = await import('../commands/templateExpander');
+					const expanded = templateExpander.buildPrompt(def, parsed.args);
+					await this.sendTextToAgent(expanded, refs);
+					return;
+				}
+			}
+		}
+		const inlineEdit = this.deps.inlineEditPanel.pendingState;
+		if (inlineEdit) this.deps.inlineEditPanel.clearState();
+
+		await this.executeAgentCall(text, refs, {
+			buildPartsWithRefs: refs,
+			retryFn: (t, r) => this.send(t, r ?? refs),
+			onFinally: () => {
+				if (this.state.usage) {
+					this.deps.renderer.showUsage({
+						...this.state.usage,
+						modelId: this.state.currentModelId ?? undefined,
+						elapsedMs: Date.now() - this.sendStartTime,
+					});
+				}
+				if (inlineEdit && this.deps.inlineEditPanel.pendingState === inlineEdit) {
+					const session = this.deps.sessionStore.get(this.state.sessionId ?? '');
+					if (session) {
+						const lastMsg = session.messages.slice().reverse().find(m => m.role === 'assistant');
+						if (lastMsg) {
+							this.deps.inlineEditPanel.showDiffFromResponse(inlineEdit.original, lastMsg.content);
+						}
+					}
+					this.deps.inlineEditPanel.pendingState = null;
+				}
+				void this.drainQueue();
+			},
+		});
+	}
+
+	private async sendTextToAgent(text: string, refs?: ContextRef[]): Promise<void> {
+		await this.executeAgentCall(text, refs ?? [], {
+			addUserMessage: false,
+			saveMessage: false,
+			buildPartsWithRefs: refs && refs.length > 0 ? refs : undefined,
+			retryFn: (t, r) => this.sendTextToAgent(t, r),
+		});
 	}
 
 	private async drainQueue(): Promise<void> {
@@ -745,6 +698,14 @@ export class CoOberViewController {
 	private noteContentCache = new Map<string, { name: string; content: string }>();
 	private cacheSessionId: string | null = null;
 
+	private setCacheEntry(path: string, entry: { name: string; content: string }): void {
+		if (this.noteContentCache.size >= NOTECACHE_MAX_SIZE) {
+			const firstKey = this.noteContentCache.keys().next().value;
+			if (firstKey !== undefined) this.noteContentCache.delete(firstKey);
+		}
+		this.noteContentCache.set(path, entry);
+	}
+
 	async buildParts(text: string, refs: ContextRef[]): Promise<PromptPart[]> {
 		const parts: PromptPart[] = [];
 
@@ -762,7 +723,10 @@ export class CoOberViewController {
 				continue;
 			}
 			const result = await this.deps.resolver.resolveNote(ref.path);
-			if (result) resolved.push(result);
+			if (result) {
+				resolved.push(result);
+				this.setCacheEntry(ref.path, result);
+			}
 		}
 		const activeAgent = getValidActiveCustomAgent(
 			this.deps.plugin.settings.activeCustomAgentId,

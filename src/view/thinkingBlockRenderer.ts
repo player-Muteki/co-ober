@@ -13,6 +13,7 @@
  */
 
 import { setupCollapsible, collapseElement, type CollapsibleState } from './collapsible';
+import { THINKING_TIMER_INTERVAL_MS } from '../constants';
 
 const ANIMATION_INTERVAL_MS = 500;
 /** Max lines shown on first expand — beyond this gets truncated with "Show all" */
@@ -89,7 +90,7 @@ export function renderLiveThinkingBlock(
   state.timerInterval = setInterval(() => {
     const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
     state.timerEl.textContent = `${elapsed}s`;
-  }, 1000);
+  }, THINKING_TIMER_INTERVAL_MS);
 
   // Dot animation: cycle every 500ms
   let dotIndex = 0;

@@ -1,5 +1,6 @@
 import type { PermissionRequest } from '../types';
 import { t, onLocaleChange } from '../i18n/index';
+import { PERMISSION_MAX_LOCATIONS, PERMISSION_SUMMARY_MAX_KEYS, PERMISSION_TRUNCATE_LENGTH } from '../constants';
 
 export class PermissionBanner {
 	private el: HTMLDivElement | null = null;
@@ -51,11 +52,11 @@ export class PermissionBanner {
 		// Locations
 		if (req.toolCall.locations?.length) {
 			const locationsEl = banner.createDiv({ cls: 'perm-locations' });
-			for (const loc of req.toolCall.locations.slice(0, 3)) {
+			for (const loc of req.toolCall.locations.slice(0, PERMISSION_MAX_LOCATIONS)) {
 				locationsEl.createDiv({ cls: 'perm-path', text: loc.path });
 			}
-			if (req.toolCall.locations.length > 3) {
-				locationsEl.createDiv({ cls: 'perm-path-more', text: `+${req.toolCall.locations.length - 3} more` });
+			if (req.toolCall.locations.length > PERMISSION_MAX_LOCATIONS) {
+				locationsEl.createDiv({ cls: 'perm-path-more', text: `+${req.toolCall.locations.length - PERMISSION_MAX_LOCATIONS} more` });
 			}
 		}
 
@@ -86,10 +87,10 @@ export class PermissionBanner {
 		const parts: string[] = [];
 		const keys = Object.keys(rawInput);
 
-		for (const key of keys.slice(0, 3)) {
+		for (const key of keys.slice(0, PERMISSION_SUMMARY_MAX_KEYS)) {
 			const value = rawInput[key];
 			if (typeof value === 'string') {
-				const truncated = value.length > 50 ? value.slice(0, 50) + '...' : value;
+				const truncated = value.length > PERMISSION_TRUNCATE_LENGTH ? value.slice(0, PERMISSION_TRUNCATE_LENGTH) + '...' : value;
 				parts.push(`${key}: ${truncated}`);
 			} else if (typeof value === 'number' || typeof value === 'boolean') {
 				parts.push(`${key}: ${value}`);

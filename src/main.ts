@@ -7,6 +7,7 @@ import { DEFAULT_SETTINGS, VIEW_TYPE } from './types';
 import type { CoOberSettings, SerializedSession, SerializedMessage, PluginData } from './types';
 import { getVaultPath } from './utils/vault';
 import { setLocale, t } from './i18n/index';
+import { MS_PER_DAY } from './constants';
 
 export default class CoOberPlugin extends Plugin {
   settings: CoOberSettings = DEFAULT_SETTINGS;
@@ -97,7 +98,7 @@ export default class CoOberPlugin extends Plugin {
   private pruneSessions(): void {
     const maxMessages = this.settings.maxSessionMessages ?? 200;
     const retentionDays = this.settings.sessionRetentionDays ?? 30;
-    const cutoffTime = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    const cutoffTime = Date.now() - retentionDays * MS_PER_DAY;
 
     const activeId = this.activeSessionId;
     for (const [id, session] of this.sessions) {

@@ -3,6 +3,12 @@ import type CoOberPlugin from '../main';
 import { VIEW_TYPE } from '../types';
 import type { ContextRef, PromptPart } from '../types';
 import { t } from '../i18n/index';
+import {
+  SCROLL_NEAR_BOTTOM_THRESHOLD,
+  CONTEXT_METER_WARNING_PCT,
+  CONTEXT_METER_CRITICAL_PCT,
+  K_FORMAT_THRESHOLD,
+} from '../constants';
 import { ChatRenderer } from './renderer';
 import { ChatInput } from '../chat/input';
 import { InputToolbar } from '../chat/toolbar';
@@ -391,7 +397,7 @@ export class CoOberView extends ItemView {
 	private setupSmartScroll(): void {
 		this.scrollHandler = () => {
 			const { scrollTop, clientHeight, scrollHeight } = this.messagesEl;
-			const nearBottom = scrollTop + clientHeight >= scrollHeight - 50;
+			const nearBottom = scrollTop + clientHeight >= scrollHeight - SCROLL_NEAR_BOTTOM_THRESHOLD;
 
 			if (!nearBottom && this.controller.state.autoScrollEnabled) {
 				this.controller.state.autoScrollEnabled = false;
@@ -688,13 +694,13 @@ export class CoOberView extends ItemView {
 		this.meterPctEl.setText(`${pct}%`);
 
 		this.meterEl.removeClass('warning', 'critical');
-		if (pct >= 90) {
+		if (pct >= CONTEXT_METER_CRITICAL_PCT) {
 			this.meterEl.addClass('critical');
-		} else if (pct >= 75) {
+		} else if (pct >= CONTEXT_METER_WARNING_PCT) {
 			this.meterEl.addClass('warning');
 		}
 
-		const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+		const fmt = (n: number) => n >= K_FORMAT_THRESHOLD ? `${(n / K_FORMAT_THRESHOLD).toFixed(1)}k` : String(n);
 		const tooltip = [
 			`Context: ${fmt(used)} / ${fmt(contextWindow)} tokens`,
 			`Input: ${fmt(usage.inputTokens)}`,

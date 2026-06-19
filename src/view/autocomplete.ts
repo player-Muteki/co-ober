@@ -60,14 +60,14 @@ export class Autocomplete {
         return;
       }
       if (e.key === 'ArrowDown') {
-        this.selIdx = Math.min(this.selIdx + 1, Math.max(0, this.filtered.length - 1));
+        this.selIdx = (this.selIdx + 1) % this.filtered.length;
         this.render();
         e.preventDefault();
         e.stopPropagation();
         return;
       }
       if (e.key === 'ArrowUp') {
-        this.selIdx = Math.max(0, this.selIdx - 1);
+        this.selIdx = (this.selIdx - 1 + this.filtered.length) % this.filtered.length;
         this.render();
         e.preventDefault();
         e.stopPropagation();

@@ -17,5 +17,15 @@ module.exports = {
     'no-control-regex': 'off',
     'no-console': 'off',
   },
-  ignorePatterns: ['main.js', 'node_modules', 'release', '*.test.ts'],
+  ignorePatterns: ['main.js', 'node_modules', 'release'],
+  overrides: [{
+    files: ['*.test.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
+      '@typescript-eslint/no-require-imports': 'off',
+      'no-control-regex': 'off',
+      'prefer-const': 'off',
+    },
+  }],
 };

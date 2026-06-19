@@ -155,8 +155,12 @@ describe('AcpSubprocess', () => {
     const subprocess = new AcpSubprocess(launchSpec);
     subprocess.start();
 
-    mockProc.kill.mockImplementation(() => {
-      throw new Error('kill failed');
+
+    mockProc.kill.mockImplementation((signal?: string) => {
+      // Dont emit close on SIGTERM; simulate a stuck process.
+      if (signal === 'SIGKILL') {
+        mockProc.emit('close');
+      }
     });
 
     const shutdownPromise = subprocess.shutdown();
@@ -250,8 +254,11 @@ describe('AcpSubprocess', () => {
     const subprocess = new AcpSubprocess(launchSpec);
     subprocess.start();
 
-    mockProc.kill.mockImplementation(() => {
-      // Don't throw, but we never emit close.
+    mockProc.kill.mockImplementation((signal?: string) => {
+      // Dont emit close on SIGTERM; simulate a stuck process.
+      if (signal === 'SIGKILL') {
+        mockProc.emit('close');
+      }
     });
 
     const shutdownPromise = subprocess.shutdown();

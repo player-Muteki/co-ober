@@ -1,3 +1,19 @@
+## 0.1.22 - 2026-06-19
+
+### Added
+- **Zod schema validation layer**: `acpSchemas.ts` defines 12 Zod schemas for all `SessionUpdate` variants, replacing raw `as` assertions in `parseSessionUpdate()` (~33 casts eliminated).
+- **Constants extraction**: `constants.ts` centralizes 16 magic numbers (timeouts, thresholds, limits) used across the codebase.
+- **Cache fix**: `noteContentCache` in `CoOberViewController` now actually writes entries (was get-only, 0% hit rate); LRU eviction at 100 entries added.
+
+### Changed
+- **Type safety overhaul**: all `as Record<string, unknown>` casts in `AcpRequestHandler.ts` replaced with Zod `safeParse` calls. `AcpSubprocess` `onClose()` deduplication fixed.
+- **send()/sendTextToAgent() deduplication**: ~80 shared lines extracted into `executeAgentCall()` private method. `send()` reduced from ~117 to ~50 lines.
+- **i18n robustness**: `setLocale` now wraps listener invocations in try/catch to isolate failures.
+- **`/clear` command fix**: resets `busy`, `genId`, `noteContentCache`, and `cacheSessionId` to prevent stale state leaks.
+
+### Fixed
+- **All 7 test failures resolved**: 523 tests now pass (0 failures). Fixed version mismatch, shell detection for .cmd/.bat, autocomplete wrapping, subprocess timeout mock, and stale cancel/abort assertion.
+
 ## 0.1.21 - 2026-06-19
 
 ### Changed

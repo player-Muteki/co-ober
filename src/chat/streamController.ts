@@ -5,6 +5,7 @@ import type { SyncEngine } from '../sync/engine';
 import type { SyncContext } from '../sync/templates';
 import type { SessionStore } from './session';
 import { t } from '../i18n/index';
+import { STREAM_SAVE_DEBOUNCE_MS } from '../constants';
 
 export interface StreamControllerDeps {
 	state: ChatState;
@@ -247,6 +248,6 @@ export class StreamController {
 
 	private scheduleSave(): void {
 		if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
-		this.saveTimer = window.setTimeout(() => { void this.deps.sessionStore.save(); }, 500);
+		this.saveTimer = window.setTimeout(() => { void this.deps.sessionStore.save(); }, STREAM_SAVE_DEBOUNCE_MS);
 	}
 }

@@ -1,6 +1,5 @@
 import type {
 	PermissionRequest,
-	PermissionOption,
 	FsCapabilityMode,
 	TerminalCapabilityMode,
 	TerminalCreateParams,
@@ -8,6 +7,35 @@ import type {
 import type { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
 import { FsDelegate } from './fsDelegate';
 import { TerminalManager, TerminalError } from './terminalManager';
+import { z } from 'zod';
+import { REQUEST_DEFAULT_TIMEOUT_MS, REQUEST_DEFAULT_MAX_OUTPUT_BYTES } from '../constants';
+
+const zPermissionParams = z.object({
+	sessionId: z.string(),
+	toolCall: z.object({
+		toolCallId: z.string().optional(),
+		title: z.string(),
+		status: z.string().optional(),
+		rawInput: z.record(z.string(), z.unknown()).optional(),
+		kind: z.enum(["read", "edit", "delete", "move", "search", "execute", "think", "fetch", "switch_mode", "other"]).optional(),
+		locations: z.array(z.object({ path: z.string() })).optional(),
+	}).passthrough(),
+	options: z.array(z.object({
+		optionId: z.string(),
+		kind: z.enum(['allow_once', 'allow_always', 'reject_once', 'reject_always']),
+		name: z.string(),
+	})),
+}).passthrough();
+
+const zFsPathParam = z.object({ path: z.string() });
+const zFsWriteParam = z.object({ path: z.string(), content: z.string() });
+const zTerminalIdParam = z.object({ terminalId: z.string() });
+const zTerminalCreateParam = z.object({
+	command: z.string(),
+	args: z.array(z.string()).optional(),
+	cwd: z.string().optional(),
+	env: z.record(z.string(), z.string()).optional(),
+});
 
 export interface AcpRequestHandlerOptions {
 	transport: AcpJsonRpcTransport;
@@ -35,8 +63,8 @@ export class AcpRequestHandler {
 		});
 
 		this.terminalManager = new TerminalManager({
-			timeoutMs: 30000,
-			maxOutputBytes: 100000,
+			timeoutMs: REQUEST_DEFAULT_TIMEOUT_MS,
+			maxOutputBytes: REQUEST_DEFAULT_MAX_OUTPUT_BYTES,
 		});
 
 		this.registerHandlers();
@@ -44,32 +72,37 @@ export class AcpRequestHandler {
 
 	private registerHandlers(): void {
 		this.transport.onRequest('request_permission', (params) => {
-			return this.handleServerRequestPermission(params as Record<string, unknown>);
+			return this.handleServerRequestPermission(this.toRecord(params));
 		});
 
 		this.transport.onRequest('fs/read_text_file', (params) => {
-			return this.handleReadTextFile(params as Record<string, unknown>);
+			return this.handleReadTextFile(this.toRecord(params));
 		});
 
 		this.transport.onRequest('fs/write_text_file', (params) => {
-			return this.handleWriteTextFile(params as Record<string, unknown>);
+			return this.handleWriteTextFile(this.toRecord(params));
 		});
 
 		this.transport.onRequest('terminal/create', (params) => {
-			return this.handleTerminalCreate(params as Record<string, unknown>);
+			return this.handleTerminalCreate(this.toRecord(params));
 		});
 		this.transport.onRequest('terminal/output', (params) => {
-			return this.handleTerminalOutput(params as Record<string, unknown>);
+			return this.handleTerminalOutput(this.toRecord(params));
 		});
 		this.transport.onRequest('terminal/kill', (params) => {
-			return this.handleTerminalKill(params as Record<string, unknown>);
+			return this.handleTerminalKill(this.toRecord(params));
 		});
 		this.transport.onRequest('terminal/release', (params) => {
-			return this.handleTerminalRelease(params as Record<string, unknown>);
+			return this.handleTerminalRelease(this.toRecord(params));
 		});
 		this.transport.onRequest('terminal/wait_for_exit', (params) => {
-			return this.handleTerminalWaitForExit(params as Record<string, unknown>);
+			return this.handleTerminalWaitForExit(this.toRecord(params));
 		});
+	}
+
+	private toRecord(params: unknown): Record<string, unknown> {
+		const r = z.record(z.string(), z.unknown()).safeParse(params);
+		return r.success ? r.data : {};
 	}
 
 	buildClientCapabilities(): Record<string, unknown> {
@@ -107,10 +140,14 @@ export class AcpRequestHandler {
 	}
 
 	private handleServerRequestPermission = (params: Record<string, unknown>): Promise<unknown> => {
+		const parsed = zPermissionParams.safeParse(params);
+		if (!parsed.success) {
+			return Promise.resolve({ error: 'Invalid permission request params' });
+		}
 		const req: PermissionRequest = {
-			sessionId: params.sessionId as string,
-			toolCall: params.toolCall as PermissionRequest['toolCall'],
-			options: params.options as PermissionOption[],
+			sessionId: parsed.data.sessionId,
+			toolCall: parsed.data.toolCall as PermissionRequest["toolCall"],
+			options: parsed.data.options,
 		};
 
 		const handler = this.onPermissionRequest ?? ((r: PermissionRequest) => this.requestPermission(r));
@@ -138,12 +175,12 @@ export class AcpRequestHandler {
 			return Promise.resolve({ content: '', error: 'File system access is disabled' });
 		}
 
-		const filePath = params.path as string;
-		if (!filePath) {
+		const parsed = zFsPathParam.safeParse(params);
+		if (!parsed.success) {
 			return Promise.resolve({ content: '', error: 'Missing required parameter: path' });
 		}
 
-		return Promise.resolve(this.fsDelegate.readTextFile(filePath));
+		return Promise.resolve(this.fsDelegate.readTextFile(parsed.data.path));
 	}
 
 	private handleWriteTextFile(params: Record<string, unknown>): Promise<unknown> {
@@ -151,18 +188,12 @@ export class AcpRequestHandler {
 			return Promise.resolve({ success: false, error: 'File system write access is disabled' });
 		}
 
-		const filePath = params.path as string;
-		const content = params.content as string;
-
-		if (!filePath) {
-			return Promise.resolve({ success: false, error: 'Missing required parameter: path' });
+		const parsed = zFsWriteParam.safeParse(params);
+		if (!parsed.success) {
+			return Promise.resolve({ success: false, error: 'Missing required parameter: path or content' });
 		}
 
-		if (content === undefined || content === null) {
-			return Promise.resolve({ success: false, error: 'Missing required parameter: content' });
-		}
-
-		return Promise.resolve(this.fsDelegate.writeTextFile(filePath, content));
+		return Promise.resolve(this.fsDelegate.writeTextFile(parsed.data.path, parsed.data.content));
 	}
 
 	private handleTerminalCreate(params: Record<string, unknown>): Promise<unknown> {
@@ -170,16 +201,16 @@ export class AcpRequestHandler {
 			return Promise.resolve({ error: 'Terminal access is disabled' });
 		}
 
-		const command = params.command as string;
-		if (!command) {
+		const parsed = zTerminalCreateParam.safeParse(params);
+		if (!parsed.success) {
 			return Promise.resolve({ error: 'Missing required parameter: command' });
 		}
 
 		const createParams: TerminalCreateParams = {
-			command,
-			args: params.args as string[] | undefined,
-			cwd: params.cwd as string | undefined,
-			env: params.env as Record<string, string> | undefined,
+			command: parsed.data.command,
+			args: parsed.data.args,
+			cwd: parsed.data.cwd,
+			env: parsed.data.env,
 		};
 
 		try {
@@ -199,13 +230,12 @@ export class AcpRequestHandler {
 			return Promise.resolve({ error: 'Terminal manager not initialized' });
 		}
 
-		const terminalId = params.terminalId as string;
-		if (!terminalId) {
+		const parsed = zTerminalIdParam.safeParse(params);
+		if (!parsed.success) {
 			return Promise.resolve({ error: 'Missing required parameter: terminalId' });
 		}
 
-		const result = this.terminalManager.output(terminalId);
-		return Promise.resolve(result);
+		return Promise.resolve(this.terminalManager.output(parsed.data.terminalId));
 	}
 
 	private handleTerminalKill(params: Record<string, unknown>): Promise<unknown> {
@@ -213,13 +243,12 @@ export class AcpRequestHandler {
 			return Promise.resolve({ error: 'Terminal manager not initialized' });
 		}
 
-		const terminalId = params.terminalId as string;
-		if (!terminalId) {
+		const parsed = zTerminalIdParam.safeParse(params);
+		if (!parsed.success) {
 			return Promise.resolve({ error: 'Missing required parameter: terminalId' });
 		}
 
-		const success = this.terminalManager.kill(terminalId);
-		return Promise.resolve({ success });
+		return Promise.resolve({ success: this.terminalManager.kill(parsed.data.terminalId) });
 	}
 
 	private handleTerminalRelease(params: Record<string, unknown>): Promise<unknown> {
@@ -227,13 +256,12 @@ export class AcpRequestHandler {
 			return Promise.resolve({ error: 'Terminal manager not initialized' });
 		}
 
-		const terminalId = params.terminalId as string;
-		if (!terminalId) {
+		const parsed = zTerminalIdParam.safeParse(params);
+		if (!parsed.success) {
 			return Promise.resolve({ error: 'Missing required parameter: terminalId' });
 		}
 
-		const success = this.terminalManager.release(terminalId);
-		return Promise.resolve({ success });
+		return Promise.resolve({ success: this.terminalManager.release(parsed.data.terminalId) });
 	}
 
 	private handleTerminalWaitForExit(params: Record<string, unknown>): Promise<unknown> {
@@ -241,11 +269,11 @@ export class AcpRequestHandler {
 			return Promise.resolve({ error: 'Terminal manager not initialized' });
 		}
 
-		const terminalId = params.terminalId as string;
-		if (!terminalId) {
+		const parsed = zTerminalIdParam.safeParse(params);
+		if (!parsed.success) {
 			return Promise.resolve({ error: 'Missing required parameter: terminalId' });
 		}
 
-		return this.terminalManager.waitForExit(terminalId).then((result) => result ?? { error: 'Terminal not found' });
+		return this.terminalManager.waitForExit(parsed.data.terminalId).then((result) => result ?? { error: 'Terminal not found' });
 	}
 }

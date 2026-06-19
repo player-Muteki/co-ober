@@ -11,7 +11,7 @@
     "noUnusedLocals": true,
     "esModuleInterop": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["obsidian", "node"],
+    "types": ["obsidian", "node"],  /* node types needed for AcpSubprocess/readline in Electron renderer */
     "jsx": "react-jsx",
     "jsxImportSource": "obsidian",
     "allowSyntheticDefaultImports": true,

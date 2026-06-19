@@ -1,3 +1,4 @@
+import { ACP_LIST_SESSIONS_LIMIT, ACP_RECONNECT_BACKOFF_BASE_MS } from '../constants';
 import { getSpawnInfo } from '../utils/commandResolution';
 import { AcpSubprocess, type AcpSubprocessLaunchSpec } from './AcpSubprocess';
 
@@ -24,8 +25,23 @@ import { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
 import { SessionUpdateNormalizer } from './sessionUpdateNormalizer';
 import type { NormalizedUpdate } from '../types';
 import { AcpRequestHandler } from './AcpRequestHandler';
+import {
+  zAgentMessageChunk,
+  zAgentThoughtChunk,
+  zUserMessageChunk,
+  zToolCall,
+  zToolCallUpdate,
+  zPlan,
+  zConfigOptionUpdate,
+  zAvailableCommandsUpdate,
+  zCurrentModeUpdate,
+  zCurrentModelUpdate,
+  zSessionInfoUpdate,
+  zUsageUpdate,
+} from './acpSchemas';
+import { z } from 'zod';
 
-export const CLIENT_VERSION = '0.1.21';
+export const CLIENT_VERSION = '0.1.22';
 
 export interface AcpSessionMeta {
   availableCommands: AvailableCommand[];
@@ -44,33 +60,56 @@ export interface AcpSessionMeta {
 /** Parse a JSON-RPC update into a strongly typed SessionUpdate */
 export function parseSessionUpdate(u: Record<string, unknown> | undefined | null): SessionUpdate | null {
   if (!u || !u.sessionUpdate) return null;
-  const c = u.content;
   const su = u.sessionUpdate as string;
   switch (su) {
-    case 'agent_message_chunk':
-      return { sessionUpdate: 'agent_message_chunk', messageId: u.messageId as string, content: c as { type: string; text: string } };
-    case 'agent_thought_chunk':
-      return { sessionUpdate: 'agent_thought_chunk', messageId: u.messageId as string, content: c as { type: string; text: string } };
-    case 'tool_call':
-      return { sessionUpdate: 'tool_call', toolCallId: u.toolCallId as string, title: u.title as string, kind: u.kind as import('../types').ToolKind, status: (u.status as string) ?? 'pending', rawInput: u.rawInput as Record<string, unknown>, locations: u.locations as { path: string }[] };
-    case 'tool_call_update':
-      return { sessionUpdate: 'tool_call_update', toolCallId: u.toolCallId as string, status: u.status as 'pending' | 'in_progress' | 'completed' | 'failed', kind: u.kind as import('../types').ToolKind, title: u.title as string, rawInput: u.rawInput as Record<string, unknown>, rawOutput: u.rawOutput as Record<string, unknown>, content: (u.content as Record<string, unknown>[])?.map((c) => c.type === 'terminal' ? { type: 'terminal', terminalId: c.terminalId } : c) as import('../types').ToolCallContent[] };
-    case 'plan':
-      return { sessionUpdate: 'plan', entries: (u.entries ?? []) as { content: string; status: string; priority: string }[] };
-    case 'user_message_chunk':
-      return { sessionUpdate: 'user_message_chunk', messageId: u.messageId as string, content: c as { type: string; text: string } };
-    case 'config_option_update':
-      return { sessionUpdate: 'config_option_update', configOptions: (u.configOptions ?? []) as import('../types').SessionConfigOption[] };
-    case 'available_commands_update':
-      return { sessionUpdate: 'available_commands_update', availableCommands: (u.availableCommands ?? []) as import('../types').AvailableCommand[] };
-    case 'usage_update':
-      return { sessionUpdate: 'usage_update', used: (u.used as number) ?? (u.totalTokens as number), size: (u.size as number) ?? (u.contextWindow as number), cost: u.cost as { amount: number; currency: string }, totalTokens: (u.totalTokens as number) ?? (u.used as number), inputTokens: (u.inputTokens as number) ?? 0, outputTokens: (u.outputTokens as number) ?? 0, thoughtTokens: (u.thoughtTokens as number) ?? 0 };
-    case 'current_mode_update':
-      return { sessionUpdate: 'current_mode_update', currentModeId: u.currentModeId as string, availableModes: u.availableModes as import('../types').ModeOption[] };
-    case 'current_model_update':
-      return { sessionUpdate: 'current_model_update', currentModelId: u.currentModelId as string, availableModels: u.availableModels as import('../types').ModelOption[] };
-    case 'session_info_update':
-      return { sessionUpdate: 'session_info_update', sessionId: u.sessionId as string, title: u.title as string, cwd: u.cwd as string };
+    case 'agent_message_chunk': {
+      const r = zAgentMessageChunk.safeParse(u);
+      return r.success ? r.data : null;
+    }
+    case 'agent_thought_chunk': {
+      const r = zAgentThoughtChunk.safeParse(u);
+      return r.success ? r.data : null;
+    }
+    case 'tool_call': {
+      const r = zToolCall.safeParse(u);
+      return r.success ? r.data : null;
+    }
+    case 'tool_call_update': {
+      const r = zToolCallUpdate.safeParse(u);
+      return r.success ? r.data : null;
+    }
+    case 'plan': {
+      const r = zPlan.safeParse(u);
+      return r.success ? r.data : null;
+    }
+    case 'user_message_chunk': {
+      const r = zUserMessageChunk.safeParse(u);
+      return r.success ? r.data : null;
+    }
+    case 'config_option_update': {
+      const r = zConfigOptionUpdate.safeParse(u);
+      return r.success ? r.data : null;
+    }
+    case 'available_commands_update': {
+      const r = zAvailableCommandsUpdate.safeParse(u);
+      return r.success ? r.data : null;
+    }
+    case 'usage_update': {
+      const r = zUsageUpdate.safeParse(u);
+      return r.success ? r.data : null;
+    }
+    case 'current_mode_update': {
+      const r = zCurrentModeUpdate.safeParse(u);
+      return r.success ? r.data : null;
+    }
+    case 'current_model_update': {
+      const r = zCurrentModelUpdate.safeParse(u);
+      return r.success ? r.data : null;
+    }
+    case 'session_info_update': {
+      const r = zSessionInfoUpdate.safeParse(u);
+      return r.success ? r.data : null;
+    }
     default: return null;
   }
 }
@@ -283,11 +322,13 @@ export class AcpClient implements OpencodeClient {
 				protocolVersion: 1,
 				clientInfo: { name: 'co-ober', version: CLIENT_VERSION },
 				clientCapabilities: this.requestHandler.buildClientCapabilities(),
-			}) as Record<string, unknown>;
-			this.agentCapabilities = (response.agentCapabilities as AgentCapabilities) ?? null;
+			});
+			const initResult = z.object({ agentCapabilities: z.unknown().optional() }).safeParse(response);
+			this.agentCapabilities = (initResult.success ? initResult.data.agentCapabilities as AgentCapabilities : null) ?? null;
 			this.methodCache.clear();
 			this.connected = true;
 		} catch (error) {
+			this.onClose?.();
 			await this.disposeConnection(error instanceof Error ? error : new Error(String(error)), true);
 			throw error;
 		}
@@ -301,38 +342,41 @@ export class AcpClient implements OpencodeClient {
     this.isIntentionalDisconnect = true;
     this.reconnectAttempts = 0;
     this.clearReconnectTimer();
+    this.onClose?.();
     await this.disposeConnection(new Error('Disconnected'), true);
   }
 
   async createSession(cwd?: string, mcpServers: McpServerConfig[] = []): Promise<string> {
-    const r = await this.requestWithFallback('newSession', { cwd: this.resolveCwd(cwd), mcpServers: buildMcpServers(mcpServers) }) as Record<string, unknown>;
-    this.applySessionSnapshot(r);
-    this.sessionId_ = (r.sessionId as string | undefined) ?? null;
-    if (!this.sessionId_) {
-      throw new Error('Server did not return a session ID');
-    }
+    const r = await this.requestWithFallback('newSession', { cwd: this.resolveCwd(cwd), mcpServers: buildMcpServers(mcpServers) });
+    const parsed = z.object({ sessionId: z.string() }).safeParse(r);
+    if (!parsed.success) throw new Error('Server did not return a valid session ID');
+    this.applySessionSnapshot(r as Record<string, unknown>);
+    this.sessionId_ = parsed.data.sessionId;
     return this.sessionId_;
   }
 
   async loadSession(id: string, cwd?: string, mcpServers: McpServerConfig[] = []): Promise<void> {
-    const r = await this.requestWithFallback('loadSession', { sessionId: id, cwd: this.resolveCwd(cwd), mcpServers: buildMcpServers(mcpServers) }) as Record<string, unknown>;
-    this.applySessionSnapshot(r);
+    const r = await this.requestWithFallback('loadSession', { sessionId: id, cwd: this.resolveCwd(cwd), mcpServers: buildMcpServers(mcpServers) });
+    this.applySessionSnapshot(r as Record<string, unknown>);
     this.sessionId_ = id;
   }
 
   async listSessions(cwd?: string): Promise<SessionMeta[]> {
-    const r = await this.requestWithFallback('listSessions', { cwd: this.resolveCwd(cwd), limit: 100 }) as Record<string, unknown>;
-    return (r.sessions as SessionMeta[]) ?? [];
+    const r = await this.requestWithFallback('listSessions', { cwd: this.resolveCwd(cwd), limit: ACP_LIST_SESSIONS_LIMIT });
+    const parsed = z.object({ sessions: z.array(z.object({ sessionId: z.string() }).passthrough()).optional() }).safeParse(r);
+    return parsed.success ? parsed.data.sessions as SessionMeta[] : [];
   }
 
   async forkSession(id: string, cwd?: string): Promise<string> {
-    const r = await this.requestWithFallback('forkSession', { sessionId: id, cwd: this.resolveCwd(cwd) }) as Record<string, unknown>;
-    return r.sessionId as string;
+    const r = await this.requestWithFallback('forkSession', { sessionId: id, cwd: this.resolveCwd(cwd) });
+    const parsed = z.object({ sessionId: z.string() }).safeParse(r);
+    if (!parsed.success) throw new Error('Server did not return a valid session ID for fork');
+    return parsed.data.sessionId;
   }
 
   async resumeSession(id: string, cwd?: string): Promise<void> {
-    const r = await this.requestWithFallback('resumeSession', { sessionId: id, cwd: this.resolveCwd(cwd) }) as Record<string, unknown>;
-    this.applySessionSnapshot(r);
+    const r = await this.requestWithFallback('resumeSession', { sessionId: id, cwd: this.resolveCwd(cwd) });
+    this.applySessionSnapshot(r as Record<string, unknown>);
     this.sessionId_ = id;
   }
 
@@ -355,8 +399,9 @@ export class AcpClient implements OpencodeClient {
   }
 
   async setConfigOption(id: string, configId: string, value: string): Promise<SessionConfigOption[]> {
-    const r = await this.requestWithFallback('setConfigOption', { sessionId: id, configId, value }) as Record<string, unknown>;
-    const configOptions = (r?.configOptions as SessionConfigOption[]) ?? [];
+    const r = await this.requestWithFallback('setConfigOption', { sessionId: id, configId, value });
+    const parsed = z.object({ configOptions: z.array(z.any()).optional() }).safeParse(r);
+    const configOptions = parsed.success ? parsed.data.configOptions as SessionConfigOption[] ?? [] : [];
     this.applyConfigOptions(configOptions);
     return configOptions;
   }
@@ -373,7 +418,26 @@ export class AcpClient implements OpencodeClient {
 
     // Use 0 timeout to disable transport-level timeout for streaming
     // The idle timeout in AgentRuntime handles cancellation
-    return (this.requestWithFallback('prompt', { sessionId: id, prompt: parts }, 0, signal) as Promise<AcpResponse>)
+    const zAcpResponse = z.object({
+      stopReason: z.enum(['end_turn', 'max_tokens', 'tool_calls', 'interrupted']),
+      usage: z.object({
+        totalTokens: z.number(),
+        inputTokens: z.number(),
+        outputTokens: z.number(),
+        thoughtTokens: z.number().optional(),
+        cachedReadTokens: z.number().optional(),
+        cachedWriteTokens: z.number().optional(),
+      }).optional(),
+      _meta: z.record(z.string(), z.unknown()).optional(),
+    });
+    return this.requestWithFallback('prompt', { sessionId: id, prompt: parts }, 0, signal)
+      .then((res) => {
+        const parsed = zAcpResponse.safeParse(res);
+        if (!parsed.success) {
+          throw new Error('Invalid ACP response format');
+        }
+        return parsed.data as AcpResponse;
+      })
       .finally(() => {
         if (this.activeStreamSessionId === id) {
           this.activeStreamSessionId = null;
@@ -542,9 +606,6 @@ export class AcpClient implements OpencodeClient {
   }
 
   private async disposeConnection(error?: Error, shutdownSubprocess = false): Promise<void> {
-    // Notify listeners before clearing transport so callbacks can inspect state.
-    this.onClose?.();
-
     const transport = this.transport;
     const subprocess = this.subprocess;
     const requestHandler = this.requestHandler;
@@ -601,7 +662,7 @@ export class AcpClient implements OpencodeClient {
   private scheduleReconnect(): void {
     if (this.isIntentionalDisconnect || this.reconnectTimer) return;
     this.reconnectAttempts++;
-    const delay = 2000 * this.reconnectAttempts; // Exponential backoff
+    const delay = ACP_RECONNECT_BACKOFF_BASE_MS * this.reconnectAttempts;
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectTimer = null;
       if (this.isIntentionalDisconnect || this.connected || !this.onReconnect) return;

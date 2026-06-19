@@ -75,7 +75,7 @@ await esbuild.build({
   write: true,
   outfile: "main.js",
   format: "cjs",
-  platform: "node",
+  platform: "node",  /* Node platform needed for readline / Node API in Electron renderer */
   target: "es2022",
   external: ["obsidian"],
   logLevel: "info",

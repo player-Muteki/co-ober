@@ -46,7 +46,7 @@ export class ChatInput {
 
     this.mousedownHandler = (e: MouseEvent) => {
       e.preventDefault();
-      let startY = e.clientY;
+      const startY = e.clientY;
       const startH = container.offsetHeight;
       this.resizeHandle.addClass('dragging');
       const onMove = (ev: MouseEvent) => {
