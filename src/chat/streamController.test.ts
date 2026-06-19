@@ -13,6 +13,7 @@ describe('StreamController', () => {
 				removeAssistantPlaceholder: vi.fn(),
 				appendText: vi.fn(),
 				appendThinking: vi.fn(),
+				finalizeCurrentThinking: vi.fn().mockReturnValue(0),
 				addToolCall: vi.fn(),
 				updateToolCall: vi.fn(),
 				setPlanEntries: vi.fn(),

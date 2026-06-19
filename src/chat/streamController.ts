@@ -65,12 +65,12 @@ export class StreamController {
 				if (ch.role === 'user') break;
 				renderer.removeAssistantPlaceholder();
 				if (ch.role === 'agent') {
-					// Flush thinking render before switching to text content
-					renderer.flushThinkingRender().catch(() => {});
+					// Finalize thinking block before switching to agent text
+					renderer.finalizeCurrentThinking();
 					renderer.appendText(ch.chunkText, ch.messageId);
 					this.saveAssistantChunk(ch.messageId, ch.accumulatedText, 'text');
 				} else if (ch.role === 'thought') {
-					// Flush text render before switching to thinking content
+					// Flush any pending text render before switching to thinking content
 					renderer.flushTextRender().catch(() => {});
 					renderer.appendThinking(ch.chunkText, ch.messageId);
 					this.saveAssistantChunk(ch.messageId, ch.accumulatedText, 'thinking');

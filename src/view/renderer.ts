@@ -2,7 +2,14 @@ import type { App } from 'obsidian';
 import { MarkdownRenderer, type Component } from 'obsidian';
 import { t, onLocaleChange } from '../i18n/index';
 import type { UsageInfo, ContentBlock, SerializedMessage } from '../types';
-import { renderStoredThinkingBlock } from './thinkingBlockRenderer';
+import {
+  renderLiveThinkingBlock,
+  renderStoredThinkingBlock,
+  finalizeThinkingBlock,
+  appendThinkingContent,
+  cleanupThinkingBlock,
+  type ThinkingState,
+} from './thinkingBlockRenderer';
 import {
   createToolCallElement,
   updateToolCallElement,
@@ -19,12 +26,9 @@ export class ChatRenderer {
   private currentAssistantEl: HTMLDivElement | null = null;
   private currentAssistantWrap: HTMLDivElement | null = null;
   private currentAssistantText = '';
-  private currentThinkingText = '';
   private currentAssistantId: string | null = null;
   private currentAssistantType: 'text' | 'thinking' = 'text';
-  private thinkingWrapEl: HTMLDivElement | null = null;
-  private thinkingEl: HTMLDivElement | null = null;
-  private thinkingCollapsed = true;
+  private liveThinkingState: ThinkingState | null = null;
   private planEl: HTMLDivElement | null = null;
   private placeholderEl: HTMLDivElement | null = null;
   private usageEls = new Map<HTMLDivElement, UsageInfo>();
@@ -36,12 +40,6 @@ export class ChatRenderer {
   private textRenderPromise: Promise<void> | null = null;
   private resolveTextRender: (() => void) | null = null;
   private isTextRenderRunning = false;
-
-  // Layer 2: Thinking render pipeline
-  private thinkingRenderFrame: number | null = null;
-  private thinkingRenderPromise: Promise<void> | null = null;
-  private resolveThinkingRender: (() => void) | null = null;
-  private isThinkingRenderRunning = false;
 
   // Layer 3: Tool output per-frame scheduling
   private toolRenderFrames = new Map<string, number>();
@@ -78,11 +76,9 @@ export class ChatRenderer {
     this.currentAssistantEl = null;
     this.currentAssistantWrap = null;
     this.currentAssistantText = '';
-    this.currentThinkingText = '';
     this.currentAssistantId = null;
     this.currentAssistantType = 'text';
-    this.thinkingWrapEl = null;
-    this.thinkingEl = null;
+    this.liveThinkingState = null;
     this.planEl = null;
     this.placeholderEl = null;
     this.usageEls.clear();
@@ -275,117 +271,64 @@ export class ChatRenderer {
   // Layer 2: Thinking Render Pipeline
   // ============================================
 
+  // ============================================
+  // Thinking block — uses thinkingBlockRenderer for structured rendering
+  // ============================================
+
+  /**
+   * Append streaming thought text.
+   * On first call, creates the structured thinking block via renderLiveThinkingBlock().
+   */
   appendThinking(text: string, messageId?: string, timestamp?: number): void {
+    // Reset on message ID change or type switch
     if (messageId && this.currentAssistantId !== messageId) {
-      this.thinkingEl = null;
+      this.finalizeCurrentThinking();
       this.currentAssistantId = messageId;
       this.currentAssistantType = 'thinking';
-      this.currentThinkingText = '';
     }
     if (this.currentAssistantType !== 'thinking') {
-      this.thinkingEl = null;
+      this.finalizeCurrentThinking();
       this.currentAssistantType = 'thinking';
     }
-    if (!this.thinkingEl) {
+
+    // Create structured thinking block on first append
+    if (!this.liveThinkingState) {
       const wrap = this.container.createDiv({ cls: 'co-ober-msg assistant' });
       wrap.dataset.timestamp = this.formatTimestamp(timestamp ?? Date.now());
-      const box = wrap.createDiv({ cls: 'co-ober-thinking is-collapsed' });
-      this.thinkingWrapEl = box;
-      const hdr = box.createDiv({ cls: 'co-ober-thinking-header', text: t().thinking.header });
-      this.thinkingEl = box.createDiv({ cls: 'co-ober-thinking-body' });
-      hdr.onclick = () => {
-        this.thinkingCollapsed = !this.thinkingCollapsed;
-        this.thinkingWrapEl?.classList.toggle('is-collapsed');
-      };
+      this.liveThinkingState = renderLiveThinkingBlock(wrap);
     }
-    this.currentThinkingText += text;
-    this.scheduleThinkingRender();
+
+    appendThinkingContent(this.liveThinkingState, text);
     this.scrollToBottom();
   }
 
   /**
-   * Schedule thinking markdown render via requestAnimationFrame.
+   * Finalize the current live thinking block (auto-collapse, update label).
+   * Returns the duration in seconds, or 0 if no thinking block was active.
    */
-  scheduleThinkingRender(): Promise<void> {
-    if (!this.thinkingRenderPromise) {
-      this.thinkingRenderPromise = new Promise(resolve => {
-        this.resolveThinkingRender = resolve;
-      });
-    }
-
-    if (this.thinkingRenderFrame === null && !this.isThinkingRenderRunning) {
-      this.thinkingRenderFrame = window.requestAnimationFrame(() => {
-        this.thinkingRenderFrame = null;
-        void this.executeThinkingRender();
-      });
-    }
-
-    return this.thinkingRenderPromise;
+  finalizeCurrentThinking(): number {
+    if (!this.liveThinkingState) return 0;
+    const elapsed = finalizeThinkingBlock(this.liveThinkingState);
+    this.liveThinkingState = null;
+    return elapsed;
   }
 
   /**
-   * Flush pending thinking render immediately.
+   * Schedule thinking markdown render via requestAnimationFrame.
+   * (Kept for backward compat — thinkingBlockRenderer handles its own rendering)
    */
-  async flushThinkingRender(): Promise<void> {
-    if (this.thinkingRenderFrame !== null) {
-      window.cancelAnimationFrame(this.thinkingRenderFrame);
-      this.thinkingRenderFrame = null;
-      void this.executeThinkingRender();
-    }
-
-    if (this.thinkingRenderPromise) {
-      await this.thinkingRenderPromise;
-    }
+  scheduleThinkingRender(): Promise<void> {
+    return Promise.resolve();
   }
 
-  private async executeThinkingRender(): Promise<void> {
-    if (this.isThinkingRenderRunning) return;
-    this.isThinkingRenderRunning = true;
-
-    try {
-      if (this.thinkingEl && this.currentThinkingText) {
-        const existing = this.thinkingEl.querySelector('.md-render-subsystem');
-        if (existing) existing.remove();
-
-        const placeholder = this.doc.createElement('div');
-        placeholder.addClass('md-render-subsystem');
-        this.thinkingEl.appendChild(placeholder);
-
-        await MarkdownRenderer.render(
-          this.app,
-          this.currentThinkingText,
-          placeholder,
-          '',
-          this.container as unknown as Component,
-        );
-      }
-    } catch {
-      if (this.thinkingEl && this.currentThinkingText) {
-        this.thinkingEl.textContent = this.currentThinkingText;
-      }
-    } finally {
-      this.isThinkingRenderRunning = false;
-    }
-
-    if (this.resolveThinkingRender) {
-      const resolve = this.resolveThinkingRender;
-      this.thinkingRenderPromise = null;
-      this.resolveThinkingRender = null;
-      resolve();
-    }
+  async flushThinkingRender(): Promise<void> {
+    // No-op: thinkingBlockRenderer updates inline, no MarkdownRenderer needed
   }
 
   cancelThinkingRender(): void {
-    if (this.thinkingRenderFrame !== null) {
-      window.cancelAnimationFrame(this.thinkingRenderFrame);
-      this.thinkingRenderFrame = null;
-    }
-
-    if (this.resolveThinkingRender) {
-      const resolve = this.resolveThinkingRender;
-      this.thinkingRenderPromise = null;
-      this.resolveThinkingRender = null;
-      resolve();
+    if (this.liveThinkingState) {
+      cleanupThinkingBlock(this.liveThinkingState);
+      this.liveThinkingState = null;
     }
   }
 

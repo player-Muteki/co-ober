@@ -99,7 +99,7 @@ describe('ChatRenderer', () => {
   describe('appendThinking', () => {
     it('creates thinking block', () => {
       renderer.appendThinking('Thinking...');
-      const thinking = container.querySelector('.co-ober-thinking');
+      const thinking = container.querySelector('.co-ober-thinking-block');
       expect(thinking).not.toBeNull();
     });
 
@@ -111,20 +111,29 @@ describe('ChatRenderer', () => {
 
     it('collapses by default', () => {
       renderer.appendThinking('Thinking...');
-      const box = container.querySelector('.co-ober-thinking') as HTMLElement;
+      const box = container.querySelector('.co-ober-thinking-block') as HTMLElement;
       expect(box?.classList.contains('is-collapsed')).toBe(true);
     });
 
     it('toggles on header click', () => {
       renderer.appendThinking('Thinking...');
       const header = container.querySelector('.co-ober-thinking-header') as HTMLElement;
-      const box = container.querySelector('.co-ober-thinking') as HTMLElement;
+      const box = container.querySelector('.co-ober-thinking-block') as HTMLElement;
 
       header.click();
       expect(box.classList.contains('is-collapsed')).toBe(false);
 
       header.click();
       expect(box.classList.contains('is-collapsed')).toBe(true);
+    });
+
+    it('finalizes thinking block', () => {
+      renderer.appendThinking('Thinking about something...');
+      const elapsed = renderer.finalizeCurrentThinking();
+      expect(elapsed).toBeGreaterThanOrEqual(0);
+      // After finalize, the block should be collapsed
+      const box = container.querySelector('.co-ober-thinking-block') as HTMLElement;
+      expect(box?.classList.contains('is-thinking')).toBe(false);
     });
   });
 
@@ -161,9 +170,6 @@ describe('ChatRenderer', () => {
   });
 
   describe('updateToolCall', () => {
-    /**
-     * Flush pending animation frames so deferred tool renders complete.
-     */
     function flushToolRenders(): void {
       renderer.flushAllToolRenders();
     }
@@ -205,10 +211,8 @@ describe('ChatRenderer', () => {
         newText: 'new',
       }], undefined, undefined, 'edit');
       flushToolRenders();
-      // Write/Edit tools now use .co-ober-write-edit (WriteEditRenderer)
       const writeEdit = container.querySelector('.co-ober-write-edit');
       expect(writeEdit).not.toBeNull();
-      // Diff content rendered as .diff-line rows inside body
       const diffLines = container.querySelectorAll('.diff-line');
       expect(diffLines.length).toBeGreaterThan(0);
     });
