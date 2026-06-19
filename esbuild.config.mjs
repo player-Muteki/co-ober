@@ -1,5 +1,5 @@
 import * as esbuild from "esbuild";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import path from "path";
 
 const mode = process.argv.includes("--minify") ? "production" : "development";
@@ -56,7 +56,9 @@ function resolveLocalImport(resolveDir, specifier) {
       ];
 
   for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate;
+    if (existsSync(candidate)) {
+      if (!statSync(candidate).isDirectory()) return candidate;
+    }
   }
 
   return null;
