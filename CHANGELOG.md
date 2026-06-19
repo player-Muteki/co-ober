@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.20 - 2026-06-19
+
+### Fixed
+- **New messages jump button redesign**: replaced accent-colored rectangular button with a subtle floating pill shape, arrow-down icon, hover effects, and slide-up entrance animation.
+- **Toolbar send button**: migrated from text labels to Obsidian `setIcon` (`send`/`square`) with `.mod-stop` toggle.
+
+### Changed
+- **Session button icon**: replaced "···" text with Obsidian `history` icon.
+- **New session button**: migrated text label to `plus-circle` icon.
+
 ## 0.1.19 - 2026-06-19
 
 ### Changed

@@ -6,5 +6,5 @@
   "description": "Embed the complete OpenCode agent inside your sidebar.",
   "minAppVersion": "1.8.0",
   "isDesktopOnly": true,
-  "version": "0.1.19"
+  "version": "0.1.20"
 }

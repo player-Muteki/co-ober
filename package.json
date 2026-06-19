@@ -1,6 +1,6 @@
 {
   "name": "co-ober",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "description": "Embed the complete OpenCode agent inside Obsidian sidebar",
   "main": "main.js",
   "scripts": {
