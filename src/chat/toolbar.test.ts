@@ -17,7 +17,7 @@ describe('InputToolbar locale refresh', () => {
 
     // Custom model selector - label shows "No models" when empty
     expect(container.querySelector('.co-ober-model-label')?.textContent).toBe('No models');
-    expect(container.querySelector('.co-ober-send-btn')?.textContent).toBe('Stop');
+    expect(container.querySelector('.co-ober-send-btn')?.classList.contains('mod-stop')).toBe(true);
 
     setLocale('zh');
     toolbar.refreshLocale();
@@ -25,7 +25,7 @@ describe('InputToolbar locale refresh', () => {
     expect(container.querySelector('.co-ober-model-label')?.textContent).toBe('无可用模型');
     expect(container.querySelector('.co-ober-effort-label')?.textContent).toBe('默认');
     expect(container.querySelector('.co-ober-effort-option')?.textContent).toBe('默认');
-    expect(container.querySelector('.co-ober-send-btn')?.textContent).toBe('停止');
+    expect(container.querySelector('.co-ober-send-btn')?.classList.contains('mod-stop')).toBe(true);
   });
 });
 

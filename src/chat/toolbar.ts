@@ -1,3 +1,4 @@
+import { setIcon } from 'obsidian';
 import { t, onLocaleChange } from '../i18n/index';
 
 export interface ToolbarCallbacks {
@@ -76,7 +77,8 @@ export class InputToolbar {
     this.updatePermissionDisplay();
 
     // Send/Stop button
-    this.sendBtn = row.createEl('button', { text: t().toolbar.send, cls: 'co-ober-send-btn' });
+    this.sendBtn = row.createEl('button', { cls: 'co-ober-send-btn' });
+    setIcon(this.sendBtn, 'send');
     this.sendBtn.onclick = () => this.handleSendClick();
   }
 
@@ -248,7 +250,8 @@ export class InputToolbar {
 
   setSending(on: boolean): void {
     this.sending = on;
-    this.sendBtn.textContent = on ? t().toolbar.stop : t().toolbar.send;
+    this.sendBtn.empty();
+    setIcon(this.sendBtn, on ? 'square' : 'send');
     this.sendBtn.classList.toggle('mod-stop', on);
     this.sendBtn.disabled = false;
   }

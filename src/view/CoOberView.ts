@@ -146,9 +146,10 @@ export class CoOberView extends ItemView {
 		this.meterEl.addClass('empty');
 
 		const actions = header.createDiv({ cls: 'co-ober-header-actions' });
-		this.newSessionBtnEl = actions.createEl('button', { text: t().header.new, cls: 'mod-icon' });
+		this.newSessionBtnEl = actions.createEl('button', { cls: 'mod-icon' });
+		setIcon(this.newSessionBtnEl, 'plus-circle');
 		this.sessionButtonEl = actions.createEl('button', { cls: 'mod-icon' });
-			setIcon(this.sessionButtonEl, 'history');
+		setIcon(this.sessionButtonEl, 'history');
 
 		// ── Messages ──
 		this.messagesEl = el.createDiv({ cls: 'co-ober-messages' });
@@ -429,7 +430,6 @@ export class CoOberView extends ItemView {
 
 	refreshLocale(): void {
 		this.headerTitleEl?.setText(t().appName);
-		this.newSessionBtnEl?.setText(t().header.new);
 		if (this.reconnectBtn) {
 			this.reconnectBtn.textContent = this.reconnectBtn.disabled ? t().reconnect.connecting : t().reconnect.text;
 		}

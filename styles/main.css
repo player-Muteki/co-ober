@@ -39,9 +39,15 @@
   background: var(--background-secondary);
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
-  padding: 2px 6px;
+  padding: 4px 8px;
   color: var(--text-normal);
   cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+.co-ober-header-actions .mod-icon svg {
+  width: 16px;
+  height: 16px;
 }
 
 .co-ober-header-actions .mod-icon:hover {
@@ -282,6 +288,7 @@
   padding: 4px 8px 6px;
   flex-shrink: 0;
   background: var(--background-primary);
+  border-top: 1px solid var(--background-modifier-border);
 }
 
 .co-ober-toolbar-row {
@@ -649,11 +656,15 @@
   color: var(--text-on-accent);
   border: none;
   border-radius: var(--radius-s);
-  padding: 4px 14px;
+  padding: 4px 10px;
   cursor: pointer;
-  font-size: var(--font-ui-small);
-  font-weight: 500;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+.co-ober-toolbar .co-ober-send-btn svg {
+  width: 16px;
+  height: 16px;
 }
 
 .co-ober-toolbar .co-ober-send-btn:hover { opacity: 0.85; }
@@ -1296,11 +1307,23 @@ pre:hover .co-ober-copy-btn {
   border-style: solid;
 }
 .co-ober-thinking-block.is-collapsed .co-ober-thinking-body {
-  display: none;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  padding-block: 0;
+  padding-inline-start: 0;
+  margin-inline-start: 0;
+  border-inline-start-width: 0;
 }
 .co-ober-tool-call.is-collapsed .co-ober-tool-call-body,
 .co-ober-write-edit.is-collapsed .co-ober-tool-call-body {
-  display: none;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  padding-block: 0;
+  padding-inline-start: 0;
+  margin-inline-start: 0;
+  border-inline-start-width: 0;
 }
 .co-ober-thinking-block .co-ober-thinking-header {
   display: flex;
@@ -1601,8 +1624,10 @@ body.theme-light .co-ober-msg.user .co-ober-msg-body {
   overflow-y: auto;
   overflow-x: auto;
   border-inline-start: 2px solid var(--background-modifier-border);
+  border-inline-start-width: 2px;
   margin-inline-start: 7px;
   font-style: normal;
+  transition: max-height 0.25s ease, opacity 0.2s ease, padding-block 0.2s ease, border-inline-start-width 0.2s ease, margin-inline-start 0.2s ease;
 }
 .co-ober-thinking-text {
   white-space: pre-wrap;
@@ -1679,12 +1704,14 @@ body.theme-light .co-ober-msg.user .co-ober-msg-body {
   padding-inline-start: 16px;
   margin-inline-start: 7px;
   border-inline-start: 2px solid var(--background-modifier-border);
+  border-inline-start-width: 2px;
   max-height: 400px;
   overflow: auto;
   white-space: pre-wrap;
   font-family: var(--font-editor);
   font-size: var(--font-smaller);
   line-height: 1.4;
+  transition: max-height 0.25s ease, opacity 0.2s ease, padding-block 0.2s ease, border-inline-start-width 0.2s ease, margin-inline-start 0.2s ease;
 }
 
 /* Status borders -> left border color on body */
@@ -1725,4 +1752,56 @@ body.theme-light .co-ober-msg.user .co-ober-msg-body {
 .co-ober-thinking-block + .co-ober-tool-call,
 .co-ober-tool-call + .co-ober-thinking-block {
   margin-top: 8px;
+}
+
+/* =============================================
+   Scrollbar — thin, theme-aware
+   ============================================= */
+.co-ober-messages::-webkit-scrollbar {
+  width: 4px;
+}
+.co-ober-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+.co-ober-messages::-webkit-scrollbar-thumb {
+  background: var(--background-modifier-border);
+  border-radius: 2px;
+}
+.co-ober-messages::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* =============================================
+   Code blocks in tool/thinking bodies
+   ============================================= */
+.co-ober-tool-call-body pre,
+.co-ober-thinking-body pre {
+  background: var(--background-primary-alt);
+  padding: 8px 10px;
+  border-radius: var(--radius-s);
+  font-size: calc(var(--font-smaller) - 1px);
+  line-height: 1.5;
+  overflow-x: auto;
+}
+.co-ober-tool-call-body code,
+.co-ober-thinking-body code {
+  font-family: var(--font-monospace);
+  font-size: calc(var(--font-smaller) - 1px);
+}
+
+/* =============================================
+   New messages button — entrance animation
+   ============================================= */
+@keyframes co-ober-slide-up {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+.co-ober-new-messages-btn {
+  animation: co-ober-slide-up 0.25s ease-out;
 }
