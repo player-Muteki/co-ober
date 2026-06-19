@@ -216,13 +216,11 @@ function createWriteEditToolCall(
     getToolSummary(kind, input, locations),
   );
 
-  const { wrapper, header, body } = bw;
+  const { wrapper, header, body, collapsibleState } = bw;
   const iconEl = header.querySelector('.tc-icon') as HTMLElement;
   const kindEl = header.querySelector('.tc-kind') as HTMLElement;
   const summaryEl = header.querySelector('.tc-file') as HTMLElement;
   const statusEl = header.querySelector('.tc-stat') as HTMLElement;
-
-  const collapsibleState: CollapsibleState = { isExpanded: false };
 
   return {
     wrapper, header, body, iconEl, kindEl, summaryEl, statusEl,
