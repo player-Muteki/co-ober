@@ -1,3 +1,10 @@
+## 0.1.21 - 2026-06-19
+
+### Changed
+- **settings.ts refactored**: `render()` method reduced from 398 lines to 22 lines by extracting 11 section methods. Large block-rendering methods (addCustomAgentBlock, addCustomSkillBlock, addCommonModelToggle, addMcpServerBlock, addSyncRuleBlock, renameCustomAgent, renameCustomSkill) moved to `src/settings/settingBlocks.ts` as standalone functions with explicit dependencies.
+- **DiffRenderer types cleaned**: `DiffHunk` and `DiffStats` interfaces made non-exported to eliminate conceptual overlap with `types.ts`.
+- **Code quality pass**: comprehensive review of error handling patterns across the codebase; all `catch(e)` handlers verified to use proper error narrowing.
+
 # Changelog
 
 ## 0.1.20 - 2026-06-19

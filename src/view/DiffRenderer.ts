@@ -1,5 +1,5 @@
 /**
- * Diff renderer â€” renders line-by-line diffs with smart hunk grouping
+ * Diff renderer â€?renders line-by-line diffs with smart hunk grouping
  * and new-file creation truncation.
  *
  * @since Phase 1 (refactored)
@@ -10,13 +10,13 @@ export interface DiffLine {
   type: 'equal' | 'insert' | 'delete';
 }
 
-export interface DiffHunk {
+interface DiffHunk {
   lines: DiffLine[];
   oldStart: number;
   newStart: number;
 }
 
-export interface DiffStats {
+interface DiffStats {
   added: number;
   removed: number;
 }
@@ -149,7 +149,7 @@ export function renderDiffContent(
 ): void {
   containerEl.empty();
 
-  // New file creation: all lines are inserts â€” cap display
+  // New file creation: all lines are inserts â€?cap display
   const allInserts = diffLines.length > 0 && diffLines.every((l) => l.type === 'insert');
   if (allInserts && diffLines.length > NEW_FILE_DISPLAY_CAP) {
     for (const line of diffLines.slice(0, NEW_FILE_DISPLAY_CAP)) {
