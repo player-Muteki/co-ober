@@ -9,7 +9,7 @@
  */
 
 import { setIcon } from 'obsidian';
-import { setupCollapsible, type CollapsibleState } from './collapsible';
+import { setupCollapsible, collapseElement, type CollapsibleState } from './collapsible';
 import {
   parseDiffLines,
   renderDiffContent,
@@ -99,6 +99,9 @@ export function updateWriteEditContent(
   // Render diff
   const diffLines = parseDiffLines(oldText, newText);
   renderDiffContent(state.body, diffLines);
+
+  // Auto-collapse after rendering diff content
+  collapseElement(state.wrapper, state.header, state.collapsibleState);
 }
 
 /**

@@ -12,7 +12,7 @@
 
 import { setIcon } from 'obsidian';
 import type { ToolCallContent } from '../types';
-import { setupCollapsible, type CollapsibleState } from './collapsible';
+import { setupCollapsible, collapseElement, type CollapsibleState } from './collapsible';
 import {
   parseDiffLines,
   renderDiffContent,
@@ -288,6 +288,9 @@ export function updateToolCallElement(
     if (kind !== 'write' && kind !== 'edit' && content && content.length > 0) {
       renderToolBodyContent(body, kind, content, rawOutput);
     }
+
+    // Auto-collapse on completion
+    collapseElement(wrapper, state.header, state.collapsibleState);
   } else if (status === 'failed') {
     wrapper.classList.add('status-error');
     statusEl.textContent = '✗';
