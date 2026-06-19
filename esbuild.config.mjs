@@ -10,15 +10,11 @@ const entryDir = path.dirname(entryPath);
 const localResolver = {
   name: "local-resolver",
   setup(build) {
-    build.onResolve({ filter: /.*/ }, (args) => {
-      if (args.path.startsWith(".") || path.isAbsolute(args.path)) {
-        const resolved = resolveLocalImport(args.resolveDir, args.path);
-        if (resolved) {
-          return { path: resolved, namespace: "local" };
-        }
-        return { path: args.path, external: true };
+    build.onResolve({ filter: /^\.\.?\/|^[A-Za-z]:\\|^\// }, (args) => {
+      const resolved = resolveLocalImport(args.resolveDir, args.path);
+      if (resolved) {
+        return { path: resolved, namespace: "local" };
       }
-
       return { path: args.path, external: true };
     });
 
