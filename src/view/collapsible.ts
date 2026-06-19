@@ -1,109 +1,107 @@
 /**
- * Reusable collapsible component.
- * Provides ARIA-compliant toggle behaviour for foldable UI sections.
+ * Unified collapsible behavior — one pattern for all collapsible UI elements.
  *
- * @since Phase 1
+ * Handles:
+ * - Click to toggle
+ * - Enter/Space keyboard navigation
+ * - aria-expanded attribute
+ * - CSS 'is-collapsed' class on wrapper
+ * - Optional scrollOnExpand (scroll element into view on expand)
+ * - Optional onToggle/onExpand callbacks
+ * - Optional baseAriaLabel for auto-generated aria-label
+ *
+ * @since Phase 1 (refactored)
  */
+
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface CollapsibleState {
+  isExpanded: boolean;
+}
 
 export interface CollapsibleOptions {
-  /** CSS class added to the wrapper when collapsed (default: 'is-collapsed') */
-  collapsedClass?: string;
-  /** ARIA label for the toggle button region */
-  ariaLabel?: string;
-  /** Called after each state change */
-  onToggle?: (collapsed: boolean) => void;
+  /** Initial expanded state (default: false) */
+  initiallyExpanded?: boolean;
+  /** Callback when state changes */
+  onToggle?: (isExpanded: boolean) => void;
+  /** Callback when expanded (fires after state change + optional scroll) */
+  onExpand?: (wrapperEl: HTMLElement) => void;
+  /** Base label for aria-label (will append "click to expand/collapse") */
+  baseAriaLabel?: string;
+  /**
+   * When true, scrolls the wrapper element into view on expand.
+   * Uses `scrollIntoView({ behavior: 'smooth', block: 'nearest' })`.
+   * Default: false
+   */
+  scrollOnExpand?: boolean;
 }
 
-const DEFAULT_OPTIONS: CollapsibleOptions = {
-  collapsedClass: 'is-collapsed',
-};
-
 /**
- * Set up a collapsible section. The header acts as the toggle trigger.
- * Returns a cleanup function.
+ * Setup collapsible behavior on a header/content pair.
  */
 export function setupCollapsible(
-  wrapper: HTMLElement,
-  header: HTMLElement,
-  content: HTMLElement,
-  collapsed: boolean,
-  options?: CollapsibleOptions,
-): () => void {
-  const opts = { ...DEFAULT_OPTIONS, ...options };
-  const collapsedClass = opts.collapsedClass!;
+  wrapperEl: HTMLElement,
+  headerEl: HTMLElement,
+  contentEl: HTMLElement,
+  state: CollapsibleState,
+  options: CollapsibleOptions = {},
+): void {
+  const { initiallyExpanded = false, onToggle, onExpand, baseAriaLabel, scrollOnExpand = false } = options;
 
-  // Initial state
-  if (collapsed) {
-    wrapper.classList.add(collapsedClass);
-  } else {
-    wrapper.classList.remove(collapsedClass);
-  }
-
-  // ARIA attributes
-  const contentId = `collapsible-content-${Math.random().toString(36).slice(2, 8)}`;
-  header.setAttribute('role', 'button');
-  header.setAttribute('tabindex', '0');
-  header.setAttribute('aria-expanded', String(!collapsed));
-  header.setAttribute('aria-controls', contentId);
-  if (opts.ariaLabel) {
-    header.setAttribute('aria-label', opts.ariaLabel);
-  }
-  content.id = contentId;
-  content.setAttribute('role', 'region');
-
-  const toggle = (): void => {
-    const isCollapsed = wrapper.classList.contains(collapsedClass);
-    if (isCollapsed) {
-      wrapper.classList.remove(collapsedClass);
-      header.setAttribute('aria-expanded', 'true');
-    } else {
-      wrapper.classList.add(collapsedClass);
-      header.setAttribute('aria-expanded', 'false');
+  const updateAriaLabel = (expanded: boolean) => {
+    if (baseAriaLabel) {
+      const action = expanded ? 'click to collapse' : 'click to expand';
+      headerEl.setAttribute('aria-label', `${baseAriaLabel} - ${action}`);
     }
-    opts.onToggle?.(!isCollapsed);
   };
 
-  // Click handler
-  const clickHandler = (e: MouseEvent): void => {
-    // Don't toggle if user clicked a link or button inside header
-    const target = e.target as HTMLElement;
-    if (target.closest('a, button, input, textarea, select')) return;
-    toggle();
-  };
-  header.addEventListener('click', clickHandler);
+  // Set initial state
+  state.isExpanded = initiallyExpanded;
+  if (initiallyExpanded) {
+    wrapperEl.removeClass('is-collapsed');
+    headerEl.setAttribute('aria-expanded', 'true');
+  } else {
+    wrapperEl.addClass('is-collapsed');
+    headerEl.setAttribute('aria-expanded', 'false');
+  }
+  updateAriaLabel(initiallyExpanded);
 
-  // Keyboard handler
-  const keyHandler = (e: KeyboardEvent): void => {
+  const toggleExpand = () => {
+    state.isExpanded = !state.isExpanded;
+    if (state.isExpanded) {
+      wrapperEl.removeClass('is-collapsed');
+      headerEl.setAttribute('aria-expanded', 'true');
+      // Scroll into view if requested
+      if (scrollOnExpand) {
+        wrapperEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+      // Fire onExpand callback
+      onExpand?.(wrapperEl);
+    } else {
+      wrapperEl.addClass('is-collapsed');
+      headerEl.setAttribute('aria-expanded', 'false');
+    }
+    updateAriaLabel(state.isExpanded);
+    onToggle?.(state.isExpanded);
+  };
+
+  headerEl.addEventListener('click', toggleExpand);
+  headerEl.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      toggle();
+      toggleExpand();
     }
-  };
-  header.addEventListener('keydown', keyHandler);
-
-  // Cleanup
-  return () => {
-    header.removeEventListener('click', clickHandler);
-    header.removeEventListener('keydown', keyHandler);
-  };
+  });
 }
 
 /**
- * Programmatically collapse or expand a collapsible section.
+ * Programmatically collapse a collapsible and sync state.
  */
 export function collapseElement(
-  wrapper: HTMLElement,
-  header: HTMLElement,
-  _content: HTMLElement,
-  collapsed: boolean,
-  collapsedClass?: string,
+  wrapperEl: HTMLElement,
+  headerEl: HTMLElement,
+  state: CollapsibleState,
 ): void {
-  const cls = collapsedClass ?? 'is-collapsed';
-  if (collapsed) {
-    wrapper.classList.add(cls);
-    header.setAttribute('aria-expanded', 'false');
-  } else {
-    wrapper.classList.remove(cls);
-    header.setAttribute('aria-expanded', 'true');
-  }
+  state.isExpanded = false;
+  wrapperEl.addClass('is-collapsed');
+  headerEl.setAttribute('aria-expanded', 'false');
 }

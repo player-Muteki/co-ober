@@ -1,15 +1,22 @@
 /**
- * Thinking-block renderer with a live timer and auto-collapse on completion.
+ * Thinking-block renderer with a live timer, auto-collapse on completion,
+ * content truncation on expand, and scroll-into-view.
  *
  * Live timer: "Thinking 0s…" → "Thinking 12s…"
  * On completion: auto-collapse, label becomes "Thought for 12s"
+ * On expand: shows truncated content (first 30 lines) with "Show all" link,
+ *            scrolls block into view.
  * Animated dot indicator, auto-expand after 10s if still running.
  *
- * @since Phase 1
+ * @since Phase 1 (refactored)
  */
 
-const ANIMATION_INTERVAL_MS = 500;  // dot animation tick
-const AUTO_EXPAND_MS = 10_000;      // expand after 10s if still thinking
+import { setupCollapsible, collapseElement, type CollapsibleState } from './collapsible';
+
+const ANIMATION_INTERVAL_MS = 500;
+const AUTO_EXPAND_MS = 10_000;
+/** Max lines shown on first expand — beyond this gets truncated with "Show all" */
+const TRUNCATE_LINES = 30;
 
 export interface ThinkingState {
   wrapper: HTMLElement;
@@ -21,14 +28,30 @@ export interface ThinkingState {
   timerInterval: ReturnType<typeof setInterval> | null;
   dotInterval: ReturnType<typeof setInterval> | null;
   autoExpandTimer: ReturnType<typeof setTimeout> | null;
+  collapsibleState: CollapsibleState;
+  /** Full (untruncated) thinking text */
+  fullText: string;
+  /** Whether the body currently shows full content (after "Show all") */
+  showingFull: boolean;
   cleanup: () => void;
 }
 
 const DOT_CHARS = ['·', '··', '···'];
 
 /**
+ * Truncate text to a max number of lines, returning truncated version + original.
+ */
+function truncateLines(text: string, maxLines: number): { display: string; truncated: boolean } {
+  const lines = text.split('\n');
+  if (lines.length <= maxLines) return { display: text, truncated: false };
+  return {
+    display: lines.slice(0, maxLines).join('\n'),
+    truncated: true,
+  };
+}
+
+/**
  * Create a live thinking block and start the timer + dot animation.
- * Returns a ThinkingState that must be cleaned up via cleanupThinkingBlock().
  */
 export function renderLiveThinkingBlock(
   parentEl: HTMLElement,
@@ -37,11 +60,16 @@ export function renderLiveThinkingBlock(
   wrapper.classList.add('is-thinking');
 
   const header = wrapper.createDiv({ cls: 'co-ober-thinking-header' });
+  header.setAttribute('role', 'button');
+  header.setAttribute('tabindex', '0');
+
   const labelEl = header.createSpan({ cls: 'co-ober-thinking-label', text: 'Thinking' });
   const timerEl = header.createSpan({ cls: 'co-ober-thinking-timer', text: '0s' });
   const dotEl = header.createSpan({ cls: 'co-ober-thinking-dot', text: '···' });
 
   const body = wrapper.createDiv({ cls: 'co-ober-thinking-body' });
+
+  const collapsibleState: CollapsibleState = { isExpanded: false };
 
   const state: ThinkingState = {
     wrapper,
@@ -53,6 +81,9 @@ export function renderLiveThinkingBlock(
     timerInterval: null,
     dotInterval: null,
     autoExpandTimer: null,
+    collapsibleState,
+    fullText: '',
+    showingFull: false,
     cleanup: () => {},
   };
 
@@ -71,47 +102,94 @@ export function renderLiveThinkingBlock(
 
   // Auto-expand after 10 seconds
   state.autoExpandTimer = setTimeout(() => {
-    wrapper.classList.remove('is-collapsed');
+    wrapper.removeClass('is-collapsed');
   }, AUTO_EXPAND_MS);
-  wrapper.classList.add('is-collapsed');
 
-  // ARIA setup
-  header.setAttribute('role', 'button');
-  header.setAttribute('tabindex', '0');
-  header.setAttribute('aria-expanded', 'false');
-  const toggle = (): void => {
-    const collapsed = wrapper.classList.contains('is-collapsed');
-    if (collapsed) {
-      wrapper.classList.remove('is-collapsed');
-      header.setAttribute('aria-expanded', 'true');
-    } else {
-      wrapper.classList.add('is-collapsed');
-      header.setAttribute('aria-expanded', 'false');
-    }
-  };
-  header.addEventListener('click', toggle);
-  header.addEventListener('keydown', (e: KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      toggle();
-    }
+  // Use unified collapsible with scroll-into-view
+  setupCollapsible(wrapper, header, body, collapsibleState, {
+    initiallyExpanded: false,
+    baseAriaLabel: 'Extended thinking',
+    scrollOnExpand: true,
+    onExpand: () => handleThinkingExpand(state),
   });
 
   state.cleanup = () => {
     if (state.timerInterval !== null) clearInterval(state.timerInterval);
     if (state.dotInterval !== null) clearInterval(state.dotInterval);
     if (state.autoExpandTimer !== null) clearTimeout(state.autoExpandTimer);
-    header.removeEventListener('click', toggle);
   };
 
   return state;
 }
 
 /**
- * Finalize a live thinking block after completion.
- * Stops timers, collapses, updates label to "Thought for Xs".
+ * Handle expand event — truncate content and enable scroll.
  */
-export function finalizeThinkingBlock(state: ThinkingState): void {
+function handleThinkingExpand(state: ThinkingState): void {
+  if (!state.fullText) return;
+
+  const { display, truncated } = truncateLines(state.fullText, TRUNCATE_LINES);
+  state.body.empty();
+
+  // First render: show truncated or full content
+  if (truncated && !state.showingFull) {
+    renderTruncatedBody(state.body, display, () => showFullThinking(state));
+  } else {
+    state.body.textContent = state.fullText;
+  }
+
+  // Enable body scrolling for long content
+  state.body.style.maxHeight = '400px';
+  state.body.style.overflowY = 'auto';
+}
+
+/**
+ * Show full thinking content when "Show all" is clicked.
+ */
+function showFullThinking(state: ThinkingState): void {
+  state.showingFull = true;
+  state.body.empty();
+  state.body.textContent = state.fullText;
+}
+
+/**
+ * Render truncated text with "Show all" link.
+ */
+function renderTruncatedBody(
+  bodyEl: HTMLElement,
+  displayText: string,
+  onShowAll: () => void,
+): void {
+  const textEl = bodyEl.createDiv({ cls: 'co-ober-thinking-text' });
+  textEl.textContent = displayText;
+
+  const showAllBtn = bodyEl.createEl('button', {
+    cls: 'co-ober-thinking-show-all',
+    text: 'Show all ›',
+  });
+  showAllBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    onShowAll();
+    // After showing full content, scroll to see more
+    bodyEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+}
+
+/**
+ * Append content to a live thinking block during streaming.
+ */
+export function appendThinkingContent(
+  state: ThinkingState,
+  content: string,
+): void {
+  state.fullText += content;
+  // During streaming, don't re-render — StreamController handles that
+}
+
+/**
+ * Finalize a live thinking block after completion.
+ */
+export function finalizeThinkingBlock(state: ThinkingState): number {
   // Stop timers
   if (state.timerInterval !== null) {
     clearInterval(state.timerInterval);
@@ -134,15 +212,19 @@ export function finalizeThinkingBlock(state: ThinkingState): void {
   const dot = state.header.querySelector('.co-ober-thinking-dot');
   if (dot) dot.remove();
 
-  // Collapse after completion
-  state.wrapper.classList.add('is-collapsed');
+  // Store final full text in body (hidden until expanded)
+  state.body.textContent = state.fullText;
+
+  // Collapse after completion via unified collapsible
+  collapseElement(state.wrapper, state.header, state.collapsibleState);
   state.wrapper.classList.remove('is-thinking');
-  state.header.setAttribute('aria-expanded', 'false');
+
+  return elapsed;
 }
 
 /**
  * Render a stored (historical) thinking block from a past message.
- * Shows "Thought for Xs" with the stored duration, collapsed by default.
+ * Collapsed by default. On expand, truncates to TRUNCATE_LINES.
  */
 export function renderStoredThinkingBlock(
   parentEl: HTMLElement,
@@ -150,9 +232,11 @@ export function renderStoredThinkingBlock(
   durationSeconds?: number,
 ): HTMLElement {
   const wrapper = parentEl.createDiv({ cls: 'co-ober-thinking-block' });
-  wrapper.classList.add('is-collapsed');
 
   const header = wrapper.createDiv({ cls: 'co-ober-thinking-header' });
+  header.setAttribute('role', 'button');
+  header.setAttribute('tabindex', '0');
+
   const label = durationSeconds ? 'Thought' : 'Thinking';
   const durationText = durationSeconds
     ? `for ${durationSeconds}s`
@@ -165,23 +249,30 @@ export function renderStoredThinkingBlock(
   const body = wrapper.createDiv({ cls: 'co-ober-thinking-body' });
   body.textContent = text;
 
-  header.setAttribute('role', 'button');
-  header.setAttribute('tabindex', '0');
-  header.setAttribute('aria-expanded', 'false');
+  let showFull = false;
+  const collapsibleState: CollapsibleState = { isExpanded: false };
 
-  const toggle = (): void => {
-    wrapper.classList.toggle('is-collapsed');
-    header.setAttribute(
-      'aria-expanded',
-      String(!wrapper.classList.contains('is-collapsed')),
-    );
-  };
-  header.addEventListener('click', toggle);
-  header.addEventListener('keydown', (e: KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      toggle();
-    }
+  setupCollapsible(wrapper, header, body, collapsibleState, {
+    initiallyExpanded: false,
+    baseAriaLabel: 'Extended thinking',
+    scrollOnExpand: true,
+    onExpand: () => {
+      // On first expand, truncate long content
+      const currentText = body.textContent || '';
+      const { display, truncated } = truncateLines(currentText, TRUNCATE_LINES);
+      if (truncated && !showFull) {
+        body.empty();
+        renderTruncatedBody(body, display, () => {
+          body.empty();
+          body.textContent = currentText;
+          showFull = true;
+          body.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+      }
+      // Enable scrolling for long content
+      body.style.maxHeight = '400px';
+      body.style.overflowY = 'auto';
+    },
   });
 
   return wrapper;

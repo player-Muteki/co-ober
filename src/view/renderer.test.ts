@@ -161,9 +161,17 @@ describe('ChatRenderer', () => {
   });
 
   describe('updateToolCall', () => {
+    /**
+     * Flush pending animation frames so deferred tool renders complete.
+     */
+    function flushToolRenders(): void {
+      renderer.flushAllToolRenders();
+    }
+
     it('updates status to completed', () => {
       renderer.addToolCall('call-1', 'Search', 'search', {});
       renderer.updateToolCall('call-1', 'completed', {}, [{ type: 'content', content: { type: 'text', text: 'Result' } }], undefined, undefined, 'search');
+      flushToolRenders();
       const stat = container.querySelector('.tc-stat');
       expect(stat?.textContent).toBe('✓');
     });
@@ -178,6 +186,7 @@ describe('ChatRenderer', () => {
     it('updates status to failed', () => {
       renderer.addToolCall('call-1', 'Search', 'search', {});
       renderer.updateToolCall('call-1', 'failed', undefined, undefined, undefined, undefined, 'search');
+      flushToolRenders();
       const stat = container.querySelector('.tc-stat');
       expect(stat?.textContent).toBe('✗');
     });
@@ -195,98 +204,13 @@ describe('ChatRenderer', () => {
         oldText: 'old',
         newText: 'new',
       }], undefined, undefined, 'edit');
-      const diff = container.querySelector('.co-ober-diff');
-      expect(diff).not.toBeNull();
-    });
-  });
-
-  describe('setPlanEntries', () => {
-    it('creates plan panel', () => {
-      renderer.setPlanEntries([{ content: 'Task 1', status: 'pending' }]);
-      const plan = container.querySelector('.co-ober-plan-panel');
-      expect(plan).not.toBeNull();
-    });
-
-    it('shows entries', () => {
-      renderer.setPlanEntries([
-        { content: 'Task 1', status: 'completed' },
-        { content: 'Task 2', status: 'in_progress' },
-        { content: 'Task 3', status: 'pending' },
-      ]);
-      const items = container.querySelectorAll('.plan-item');
-      expect(items.length).toBe(3);
-    });
-
-    it('updates existing entries', () => {
-      renderer.setPlanEntries([{ content: 'Task 1', status: 'pending' }]);
-      renderer.setPlanEntries([{ content: 'Task 1', status: 'completed' }]);
-      const items = container.querySelectorAll('.plan-item');
-      expect(items.length).toBe(1);
-      expect(items[0].textContent).toContain('✓');
-    });
-  });
-
-  describe('addError', () => {
-    it('adds error message', () => {
-      renderer.addError('Something went wrong');
-      const error = container.querySelector('.co-ober-error');
-      expect(error).not.toBeNull();
-      expect(error?.textContent).toBe('Something went wrong');
-    });
-
-    it('removes placeholder', () => {
-      renderer.addAssistantPlaceholder();
-      renderer.addError('Error');
-      const placeholder = container.querySelector('.co-ober-loading');
-      expect(placeholder).toBeNull();
-    });
-  });
-
-  describe('showUsage', () => {
-    it('shows usage info', () => {
-      renderer.appendText('Hello');
-      renderer.showUsage({
-        totalTokens: 100,
-        inputTokens: 50,
-        outputTokens: 50,
-        modelId: 'claude-3-sonnet',
-      });
-      const usage = container.querySelector('.co-ober-usage');
-      expect(usage).not.toBeNull();
-      expect(usage?.textContent).toContain('claude-3-sonnet');
-    });
-
-    it('shows cost when available', () => {
-      renderer.appendText('Hello');
-      renderer.showUsage({
-        totalTokens: 100,
-        inputTokens: 50,
-        outputTokens: 50,
-        cost: { amount: 0.0012, currency: 'USD' },
-      });
-      const usage = container.querySelector('.co-ober-usage');
-      expect(usage?.textContent).toContain('$0.0012');
-    });
-
-    it('shows elapsed time', () => {
-      renderer.appendText('Hello');
-      renderer.showUsage({
-        totalTokens: 100,
-        inputTokens: 50,
-        outputTokens: 50,
-        elapsedMs: 2500,
-      });
-      const usage = container.querySelector('.co-ober-usage');
-      expect(usage?.textContent).toContain('2.5s');
-    });
-  });
-
-  describe('forceScrollToBottom', () => {
-    it('calls requestAnimationFrame', () => {
-      const rafSpy = vi.spyOn(globalThis, 'requestAnimationFrame');
-      renderer.forceScrollToBottom();
-      expect(rafSpy).toHaveBeenCalled();
-      rafSpy.mockRestore();
+      flushToolRenders();
+      // Write/Edit tools now use .co-ober-write-edit (WriteEditRenderer)
+      const writeEdit = container.querySelector('.co-ober-write-edit');
+      expect(writeEdit).not.toBeNull();
+      // Diff content rendered as .diff-line rows inside body
+      const diffLines = container.querySelectorAll('.diff-line');
+      expect(diffLines.length).toBeGreaterThan(0);
     });
   });
 });

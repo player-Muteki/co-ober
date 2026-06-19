@@ -1,104 +1,205 @@
 /**
- * Diff rendering infrastructure.
- * Renders unified-diff-style line changes with stats summaries.
+ * Diff renderer — renders line-by-line diffs with smart hunk grouping
+ * and new-file creation truncation.
  *
- * @since Phase 1
+ * @since Phase 1 (refactored)
  */
 
-import type { DiffStats, DiffLine, FileDiff } from '../types';
+export interface DiffLine {
+  text: string;
+  type: 'equal' | 'insert' | 'delete';
+}
+
+export interface DiffHunk {
+  lines: DiffLine[];
+  oldStart: number;
+  newStart: number;
+}
+
+export interface DiffStats {
+  added: number;
+  removed: number;
+}
+
+const NEW_FILE_DISPLAY_CAP = 20;
+const MAX_DIFF_LINES = 50;
 
 /**
- * Render diff stats as a compact "+12 -3" string.
+ * Compute simple diff stats from old/new text.
  */
-export function renderDiffStats(stats: DiffStats): string {
-  const parts: string[] = [];
-  if (stats.added > 0) parts.push(`+${stats.added}`);
-  if (stats.removed > 0) parts.push(`-${stats.removed}`);
-  return parts.join(' ') || '0 changes';
+export function computeDiffStats(oldText: string, newText: string): DiffStats {
+  const oldLines = oldText.split('\n');
+  const newLines = newText.split('\n');
+  let added = 0;
+  let removed = 0;
+
+  for (let i = 0; i < Math.max(oldLines.length, newLines.length); i++) {
+    if (oldLines[i] === undefined) {
+      added++;
+    } else if (newLines[i] === undefined) {
+      removed++;
+    } else if (oldLines[i] !== newLines[i]) {
+      added++;
+      removed++;
+    }
+  }
+
+  return { added, removed };
 }
 
 /**
- * Render a single diff content element from an array of DiffLine objects.
+ * Render diff stats element (+N -M).
  */
-export function renderDiffContent(
-  lines: DiffLine[],
-  maxLines: number = 50,
-): HTMLElement {
-  const body = document.createElement('div');
-  body.className = 'co-ober-diff-body';
+export function renderDiffStats(
+  container: HTMLElement,
+  stats: DiffStats,
+): void {
+  if (stats.added > 0) {
+    const el = container.createSpan({ cls: 'added', text: `+${stats.added}` });
+    container.appendChild(el);
+  }
+  if (stats.removed > 0) {
+    if (stats.added > 0) {
+      container.createSpan({ text: ' ' });
+    }
+    const el = container.createSpan({ cls: 'removed', text: `-${stats.removed}` });
+    container.appendChild(el);
+  }
+}
 
-  let rendered = 0;
-  for (const line of lines) {
-    if (rendered >= maxLines) {
-      body.createDiv({
-        cls: 'diff-line truncated',
-        text: `... ${lines.length - rendered} more lines`,
-      });
-      break;
+/**
+ * Parse old/new text into DiffLine array.
+ */
+export function parseDiffLines(oldText: string, newText: string): DiffLine[] {
+  const oldLines = oldText.split('\n');
+  const newLines = newText.split('\n');
+  const maxLen = Math.max(oldLines.length, newLines.length);
+  const lines: DiffLine[] = [];
+
+  for (let i = 0; i < maxLen; i++) {
+    if (oldLines[i] === undefined) {
+      lines.push({ text: newLines[i] || ' ', type: 'insert' });
+    } else if (newLines[i] === undefined) {
+      lines.push({ text: oldLines[i] || ' ', type: 'delete' });
+    } else if (oldLines[i] !== newLines[i]) {
+      lines.push({ text: oldLines[i] || ' ', type: 'delete' });
+      lines.push({ text: newLines[i] || ' ', type: 'insert' });
+    } else {
+      lines.push({ text: oldLines[i] || ' ', type: 'equal' });
+    }
+  }
+
+  return lines;
+}
+
+/**
+ * Split diff lines into hunks with context around changes.
+ */
+export function splitIntoHunks(diffLines: DiffLine[], contextLines = 3): DiffHunk[] {
+  if (diffLines.length === 0) return [];
+
+  // Find indices of all changed lines
+  const changedIndices: number[] = [];
+  for (let i = 0; i < diffLines.length; i++) {
+    if (diffLines[i].type !== 'equal') {
+      changedIndices.push(i);
+    }
+  }
+
+  if (changedIndices.length === 0) return [];
+
+  // Group changed lines into ranges with context
+  const ranges: Array<{ start: number; end: number }> = [];
+
+  for (const idx of changedIndices) {
+    const start = Math.max(0, idx - contextLines);
+    const end = Math.min(diffLines.length - 1, idx + contextLines);
+
+    // Merge with previous range if overlapping or adjacent
+    if (ranges.length > 0 && start <= ranges[ranges.length - 1].end + 1) {
+      ranges[ranges.length - 1].end = end;
+    } else {
+      ranges.push({ start, end });
+    }
+  }
+
+  // Convert ranges to hunks with line numbers
+  return ranges.map((range) => {
+    const lines = diffLines.slice(range.start, range.end + 1);
+
+    let oldStart = 1;
+    let newStart = 1;
+    for (let i = 0; i < range.start; i++) {
+      const line = diffLines[i];
+      if (line.type === 'equal' || line.type === 'delete') oldStart++;
+      if (line.type === 'equal' || line.type === 'insert') newStart++;
     }
 
-    const clsMap: Record<string, string> = {
-      add: 'diff-line added',
-      del: 'diff-line removed',
-      ctx: 'diff-line context',
-    };
-    const markerMap: Record<string, string> = {
-      add: '+',
-      del: '-',
-      ctx: ' ',
-    };
-
-    const lineEl = body.createDiv({ cls: clsMap[line.type] ?? 'diff-line context' });
-    lineEl.createSpan({ cls: 'diff-marker', text: markerMap[line.type] ?? ' ' });
-    lineEl.createSpan({ text: line.content });
-    rendered++;
-  }
-
-  return body;
-}
-
-/**
- * Render a complete file diff section: header + stats + content.
- */
-export function renderFileDiffSection(
-  fileDiff: FileDiff,
-  maxLines: number = 50,
-): HTMLElement {
-  const container = document.createElement('div');
-  container.className = 'co-ober-diff';
-
-  // Header with path and stats
-  const header = container.createDiv({ cls: 'co-ober-diff-header' });
-  header.createSpan({ cls: 'diff-path', text: fileDiff.path });
-  header.createSpan({ cls: 'diff-stats', text: renderDiffStats(fileDiff.stats) });
-
-  // Content body
-  const body = renderDiffContent(fileDiff.lines, maxLines);
-  container.appendChild(body);
-
-  // Collapse toggle
-  container.classList.add('is-collapsed');
-  header.addEventListener('click', () => {
-    container.classList.toggle('is-collapsed');
+    return { lines, oldStart, newStart };
   });
-
-  return container;
 }
 
 /**
- * Truncate long content to N lines with a "… N more lines" indicator.
+ * Render full diff content with hunk grouping and truncation.
  */
-export function renderTruncatedContent(
-  text: string,
-  maxLines: number,
-): { content: string; truncated: boolean; extraLines: number } {
-  const lines = text.split('\n');
-  if (lines.length <= maxLines) {
-    return { content: text, truncated: false, extraLines: 0 };
+export function renderDiffContent(
+  containerEl: HTMLElement,
+  diffLines: DiffLine[],
+  contextLines = 3,
+): void {
+  containerEl.empty();
+
+  // New file creation: all lines are inserts — cap display
+  const allInserts = diffLines.length > 0 && diffLines.every((l) => l.type === 'insert');
+  if (allInserts && diffLines.length > NEW_FILE_DISPLAY_CAP) {
+    for (const line of diffLines.slice(0, NEW_FILE_DISPLAY_CAP)) {
+      const lineEl = containerEl.createDiv({ cls: 'diff-line added' });
+      lineEl.createSpan({ cls: 'diff-marker', text: '+' });
+      lineEl.createSpan({ text: line.text });
+    }
+    const remaining = diffLines.length - NEW_FILE_DISPLAY_CAP;
+    containerEl.createDiv({
+      cls: 'diff-line truncated',
+      text: `... ${remaining} more lines`,
+    });
+    return;
   }
-  return {
-    content: lines.slice(0, maxLines).join('\n') + `\n... ${lines.length - maxLines} more lines`,
-    truncated: true,
-    extraLines: lines.length - maxLines,
-  };
+
+  const hunks = splitIntoHunks(diffLines, contextLines);
+
+  if (hunks.length === 0) {
+    containerEl.createDiv({ cls: 'diff-line', text: 'No changes' });
+    return;
+  }
+
+  let totalRendered = 0;
+  for (let hunkIdx = 0; hunkIdx < hunks.length; hunkIdx++) {
+    const hunk = hunks[hunkIdx];
+
+    // Add separator between hunks
+    if (hunkIdx > 0) {
+      containerEl.createDiv({ cls: 'diff-line context muted', text: '...' });
+    }
+
+    for (const line of hunk.lines) {
+      if (totalRendered >= MAX_DIFF_LINES) {
+        containerEl.createDiv({
+          cls: 'diff-line truncated',
+          text: `... ${diffLines.length - totalRendered} more lines`,
+        });
+        return;
+      }
+
+      const cls = line.type === 'insert'
+        ? 'diff-line added'
+        : line.type === 'delete'
+          ? 'diff-line removed'
+          : 'diff-line context';
+      const marker = line.type === 'insert' ? '+' : line.type === 'delete' ? '-' : ' ';
+      const lineEl = containerEl.createDiv({ cls });
+      lineEl.createSpan({ cls: 'diff-marker', text: marker });
+      lineEl.createSpan({ text: line.text });
+      totalRendered++;
+    }
+  }
 }

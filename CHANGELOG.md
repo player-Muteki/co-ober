@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.18 - 2026-06-19
+
+### Added
+- **Unified collapsible component**: `setupCollapsible()` with scroll-into-view on expand, `onExpand` callback, and `scrollOnExpand` option — replaces 4 independent toggle implementations.
+- **Independent DiffRenderer**: `splitIntoHunks()` smart hunk grouping, `computeDiffStats()`, new-file creation truncation at 20 lines, and `parseDiffLines()` for structured diff data.
+- **Dedicated WriteEditRenderer**: separate rendering for Write/Edit tool calls with diff previews, `+N -M` stats, and collapsible diff content.
+- **Thinking block content truncation**: expanded thinking blocks show first 30 lines with "Show all ›" button for full content, `max-height: 400px` with scroll for long content.
+- **Tool call body scrolling**: expanded tool call cards get `max-height: 400px` + `overflow-y: auto` to handle long bash output or diff content.
+
+### Changed
+- **ToolCallRenderer** — refactored with `renderLinesExpanded()` truncation pattern, `renderToolBodyContent()` content-type dispatch, and Write/Edit delegation to `writeEditRenderer.ts`.
+- **renderer.ts** — three-layer render frame scheduling (text/thinking/toolOutput) using `requestAnimationFrame` + Promise pipelines, replacing `setTimeout`-based throttling. Adds `flushTextRender()`, `flushThinkingRender()`, `scheduleToolRender()`.
+- **StreamController** — calls `flushThinkingRender()`/`flushTextRender()` on content type transitions (agent ↔ thought) for consistent rendering.
+
 ## 0.1.17 - 2026-06-19
 
 ### Added

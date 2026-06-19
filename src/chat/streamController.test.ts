@@ -15,7 +15,9 @@ describe('StreamController', () => {
 				appendThinking: vi.fn(),
 				addToolCall: vi.fn(),
 				updateToolCall: vi.fn(),
-				setPlanEntries: vi.fn()
+				setPlanEntries: vi.fn(),
+				flushThinkingRender: vi.fn().mockResolvedValue(undefined),
+				flushTextRender: vi.fn().mockResolvedValue(undefined),
 			},
 			syncEngine: {
 				process: vi.fn().mockResolvedValue([])

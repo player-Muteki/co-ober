@@ -1,29 +1,21 @@
 import type { App } from 'obsidian';
-import { MarkdownRenderer, setIcon, type Component } from 'obsidian';
+import { MarkdownRenderer, type Component } from 'obsidian';
 import { t, onLocaleChange } from '../i18n/index';
 import type { UsageInfo, ContentBlock, SerializedMessage } from '../types';
-import { renderStoredThinkingBlock, cleanupThinkingBlock } from './thinkingBlockRenderer';
-import type { ToolCallState } from './ToolCallRenderer';
-
-const TOOL_ICONS: Record<string, string> = {
-  read: 'file-text',
-  edit: 'file-pen',
-  write: 'file-plus',
-  execute: 'terminal',
-  search: 'search',
-  think: 'brain',
-  fetch: 'globe',
-  delete: 'trash',
-  move: 'folder-move',
-  switch_mode: 'repeat',
-  other: 'settings',
-};
+import { renderStoredThinkingBlock } from './thinkingBlockRenderer';
+import {
+  createToolCallElement,
+  updateToolCallElement,
+  type ToolCallState,
+} from './ToolCallRenderer';
 
 export class ChatRenderer {
   private container: HTMLDivElement;
   private app: App;
   private doc: Document;
   private shouldAutoScroll: () => boolean;
+
+  // ---- Streaming message state ----
   private currentAssistantEl: HTMLDivElement | null = null;
   private currentAssistantWrap: HTMLDivElement | null = null;
   private currentAssistantText = '';
@@ -34,16 +26,31 @@ export class ChatRenderer {
   private thinkingEl: HTMLDivElement | null = null;
   private thinkingCollapsed = true;
   private planEl: HTMLDivElement | null = null;
-  private toolEls = new Map<string, HTMLDivElement>();
   private placeholderEl: HTMLDivElement | null = null;
-  private renderTimeout: number | null = null;
-  private thinkingRenderTimeout: number | null = null;
   private usageEls = new Map<HTMLDivElement, UsageInfo>();
   private unsubscribeLocale: () => void;
 
-  // Phase 3 — structured rendering state
+  // ---- Three-layer render frame scheduling ----
+  // Layer 1: Text render pipeline (requestAnimationFrame + Promise)
+  private textRenderFrame: number | null = null;
+  private textRenderPromise: Promise<void> | null = null;
+  private resolveTextRender: (() => void) | null = null;
+  private isTextRenderRunning = false;
+
+  // Layer 2: Thinking render pipeline
+  private thinkingRenderFrame: number | null = null;
+  private thinkingRenderPromise: Promise<void> | null = null;
+  private resolveThinkingRender: (() => void) | null = null;
+  private isThinkingRenderRunning = false;
+
+  // Layer 3: Tool output per-frame scheduling
+  private toolRenderFrames = new Map<string, number>();
+
+  // Legacy fallback (pre-existing elements without ToolCallState)
+  private toolEls = new Map<string, HTMLDivElement>();
+
+  // Structured tool call states (new approach)
   private toolCallStates = new Map<string, ToolCallState>();
-  private thinkingState: import('./thinkingBlockRenderer').ThinkingState | null = null;
 
   constructor(container: HTMLDivElement, app: App, shouldAutoScroll: () => boolean = () => true) {
     this.container = container;
@@ -54,36 +61,31 @@ export class ChatRenderer {
   }
 
   dispose(): void {
+    this.cancelTextRender();
+    this.cancelThinkingRender();
+    this.cancelAllToolRenders();
     this.unsubscribeLocale();
   }
 
   clear(): void {
+    this.cancelTextRender();
+    this.cancelThinkingRender();
+    this.cancelAllToolRenders();
+
     this.container.empty();
     this.toolEls.clear();
+    this.toolCallStates.clear();
     this.currentAssistantEl = null;
     this.currentAssistantWrap = null;
     this.currentAssistantText = '';
     this.currentThinkingText = '';
     this.currentAssistantId = null;
     this.currentAssistantType = 'text';
-    this.toolCallStates.clear();
-    if (this.thinkingState) {
-      cleanupThinkingBlock(this.thinkingState);
-      this.thinkingState = null;
-    }
     this.thinkingWrapEl = null;
     this.thinkingEl = null;
     this.planEl = null;
     this.placeholderEl = null;
     this.usageEls.clear();
-    if (this.renderTimeout !== null) {
-      window.clearTimeout(this.renderTimeout);
-      this.renderTimeout = null;
-    }
-    if (this.thinkingRenderTimeout !== null) {
-      window.clearTimeout(this.thinkingRenderTimeout);
-      this.thinkingRenderTimeout = null;
-    }
   }
 
   private scrollToBottom(): void {
@@ -129,6 +131,10 @@ export class ChatRenderer {
     this.placeholderEl = null;
   }
 
+  // ============================================
+  // Layer 1: Text Render Pipeline
+  // ============================================
+
   appendText(text: string, messageId?: string, timestamp?: number): void {
     if (messageId && this.currentAssistantId !== messageId) {
       this.currentAssistantEl = null;
@@ -150,35 +156,99 @@ export class ChatRenderer {
       this.currentAssistantWrap = wrap;
       this.currentAssistantEl = wrap.createDiv({ cls: 'co-ober-msg-body' });
     }
-    if (this.renderTimeout !== null) window.clearTimeout(this.renderTimeout);
-    this.renderTimeout = window.setTimeout(() => {
-      this.renderMarkdown();
-      this.renderTimeout = null;
-    }, 50);
+    this.scheduleTextRender();
     this.scrollToBottom();
   }
 
-  private renderMarkdown(): void {
-    if (!this.currentAssistantEl || !this.currentAssistantText) return;
+  /**
+   * Schedule text markdown render via requestAnimationFrame.
+   * Returns a promise that resolves when the render completes.
+   */
+  scheduleTextRender(): Promise<void> {
+    if (!this.textRenderPromise) {
+      this.textRenderPromise = new Promise(resolve => {
+        this.resolveTextRender = resolve;
+      });
+    }
 
-    const existing = this.currentAssistantEl.querySelector('.md-render-subsystem');
-    if (existing) existing.remove();
+    if (this.textRenderFrame === null && !this.isTextRenderRunning) {
+      this.textRenderFrame = window.requestAnimationFrame(() => {
+        this.textRenderFrame = null;
+        void this.executeTextRender();
+      });
+    }
 
-    const placeholder = this.doc.createElement('div');
-    placeholder.addClass('md-render-subsystem');
-    this.currentAssistantEl.appendChild(placeholder);
+    return this.textRenderPromise;
+  }
 
-    MarkdownRenderer.render(
-      this.app,
-      this.currentAssistantText,
-      placeholder,
-      this.app.vault.getRoot().path,
-      this.container as unknown as Component,
-    ).then(() => {
-      this.addCopyButtons(placeholder);
-    }).catch(() => {
-      this.currentAssistantEl!.textContent = this.currentAssistantText;
-    });
+  /**
+   * Flush pending text render immediately (cancel schedule + execute now).
+   * Used by StreamController when content type changes (e.g., text→thinking).
+   */
+  async flushTextRender(): Promise<void> {
+    if (this.textRenderFrame !== null) {
+      window.cancelAnimationFrame(this.textRenderFrame);
+      this.textRenderFrame = null;
+      void this.executeTextRender();
+    }
+
+    if (this.textRenderPromise) {
+      await this.textRenderPromise;
+    }
+  }
+
+  private async executeTextRender(): Promise<void> {
+    if (this.isTextRenderRunning) return;
+    this.isTextRenderRunning = true;
+
+    try {
+      if (this.currentAssistantEl && this.currentAssistantText) {
+        const existing = this.currentAssistantEl.querySelector('.md-render-subsystem');
+        if (existing) existing.remove();
+
+        const placeholder = this.doc.createElement('div');
+        placeholder.addClass('md-render-subsystem');
+        this.currentAssistantEl.appendChild(placeholder);
+
+        await MarkdownRenderer.render(
+          this.app,
+          this.currentAssistantText,
+          placeholder,
+          this.app.vault.getRoot().path,
+          this.container as unknown as Component,
+        );
+
+        this.addCopyButtons(placeholder);
+      }
+    } catch {
+      if (this.currentAssistantEl && this.currentAssistantText) {
+        this.currentAssistantEl.textContent = this.currentAssistantText;
+      }
+    } finally {
+      this.isTextRenderRunning = false;
+    }
+
+    // If more text arrived during render, schedule another pass
+    if (this.currentAssistantEl && this.resolveTextRender) {
+      const resolve = this.resolveTextRender;
+      this.textRenderPromise = null;
+      this.resolveTextRender = null;
+      resolve();
+    }
+  }
+
+  cancelTextRender(): void {
+    if (this.textRenderFrame !== null) {
+      window.cancelAnimationFrame(this.textRenderFrame);
+      this.textRenderFrame = null;
+    }
+
+    if (this.resolveTextRender) {
+      const resolve = this.resolveTextRender;
+      this.textRenderPromise = null;
+      this.resolveTextRender = null;
+      resolve();
+    }
   }
 
   private addCopyButtons(container: HTMLElement): void {
@@ -200,6 +270,10 @@ export class ChatRenderer {
       pre.appendChild(btn);
     });
   }
+
+  // ============================================
+  // Layer 2: Thinking Render Pipeline
+  // ============================================
 
   appendThinking(text: string, messageId?: string, timestamp?: number): void {
     if (messageId && this.currentAssistantId !== messageId) {
@@ -225,81 +299,199 @@ export class ChatRenderer {
       };
     }
     this.currentThinkingText += text;
-    if (this.thinkingRenderTimeout !== null) window.clearTimeout(this.thinkingRenderTimeout);
-    this.thinkingRenderTimeout = window.setTimeout(() => {
-      this.renderThinkingMarkdown();
-      this.thinkingRenderTimeout = null;
-    }, 50);
+    this.scheduleThinkingRender();
     this.scrollToBottom();
   }
 
-  private renderThinkingMarkdown(): void {
-    if (!this.thinkingEl || !this.currentThinkingText) return;
-    const existing = this.thinkingEl.querySelector('.md-render-subsystem');
-    if (existing) existing.remove();
-    const placeholder = this.doc.createElement('div');
-    placeholder.addClass('md-render-subsystem');
-    this.thinkingEl.appendChild(placeholder);
-    MarkdownRenderer.render(
-      this.app,
-      this.currentThinkingText,
-      placeholder,
-      '',
-      this.container as unknown as Component,
-    ).catch(() => {
-      this.thinkingEl!.textContent = this.currentThinkingText;
-    });
+  /**
+   * Schedule thinking markdown render via requestAnimationFrame.
+   */
+  scheduleThinkingRender(): Promise<void> {
+    if (!this.thinkingRenderPromise) {
+      this.thinkingRenderPromise = new Promise(resolve => {
+        this.resolveThinkingRender = resolve;
+      });
+    }
+
+    if (this.thinkingRenderFrame === null && !this.isThinkingRenderRunning) {
+      this.thinkingRenderFrame = window.requestAnimationFrame(() => {
+        this.thinkingRenderFrame = null;
+        void this.executeThinkingRender();
+      });
+    }
+
+    return this.thinkingRenderPromise;
+  }
+
+  /**
+   * Flush pending thinking render immediately.
+   */
+  async flushThinkingRender(): Promise<void> {
+    if (this.thinkingRenderFrame !== null) {
+      window.cancelAnimationFrame(this.thinkingRenderFrame);
+      this.thinkingRenderFrame = null;
+      void this.executeThinkingRender();
+    }
+
+    if (this.thinkingRenderPromise) {
+      await this.thinkingRenderPromise;
+    }
+  }
+
+  private async executeThinkingRender(): Promise<void> {
+    if (this.isThinkingRenderRunning) return;
+    this.isThinkingRenderRunning = true;
+
+    try {
+      if (this.thinkingEl && this.currentThinkingText) {
+        const existing = this.thinkingEl.querySelector('.md-render-subsystem');
+        if (existing) existing.remove();
+
+        const placeholder = this.doc.createElement('div');
+        placeholder.addClass('md-render-subsystem');
+        this.thinkingEl.appendChild(placeholder);
+
+        await MarkdownRenderer.render(
+          this.app,
+          this.currentThinkingText,
+          placeholder,
+          '',
+          this.container as unknown as Component,
+        );
+      }
+    } catch {
+      if (this.thinkingEl && this.currentThinkingText) {
+        this.thinkingEl.textContent = this.currentThinkingText;
+      }
+    } finally {
+      this.isThinkingRenderRunning = false;
+    }
+
+    if (this.resolveThinkingRender) {
+      const resolve = this.resolveThinkingRender;
+      this.thinkingRenderPromise = null;
+      this.resolveThinkingRender = null;
+      resolve();
+    }
+  }
+
+  cancelThinkingRender(): void {
+    if (this.thinkingRenderFrame !== null) {
+      window.cancelAnimationFrame(this.thinkingRenderFrame);
+      this.thinkingRenderFrame = null;
+    }
+
+    if (this.resolveThinkingRender) {
+      const resolve = this.resolveThinkingRender;
+      this.thinkingRenderPromise = null;
+      this.resolveThinkingRender = null;
+      resolve();
+    }
   }
 
   addToolCall(id: string, title: string, kind: string, input: Record<string, unknown> | undefined, locations?: { path: string }[]): void {
     const wrap = this.container.createDiv({ cls: 'co-ober-msg assistant' });
-    const box = wrap.createDiv({ cls: 'co-ober-tool-call' });
-    box.dataset.toolId = id;
+    const toolState = createToolCallElement(wrap, id, kind, title, input, locations);
+    this.toolCallStates.set(id, toolState);
+  }
 
-    const hdr = box.createDiv({ cls: 'co-ober-tool-call-header' });
+  // ============================================
+  // Layer 3: Tool Output Scheduling
+  // ============================================
 
-    const iconEl = hdr.createSpan({ cls: 'tc-icon' });
-    setIcon(iconEl, TOOL_ICONS[kind] || 'tool');
+  // Pending tool render callbacks for synchronous flush support
+  private pendingToolRenderCallbacks = new Map<string, () => void>();
 
-    const displayKind = kind ? kind.charAt(0).toUpperCase() + kind.slice(1) : 'tool';
-    hdr.createSpan({ text: displayKind, cls: 'tc-kind' });
+  /**
+   * Schedule a tool call update to be rendered on the next animation frame.
+   * Each tool has its own frame, so fast updates don't block each other.
+   */
+  scheduleToolRender(id: string, callback: () => void): void {
+    // Cancel any pending frame for this tool
+    const existing = this.toolRenderFrames.get(id);
+    if (existing !== undefined) {
+      window.cancelAnimationFrame(existing);
+    }
 
-    const rawPath = (locations?.[0]?.path ?? input?.file_path ?? input?.filePath ?? input?.path ?? '') as string;
-    const fileName = rawPath ? (rawPath.split(/[\\/]/).pop() ?? rawPath) : '';
-    hdr.createSpan({ text: fileName, cls: 'tc-file' });
+    // Store callback for synchronous flush
+    this.pendingToolRenderCallbacks.set(id, callback);
 
-    hdr.createSpan({ text: '…', cls: 'tc-stat' });
+    const frame = window.requestAnimationFrame(() => {
+      this.toolRenderFrames.delete(id);
+      this.pendingToolRenderCallbacks.delete(id);
+      callback();
+    });
+    this.toolRenderFrames.set(id, frame);
+  }
 
-    box.createDiv({ cls: 'co-ober-tool-call-body' });
-    box.classList.add('is-collapsed');
+  cancelToolRender(id: string): void {
+    const frame = this.toolRenderFrames.get(id);
+    if (frame !== undefined) {
+      window.cancelAnimationFrame(frame);
+      this.toolRenderFrames.delete(id);
+    }
+    this.pendingToolRenderCallbacks.delete(id);
+  }
 
-    hdr.onclick = () => { box.classList.toggle('is-collapsed'); };
+  /**
+   * Flush all pending tool renders synchronously (execute callbacks immediately).
+   * Used in tests and when content type changes mid-stream.
+   */
+  flushAllToolRenders(): void {
+    // Cancel all pending frames
+    for (const [id, frame] of this.toolRenderFrames) {
+      window.cancelAnimationFrame(frame);
+      const callback = this.pendingToolRenderCallbacks.get(id);
+      if (callback) {
+        callback();
+      }
+    }
+    this.toolRenderFrames.clear();
+    this.pendingToolRenderCallbacks.clear();
+  }
 
-    this.toolEls.set(id, box);
+  cancelAllToolRenders(): void {
+    for (const frame of this.toolRenderFrames.values()) {
+      window.cancelAnimationFrame(frame);
+    }
+    this.toolRenderFrames.clear();
+    this.pendingToolRenderCallbacks.clear();
   }
 
   updateToolCall(
     id: string,
     status: string,
-    _rawOutput?: Record<string, unknown>,
+    rawOutput?: Record<string, unknown>,
     content?: Array<{ type: string; content?: { type: string; text?: string }; path?: string; oldText?: string; newText?: string }>,
     rawInput?: Record<string, unknown>,
     locations?: { path: string }[],
-    _kind?: string,
+    kind?: string,
   ): void {
+    // Use stored ToolCallState from createToolCallElement (with frame scheduling)
+    const toolState = this.toolCallStates.get(id);
+    if (toolState) {
+      this.scheduleToolRender(id, () => {
+        updateToolCallElement(
+          toolState, status, kind ?? toolState.kindEl.textContent?.toLowerCase() ?? '',
+          rawOutput, content as any, rawInput, locations,
+        );
+        this.scrollToBottom();
+      });
+      return;
+    }
+
+    // Fallback: legacy DOM-based approach for pre-existing elements
     const box = this.toolEls.get(id);
     if (!box) return;
     const hdr = box.querySelector('.co-ober-tool-call-header') as HTMLElement;
     const statEl = hdr.querySelector('.tc-stat') as HTMLElement;
 
-    // Update filename when rawInput/locations become available (in_progress event)
     if (rawInput) {
       const fileEl = hdr.querySelector('.tc-file') as HTMLElement;
       if (fileEl) {
         const rawPath = (locations?.[0]?.path ?? rawInput.file_path ?? rawInput.filePath ?? rawInput.path) as string | undefined;
         if (rawPath) {
-          const fileName = rawPath.split(/[\\/]/).pop() ?? rawPath;
-          fileEl.textContent = fileName;
+          fileEl.textContent = rawPath.split(/[\\/]/).pop() ?? rawPath;
         }
       }
     }
@@ -318,7 +510,7 @@ export class ChatRenderer {
             else if (newLines[i] === undefined) removed++;
             else if (oldLines[i] !== newLines[i]) { added++; removed++; }
           }
-          body.appendChild(this.renderDiff(item.path, item.oldText, item.newText));
+          this.renderLegacyDiff(body, item.oldText, item.newText);
         } else if (item.type === 'content' && item.content?.text) {
           body.createDiv({ text: item.content.text });
         }
@@ -337,54 +529,36 @@ export class ChatRenderer {
     this.scrollToBottom();
   }
 
-  private renderDiff(path: string, oldText: string, newText: string): HTMLElement {
-    const container = this.doc.createElement('div');
-    container.className = 'co-ober-diff';
-
-    const header = container.createDiv({ cls: 'co-ober-diff-header', text: path });
-
-    const body = container.createDiv({ cls: 'co-ober-diff-body' });
-
+  /**
+   * Legacy inline diff — used only when ToolCallState is unavailable
+   * (e.g., tool calls created before the new rendering was adopted).
+   */
+  private renderLegacyDiff(body: HTMLElement, oldText: string, newText: string): void {
     const oldLines = oldText.split('\n');
     const newLines = newText.split('\n');
-
-    // Simple line-by-line diff
     const maxLen = Math.max(oldLines.length, newLines.length);
     for (let i = 0; i < maxLen; i++) {
-      const oldLine = oldLines[i];
-      const newLine = newLines[i];
-
-      if (oldLine === undefined) {
-        // Added line
+      if (oldLines[i] === undefined) {
         const line = body.createDiv({ cls: 'diff-line added' });
         line.createSpan({ cls: 'diff-marker', text: '+' });
-        line.createSpan({ text: newLine });
-      } else if (newLine === undefined) {
-        // Removed line
+        line.createSpan({ text: newLines[i] });
+      } else if (newLines[i] === undefined) {
         const line = body.createDiv({ cls: 'diff-line removed' });
         line.createSpan({ cls: 'diff-marker', text: '-' });
-        line.createSpan({ text: oldLine });
-      } else if (oldLine !== newLine) {
-        // Changed line - show removal then addition
+        line.createSpan({ text: oldLines[i] });
+      } else if (oldLines[i] !== newLines[i]) {
         const rmLine = body.createDiv({ cls: 'diff-line removed' });
         rmLine.createSpan({ cls: 'diff-marker', text: '-' });
-        rmLine.createSpan({ text: oldLine });
+        rmLine.createSpan({ text: oldLines[i] });
         const addLine = body.createDiv({ cls: 'diff-line added' });
         addLine.createSpan({ cls: 'diff-marker', text: '+' });
-        addLine.createSpan({ text: newLine });
+        addLine.createSpan({ text: newLines[i] });
       } else {
-        // Context line
         const line = body.createDiv({ cls: 'diff-line context' });
         line.createSpan({ cls: 'diff-marker', text: ' ' });
-        line.createSpan({ text: oldLine });
+        line.createSpan({ text: oldLines[i] });
       }
     }
-
-    header.onclick = () => {
-      container.classList.toggle('is-collapsed');
-    };
-
-    return container;
   }
 
   setPlanEntries(entries: Array<{ content: string; status: string; priority?: string }>): void {
