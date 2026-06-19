@@ -1177,12 +1177,11 @@ pre:hover .co-ober-copy-btn {
   font-size: var(--font-smaller);
 }
 
-/* New messages button — centered floating circle, slides in from left */
+/* New messages button — left-anchored circle, slides in from left */
 .co-ober-new-messages-btn {
   position: sticky;
   bottom: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 24px;
   z-index: 50;
   width: 32px;
   height: 32px;
@@ -1806,10 +1805,10 @@ body.theme-light .co-ober-msg.user .co-ober-msg-body {
 @keyframes co-ober-slide-in-left {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateX(-24px);
+    transform: translateX(-100%);
   }
   to {
     opacity: 1;
-    transform: translateX(-50%);
+    transform: translateX(0);
   }
 }
