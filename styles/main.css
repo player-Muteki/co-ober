@@ -1297,6 +1297,10 @@ pre:hover .co-ober-copy-btn {
 .co-ober-thinking-block.is-collapsed .co-ober-thinking-body {
   display: none;
 }
+.co-ober-tool-call.is-collapsed .co-ober-tool-call-body,
+.co-ober-write-edit.is-collapsed .co-ober-tool-call-body {
+  display: none;
+}
 .co-ober-thinking-block .co-ober-thinking-header {
   display: flex;
   align-items: center;
