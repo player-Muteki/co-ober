@@ -1,4 +1,13 @@
-import type { NormalizedUpdate, SessionConfigOption, ModeOption, AvailableCommand, ModelOption, ToolCallContent, ToolKind } from '../types';
+/**
+ * StreamController — bridges ACP streaming updates to ChatRenderer.
+ *
+ * Handles content block ordering so messages render text + tool calls
+ * in the correct order when replayed.
+ *
+ * @since Phase 1 (refactored)
+ */
+
+import type { NormalizedUpdate, SessionConfigOption, ModeOption, AvailableCommand, ModelOption, ToolCallContent, ToolKind, ContentBlockType, ContentBlock } from '../types';
 import type { ChatState } from './chatState';
 import type { ChatRenderer } from '../view/renderer';
 import type { SyncEngine } from '../sync/engine';
@@ -28,6 +37,8 @@ export class StreamController {
 	private saveTimer: number | null = null;
 	private disposed = false;
 
+	// Track content block order for the current assistant message
+	private currentContentBlocks: Array<{ type: string; toolCallId?: string; subagentId?: string }> = [];
 	// Phase 4 — tool call buffering
 	private pendingToolBuffer: Array<{
 		toolCallId: string;
@@ -181,6 +192,7 @@ export class StreamController {
 		this.syncedToolCalls.clear();
 		this.assistantMessageIndex.clear();
 		this.pendingToolBuffer = [];
+		this.currentContentBlocks = [];
 		this.deps.state.resetStreamingState();
 		if (this.saveTimer !== null) {
 			window.clearTimeout(this.saveTimer);
@@ -198,6 +210,8 @@ export class StreamController {
 		const { renderer } = this.deps;
 		for (const tc of this.pendingToolBuffer) {
 			renderer.addToolCall(tc.toolCallId, tc.title, tc.toolKind, tc.rawInput, tc.locations);
+			// Track tool call in content blocks for ordering
+			this.currentContentBlocks.push({ type: 'tool_use' as ContentBlockType, toolCallId: tc.toolCallId });
 		}
 		this.pendingToolBuffer = [];
 	}
@@ -213,10 +227,27 @@ export class StreamController {
 			this.deps.sessionStore.getOrCreate(sessionId);
 			const session = this.deps.sessionStore.get(sessionId);
 			if (!session) return;
+
+			// Build content blocks for ordering
+			const contentBlocks: ContentBlock[] = [];
+
+			// Add text/thinking content
+			if (accumulatedText) {
+				contentBlocks.push({ type: type as ContentBlockType, text: accumulatedText });
+			}
+
+			// Add all tracked tool call blocks
+			for (const cb of this.currentContentBlocks) {
+				if (cb.type === 'tool_use') {
+					contentBlocks.push({ type: 'tool_use' as ContentBlockType, toolCallId: cb.toolCallId });
+				}
+			}
+
 			session.messages.push({
 				role: 'assistant',
 				content: accumulatedText,
 				type,
+				contentBlocks: contentBlocks.length > 0 ? contentBlocks : undefined,
 				timestamp: Date.now(),
 			});
 			this.assistantMessageIndex.set(key, session.messages.length - 1);
@@ -225,14 +256,24 @@ export class StreamController {
 			const session = this.deps.sessionStore.get(sessionId);
 			if (!session) return;
 			const msg = session.messages[index];
-			if (msg) msg.content = accumulatedText;
+			if (msg) {
+				msg.content = accumulatedText;
+				// Update contentBlocks text
+				if (msg.contentBlocks) {
+					for (const block of msg.contentBlocks) {
+						if (block.type === type && block.text !== undefined) {
+							block.text = accumulatedText;
+						}
+					}
+				}
+			}
 			session.updatedAt = Date.now();
 		}
 		this.deps.sessionStore.setActive(sessionId);
 		this.scheduleSave();
 	}
 
-	saveMessage(role: 'user' | 'assistant', content: string, type: string): void {
+	saveMessage(role: 'user' | 'assistant', content: string, type: string, contentBlocks?: Array<{ type: string; text?: string; toolCallId?: string }>): void {
 		const sessionId = this.deps.getSessionId();
 		if (!sessionId) return;
 		this.deps.sessionStore.getOrCreate(sessionId);
@@ -240,6 +281,7 @@ export class StreamController {
 			role,
 			content,
 			type: type as 'text' | 'tool-call' | 'tool-result' | 'thinking',
+			contentBlocks: contentBlocks as any,
 			timestamp: Date.now(),
 		});
 		this.deps.sessionStore.setActive(sessionId);

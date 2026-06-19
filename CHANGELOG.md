@@ -1,3 +1,21 @@
+## 0.1.24 - 2026-06-19
+
+### Added
+- **Write/Edit diff stats in header**: collapsed tool calls now show `+x -y` directly in the header, with dedicated monospace styling and green/red color coding. Empty status hidden on completion so stats align flush-right. (claudian parity)
+- **SVG status icons**: replaced text `…`/`✓`/`✗` with Obsidian SVG icons (`loader` with spin animation, `check`, `x`, `circle`) for running/completed/failed/pending states. (claudian parity)
+- **Per-tool expanded content rendering**: bash/execute shows command + stdout/stderr + exit code; read shows first 15 lines; search/grep shows up to 20 hoverable matches; fetch/web_search shows content preview + source URL; think shows up to 30 lines. (claudian parity)
+- **apply_patch multi-file diff rendering**: parses `*** Add/Update/Delete File:` markers, renders each file as a bordered section with operation badge (ADD/UPDATE/DELETE) and inline diff. (claudian parity)
+- **ContentBlocks ordering**: stream controller now tracks tool call order and persists `contentBlocks[]` on saved messages, preserving interleaved text/tool_use/thinking order on replay. (claudian parity)
+- **extractDiffData utility**: extracts structured diff data from SDK `structuredPatch` format, or falls back to computing from Edit `old_string`/`new_string` and Write `content`. (claudian parity)
+
+### Fixed
+- **Horizontal scrollbar in dialog**: `.co-ober-messages` now has `overflow-x: hidden`, tool/thinking bodies clip horizontally with internal scroll only, `.diff-line` breaks long lines with `word-break: break-all`. (claudian parity)
+- **Text selection disabled**: `.co-ober-message-content` and `.co-ober-text-block` now explicitly set `user-select: text` so chat content can be selected and copied. (claudian parity)
+- **tool_use block rendering**: content blocks now check `toolCallStates` first (most reliable), fall back to DOM lookup, then render truncated ID placeholder. (robustness)
+
+### Changed
+- **`ToolKind` type extended**: added `'apply_patch'` to the union type for first-class apply_patch tool support.
+
 ## 0.1.23 - 2026-06-19
 
 ### Fixed

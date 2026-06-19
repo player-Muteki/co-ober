@@ -179,14 +179,17 @@ describe('ChatRenderer', () => {
       renderer.updateToolCall('call-1', 'completed', {}, [{ type: 'content', content: { type: 'text', text: 'Result' } }], undefined, undefined, 'search');
       flushToolRenders();
       const stat = container.querySelector('.tc-stat');
-      expect(stat?.textContent).toBe('✓');
+      expect(stat?.classList.contains('tc-stat-done')).toBe(true);
+      // Status icon is now SVG (check icon), so textContent should be empty
+      expect(stat?.textContent?.trim() || '').toBe('');
     });
 
     it('updates status to in_progress', () => {
       renderer.addToolCall('call-1', 'Search', 'search', {});
       renderer.updateToolCall('call-1', 'in_progress', undefined, undefined, undefined, undefined, 'search');
+      flushToolRenders();
       const stat = container.querySelector('.tc-stat');
-      expect(stat?.textContent).toBe('…');
+      expect(stat?.classList.contains('spin')).toBe(true);
     });
 
     it('updates status to failed', () => {
@@ -194,7 +197,7 @@ describe('ChatRenderer', () => {
       renderer.updateToolCall('call-1', 'failed', undefined, undefined, undefined, undefined, 'search');
       flushToolRenders();
       const stat = container.querySelector('.tc-stat');
-      expect(stat?.textContent).toBe('✗');
+      expect(stat?.classList.contains('tc-stat-fail')).toBe(true);
     });
 
     it('does nothing for unknown tool id', () => {

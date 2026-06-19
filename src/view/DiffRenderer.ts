@@ -1,13 +1,30 @@
 /**
- * Diff renderer �?renders line-by-line diffs with smart hunk grouping
- * and new-file creation truncation.
+ * Diff renderer — renders line-by-line diffs with smart hunk grouping,
+ * new-file creation truncation, and structuredPatch extraction.
  *
  * @since Phase 1 (refactored)
+ * @see claudian/src/utils/diff.ts for the reference implementation
  */
 
 export interface DiffLine {
   text: string;
   type: 'equal' | 'insert' | 'delete';
+}
+
+/** Shape of the SDK's structuredPatch format. */
+export interface StructuredPatchHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: string[];
+}
+
+/** Pre-computed diff data for a tool call (Write/Edit). */
+export interface ToolDiffData {
+  filePath: string;
+  diffLines: DiffLine[];
+  stats: DiffStats;
 }
 
 interface DiffHunk {
@@ -23,6 +40,97 @@ interface DiffStats {
 
 const NEW_FILE_DISPLAY_CAP = 20;
 const MAX_DIFF_LINES = 50;
+
+// ── Counting / Stats ──
+
+/**
+ * Count the number of added and removed lines in a DiffLine array.
+ */
+export function countLineChanges(diffLines: DiffLine[]): { added: number; removed: number } {
+  let added = 0;
+  let removed = 0;
+  for (const line of diffLines) {
+    if (line.type === 'insert') added++;
+    else if (line.type === 'delete') removed++;
+  }
+  return { added, removed };
+}
+
+/**
+ * Convert SDK structuredPatch hunks into DiffLine array.
+ */
+export function structuredPatchToDiffLines(hunks: StructuredPatchHunk[]): DiffLine[] {
+  const result: DiffLine[] = [];
+  for (const hunk of hunks) {
+    for (const rawLine of hunk.lines) {
+      const prefix = rawLine[0];
+      const text = rawLine.slice(1);
+      if (prefix === '+') {
+        result.push({ type: 'insert', text });
+      } else if (prefix === '-') {
+        result.push({ type: 'delete', text });
+      } else {
+        result.push({ type: 'equal', text });
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Extract diff data from a tool result or tool input.
+ *
+ * Priority:
+ * 1. StructuredPatch from toolUseResult (SDK format)
+ * 2. Compute from tool input: Edit(old_string/new_string), Write(content)
+ */
+export function extractDiffData(
+  toolUseResult: unknown,
+  toolName: string,
+  toolInput: Record<string, unknown>,
+  filePath: string,
+): ToolDiffData | undefined {
+  // Try structuredPatch first (SDK format)
+  if (toolUseResult && typeof toolUseResult === 'object') {
+    const result = toolUseResult as Record<string, unknown>;
+    if (Array.isArray(result.structuredPatch) && result.structuredPatch.length > 0) {
+      const resultFilePath = (typeof result.filePath === 'string' ? result.filePath : null) || filePath;
+      const hunks = result.structuredPatch as StructuredPatchHunk[];
+      const diffLines = structuredPatchToDiffLines(hunks);
+      const stats = countLineChanges(diffLines);
+      return { filePath: resultFilePath, diffLines, stats };
+    }
+  }
+
+  // Fall back to computing from tool input
+  if (toolName === 'Edit') {
+    const oldStr = toolInput.old_string;
+    const newStr = toolInput.new_string;
+    if (typeof oldStr === 'string' && typeof newStr === 'string') {
+      const diffLines: DiffLine[] = [];
+      for (const line of oldStr.split('\n')) {
+        diffLines.push({ type: 'delete', text: line });
+      }
+      for (const line of newStr.split('\n')) {
+        diffLines.push({ type: 'insert', text: line });
+      }
+      return { filePath, diffLines, stats: countLineChanges(diffLines) };
+    }
+  }
+
+  if (toolName === 'Write') {
+    const content = toolInput.content;
+    if (typeof content === 'string') {
+      const newLines = content.split('\n');
+      const diffLines: DiffLine[] = newLines.map(text => ({ type: 'insert', text }));
+      return { filePath, diffLines, stats: { added: newLines.length, removed: 0 } };
+    }
+  }
+
+  return undefined;
+}
+
+// ── Existing utility functions ──
 
 /**
  * Compute simple diff stats from old/new text.
@@ -149,7 +257,7 @@ export function renderDiffContent(
 ): void {
   containerEl.empty();
 
-  // New file creation: all lines are inserts �?cap display
+  // New file creation: all lines are inserts — cap display
   const allInserts = diffLines.length > 0 && diffLines.every((l) => l.type === 'insert');
   if (allInserts && diffLines.length > NEW_FILE_DISPLAY_CAP) {
     for (const line of diffLines.slice(0, NEW_FILE_DISPLAY_CAP)) {

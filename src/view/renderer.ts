@@ -688,20 +688,34 @@ export class ChatRenderer {
       }
 
       case 'tool_use': {
-        // tool_use blocks reference existing tool calls already rendered via addToolCall/updateToolCall.
-        // If the tool call exists in our map, we just ensure it's visible.
-        // Otherwise, render a placeholder.
-        if (block.toolCallId && this.toolEls.has(block.toolCallId)) {
-          const existing = this.toolEls.get(block.toolCallId);
-          if (existing && existing.parentElement !== parentEl) {
-            parentEl.appendChild(existing);
+        // tool_use blocks reference existing tool calls already rendered.
+        // Check structured tool call states first, then fall back to DOM lookup.
+        if (block.toolCallId) {
+          const toolState = this.toolCallStates.get(block.toolCallId);
+          if (toolState) {
+            const { wrapper } = toolState;
+            if (wrapper.parentElement !== parentEl) {
+              parentEl.appendChild(wrapper);
+            }
+            break;
           }
-        } else if (block.toolCallId) {
-          // Fallback: render a minimal placeholder
+          const existing = this.toolEls.get(block.toolCallId);
+          if (existing) {
+            if (existing.parentElement !== parentEl) {
+              parentEl.appendChild(existing);
+            }
+            break;
+          }
+        }
+        // Fallback: render a minimal placeholder with truncated ID
+        if (block.toolCallId) {
           const placeholder = parentEl.createDiv({ cls: 'co-ober-tool-call' });
           placeholder.dataset.toolId = block.toolCallId;
           const hdr = placeholder.createDiv({ cls: 'co-ober-tool-call-header' });
-          hdr.createSpan({ text: `[tool: ${block.toolCallId}]`, cls: 'tc-kind' });
+          const shortId = block.toolCallId.length > 10
+            ? block.toolCallId.slice(0, 10) + '…'
+            : block.toolCallId;
+          hdr.createSpan({ text: `Tool: ${shortId}`, cls: 'tc-kind' });
         }
         break;
       }

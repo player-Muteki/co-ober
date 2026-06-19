@@ -32,6 +32,7 @@ const TOOL_ICONS: Record<string, string> = {
   delete: 'trash',
   move: 'folder-move',
   switch_mode: 'repeat',
+  apply_patch: 'wand',
   other: 'settings',
 };
 
@@ -264,11 +265,14 @@ export function updateToolCallElement(
 
   if (status === 'in_progress') {
     wrapper.classList.add('status-running');
-    statusEl.textContent = '…';
+    statusEl.empty();
+    setIcon(statusEl, 'loader');
+    statusEl.addClass('spin');
   } else if (status === 'completed') {
     wrapper.classList.add('status-completed');
-    statusEl.textContent = '✓';
-    statusEl.classList.add('tc-stat-done');
+    statusEl.empty();
+    setIcon(statusEl, 'check');
+    statusEl.addClass('tc-stat-done');
 
     // Render body content for non-write/edit tools
     if (kind !== 'write' && kind !== 'edit' && content && content.length > 0) {
@@ -279,8 +283,9 @@ export function updateToolCallElement(
     collapseElement(wrapper, state.header, state.collapsibleState);
   } else if (status === 'failed') {
     wrapper.classList.add('status-error');
-    statusEl.textContent = '✗';
-    statusEl.classList.add('tc-stat-fail');
+    statusEl.empty();
+    setIcon(statusEl, 'x');
+    statusEl.addClass('tc-stat-fail');
     if (rawOutput) {
       body.empty();
       body.createDiv({ text: JSON.stringify(rawOutput, null, 2) });
@@ -289,19 +294,29 @@ export function updateToolCallElement(
     collapseElement(wrapper, state.header, state.collapsibleState);
   } else {
     // pending
-    statusEl.textContent = '…';
+    statusEl.empty();
+    setIcon(statusEl, 'circle');
   }
 }
 
 /**
- * Render tool body content — dispatch by content types.
+ * Render tool body content — dispatch by content types and tool kind.
+ *
+ * - bash/execute: command + terminal output in code blocks
+ * - read: file content with line count
+ * - search/grep: list of matched results
+ * - fetch/web_search: truncated content preview
+ * - think: reasoning text
+ * - Default: content items or raw output
  */
 function renderToolBodyContent(
   body: HTMLElement,
-  _kind: string,
+  kind: string,
   content: ToolCallContent[],
-  _rawOutput?: Record<string, unknown>,
+  rawOutput?: Record<string, unknown>,
 ): void {
+  // Extract text content from content items
+  const textParts: string[] = [];
   let hasDiffContent = false;
 
   for (const item of content) {
@@ -310,17 +325,291 @@ function renderToolBodyContent(
       renderDiffContent(body, diffLines);
       hasDiffContent = true;
     } else if (item.type === 'content' && item.content?.type === 'text' && item.content.text) {
-      body.createDiv({ text: item.content.text });
+      textParts.push(item.content.text);
     }
   }
 
-  if (!hasDiffContent) {
-    // Render raw output as truncated text
-    const outputText = JSON.stringify(_rawOutput, null, 2);
-    if (outputText !== '{}' && outputText !== 'undefined') {
-      body.createDiv({ text: renderTruncatedText(outputText, 20) });
+  const text = textParts.join('\n');
+  const outputText = rawOutput
+    ? (rawOutput.text ?? rawOutput.output ?? rawOutput.result ?? rawOutput.content) as string | undefined
+    : undefined;
+
+  // Tool-specific rendering
+  switch (kind) {
+    case 'bash':
+    case 'execute': {
+      renderBashExpanded(body, text || outputText || '', rawOutput);
+      return;
+    }
+    case 'read': {
+      if (text || outputText) {
+        renderLinesExpanded(body, text || outputText!, 15);
+      } else if (!hasDiffContent) {
+        body.createDiv({ cls: 'co-ober-tool-empty', text: 'No content' });
+      }
+      return;
+    }
+    case 'search':
+    case 'grep': {
+      const searchResult = text || outputText || '';
+      if (searchResult) {
+        renderSearchExpanded(body, searchResult);
+      } else if (!hasDiffContent) {
+        body.createDiv({ cls: 'co-ober-tool-empty', text: 'No matches' });
+      }
+      return;
+    }
+    case 'fetch':
+    case 'web_search': {
+      if (text || outputText) {
+        renderLinesExpanded(body, text || outputText!, 20);
+        if (rawOutput?.url) {
+          body.createDiv({
+            cls: 'co-ober-tool-url',
+            text: `Source: ${rawOutput.url as string}`,
+          });
+        }
+      } else if (!hasDiffContent) {
+        body.createDiv({ cls: 'co-ober-tool-empty', text: 'No result' });
+      }
+      return;
+    }
+    case 'think': {
+      if (text || outputText) {
+        renderLinesExpanded(body, text || outputText!, 30);
+      }
+      return;
+    }
+    case 'apply_patch': {
+      renderApplyPatchExpanded(body, text || outputText || '', rawOutput, content);
+      return;
+    }
+    default: {
+      // Default: render content items or raw output
+      if (!hasDiffContent) {
+        if (text) {
+          body.createDiv({ text: renderTruncatedText(text, 20) });
+        } else if (rawOutput) {
+          const json = JSON.stringify(rawOutput, null, 2);
+          if (json !== '{}' && json !== 'undefined') {
+            body.createDiv({ text: renderTruncatedText(json, 20) });
+          }
+        }
+      }
+      break;
     }
   }
+}
+
+/**
+ * Render bash/execute tool expanded content — command + stdout + stderr.
+ */
+function renderBashExpanded(
+  container: HTMLElement,
+  text: string,
+  rawOutput?: Record<string, unknown>,
+): void {
+  if (text) {
+    renderLinesExpanded(container, text, 30);
+  }
+
+  // If rawOutput has structured fields, show them too
+  if (rawOutput) {
+    const exitCode = rawOutput.exit_code ?? rawOutput.exitCode;
+    if (typeof exitCode === 'number') {
+      const statusEl = container.createDiv({
+        cls: 'co-ober-tool-exit-status',
+        text: `Exit code: ${exitCode}`,
+      });
+      if (exitCode !== 0) {
+        statusEl.addClass('error');
+      }
+    }
+    const error = rawOutput.error as string | undefined;
+    if (error) {
+      container.createDiv({
+        cls: 'co-ober-tool-stderr',
+        text: renderTruncatedText(error, 10),
+      });
+    }
+  }
+}
+
+/**
+ * Render search/grep tool expanded content with file paths.
+ */
+function renderSearchExpanded(
+  container: HTMLElement,
+  result: string,
+): void {
+  const lines = result.split(/\r?\n/).filter(Boolean);
+  if (lines.length === 0) {
+    container.createDiv({ cls: 'co-ober-tool-empty', text: 'No matches found' });
+    return;
+  }
+
+  const maxLines = 20;
+  const truncated = lines.length > maxLines;
+  const displayLines = truncated ? lines.slice(0, maxLines) : lines;
+
+  const linesEl = container.createDiv({ cls: 'co-ober-tool-lines' });
+  for (const line of displayLines) {
+    const lineEl = linesEl.createDiv({ cls: 'co-ober-tool-line hoverable' });
+    lineEl.setText(line);
+  }
+
+  if (truncated) {
+    linesEl.createDiv({
+      cls: 'co-ober-tool-truncated',
+      text: `... ${lines.length - maxLines} more matches`,
+    });
+  }
+}
+
+/**
+ * Render apply_patch tool expanded content — multi-file diff sections.
+ *
+ * Parses the patch text or rawOutput for file-level diffs and renders
+ * each as a collapsible section with change markers.
+ *
+ * Supports formats:
+ * - Raw text with file markers (*** Add/Update/Delete File: path)
+ * - content items with diff type
+ * - rawOutput with structured file lists
+ */
+function renderApplyPatchExpanded(
+  container: HTMLElement,
+  text: string,
+  rawOutput?: Record<string, unknown>,
+  content?: ToolCallContent[],
+): void {
+  // 1. Try content items first (diff type)
+  let hasContent = false;
+  if (content) {
+    for (const item of content) {
+      if (item.type === 'diff' && item.path && item.oldText !== undefined && item.newText !== undefined) {
+        const section = container.createDiv({ cls: 'co-ober-patch-section' });
+        const fileHeader = section.createDiv({ cls: 'co-ober-patch-file' });
+        setIcon(fileHeader.createSpan({ cls: 'co-ober-patch-file-icon' }), 'file');
+        fileHeader.createSpan({ cls: 'co-ober-patch-file-name', text: item.path });
+        const diffLines = parseDiffLines(item.oldText, item.newText);
+        renderDiffContent(section, diffLines);
+        hasContent = true;
+      }
+    }
+  }
+
+  // 2. Try parsing file diffs from text (*** markers)
+  if (!hasContent && text) {
+    const fileDiffs = parseApplyPatchFileDiffs(text);
+    if (fileDiffs.length > 0) {
+      for (const fd of fileDiffs) {
+        const section = container.createDiv({ cls: 'co-ober-patch-section' });
+        const fileHeader = section.createDiv({ cls: 'co-ober-patch-file' });
+        const icon = fd.operation === 'add' ? 'file-plus'
+          : fd.operation === 'delete' ? 'trash'
+          : 'file-pen';
+        setIcon(fileHeader.createSpan({ cls: 'co-ober-patch-file-icon' }), icon);
+        fileHeader.createSpan({ cls: 'co-ober-patch-file-name', text: fd.filePath });
+        const opText = fd.operation === 'add' ? 'ADD'
+          : fd.operation === 'delete' ? 'DELETE'
+          : 'UPDATE';
+        fileHeader.createSpan({ cls: `co-ober-patch-op co-ober-patch-op-${fd.operation}`, text: opText });
+
+        if (fd.diffLines.length > 0) {
+          renderDiffContent(section, fd.diffLines);
+        } else if (fd.operation === 'delete') {
+          section.createDiv({ cls: 'co-ober-tool-empty', text: 'File deleted' });
+        }
+        hasContent = true;
+      }
+    }
+  }
+
+  // 3. Fallback to raw text
+  if (!hasContent) {
+    if (text) {
+      renderLinesExpanded(container, text, 20);
+    } else if (rawOutput) {
+      const json = JSON.stringify(rawOutput, null, 2);
+      if (json !== '{}' && json !== 'undefined') {
+        container.createDiv({ text: renderTruncatedText(json, 20) });
+      }
+    } else {
+      container.createDiv({ cls: 'co-ober-tool-empty', text: 'No result' });
+    }
+  }
+}
+
+interface ParsedFileDiff {
+  filePath: string;
+  operation: 'add' | 'update' | 'delete';
+  diffLines: import('./DiffRenderer').DiffLine[];
+}
+
+/**
+ * Parse apply_patch text output into file-level diffs.
+ */
+function parseApplyPatchFileDiffs(patchText: string): ParsedFileDiff[] {
+  const result: ParsedFileDiff[] = [];
+  const lines = patchText.split(/\r?\n/);
+  let current: { filePath: string; operation: ParsedFileDiff['operation']; rawLines: string[] } | null = null;
+
+  const flushCurrent = () => {
+    if (!current) return;
+    const diffLines: import('./DiffRenderer').DiffLine[] = [];
+    for (const line of current.rawLines) {
+      const prefix = line[0];
+      const text = line.slice(1);
+      if (prefix === '+') {
+        diffLines.push({ type: 'insert', text });
+      } else if (prefix === '-') {
+        diffLines.push({ type: 'delete', text });
+      } else if (prefix === ' ') {
+        diffLines.push({ type: 'equal', text });
+      }
+    }
+    result.push({
+      filePath: current.filePath,
+      operation: current.operation,
+      diffLines,
+    });
+    current = null;
+  };
+
+  for (const line of lines) {
+    const addMatch = line.match(/^\*\*\* Add File: (.+)$/);
+    if (addMatch) {
+      flushCurrent();
+      current = { filePath: addMatch[1].trim(), operation: 'add', rawLines: [] };
+      continue;
+    }
+    const updateMatch = line.match(/^\*\*\* Update File: (.+)$/);
+    if (updateMatch) {
+      flushCurrent();
+      current = { filePath: updateMatch[1].trim(), operation: 'update', rawLines: [] };
+      continue;
+    }
+    const deleteMatch = line.match(/^\*\*\* Delete File: (.+)$/);
+    if (deleteMatch) {
+      flushCurrent();
+      result.push({
+        filePath: deleteMatch[1].trim(),
+        operation: 'delete',
+        diffLines: [],
+      });
+      continue;
+    }
+
+    if (!current) continue;
+    const prefix = line[0];
+    if (prefix === '+' || prefix === '-' || prefix === ' ') {
+      current.rawLines.push(line);
+    }
+  }
+
+  flushCurrent();
+  return result;
 }
 
 // ---- Generic Rendering Utilities ----

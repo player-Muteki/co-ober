@@ -160,13 +160,27 @@
 
 .co-ober-tool-call-header .tc-stat {
   flex-shrink: 0;
-  font-size: 10px;
+  display: flex;
+  align-items: center;
   color: var(--text-muted);
-  font-family: var(--font-monospace);
 }
 
-.co-ober-tool-call-header .tc-stat-done { color: #22c55e; }
-.co-ober-tool-call-header .tc-stat-fail { color: var(--text-error); }
+.co-ober-tool-call-header .tc-stat svg {
+  width: 14px;
+  height: 14px;
+}
+
+.co-ober-tool-call-header .tc-stat.tc-stat-done { color: #22c55e; }
+.co-ober-tool-call-header .tc-stat.tc-stat-fail { color: var(--text-error); }
+
+.co-ober-tool-call-header .tc-stat.spin svg {
+  animation: co-ober-spin 1.5s linear infinite;
+}
+
+@keyframes co-ober-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
 .co-ober-tool-call-body {
   padding: 8px 10px;
@@ -1053,6 +1067,8 @@ pre:hover .co-ober-copy-btn {
   display: flex;
   padding: 0 8px;
   line-height: 1.4;
+  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 .diff-line .diff-marker {
@@ -1085,6 +1101,121 @@ pre:hover .co-ober-copy-btn {
 .diff-line.context {
   color: var(--text-muted);
 }
+
+/* ── Tool-specific expanded content ── */
+.co-ober-tool-lines {
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.co-ober-tool-line {
+  padding: 0 2px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.co-ober-tool-line.hoverable {
+  cursor: pointer;
+}
+.co-ober-tool-line.hoverable:hover {
+  background: var(--background-modifier-hover);
+}
+.co-ober-tool-truncated {
+  color: var(--text-faint);
+  font-style: italic;
+  padding: 2px 0;
+  font-size: 10px;
+}
+.co-ober-tool-empty {
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 4px 0;
+  font-size: 11px;
+}
+.co-ober-tool-exit-status {
+  font-family: var(--font-monospace);
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.co-ober-tool-exit-status.error {
+  color: var(--text-error);
+}
+.co-ober-tool-stderr {
+  font-family: var(--font-monospace);
+  font-size: 10px;
+  color: var(--text-error);
+  padding: 4px 8px;
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: var(--radius-s);
+  margin-top: 4px;
+  white-space: pre-wrap;
+}
+.co-ober-tool-url {
+  font-family: var(--font-monospace);
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--background-modifier-border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* ── Apply Patch sections ── */
+.co-ober-patch-section {
+  margin: 6px 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  overflow: hidden;
+}
+.co-ober-patch-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--background-secondary);
+  font-family: var(--font-monospace);
+  font-size: 11px;
+}
+.co-ober-patch-file-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-accent);
+  flex-shrink: 0;
+}
+.co-ober-patch-file-icon svg {
+  width: 14px;
+  height: 14px;
+}
+.co-ober-patch-file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-normal);
+}
+.co-ober-patch-op {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+.co-ober-patch-op-add {
+  background: rgba(34, 197, 94, 0.15);
+  color: #16a34a;
+}
+.co-ober-patch-op-update {
+  background: rgba(59, 130, 246, 0.15);
+  color: #2563eb;
+}
+.co-ober-patch-op-delete {
+  background: rgba(239, 68, 68, 0.15);
+  color: #dc2626;
+}
+/* ── End tool-specific content ── */
 
 /* Welcome page */
 .co-ober-welcome {
@@ -1271,6 +1402,8 @@ pre:hover .co-ober-copy-btn {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* Plain text block */
@@ -1552,9 +1685,10 @@ pre:hover .co-ober-copy-btn {
    Claudian-inspired layout — cleaner, lighter
    ============================================= */
 
-/* Messages container — tighter gap */
+/* Messages container — tighter gap, no horizontal overflow */
 .co-ober-messages {
   gap: 8px;
+  overflow-x: hidden;
 }
 
 /* User message — muted, no accent color clash */
@@ -1580,10 +1714,12 @@ body.theme-light .co-ober-msg.user .co-ober-msg-body {
   width: 100%;
 }
 
-/* Assistant text block — default font, no background */
+/* Assistant text block — default font, no background, selectable */
 .co-ober-text-block {
   font-size: var(--font-ui-small);
   line-height: 1.6;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* ----- Thinking block — tree-branch style ----- */
@@ -1632,7 +1768,7 @@ body.theme-light .co-ober-msg.user .co-ober-msg-body {
   color: var(--text-muted);
   max-height: 400px;
   overflow-y: auto;
-  overflow-x: auto;
+  overflow-x: hidden;
   border-inline-start: 2px solid var(--background-modifier-border);
   border-inline-start-width: 2px;
   margin-inline-start: 7px;
@@ -1708,6 +1844,28 @@ body.theme-light .co-ober-msg.user .co-ober-msg-body {
 .co-ober-tool-call-header .tc-stat.tc-stat-fail {
   color: var(--text-error);
 }
+
+/* ── Diff stats (+N -M) in write/edit tool headers ── */
+.tc-diff-stats {
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  flex-shrink: 0;
+  margin-left: auto;
+  margin-right: 4px;
+}
+.tc-diff-stats .added {
+  color: var(--color-green);
+}
+.tc-diff-stats .removed {
+  color: var(--color-red);
+  margin-left: 4px;
+}
+
+/* Hide empty status on completion so +N -M aligns to right edge */
+.co-ober-write-edit.status-completed .tc-stat:empty {
+  display: none;
+}
+
 /* Tool body — left-border tree branch */
 .co-ober-tool-call-body {
   padding: 4px 0;
@@ -1716,13 +1874,18 @@ body.theme-light .co-ober-msg.user .co-ober-msg-body {
   border-inline-start: 2px solid var(--background-modifier-border);
   border-inline-start-width: 2px;
   max-height: 400px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   white-space: pre-wrap;
   font-family: var(--font-editor);
   font-size: var(--font-smaller);
   line-height: 1.4;
   transition: max-height 0.25s ease, opacity 0.2s ease, padding-block 0.2s ease, border-inline-start-width 0.2s ease, margin-inline-start 0.2s ease;
 }
+
+/* Inner scrollable areas (diff content, code) in tool bodies */
+.co-ober-tool-call-body .diff-line { min-width: 0; }
+.co-ober-tool-call-body pre { overflow-x: auto; }
 
 /* Status borders -> left border color on body */
 .co-ober-tool-call.status-running .co-ober-tool-call-body {

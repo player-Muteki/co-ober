@@ -95,7 +95,7 @@ export interface PermissionRequest {
   options: PermissionOption[];
 }
 
-export type ToolKind = 'read' | 'edit' | 'delete' | 'move' | 'search' | 'execute' | 'think' | 'fetch' | 'switch_mode' | 'other';
+export type ToolKind = 'read' | 'edit' | 'delete' | 'move' | 'search' | 'execute' | 'think' | 'fetch' | 'switch_mode' | 'apply_patch' | 'other';
 
 export type ToolCallContent =
   | { type: 'content'; content: { type: 'text'; text: string } }
