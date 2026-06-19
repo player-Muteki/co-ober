@@ -12,7 +12,9 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): ControllerDeps
 	return {
 		renderer: {
 			clear: noop, addUserMessage: noop, addAssistantPlaceholder: noop, removeAssistantPlaceholder: noop,
-			appendText: noop, appendThinking: noop, addError: noop, showUsage: noop, forceScrollToBottom: noop,
+			appendText: noop, appendThinking: noop, appendInterruptIndicator: noop,
+			flushTextRender: vi.fn().mockResolvedValue(undefined),
+			addError: noop, showUsage: noop, forceScrollToBottom: noop,
 			addToolCall: noop, updateToolCall: noop, setPlanEntries: noop,
 		} as unknown as ControllerDeps['renderer'],
 		input: { setStreaming: noop, focus: noop, appendValue: noop, triggerSend: noop, triggerStop: noop } as unknown as ControllerDeps['input'],

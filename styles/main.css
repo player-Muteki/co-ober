@@ -1977,6 +1977,49 @@ body.theme-light .co-ober-msg.user .co-ober-msg-body {
   font-size: calc(var(--font-smaller) - 1px);
 }
 
+/* ── Queue indicator ── */
+.co-ober-queue-indicator {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 12px;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.co-ober-queue-indicator.co-ober-visible {
+  display: flex;
+}
+.co-ober-queue-text {
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Interrupted indicator ── */
+.co-ober-interrupted-row {
+  padding: 8px 0 4px;
+  font-size: var(--font-ui-small);
+  line-height: 1.5;
+}
+.co-ober-interrupted-badge {
+  color: #d45d5d;
+  font-weight: 500;
+}
+.co-ober-interrupted-hint {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.co-ober-message-content .co-ober-interrupted-row,
+.co-ober-msg-body .co-ober-interrupted-row {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 /* =============================================
    New messages button — slide in from left
    ============================================= */

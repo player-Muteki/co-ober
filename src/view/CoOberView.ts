@@ -168,6 +168,9 @@ export class CoOberView extends ItemView {
 		// ── Context chips ──
 		this.contextChipsEl = el.createDiv({ cls: 'co-ober-context-chips' });
 
+		// ── Queue indicator ──
+		const queueIndicatorEl = el.createDiv({ cls: 'co-ober-queue-indicator' });
+
 		// ── Input ──
 		this.inputAreaEl = el.createDiv({ cls: 'co-ober-input-area' });
 		this.input = new ChatInput(this.inputAreaEl, {
@@ -258,6 +261,9 @@ export class CoOberView extends ItemView {
 		};
 
 		this.controller = new CoOberViewController(deps, callbacks);
+
+		// Store queue indicator reference on controller
+		this.controller.queueIndicatorEl = queueIndicatorEl;
 
 		// Restore session ID into controller state
 		if (savedSessionId) {

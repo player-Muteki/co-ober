@@ -162,6 +162,33 @@ export class ChatRenderer {
   }
 
   /**
+   * Append an "Interrupted" indicator to the current assistant message.
+   * Rendered as formatted DOM elements directly (not through markdown) to
+   * show the red "Interrupted" label with a muted hint text.
+   *
+   * Like claudian's: "Interrupted · What should I do instead?"
+   */
+  appendInterruptIndicator(): void {
+    // Ensure we have an assistant message container
+    if (!this.currentAssistantEl) {
+      const wrap = this.container.createDiv({ cls: 'co-ober-msg assistant' });
+      this.currentAssistantWrap = wrap;
+      this.currentAssistantEl = wrap.createDiv({ cls: 'co-ober-msg-body' });
+    }
+
+    // Add interrupted indicator as styled inline elements
+    const indicatorEl = this.currentAssistantEl.createDiv({ cls: 'co-ober-interrupted-row' });
+    const badgeEl = indicatorEl.createSpan({ cls: 'co-ober-interrupted-badge', text: 'Interrupted' });
+    badgeEl.createSpan({
+      cls: 'co-ober-interrupted-hint',
+      text: ' \u00B7 What should I do instead?',
+    });
+
+    // Also append to the text content so it renders in stored messages
+    this.currentAssistantText += '\n\n*Interrupted*';
+  }
+
+  /**
    * Schedule text markdown render via requestAnimationFrame.
    * Returns a promise that resolves when the render completes.
    */

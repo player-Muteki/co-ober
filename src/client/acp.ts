@@ -448,15 +448,13 @@ export class AcpClient implements OpencodeClient {
   }
 
   cancel(id: string): Promise<void> {
-    // Send RPC cancel first, then clean up local state to avoid a race where
-    // the stream ends between local cleanup and the RPC, leaving a dangling
-    // prompt Promise.
-    // wasActive is intentionally unused — we unconditionally clean up
-    // to avoid the race described below.
+    // Abort in-flight prompt FIRST so sendMessage() rejects immediately,
+    // then clean up state so sendMessage's .finally() can detect completion.
+    const controller = this.activeAbortController;
+    this.activeAbortController = null;
+    controller?.abort();
     this.activeStreamSessionId = null;
     this.chunkHandler = null;
-    this.activeAbortController?.abort();
-    this.activeAbortController = null;
 
     return this.requestWithFallback('cancel', { sessionId: id }).then(() => {}).catch((e) => {
       console.warn('[co-ober] cancel RPC failed:', e);

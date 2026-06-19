@@ -62,6 +62,7 @@ export class CoOberViewController {
 	private sendStartTime = 0;
 	private genId = 0;
 	private promptQueue: Array<{ text: string; refs: ContextRef[] }> = [];
+	queueIndicatorEl: HTMLDivElement | null = null;
 
 	constructor(
 		private deps: ControllerDeps,
@@ -613,7 +614,8 @@ export class CoOberViewController {
 	async send(text: string, refs: ContextRef[]): Promise<void> {
 		if (this.busy) {
 			this.promptQueue.push({ text, refs });
-			return;
+			this.updateQueueIndicator();
+			return; 
 		}
 		const parsed = parseSlashCommand(text);
 		if (parsed) {
@@ -674,23 +676,53 @@ export class CoOberViewController {
 	private async drainQueue(): Promise<void> {
 		while (this.promptQueue.length > 0 && !this.busy) {
 			const next = this.promptQueue.shift()!;
-			await this.send(next.text, next.refs);
+			this.updateQueueIndicator();
+			await this.send(next.text, next.refs); 
 		}
 	}
 
 	async stopGeneration(): Promise<void> {
 		const c = this.deps.plugin.getClient();
 		if (!c || !this.state.sessionId || (!this.busy && !this.state.isStreaming)) return;
+		// Increment genId FIRST so the in-flight executeAgentCall's finally block
+		// skips stale state updates (busy=false, onFinally).
 		++this.genId;
-		this.busy = false;
-		this.state.isStreaming = false;
 		this.deps.input.setStreaming(false);
 		this.deps.toolbar.setSending(false);
-		this.promptQueue.length = 0;
 		try {
+			// Cancel the backend RPC before resetting local state,
+			// so the in-flight handler stops processing chunks immediately.
 			await c.cancel(this.state.sessionId);
 		} catch (e) {
 			console.error('[co-ober] cancel:', e);
+		}
+		// Append "Interrupted" indicator to the current assistant response
+		this.deps.renderer.appendInterruptIndicator();
+		this.deps.renderer.flushTextRender().catch(() => {});
+		this.busy = false;
+		this.state.isStreaming = false;
+		this.promptQueue.length = 0;
+		this.updateQueueIndicator();
+	}
+
+	/**
+	 * Update the queue indicator showing queued message count.
+	 * Shown when messages are queued during streaming, hidden when queue is empty.
+	 */
+	private updateQueueIndicator(): void {
+		const indicatorEl = this.queueIndicatorEl;
+		if (!indicatorEl) return;
+
+		indicatorEl.empty();
+
+		if (this.promptQueue.length > 0) {
+			const text = this.promptQueue.length === 1
+				? `⌙ 1 message queued`
+				: `⌙ ${this.promptQueue.length} messages queued`;
+			indicatorEl.createSpan({ cls: 'co-ober-queue-text', text });
+			indicatorEl.addClass('co-ober-visible');
+		} else {
+			indicatorEl.removeClass('co-ober-visible');
 		}
 	}
 
@@ -854,6 +886,7 @@ export class CoOberViewController {
 		this.streamCtrl.reset();
 		++this.genId;
 		this.promptQueue = [];
+		this.updateQueueIndicator();
 		this.busy = false;
 		this.state.isStreaming = false;
 		this.state.usage = null;
