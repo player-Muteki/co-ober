@@ -1,6 +1,7 @@
 /* Co-Ober — main styles */
 
 .co-ober-view {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -795,9 +796,9 @@
 
 /* Session list */
 .co-ober-session-list {
-  position: absolute;
-  top: 100%;
-  right: 0;
+  position: fixed;
+  top: var(--dropdown-top);
+  right: var(--dropdown-right);
   width: 320px;
   max-height: 400px;
   overflow-y: auto;
