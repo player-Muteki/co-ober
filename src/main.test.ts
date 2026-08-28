@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
+import { Plugin } from 'obsidian';
 import CoOberPlugin from './main';
-import { VIEW_TYPE } from './types';
+import { DEFAULT_SETTINGS, VIEW_TYPE } from './types';
+import { SessionRepository } from './chat/session';
 
 describe('CoOberPlugin view activation', () => {
   it('does not connect to OpenCode while loading the plugin', async () => {
@@ -58,6 +60,54 @@ describe('CoOberPlugin view activation', () => {
   });
 });
 
+describe('CoOberPlugin persistence', () => {
+  it('serializes concurrent plugin-data saves', async () => {
+    let resolveFirstSave!: () => void;
+    const firstSave = new Promise<void>((resolve) => {
+      resolveFirstSave = resolve;
+    });
+    const saveData = vi.spyOn(Plugin.prototype, 'saveData')
+      .mockImplementationOnce(() => firstSave)
+      .mockResolvedValue(undefined);
+    const plugin = new CoOberPlugin({} as never, {} as never);
+    plugin.settings = { ...DEFAULT_SETTINGS };
+
+    const pendingFirst = plugin.savePluginData();
+    const pendingSecond = plugin.savePluginData();
+
+    await vi.waitFor(() => expect(saveData).toHaveBeenCalledTimes(1));
+    resolveFirstSave();
+    await Promise.all([pendingFirst, pendingSecond]);
+    expect(saveData).toHaveBeenCalledTimes(2);
+  });
+
+  it('persists the session state after pruning it', async () => {
+    const saveData = vi.spyOn(Plugin.prototype, 'saveData').mockResolvedValue(undefined);
+    const plugin = new CoOberPlugin({} as never, {} as never);
+    plugin.settings = { ...DEFAULT_SETTINGS, maxSessionMessages: 4, sessionRetentionDays: 30 };
+    plugin.sessionStore.hydrate([{
+      sessionId: 's1',
+      title: 'Session',
+      messages: Array.from({ length: 6 }, (_, index) => ({
+        role: 'user' as const,
+        content: `message ${index}`,
+        type: 'text' as const,
+        timestamp: index,
+      })),
+      createdAt: 1,
+      updatedAt: Date.now(),
+    }], 's1');
+
+    await plugin.savePluginData();
+
+    expect(saveData).toHaveBeenCalledWith(expect.objectContaining({
+      sessions: [expect.objectContaining({ messages: expect.arrayContaining([
+        expect.objectContaining({ content: '[3 earlier messages truncated]' }),
+      ]) })],
+    }));
+  });
+});
+
 function createLeaf(onDetach?: () => void) {
   return {
     setViewState: vi.fn().mockResolvedValue(undefined),
@@ -73,8 +123,7 @@ function createPlugin(workspace: unknown): CoOberPlugin {
       language: 'en',
       autoConnect: false,
     },
-    sessions: new Map(),
-    activeSessionId: null,
+    sessionStore: new SessionRepository(async () => {}),
     loadPluginData: vi.fn().mockResolvedValue(undefined),
     registerView: vi.fn(),
     deduplicateCoOberLeaves: CoOberPlugin.prototype['deduplicateCoOberLeaves'],

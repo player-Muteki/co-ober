@@ -1,6 +1,6 @@
 {
   "name": "co-ober",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "description": "Embed the complete OpenCode agent inside Obsidian sidebar",
   "main": "main.js",
   "scripts": {
@@ -11,7 +11,7 @@
     "release:check": "node scripts/check-release.mjs --artifacts",
     "check": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src --ext .ts --max-warnings=0",
     "format": "node scripts/format.mjs"
   },
   "dependencies": {

@@ -29,7 +29,7 @@ describe('StreamController', () => {
 				get: vi.fn(),
 				append: vi.fn(),
 				setActive: vi.fn(),
-				save: vi.fn()
+				save: vi.fn().mockResolvedValue(undefined)
 			},
 			getSessionId: vi.fn().mockReturnValue('session-1'),
 			onConfigUpdate: vi.fn(),
@@ -233,9 +233,34 @@ describe('StreamController', () => {
 		// Doesn't crash
 	});
 
-	it('reset clears pending state and save timer', () => {
+	it('reset preserves a pending save', () => {
 		controller.saveMessage('user', 'Hi', 'text');
 		controller.reset();
+		vi.runAllTimers();
+
 		expect(deps.state.resetStreamingState).toHaveBeenCalled();
+		expect(deps.sessionStore.save).toHaveBeenCalledOnce();
+	});
+
+	it('flushes a pending save when disposed', async () => {
+		controller.saveMessage('user', 'Hi', 'text');
+
+		await controller.dispose();
+
+		expect(deps.sessionStore.save).toHaveBeenCalledOnce();
+		vi.runAllTimers();
+		expect(deps.sessionStore.save).toHaveBeenCalledOnce();
+	});
+
+	it('handles background save failures', async () => {
+		const error = new Error('disk full');
+		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		deps.sessionStore.save.mockRejectedValueOnce(error);
+
+		controller.saveMessage('user', 'Hi', 'text');
+		await vi.runAllTimersAsync();
+
+		expect(errorSpy).toHaveBeenCalledWith('[co-ober] save session:', error);
+		errorSpy.mockRestore();
 	});
 });

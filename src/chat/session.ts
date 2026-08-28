@@ -1,83 +1,131 @@
-import type CoOberPlugin from '../main';
 import type { SessionMeta, SerializedMessage, SerializedSession } from '../types';
 import { t } from '../i18n/index';
+import { MS_PER_DAY } from '../constants';
 
-/** Session store for persisting conversations in Obsidian plugin data */
 export interface SessionStore {
-  sessions: Map<string, SerializedSession>;
-  activeId: string | null;
+  readonly activeId: string | null;
   get(id: string): SerializedSession | undefined;
   getOrCreate(opencodeSessionId: string): SerializedSession;
   append(id: string, msg: SerializedMessage): void;
   setActive(id: string): void;
   list(): SessionMeta[];
   save(): Promise<void>;
-  load(): Promise<void>;
   remove(id: string): void;
 }
 
-export function createSessionStore(plugin: CoOberPlugin): SessionStore {
-  const store: SessionStore = {
-    sessions: plugin.sessions,
-    activeId: plugin.activeSessionId,
+export interface SerializedSessionState {
+  sessions: SerializedSession[];
+  activeSessionId: string | null;
+}
 
-    get(id: string): SerializedSession | undefined {
-      return this.sessions.get(id);
-    },
+export interface SessionPruneOptions {
+  maxMessages: number;
+  retentionDays: number;
+  now?: number;
+}
 
-    getOrCreate(opencodeSessionId: string): SerializedSession {
-      let session = this.sessions.get(opencodeSessionId);
-      if (session) return session;
+/** Owns persisted chat state independently from the Obsidian plugin lifecycle. */
+export class SessionRepository implements SessionStore {
+  private readonly sessions = new Map<string, SerializedSession>();
+  private activeSessionId: string | null = null;
 
-      const now = Date.now();
-      session = {
-        sessionId: opencodeSessionId,
-        title: t().session.defaultTitle.replace('{time}', new Date(now).toLocaleTimeString()),
-        opencodeSessionId,
-        messages: [],
-        createdAt: now,
-        updatedAt: now,
-      };
-      this.sessions.set(opencodeSessionId, session);
-      this.activeId = opencodeSessionId;
-      plugin.activeSessionId = opencodeSessionId;
-      return session;
-    },
+  constructor(private readonly persist: () => Promise<void>) {}
 
-    append(id: string, msg: SerializedMessage): void {
-      const s = this.sessions.get(id);
-      if (!s) return;
-      s.messages.push(msg);
-      s.updatedAt = Date.now();
-    },
+  get activeId(): string | null {
+    return this.activeSessionId;
+  }
 
-    setActive(id: string): void {
-      this.activeId = id;
-      plugin.activeSessionId = id;
-    },
+  hydrate(sessions: SerializedSession[], activeSessionId: string | null): void {
+    this.sessions.clear();
+    for (const session of sessions) {
+      this.sessions.set(session.sessionId, session);
+    }
+    this.activeSessionId = activeSessionId;
+  }
 
-    list(): SessionMeta[] {
-      return [...this.sessions.values()].map((s) => ({
-        sessionId: s.sessionId,
-        title: s.title,
-        updatedAt: new Date(s.updatedAt).toISOString(),
-      }));
-    },
+  snapshot(): SerializedSessionState {
+    return {
+      sessions: [...this.sessions.values()],
+      activeSessionId: this.activeSessionId,
+    };
+  }
 
-    async save(): Promise<void> {
-      plugin.activeSessionId = this.activeId;
-      await plugin.savePluginData();
-    },
+  get(id: string): SerializedSession | undefined {
+    return this.sessions.get(id);
+  }
 
-    async load(): Promise<void> {
-      // Data is already loaded in plugin.onload(), just sync the active session ID
-      this.activeId = plugin.activeSessionId;
-    },
+  getOrCreate(opencodeSessionId: string): SerializedSession {
+    let session = this.sessions.get(opencodeSessionId);
+    if (session) return session;
 
-    remove(id: string): void {
-      this.sessions.delete(id);
-      if (this.activeId === id) this.activeId = null;
-    },
-  };
-  return store;
+    const now = Date.now();
+    session = {
+      sessionId: opencodeSessionId,
+      title: t().session.defaultTitle.replace('{time}', new Date(now).toLocaleTimeString()),
+      opencodeSessionId,
+      messages: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.sessions.set(opencodeSessionId, session);
+    this.activeSessionId = opencodeSessionId;
+    return session;
+  }
+
+  append(id: string, msg: SerializedMessage): void {
+    const session = this.sessions.get(id);
+    if (!session) return;
+    session.messages.push(msg);
+    session.updatedAt = Date.now();
+  }
+
+  setActive(id: string): void {
+    this.activeSessionId = id;
+  }
+
+  list(): SessionMeta[] {
+    return [...this.sessions.values()].map((session) => ({
+      sessionId: session.sessionId,
+      title: session.title,
+      updatedAt: new Date(session.updatedAt).toISOString(),
+    }));
+  }
+
+  save(): Promise<void> {
+    return this.persist();
+  }
+
+  remove(id: string): void {
+    this.sessions.delete(id);
+    if (this.activeSessionId === id) this.activeSessionId = null;
+  }
+
+  prune({ maxMessages, retentionDays, now = Date.now() }: SessionPruneOptions): void {
+    const cutoffTime = now - retentionDays * MS_PER_DAY;
+    const messageLimit = Math.max(1, maxMessages);
+
+    for (const [id, session] of this.sessions) {
+      if (id !== this.activeSessionId && session.updatedAt < cutoffTime) {
+        this.sessions.delete(id);
+        continue;
+      }
+
+      if (session.messages.length > messageLimit) {
+        const retainedCount = messageLimit - 1;
+        const firstCount = Math.floor(retainedCount / 2);
+        const lastCount = retainedCount - firstCount;
+        const truncatedCount = session.messages.length - firstCount - lastCount;
+        session.messages = [
+          ...session.messages.slice(0, firstCount),
+          {
+            role: 'system',
+            content: `[${truncatedCount} earlier messages truncated]`,
+            type: 'text',
+            timestamp: session.messages[firstCount]?.timestamp ?? now,
+          },
+          ...(lastCount > 0 ? session.messages.slice(-lastCount) : []),
+        ];
+      }
+    }
+  }
 }

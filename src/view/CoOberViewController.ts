@@ -1,5 +1,6 @@
 import type { NormalizedUpdate, ContextRef, PromptPart, SessionConfigOption, ModeOption, ModelOption, AcpResponse } from '../types';
-import type CoOberPlugin from '../main';
+import type { CoOberSettings } from '../types';
+import type { OpencodeClient } from '../client';
 import { t } from '../i18n/index';
 import type { ChatRenderer } from './renderer';
 import type { ChatInput } from '../chat/input';
@@ -14,7 +15,6 @@ import { buildCustomAgentPrompt, getValidActiveCustomAgent } from '../agents/cus
 import { filterCommonModelOptions } from './modelFilter';
 import { applyDefaultSessionSettings } from './sessionDefaults';
 import { Mutex } from '../utils/mutex';
-import { getVaultPath } from '../utils/vault';
 import type { WelcomeView } from './welcomeView';
 import type { PermissionBanner } from './permissionBanner';
 import type { InlineEditPanel } from './inlineEditPanel';
@@ -39,6 +39,13 @@ export interface ControllerCallbacks {
 	onAutoRefActiveFile(): void;
 }
 
+export interface ControllerRuntime {
+	readonly settings: CoOberSettings;
+	getClient(): OpencodeClient | null;
+	initClient(): Promise<boolean>;
+	getVaultCwd(): string;
+}
+
 export interface ControllerDeps {
 	renderer: ChatRenderer;
 	input: ChatInput;
@@ -50,7 +57,7 @@ export interface ControllerDeps {
 	syncEngine: SyncEngine;
 	sessionStore: SessionStore;
 	welcomeView: WelcomeView;
-	plugin: CoOberPlugin;
+	runtime: ControllerRuntime;
 	updateContextMeter: (usage: import('../types').UsageInfo | null) => void;
 }
 
@@ -88,7 +95,7 @@ export class CoOberViewController {
 
 	private registerBuiltinCommands(): void {
 		const registry = commandRegistry;
-		const client = () => this.deps.plugin.getClient();
+		const client = () => this.deps.runtime.getClient();
 		const caps = () => client()?.getAgentCapabilities?.();
 
 		registry.registerBuiltin({
@@ -234,7 +241,7 @@ export class CoOberViewController {
 	}
 
 	getVaultCwd(): string {
-		return getVaultPath(this.deps.plugin.app);
+		return this.deps.runtime.getVaultCwd();
 	}
 
 	isBusy(): boolean {
@@ -249,8 +256,8 @@ export class CoOberViewController {
 		return this.streamCtrl;
 	}
 
-	dispose(): void {
-		this.streamCtrl.dispose();
+	async dispose(): Promise<void> {
+		await this.streamCtrl.dispose();
 		this.noteContentCache.clear();
 		this.cacheSessionId = null;
 	}
@@ -258,7 +265,7 @@ export class CoOberViewController {
 	// ── Connection ──
 
 	async ensureClientConnected(): Promise<boolean> {
-		const existing = this.deps.plugin.getClient();
+		const existing = this.deps.runtime.getClient();
 		if (existing?.isConnected()) {
 			this.state.isConnected = true;
 			this.bindClientHandlers();
@@ -268,7 +275,7 @@ export class CoOberViewController {
 			return true;
 		}
 
-		const connected = await this.deps.plugin.initClient();
+		const connected = await this.deps.runtime.initClient();
 		this.state.isConnected = connected;
 		if (!connected) {
 			this.handleDisconnect();
@@ -294,7 +301,7 @@ export class CoOberViewController {
 	}
 
 	bindClientHandlers(): void {
-		const client = this.deps.plugin.getClient();
+		const client = this.deps.runtime.getClient();
 		if (!client) return;
 		client.setClientHandlers({
 			onClose: () => this.handleDisconnect(),
@@ -319,11 +326,13 @@ export class CoOberViewController {
 					this.deps.renderer.addError(t().error.reconnected);
 				}
 			},
-			onPermissionRequest: async (req) => (
-				client.permissionMode === 'safe'
-					? this.deps.permissionBanner.show(req)
-					: client.requestPermission(req)
-			),
+				onPermissionRequest: async (req) => (
+					client.permissionMode === 'safe'
+						? this.deps.permissionBanner.show(req)
+						: client.requestPermission?.(req) ?? Promise.resolve(
+							req.options.find((option) => option.kind === 'reject_once' || option.kind === 'reject_always')?.optionId ?? 'reject_once',
+						)
+				),
 		});
 	}
 
@@ -347,7 +356,7 @@ export class CoOberViewController {
 
 	async reconnect(): Promise<void> {
 		try {
-			const connected = await this.deps.plugin.initClient();
+			const connected = await this.deps.runtime.initClient();
 			if (!connected) throw new Error(t().reconnect.failed);
 			this.bindClientHandlers();
 			try {
@@ -370,15 +379,15 @@ export class CoOberViewController {
 	async syncRuntimeSession(sessionId: string | null): Promise<void> {
 		if (!sessionId) return;
 		return this.sessionMutex.runExclusive(async () => {
-			const client = this.deps.plugin.getClient();
+			const client = this.deps.runtime.getClient();
 			if (!client) return;
 			if (client.getCurrentSessionId() === sessionId) return;
-			await client.loadSession(sessionId, this.getVaultCwd(), this.deps.plugin.settings.mcpServers);
+			await client.loadSession(sessionId, this.getVaultCwd(), this.deps.runtime.settings.mcpServers);
 		});
 	}
 
 	async cancelActiveGeneration(): Promise<void> {
-		const client = this.deps.plugin.getClient();
+		const client = this.deps.runtime.getClient();
 		if (!client || !this.busy || !this.state.sessionId) return;
 		try {
 			await client.cancel(this.state.sessionId);
@@ -401,16 +410,16 @@ export class CoOberViewController {
 		await this.deps.sessionStore.save();
 		const connected = await this.ensureClientConnected();
 		if (!connected) return;
-		const c = this.deps.plugin.getClient();
+		const c = this.deps.runtime.getClient();
 		if (!c) return;
 
 		try {
 			await this.cancelActiveGeneration();
 			this.resetConversationView();
 			await this.sessionMutex.runExclusive(async () => {
-				const sid = await c.createSession(this.getVaultCwd(), this.deps.plugin.settings.mcpServers);
+				const sid = await c.createSession(this.getVaultCwd(), this.deps.runtime.settings.mcpServers);
 				this.state.sessionId = sid;
-				await applyDefaultSessionSettings(c, sid, this.deps.plugin.settings);
+				await applyDefaultSessionSettings(c, sid, this.deps.runtime.settings);
 			});
 			if (this.state.sessionId) {
 				this.deps.sessionStore.getOrCreate(this.state.sessionId);
@@ -418,7 +427,7 @@ export class CoOberViewController {
 			}
 			await this.deps.sessionStore.save();
 			this.loadToolbarOptions();
-			this.callbacks.onShowWelcome(this.deps.plugin.getClient() !== null);
+			this.callbacks.onShowWelcome(this.deps.runtime.getClient() !== null);
 			this.callbacks.onAutoRefActiveFile();
 		} catch (e) {
 			console.error('[co-ober] newSession:', e);
@@ -443,7 +452,7 @@ export class CoOberViewController {
 
 	async ensureRuntimeSession(): Promise<string | null> {
 		if (!(await this.ensureClientConnected())) return null;
-		const client = this.deps.plugin.getClient();
+		const client = this.deps.runtime.getClient();
 		if (!client) return null;
 
 		if (this.state.sessionId) {
@@ -459,9 +468,9 @@ export class CoOberViewController {
 
 		try {
 			await this.sessionMutex.runExclusive(async () => {
-				const sid = await client.createSession(this.getVaultCwd(), this.deps.plugin.settings.mcpServers);
+				const sid = await client.createSession(this.getVaultCwd(), this.deps.runtime.settings.mcpServers);
 				this.state.sessionId = sid;
-				await applyDefaultSessionSettings(client, sid, this.deps.plugin.settings);
+				await applyDefaultSessionSettings(client, sid, this.deps.runtime.settings);
 			});
 			if (this.state.sessionId) {
 				this.deps.sessionStore.getOrCreate(this.state.sessionId);
@@ -493,7 +502,7 @@ export class CoOberViewController {
 		this.deps.sessionStore.setActive(sessionId);
 		await this.deps.sessionStore.save();
 		this.loadToolbarOptions();
-		this.callbacks.onShowWelcome(this.deps.plugin.getClient() !== null);
+		this.callbacks.onShowWelcome(this.deps.runtime.getClient() !== null);
 		this.callbacks.onAutoRefActiveFile();
 	}
 
@@ -506,7 +515,7 @@ export class CoOberViewController {
 	}
 
 	async forkSession(sessionId: string): Promise<void> {
-		const client = this.deps.plugin.getClient();
+		const client = this.deps.runtime.getClient();
 		if (!client) return;
 		const forkedId = await client.forkSession(sessionId, this.getVaultCwd());
 		this.state.sessionId = forkedId;
@@ -516,7 +525,7 @@ export class CoOberViewController {
 	}
 
 	async resumeSession(sessionId: string): Promise<void> {
-		const client = this.deps.plugin.getClient();
+		const client = this.deps.runtime.getClient();
 		if (!client) return;
 		await client.resumeSession(sessionId, this.getVaultCwd());
 		this.state.sessionId = sessionId;
@@ -540,7 +549,7 @@ export class CoOberViewController {
 		},
 	): Promise<void> {
 		const sessionId = await this.ensureRuntimeSession();
-		const c = this.deps.plugin.getClient();
+		const c = this.deps.runtime.getClient();
 		if (!c || !sessionId) return;
 
 		const currentGen = ++this.genId;
@@ -564,7 +573,7 @@ export class CoOberViewController {
 			if (this.state.sessionId !== sessionId || !this.busy) return;
 			this.callbacks.onClearPendingImageChips();
 			const response = await c.sendMessage(sessionId, parts, (ch: NormalizedUpdate) => {
-				if (!this.busy || this.state.sessionId !== sessionId) return;
+				if (this.genId !== currentGen || !this.busy || this.state.sessionId !== sessionId) return;
 				this.streamCtrl.handleChunk(ch);
 			});
 			if (response?.usage) {
@@ -682,7 +691,7 @@ export class CoOberViewController {
 	}
 
 	async stopGeneration(): Promise<void> {
-		const c = this.deps.plugin.getClient();
+		const c = this.deps.runtime.getClient();
 		if (!c || !this.state.sessionId || (!this.busy && !this.state.isStreaming)) return;
 		// Increment genId FIRST so the in-flight executeAgentCall's finally block
 		// skips stale state updates (busy=false, onFinally).
@@ -761,12 +770,12 @@ export class CoOberViewController {
 			}
 		}
 		const activeAgent = getValidActiveCustomAgent(
-			this.deps.plugin.settings.activeCustomAgentId,
-			this.deps.plugin.settings.customAgents,
-			this.deps.plugin.settings.customSkills,
+			this.deps.runtime.settings.activeCustomAgentId,
+			this.deps.runtime.settings.customAgents,
+			this.deps.runtime.settings.customSkills,
 		);
-		const customAgentPrompt = buildCustomAgentPrompt(activeAgent, this.deps.plugin.settings.customSkills);
-		const customInstructions = [this.deps.plugin.settings.systemPrompt, customAgentPrompt].filter(Boolean).join('\n\n');
+		const customAgentPrompt = buildCustomAgentPrompt(activeAgent, this.deps.runtime.settings.customSkills);
+		const customInstructions = [this.deps.runtime.settings.systemPrompt, customAgentPrompt].filter(Boolean).join('\n\n');
 		const sysPrompt = buildSystemPrompt(customInstructions);
 		const notesBlock = buildNotesBlock(resolved);
 		const combined = [sysPrompt, notesBlock].filter(Boolean).join('\n\n');
@@ -794,7 +803,7 @@ export class CoOberViewController {
 	// ── Toolbar sync ──
 
 	loadToolbarOptions(): void {
-		const c = this.deps.plugin.getClient();
+		const c = this.deps.runtime.getClient();
 		if (!c) return;
 
 		const snapshot = c.getSessionSnapshot();
@@ -821,18 +830,18 @@ export class CoOberViewController {
 
 		this.deps.toolbar.updateAgents(
 			agents,
-			snapshot.currentModeId ?? modeConfig?.currentValue ?? this.deps.plugin.settings.defaultAgent,
+			snapshot.currentModeId ?? modeConfig?.currentValue ?? this.deps.runtime.settings.defaultAgent,
 		);
 		this.deps.toolbar.updateModels(
 			models,
-			snapshot.currentModelId ?? modelConfig?.currentValue ?? this.deps.plugin.settings.defaultModel,
+			snapshot.currentModelId ?? modelConfig?.currentValue ?? this.deps.runtime.settings.defaultModel,
 		);
 		this.state.currentModelId = snapshot.currentModelId ?? modelConfig?.currentValue ?? null;
 		this.deps.toolbar.updateEffort(
 			efforts,
-			effortConfig?.currentValue ?? this.deps.plugin.settings.defaultEffort,
+			effortConfig?.currentValue ?? this.deps.runtime.settings.defaultEffort,
 		);
-		this.deps.toolbar.updatePermission(this.deps.plugin.settings.permissionMode);
+		this.deps.toolbar.updatePermission(this.deps.runtime.settings.permissionMode);
 	}
 
 	applyConfigOptions(opts: SessionConfigOption[]): void {
@@ -873,7 +882,7 @@ export class CoOberViewController {
 	}
 
 	filterCommonModelOptions(options: Array<{ value: string; label: string }>): Array<{ value: string; label: string }> {
-		return filterCommonModelOptions(options, this.deps.plugin.settings.commonModels, this.deps.plugin.settings.defaultModel);
+		return filterCommonModelOptions(options, this.deps.runtime.settings.commonModels, this.deps.runtime.settings.defaultModel);
 	}
 
 	// ── Reset ──

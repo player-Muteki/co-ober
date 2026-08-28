@@ -35,6 +35,7 @@ export class StreamController {
 	private syncedToolCalls = new Set<string>();
 	private assistantMessageIndex = new Map<string, number>();
 	private saveTimer: number | null = null;
+	private activeSave: Promise<void> | null = null;
 	private disposed = false;
 
 	// Track content block order for the current assistant message
@@ -55,12 +56,15 @@ export class StreamController {
 		this.deps = deps;
 	}
 
-	dispose(): void {
+	async dispose(): Promise<void> {
 		this.disposed = true;
 		if (this.saveTimer !== null) {
 			window.clearTimeout(this.saveTimer);
 			this.saveTimer = null;
+			await this.persist();
+			return;
 		}
+		await this.activeSave;
 	}
 
 	handleChunk(ch: NormalizedUpdate): void {
@@ -194,10 +198,6 @@ export class StreamController {
 		this.pendingToolBuffer = [];
 		this.currentContentBlocks = [];
 		this.deps.state.resetStreamingState();
-		if (this.saveTimer !== null) {
-			window.clearTimeout(this.saveTimer);
-			this.saveTimer = null;
-		}
 	}
 
 	/**
@@ -273,15 +273,20 @@ export class StreamController {
 		this.scheduleSave();
 	}
 
-	saveMessage(role: 'user' | 'assistant', content: string, type: string, contentBlocks?: Array<{ type: string; text?: string; toolCallId?: string }>): void {
+	saveMessage(
+		role: 'user' | 'assistant',
+		content: string,
+		type: 'text' | 'tool-call' | 'tool-result' | 'thinking',
+		contentBlocks?: ContentBlock[],
+	): void {
 		const sessionId = this.deps.getSessionId();
 		if (!sessionId) return;
 		this.deps.sessionStore.getOrCreate(sessionId);
 		this.deps.sessionStore.append(sessionId, {
 			role,
 			content,
-			type: type as 'text' | 'tool-call' | 'tool-result' | 'thinking',
-			contentBlocks: contentBlocks as any,
+			type,
+			contentBlocks,
 			timestamp: Date.now(),
 		});
 		this.deps.sessionStore.setActive(sessionId);
@@ -290,6 +295,20 @@ export class StreamController {
 
 	private scheduleSave(): void {
 		if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
-		this.saveTimer = window.setTimeout(() => { void this.deps.sessionStore.save(); }, STREAM_SAVE_DEBOUNCE_MS);
+		this.saveTimer = window.setTimeout(() => {
+			this.saveTimer = null;
+			void this.persist();
+		}, STREAM_SAVE_DEBOUNCE_MS);
+	}
+
+	private persist(): Promise<void> {
+		const save = this.deps.sessionStore.save().catch((error: unknown) => {
+			console.error('[co-ober] save session:', error);
+		});
+		this.activeSave = save;
+		void save.finally(() => {
+			if (this.activeSave === save) this.activeSave = null;
+		});
+		return save;
 	}
 }

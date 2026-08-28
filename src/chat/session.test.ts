@@ -1,150 +1,148 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createSessionStore } from './session';
-import type CoOberPlugin from '../main';
-import type { SerializedSession, SerializedMessage } from '../types';
+import { SessionRepository } from './session';
+import type { SerializedMessage, SerializedSession } from '../types';
 import { setLocale } from '../i18n/index';
 
-function createMockPlugin(): CoOberPlugin {
+function createSession(id: string, updatedAt = 1, messageCount = 0): SerializedSession {
   return {
-    sessions: new Map<string, SerializedSession>(),
-    activeSessionId: null,
-    savePluginData: vi.fn().mockResolvedValue(undefined),
-    loadPluginData: vi.fn().mockResolvedValue(undefined),
-  } as unknown as CoOberPlugin;
+    sessionId: id,
+    title: `Session ${id}`,
+    messages: Array.from({ length: messageCount }, (_, index) => ({
+      role: 'user',
+      content: `message ${index}`,
+      type: 'text',
+      timestamp: index,
+    })),
+    createdAt: 1,
+    updatedAt,
+  };
 }
 
-describe('SessionStore', () => {
-  it('should get an existing session', () => {
-    const plugin = createMockPlugin();
-    const store = createSessionStore(plugin);
-    const session: SerializedSession = {
-      sessionId: 's1',
-      title: 'Test',
-      messages: [],
-      createdAt: 1,
-      updatedAt: 1,
-    };
-    plugin.sessions.set('s1', session);
+function createRepository() {
+  const save = vi.fn().mockResolvedValue(undefined);
+  return { repository: new SessionRepository(save), save };
+}
 
-    expect(store.get('s1')).toBe(session);
-    expect(store.get('missing')).toBeUndefined();
+describe('SessionRepository', () => {
+  it('hydrates persisted sessions and active state', () => {
+    const { repository } = createRepository();
+    const session = createSession('s1');
+
+    repository.hydrate([session], 's1');
+
+    expect(repository.get('s1')).toBe(session);
+    expect(repository.activeId).toBe('s1');
   });
 
-  it('should create a new session via getOrCreate', () => {
+  it('creates localized sessions and makes them active', () => {
     setLocale('en');
-    const plugin = createMockPlugin();
-    const store = createSessionStore(plugin);
+    const { repository } = createRepository();
 
-    const session = store.getOrCreate('new-id');
+    const session = repository.getOrCreate('new-id');
 
     expect(session.sessionId).toBe('new-id');
     expect(session.title).toContain('Chat ');
     expect(session.messages).toEqual([]);
-    expect(plugin.sessions.has('new-id')).toBe(true);
-    expect(store.activeId).toBe('new-id');
-    expect(plugin.activeSessionId).toBe('new-id');
+    expect(repository.activeId).toBe('new-id');
   });
 
-  it('should localize new session titles', () => {
+  it('localizes new session titles', () => {
     setLocale('zh');
-    const plugin = createMockPlugin();
-    const store = createSessionStore(plugin);
+    const { repository } = createRepository();
 
-    const session = store.getOrCreate('zh-id');
-
-    expect(session.title).toContain('会话 ');
+    expect(repository.getOrCreate('zh-id').title).toContain('会话 ');
     setLocale('en');
   });
 
-  it('should return existing session via getOrCreate', () => {
-    const plugin = createMockPlugin();
-    const store = createSessionStore(plugin);
-    const existing = store.getOrCreate('same-id');
-    const again = store.getOrCreate('same-id');
+  it('returns an existing session without creating a duplicate', () => {
+    const { repository } = createRepository();
+    const existing = repository.getOrCreate('same-id');
 
-    expect(again).toBe(existing);
-    expect(plugin.sessions.size).toBe(1);
+    expect(repository.getOrCreate('same-id')).toBe(existing);
+    expect(repository.list()).toHaveLength(1);
   });
 
-  it('should append messages', () => {
-    const plugin = createMockPlugin();
-    const store = createSessionStore(plugin);
-    store.getOrCreate('s1');
-    const msg: SerializedMessage = { role: 'user', content: 'hi', type: 'text', timestamp: 1 };
+  it('appends messages and ignores unknown sessions', () => {
+    const { repository } = createRepository();
+    repository.getOrCreate('s1');
+    const message: SerializedMessage = { role: 'user', content: 'hi', type: 'text', timestamp: 1 };
 
-    store.append('s1', msg);
+    repository.append('s1', message);
 
-    const session = plugin.sessions.get('s1')!;
-    expect(session.messages).toHaveLength(1);
-    expect(session.messages[0].content).toBe('hi');
-    expect(session.updatedAt).toBeGreaterThan(0);
+    expect(repository.get('s1')?.messages).toEqual([message]);
+    expect(() => repository.append('missing', message)).not.toThrow();
   });
 
-  it('should not append to missing session', () => {
-    const plugin = createMockPlugin();
-    const store = createSessionStore(plugin);
-    const msg: SerializedMessage = { role: 'user', content: 'hi', type: 'text', timestamp: 1 };
+  it('lists session metadata and updates active state', () => {
+    const { repository } = createRepository();
+    repository.getOrCreate('s1');
+    repository.getOrCreate('s2');
+    repository.setActive('s1');
 
-    expect(() => store.append('missing', msg)).not.toThrow();
+    expect(repository.activeId).toBe('s1');
+    expect(repository.list()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sessionId: 's1' }),
+      expect.objectContaining({ sessionId: 's2' }),
+    ]));
   });
 
-  it('should set active session', () => {
-    const plugin = createMockPlugin();
-    const store = createSessionStore(plugin);
+  it('removes the active session and clears active state', () => {
+    const { repository } = createRepository();
+    repository.getOrCreate('s1');
+    repository.setActive('s1');
 
-    store.setActive('s1');
+    repository.remove('s1');
 
-    expect(store.activeId).toBe('s1');
-    expect(plugin.activeSessionId).toBe('s1');
+    expect(repository.get('s1')).toBeUndefined();
+    expect(repository.activeId).toBeNull();
   });
 
-  it('should list sessions as metadata', () => {
-    const plugin = createMockPlugin();
-    const store = createSessionStore(plugin);
-    store.getOrCreate('s1');
-    store.getOrCreate('s2');
+  it('does not reset active state when removing another session', () => {
+    const { repository } = createRepository();
+    repository.getOrCreate('s1');
+    repository.getOrCreate('s2');
+    repository.setActive('s1');
 
-    const list = store.list();
+    repository.remove('s2');
 
-    expect(list).toHaveLength(2);
-    expect(list[0]).toHaveProperty('sessionId');
-    expect(list[0]).toHaveProperty('title');
-    expect(list[0]).toHaveProperty('updatedAt');
+    expect(repository.activeId).toBe('s1');
   });
 
-  it('should save and load', async () => {
-    const plugin = createMockPlugin();
-    const store = createSessionStore(plugin);
+  it('returns persisted state through snapshots', () => {
+    const { repository } = createRepository();
+    const session = createSession('s1');
+    repository.hydrate([session], 's1');
 
-    await store.save();
-    expect(plugin.savePluginData).toHaveBeenCalled();
-
-    plugin.activeSessionId = 'loaded-id';
-    await store.load();
-    expect(store.activeId).toBe('loaded-id');
+    expect(repository.snapshot()).toEqual({
+      sessions: [session],
+      activeSessionId: 's1',
+    });
   });
 
-  it('should remove session', () => {
-    const plugin = createMockPlugin();
-    const store = createSessionStore(plugin);
-    store.getOrCreate('s1');
-    store.setActive('s1');
+  it('delegates saves to its persistence callback', async () => {
+    const { repository, save } = createRepository();
 
-    store.remove('s1');
+    await repository.save();
 
-    expect(plugin.sessions.has('s1')).toBe(false);
-    expect(store.activeId).toBeNull();
+    expect(save).toHaveBeenCalledOnce();
   });
 
-  it('should not reset activeId when removing non-active session', () => {
-    const plugin = createMockPlugin();
-    const store = createSessionStore(plugin);
-    store.getOrCreate('s1');
-    store.getOrCreate('s2');
-    store.setActive('s1');
+  it('prunes expired inactive sessions and truncates long histories', () => {
+    const { repository } = createRepository();
+    const now = 100 * 24 * 60 * 60 * 1000;
+    repository.hydrate([
+      createSession('active', now, 6),
+      createSession('expired', now - 31 * 24 * 60 * 60 * 1000),
+    ], 'active');
 
-    store.remove('s2');
+    repository.prune({ maxMessages: 4, retentionDays: 30, now });
 
-    expect(store.activeId).toBe('s1');
+    expect(repository.get('expired')).toBeUndefined();
+    expect(repository.get('active')?.messages).toEqual([
+      expect.objectContaining({ content: 'message 0' }),
+      expect.objectContaining({ type: 'text', role: 'system', content: '[3 earlier messages truncated]' }),
+      expect.objectContaining({ content: 'message 4' }),
+      expect.objectContaining({ content: 'message 5' }),
+    ]);
   });
 });

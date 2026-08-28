@@ -2,17 +2,25 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { CoOberViewController } from './CoOberViewController';
 import type { ControllerCallbacks, ControllerDeps } from './CoOberViewController';
-import type { ContextRef } from '../types';
+import type { AcpResponse, ContextRef, NormalizedUpdate, PromptPart } from '../types';
 import { setLocale } from '../i18n/index';
 
 setLocale('en');
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((resolvePromise) => {
+		resolve = resolvePromise;
+	});
+	return { promise, resolve };
+}
 
 function createMockDeps(overrides: Partial<ControllerDeps> = {}): ControllerDeps {
 	const noop = vi.fn();
 	return {
 		renderer: {
 			clear: noop, addUserMessage: noop, addAssistantPlaceholder: noop, removeAssistantPlaceholder: noop,
-			appendText: noop, appendThinking: noop, appendInterruptIndicator: noop,
+			appendText: noop, appendThinking: noop, finalizeCurrentThinking: noop, appendInterruptIndicator: noop,
 			flushTextRender: vi.fn().mockResolvedValue(undefined),
 			addError: noop, showUsage: noop, forceScrollToBottom: noop,
 			addToolCall: noop, updateToolCall: noop, setPlanEntries: noop,
@@ -29,8 +37,7 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): ControllerDeps
 			sessions: new Map(), activeId: null,
 		} as unknown as ControllerDeps['sessionStore'],
 		welcomeView: { show: noop, hide: noop, updateStatus: noop } as unknown as ControllerDeps['welcomeView'],
-		plugin: {
-			app: { vault: { adapter: { getBasePath: () => '/vault' } } },
+		runtime: {
 			settings: {
 				maxNoteSize: 8000, syncRules: [], mcpServers: [], defaultAgent: 'build', defaultModel: '',
 				defaultEffort: 'default', systemPrompt: '', customAgents: [], customSkills: [],
@@ -38,7 +45,8 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): ControllerDeps
 			},
 			getClient: vi.fn(() => null),
 			initClient: vi.fn().mockResolvedValue(false),
-		} as unknown as ControllerDeps['plugin'],
+			getVaultCwd: vi.fn(() => '/vault'),
+		} as unknown as ControllerDeps['runtime'],
 		updateContextMeter: noop,
 		...overrides,
 	};
@@ -101,7 +109,7 @@ describe('CoOberViewController', () => {
 	describe('ensureClientConnected', () => {
 		it('returns true if client already connected', async () => {
 			const client = createMockClient();
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
 
 			const result = await controller.ensureClientConnected();
 
@@ -113,21 +121,21 @@ describe('CoOberViewController', () => {
 
 		it('initializes client when not connected', async () => {
 			const client = createMockClient();
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>)
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>)
 				.mockReturnValueOnce(null)
 				.mockReturnValue(client);
-			(deps.plugin.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+			(deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
 
 			const result = await controller.ensureClientConnected();
 
 			expect(result).toBe(true);
-			expect(deps.plugin.initClient).toHaveBeenCalled();
+			expect(deps.runtime.initClient).toHaveBeenCalled();
 			expect(controller.state.isConnected).toBe(true);
 		});
 
 		it('returns false and shows reconnect on init failure', async () => {
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(null);
-			(deps.plugin.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(null);
+			(deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(false);
 
 			const result = await controller.ensureClientConnected();
 
@@ -154,8 +162,8 @@ describe('CoOberViewController', () => {
 	describe('reconnect', () => {
 		it('succeeds and hides reconnect button', async () => {
 			const client = createMockClient();
-			(deps.plugin.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
 
 			await controller.reconnect();
 
@@ -165,7 +173,7 @@ describe('CoOberViewController', () => {
 		});
 
 		it('throws on failure', async () => {
-			(deps.plugin.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+			(deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(false);
 
 			await expect(controller.reconnect()).rejects.toThrow();
 		});
@@ -174,12 +182,12 @@ describe('CoOberViewController', () => {
 	describe('syncRuntimeSession', () => {
 		it('does nothing for null session', async () => {
 			await controller.syncRuntimeSession(null);
-			expect(deps.plugin.getClient).not.toHaveBeenCalled();
+			expect(deps.runtime.getClient).not.toHaveBeenCalled();
 		});
 
 		it('loads session when different from current', async () => {
 			const client = createMockClient({ getCurrentSessionId: vi.fn(() => 'other') });
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
 
 			await controller.syncRuntimeSession('test-session');
 
@@ -188,7 +196,7 @@ describe('CoOberViewController', () => {
 
 		it('skips load when session already current', async () => {
 			const client = createMockClient({ getCurrentSessionId: vi.fn(() => 'same') });
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
 
 			await controller.syncRuntimeSession('same');
 
@@ -196,10 +204,28 @@ describe('CoOberViewController', () => {
 		});
 	});
 
+	describe('client permission handling', () => {
+		it('rejects when a non-safe client has no permission callback', async () => {
+			const client = createMockClient({ permissionMode: 'plan', requestPermission: undefined });
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+			controller.bindClientHandlers();
+			const handlers = (client.setClientHandlers as ReturnType<typeof vi.fn>).mock.calls[0][0];
+			const decision = await handlers.onPermissionRequest({
+				options: [
+					{ optionId: 'allow', kind: 'allow_once' },
+					{ optionId: 'reject', kind: 'reject_once' },
+				],
+			} as never);
+
+			expect(decision).toBe('reject');
+		});
+	});
+
 	describe('newSession', () => {
 		it('creates session and updates state', async () => {
 			const client = createMockClient();
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
 
 			await controller.newSession();
 
@@ -212,8 +238,8 @@ describe('CoOberViewController', () => {
 		});
 
 		it('does nothing when client fails to connect', async () => {
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(null);
-			(deps.plugin.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(null);
+			(deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(false);
 
 			await controller.newSession();
 
@@ -248,8 +274,8 @@ describe('CoOberViewController', () => {
 	describe('send', () => {
 		it('reuses existing session for subsequent sends', async () => {
 			const client = createMockClient();
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
-			(deps.plugin.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
 
 			await controller.send('first', []);
 			await controller.send('second', []);
@@ -260,7 +286,7 @@ describe('CoOberViewController', () => {
 
 		it('queues prompt when busy', async () => {
 			const client = createMockClient();
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
 
 			// Manually set busy
 			Reflect.set(controller, 'busy', true);
@@ -278,8 +304,8 @@ describe('CoOberViewController', () => {
 
 		it('sends message and processes response', async () => {
 			const client = createMockClient();
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
-			(deps.plugin.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
 
 			await controller.send('hello', []);
 
@@ -291,10 +317,59 @@ describe('CoOberViewController', () => {
 			expect(controller.isBusy()).toBe(false);
 		});
 
+		it('ignores late updates from a cancelled request after a new request starts', async () => {
+			const firstResponse = deferred<AcpResponse>();
+			const secondResponse = deferred<AcpResponse>();
+			let firstHandler: ((update: NormalizedUpdate) => void) | undefined;
+			let secondHandler: ((update: NormalizedUpdate) => void) | undefined;
+			const client = createMockClient({
+				sendMessage: vi.fn()
+					.mockImplementationOnce(async (_id: string, _parts: PromptPart[], handler: (update: NormalizedUpdate) => void) => {
+						firstHandler = handler;
+						return firstResponse.promise;
+					})
+					.mockImplementationOnce(async (_id: string, _parts: PromptPart[], handler: (update: NormalizedUpdate) => void) => {
+						secondHandler = handler;
+						return secondResponse.promise;
+					}),
+			});
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+			const appendText = vi.fn();
+			deps.renderer.appendText = appendText;
+
+			const firstSend = controller.send('first', []);
+			await vi.waitFor(() => expect(firstHandler).toBeDefined());
+			await controller.stopGeneration();
+			const secondSend = controller.send('second', []);
+			await vi.waitFor(() => expect(secondHandler).toBeDefined());
+
+			firstHandler?.({
+				kind: 'message_chunk',
+				role: 'agent',
+				messageId: 'late-message',
+				chunkText: 'late',
+				accumulatedText: 'late',
+			});
+			secondHandler?.({
+				kind: 'message_chunk',
+				role: 'agent',
+				messageId: 'current-message',
+				chunkText: 'current',
+				accumulatedText: 'current',
+			});
+			expect(appendText).toHaveBeenCalledTimes(1);
+			expect(appendText).toHaveBeenCalledWith('current', 'current-message');
+
+			firstResponse.resolve({ stopReason: 'interrupted' });
+			secondResponse.resolve({ stopReason: 'end_turn' });
+			await Promise.all([firstSend, secondSend]);
+		});
+
 		it('sends /compact through ACP prompt (not local interception)', async () => {
 			const client = createMockClient();
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
-			(deps.plugin.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
 
 			await controller.send('/compact', []);
 
@@ -305,8 +380,8 @@ describe('CoOberViewController', () => {
 			const client = createMockClient({
 				sendMessage: vi.fn().mockRejectedValue(new Error('network error')),
 			});
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
-			(deps.plugin.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
 
 			await controller.send('hello', []);
 
@@ -318,7 +393,7 @@ describe('CoOberViewController', () => {
 	describe('stopGeneration', () => {
 		it('does nothing when not busy', async () => {
 			const client = createMockClient();
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
 			controller.state.sessionId = 'test';
 
 			await controller.stopGeneration();
@@ -328,7 +403,7 @@ describe('CoOberViewController', () => {
 
 		it('cancels when busy', async () => {
 			const client = createMockClient();
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
 			controller.state.sessionId = 'test-session';
 			// Simulate busy state by calling send which sets busy internally
 			// We need to intercept during the send, so set busy directly
@@ -346,7 +421,7 @@ describe('CoOberViewController', () => {
 	describe('switchSession', () => {
 		it('switches session and restores messages', async () => {
 			const client = createMockClient();
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
 			(deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue({
 				messages: [{ role: 'user', content: 'old msg', type: 'text', timestamp: 1000 }],
 			});
@@ -363,7 +438,7 @@ describe('CoOberViewController', () => {
 	describe('deleteSession', () => {
 		it('removes session from store', async () => {
 			const client = createMockClient();
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
 
 			await controller.deleteSession('other-session');
 
@@ -372,7 +447,7 @@ describe('CoOberViewController', () => {
 
 		it('creates new session when deleting active', async () => {
 			const client = createMockClient();
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
 			controller.state.sessionId = 'active-session';
 
 			await controller.deleteSession('active-session');
@@ -385,7 +460,7 @@ describe('CoOberViewController', () => {
 	describe('forkSession', () => {
 		it('forks session and updates state', async () => {
 			const client = createMockClient();
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
 
 			await controller.forkSession('source-session');
 
@@ -398,7 +473,7 @@ describe('CoOberViewController', () => {
 	describe('resumeSession', () => {
 		it('resumes session and updates state', async () => {
 			const client = createMockClient();
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
 
 			await controller.resumeSession('paused-session');
 
@@ -410,7 +485,7 @@ describe('CoOberViewController', () => {
 
 	describe('loadToolbarOptions', () => {
 		it('does nothing without client', () => {
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(null);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(null);
 			controller.loadToolbarOptions();
 			expect(deps.toolbar.updateAgents).not.toHaveBeenCalled();
 		});
@@ -430,7 +505,7 @@ describe('CoOberViewController', () => {
 					currentModeId: 'build',
 				})),
 			});
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
 
 			controller.loadToolbarOptions();
 
@@ -478,8 +553,8 @@ describe('CoOberViewController', () => {
 	describe('sendTextToAgent', () => {
 		it('completes successfully without adding user message', async () => {
 			const client = createMockClient();
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
-			(deps.plugin.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
 			const fn = Reflect.get(controller, 'sendTextToAgent') as (text: string, refs?: ContextRef[]) => Promise<void>;
 
 			await fn.call(controller, 'silent msg');
@@ -490,8 +565,8 @@ describe('CoOberViewController', () => {
 
 		it('uses buildPartsWithRefs when refs provided', async () => {
 			const client = createMockClient();
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
-			(deps.plugin.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
 			const refs: ContextRef[] = [{ id: 'n1', type: 'note', name: 'note.md', path: 'note.md' }];
 			(deps.resolver.resolveNote as ReturnType<typeof vi.fn>).mockResolvedValue({ name: 'note.md', content: 'note content' });
 			const fn = Reflect.get(controller, 'sendTextToAgent') as (text: string, refs?: ContextRef[]) => Promise<void>;
@@ -504,7 +579,7 @@ describe('CoOberViewController', () => {
 
 		it('sends plain text part when no refs', async () => {
 			const client = createMockClient();
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
 			const fn = Reflect.get(controller, 'sendTextToAgent') as (text: string, refs?: ContextRef[]) => Promise<void>;
 
 			await fn.call(controller, 'plain text', []);
@@ -517,7 +592,7 @@ describe('CoOberViewController', () => {
 			const client = createMockClient({
 				sendMessage: vi.fn().mockRejectedValue(new Error('send error')),
 			});
-			(deps.plugin.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
 			const fn = Reflect.get(controller, 'sendTextToAgent') as (text: string, refs?: ContextRef[]) => Promise<void>;
 
 			await fn.call(controller, 'failing msg');

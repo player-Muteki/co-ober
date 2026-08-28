@@ -1,5 +1,5 @@
 import { Setting, Notice } from 'obsidian';
-import type { CustomAgentDefinition, CustomSkillDefinition, SyncRule, McpServerConfig, ModelOption, CoOberSettings } from '../types';
+import type { AgentCapabilities, CustomAgentDefinition, CustomSkillDefinition, SyncRule, McpServerConfig, ModelOption, CoOberSettings } from '../types';
 import type { Locale } from '../i18n/index';
 import { t as locale } from '../i18n/index';
 
@@ -131,7 +131,7 @@ export function addCommonModelToggle(containerEl: HTMLElement, model: ModelOptio
         }));
   }
 
-export function addMcpServerBlock(containerEl: HTMLElement, server: McpServerConfig, settings: CoOberSettings, save: () => Promise<void>, render: () => void, mcpCapabilities: any): void {
+export function addMcpServerBlock(containerEl: HTMLElement, server: McpServerConfig, settings: CoOberSettings, save: () => Promise<void>, render: () => void, mcpCapabilities: AgentCapabilities['mcpCapabilities']): void {
     const labels = locale().settings.mcp;
     const block = containerEl.createDiv({ cls: 'co-ober-mcp-server' });
     block.createEl('strong', { text: labels.label.replace('{name}', server.name || labels.unnamed) });
@@ -376,4 +376,4 @@ export function renameCustomSkill(currentId: string, nextId: string, settings: C
       agent.skillIds = agent.skillIds.map((id) => id === currentId ? nextId : id);
     }
     return true;
-  }
+  }

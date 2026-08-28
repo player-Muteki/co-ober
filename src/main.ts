@@ -4,19 +4,20 @@ import { AcpClient } from './client/acp';
 import { CoOberView } from './view/CoOberView';
 import { CoOberSettingsTab } from './settings';
 import { DEFAULT_SETTINGS, VIEW_TYPE } from './types';
-import type { CoOberSettings, SerializedSession, SerializedMessage, PluginData } from './types';
+import type { CoOberSettings, PluginData } from './types';
 import { getVaultPath } from './utils/vault';
 import { setLocale, t } from './i18n/index';
-import { MS_PER_DAY } from './constants';
+import { Mutex } from './utils/mutex';
+import { SessionRepository } from './chat/session';
 
 export default class CoOberPlugin extends Plugin {
   settings: CoOberSettings = DEFAULT_SETTINGS;
   client: AgentRuntime | null = null;
-  sessions: Map<string, SerializedSession> = new Map();
-  activeSessionId: string | null = null;
+  readonly sessionStore = new SessionRepository(() => this.savePluginData());
   private clientReadyResolvers: Array<(ready: boolean) => void> = [];
   private _clientReady = false;
   private connecting: Promise<boolean> | null = null;
+  private readonly saveMutex = new Mutex();
 
   /** Resolves when the first successful connection is established. */
   waitForClient(): Promise<boolean> {
@@ -82,63 +83,32 @@ export default class CoOberPlugin extends Plugin {
   }
 
   private buildPluginData(): PluginData {
+    const sessionState = this.sessionStore.snapshot();
     return {
       settings: this.settings,
-      sessions: [...this.sessions.values()],
-      activeSessionId: this.activeSessionId,
+      ...sessionState,
     };
   }
 
   async savePluginData(): Promise<void> {
-    // Defer prune so it doesn't block the save IO.
-    setTimeout(() => this.pruneSessions(), 0);
-    await super.saveData(this.buildPluginData());
-  }
-
-  private pruneSessions(): void {
-    const maxMessages = this.settings.maxSessionMessages ?? 200;
-    const retentionDays = this.settings.sessionRetentionDays ?? 30;
-    const cutoffTime = Date.now() - retentionDays * MS_PER_DAY;
-
-    const activeId = this.activeSessionId;
-    for (const [id, session] of this.sessions) {
-      // Remove old sessions (even with messages if past retention)
-      if (id !== activeId && session.updatedAt < cutoffTime) {
-        this.sessions.delete(id);
-        continue;
-      }
-
-      // Truncate large sessions
-      if (session.messages.length > maxMessages) {
-        const keepCount = Math.floor(maxMessages / 2);
-        const truncated: SerializedMessage[] = [
-          ...session.messages.slice(0, keepCount),
-          {
-            role: 'system',
-            content: `[${session.messages.length - keepCount * 2} earlier messages truncated]`,
-            type: 'text',
-            timestamp: session.messages[keepCount]?.timestamp ?? Date.now(),
-          },
-          ...session.messages.slice(-keepCount),
-        ];
-        session.messages = truncated;
-      }
-    }
+    await this.saveMutex.runExclusive(async () => {
+      this.sessionStore.prune({
+        maxMessages: this.settings.maxSessionMessages ?? 200,
+        retentionDays: this.settings.sessionRetentionDays ?? 30,
+      });
+      await super.saveData(this.buildPluginData());
+    });
   }
 
   async loadPluginData(): Promise<void> {
     this.settings = DEFAULT_SETTINGS;
-    this.sessions.clear();
-    this.activeSessionId = null;
+    this.sessionStore.hydrate([], null);
 
     const pluginData = await this.loadData();
     if (!pluginData) return;
 
     this.settings = { ...DEFAULT_SETTINGS, ...(pluginData.settings ?? {}) };
-    for (const s of (pluginData.sessions ?? [])) {
-      this.sessions.set(s.sessionId, s);
-    }
-    this.activeSessionId = pluginData.activeSessionId ?? null;
+    this.sessionStore.hydrate(pluginData.sessions ?? [], pluginData.activeSessionId ?? null);
   }
 
   // ── Client ──
@@ -216,4 +186,6 @@ export default class CoOberPlugin extends Plugin {
   }
 
   getClient(): AgentRuntime | null { return this.client; }
+
+  getVaultCwd(): string { return getVaultPath(this.app); }
 }

@@ -1,3 +1,14 @@
+## 0.1.26 - 2026-08-28
+
+### Fixed
+- **Session persistence races**: serialized plugin-data writes, guarded stale stream callbacks, and flush pending stream saves during view shutdown so recent messages are not lost.
+- **Permission fallback safety**: clients without a permission callback now select a rejection option rather than inadvertently allowing an operation.
+
+### Changed
+- **Session ownership**: moved persisted sessions and active-session state into `SessionRepository`, with explicit hydrate, snapshot, and pruning behavior.
+- **Controller boundary**: `CoOberViewController` now depends on a minimal runtime port instead of the concrete plugin class.
+- **Quality gate**: CI runs tests, and lint now requires zero warnings; MCP capability settings use the precise agent capability type.
+
 ## 0.1.25 - 2026-06-19
 
 ### Fixed

@@ -6,6 +6,7 @@ import type { ControllerCallbacks, ControllerDeps } from './CoOberViewController
 import { setLocale } from '../i18n/index';
 import { installObsidianDomHelpers } from '../test/domHelpers';
 import type CoOberPlugin from '../main';
+import { SessionRepository } from '../chat/session';
 
 installObsidianDomHelpers();
 
@@ -111,9 +112,9 @@ describe('CoOberView runtime session sync', () => {
       loadSession: vi.fn().mockResolvedValue(undefined),
     };
     const plugin = {
-      app: { vault: { adapter: { getBasePath: () => '/vault' } } },
       settings: { maxNoteSize: 8000, syncRules: [], mcpServers },
       getClient: () => client,
+      getVaultCwd: () => '/vault',
     } as unknown as CoOberPlugin;
 
     const controller = createController(plugin);
@@ -157,7 +158,7 @@ function createController(plugin: CoOberPlugin): CoOberViewController {
       sessions: new Map(), activeId: null,
     } as unknown as ControllerDeps['sessionStore'],
     welcomeView: { show: noop, hide: noop, updateStatus: noop } as unknown as ControllerDeps['welcomeView'],
-    plugin,
+		runtime: plugin,
     updateContextMeter: noop,
   };
   const callbacks: ControllerCallbacks = {
@@ -174,7 +175,7 @@ function createPlugin(overrides: {
   settings?: Record<string, unknown>;
 } = {}): CoOberPlugin {
   const client = overrides.client ?? null;
-  return {
+  const plugin = {
     app: {
       vault: { adapter: { getBasePath: () => '/vault' }, getMarkdownFiles: vi.fn(() => []) },
       workspace: {
@@ -198,14 +199,17 @@ function createPlugin(overrides: {
       autoScrollEnabled: true,
       ...(overrides.settings ?? {}),
     },
-    sessions: new Map(),
-    activeSessionId: null,
     loadPluginData: vi.fn().mockResolvedValue(undefined),
     savePluginData: vi.fn().mockResolvedValue(undefined),
     waitForClient: vi.fn().mockResolvedValue(false),
     initClient: overrides.initClient ?? vi.fn().mockResolvedValue(Boolean(client)),
     getClient: vi.fn(() => client),
+    getVaultCwd: vi.fn(() => '/vault'),
   } as unknown as CoOberPlugin;
+  Object.assign(plugin, {
+    sessionStore: new SessionRepository(() => plugin.savePluginData()),
+  });
+  return plugin;
 }
 
 function createClient() {

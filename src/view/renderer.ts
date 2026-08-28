@@ -1,7 +1,7 @@
 import type { App } from 'obsidian';
 import { MarkdownRenderer, type Component } from 'obsidian';
 import { t, onLocaleChange } from '../i18n/index';
-import type { UsageInfo, ContentBlock, SerializedMessage } from '../types';
+import type { UsageInfo, ContentBlock, SerializedMessage, ToolCallContent } from '../types';
 import { COPY_BUTTON_RESET_MS } from '../constants';
 import {
   renderLiveThinkingBlock,
@@ -460,7 +460,7 @@ export class ChatRenderer {
     id: string,
     status: string,
     rawOutput?: Record<string, unknown>,
-    content?: Array<{ type: string; content?: { type: string; text?: string }; path?: string; oldText?: string; newText?: string }>,
+    content?: ToolCallContent[],
     rawInput?: Record<string, unknown>,
     locations?: { path: string }[],
     kind?: string,
@@ -471,7 +471,7 @@ export class ChatRenderer {
       this.scheduleToolRender(id, () => {
         updateToolCallElement(
           toolState, status, kind ?? toolState.kindEl.textContent?.toLowerCase() ?? '',
-          rawOutput, content as any, rawInput, locations,
+          rawOutput, content, rawInput, locations,
         );
         this.scrollToBottom();
       });
@@ -509,7 +509,7 @@ export class ChatRenderer {
             else if (oldLines[i] !== newLines[i]) { added++; removed++; }
           }
           this.renderLegacyDiff(body, item.oldText, item.newText);
-        } else if (item.type === 'content' && item.content?.text) {
+        } else if (item.type === 'content' && item.content.type === 'text') {
           body.createDiv({ text: item.content.text });
         }
       }

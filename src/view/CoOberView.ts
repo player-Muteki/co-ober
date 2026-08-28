@@ -16,7 +16,6 @@ import type { UsageInfo } from '../types';
 import { ContextMention } from '../context/mention';
 import { ContextResolver } from '../context/resolver';
 import { SyncEngine } from '../sync/engine';
-import { createSessionStore } from '../chat/session';
 import type { SessionStore } from '../chat/session';
 import { SessionDropdown } from './sessionDropdown';
 import { commandRegistry } from '../commands/registry';
@@ -92,15 +91,14 @@ export class CoOberView extends ItemView {
 		this.mention = new ContextMention(this.plugin.app);
 		this.resolver = new ContextResolver(this.plugin.app.vault, this.plugin.settings.maxNoteSize);
 		this.syncEngine = new SyncEngine(this.plugin.app.vault, this.plugin.settings.syncRules);
-		this.sessionStore = createSessionStore(this.plugin);
-		await this.sessionStore.load();
+		this.sessionStore = this.plugin.sessionStore;
 
 		// Register file-based commands from .opencode/commands/*.md
 		const fileStorage = new FileCommandStorage(this.plugin.app.vault);
 		commandRegistry.registerSource(fileStorage);
 
 		// Restore active session
-		const savedId = this.plugin.activeSessionId;
+		const savedId = this.sessionStore.activeId;
 		if (savedId) {
 			const saved = this.sessionStore.get(savedId);
 			if (saved) {
@@ -229,7 +227,7 @@ export class CoOberView extends ItemView {
 			syncEngine: this.syncEngine,
 			sessionStore: this.sessionStore,
 			welcomeView: this.welcomeView,
-			plugin: this.plugin,
+			runtime: this.plugin,
 			updateContextMeter: (usage) => this.updateContextMeter(usage),
 		};
 
@@ -365,7 +363,7 @@ export class CoOberView extends ItemView {
 
 	override async onClose(): Promise<void> {
 		await this.controller?.stopGeneration();
-		this.controller?.dispose();
+		await this.controller?.dispose();
 		this.input?.dispose();
 		this.toolbar?.dispose();
 		this.permissionBanner?.dispose();

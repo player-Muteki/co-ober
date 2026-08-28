@@ -25,6 +25,12 @@ export class Component {}
 
 export class Plugin extends Component {
   app: unknown;
+
+  async loadData(): Promise<unknown> {
+    return null;
+  }
+
+  async saveData(_data: unknown): Promise<void> {}
 }
 
 export class ItemView extends Component {
