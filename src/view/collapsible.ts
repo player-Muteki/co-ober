@@ -13,7 +13,6 @@
  * @since Phase 1 (refactored)
  */
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface CollapsibleState {
   isExpanded: boolean;
 }

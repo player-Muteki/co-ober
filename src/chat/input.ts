@@ -50,7 +50,7 @@ export class ChatInput {
       const startH = container.offsetHeight;
       this.resizeHandle.addClass('dragging');
       const onMove = (ev: MouseEvent) => {
-        container.style.height = Math.min(400, Math.max(144, startH + startY - ev.clientY)) + 'px';
+        container.setCssProps({ height: `${Math.min(400, Math.max(144, startH + startY - ev.clientY))}px` });
       };
       const onUp = () => {
         this.resizeHandle.removeClass('dragging');
