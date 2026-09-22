@@ -30,6 +30,7 @@ import { Mutex } from '../utils/mutex';
 import type { WelcomeView } from './welcomeView';
 import type { PermissionBanner } from './permissionBanner';
 import type { InlineEditPanel } from './inlineEditPanel';
+import type { SideChatAsk } from './sideChatPanel';
 import { buildSystemPrompt } from '../context/injection';
 import { expandWikilinkRefs } from '../context/wikilinks';
 import { buildHistoryBlock } from '../context/historyRewind';
@@ -62,6 +63,10 @@ export interface ControllerCallbacks {
   onAutoRefActiveFile(): void;
   /** Open the session dropdown (used by /resume without arguments). */
   onOpenSessions?(): void;
+  /** Show the side-chat panel wired to a questioner for the forked session. */
+  onOpenSideChat?(ask: SideChatAsk, question: string): void;
+  /** Hide the side-chat panel (main session was switched or reset). */
+  onCloseSideChat?(): void;
 }
 
 export interface ControllerRuntime {
@@ -97,6 +102,7 @@ export class CoOberViewController {
   private genId = 0;
   private unsubscribeLocale: (() => void) | null = null;
   private promptQueue: Array<{ text: string; refs: ContextRef[] }> = [];
+  private sideChatSessionId: string | null = null;
   queueIndicatorEl: HTMLDivElement | null = null;
 
   constructor(
@@ -234,6 +240,19 @@ export class CoOberViewController {
       },
     });
     registry.registerBuiltin({
+      id: 'btw',
+      trigger: 'btw',
+      title: t().slashTitles.btw,
+      description: t().slash.btw,
+      argumentHint: '[question]',
+      category: 'session',
+      source: 'builtin',
+      enabled: () => caps()?.sessionCapabilities?.fork ?? false,
+      run: async (args: string) => {
+        await this.startSideChat(args.trim());
+      },
+    });
+    registry.registerBuiltin({
       id: 'export',
       trigger: 'export',
       title: t().slashTitles.export,
@@ -322,6 +341,7 @@ export class CoOberViewController {
   async dispose(): Promise<void> {
     this.unsubscribeLocale?.();
     this.unsubscribeLocale = null;
+    this.endSideChat();
     await this.streamCtrl.dispose();
     this.noteContentCache.clear();
     this.cacheSessionId = null;
@@ -663,8 +683,61 @@ export class CoOberViewController {
     }
   }
 
-  async resumeSession(sessionId: string): Promise<void> {
+  // ── Side chat (/btw) ──
+
+  /**
+   * Fork the current conversation into a scratch thread and hand a bound
+   * questioner to the view's side-chat panel. The main session is never
+   * touched: no transcript, store or toolbar state changes here.
+   */
+  async startSideChat(question: string): Promise<void> {
     const client = this.deps.runtime.getClient();
+    if (!client) {
+      this.deps.renderer.addError(t().sideChat.notConnected);
+      return;
+    }
+    if (client.getAgentCapabilities?.()?.sessionCapabilities?.fork !== true) {
+      this.deps.renderer.addError(t().sideChat.forkUnsupported);
+      return;
+    }
+    if (this.busy) {
+      this.deps.renderer.addSystemMessage(t().sideChat.busy);
+      return;
+    }
+    try {
+      if (!this.sideChatSessionId) {
+        const parent = await this.ensureRuntimeSession();
+        if (!parent) return;
+        this.sideChatSessionId = await client.forkSession(parent, this.getVaultCwd());
+      }
+      this.callbacks.onOpenSideChat?.(this.buildSideChatAsk(), question);
+    } catch (e) {
+      console.error('[co-ober] side chat fork:', e);
+      this.deps.renderer.addError(t().sideChat.failed.replace('{error}', e instanceof Error ? e.message : String(e)));
+    }
+  }
+
+  private buildSideChatAsk(): SideChatAsk {
+    return async (text, onChunk) => {
+      const client = this.deps.runtime.getClient();
+      const sideId = this.sideChatSessionId;
+      if (!client || !sideId) throw new Error(t().sideChat.notConnected);
+      return client.sendMessage(sideId, [{ type: 'text', text }], onChunk);
+    };
+  }
+
+  /** Close and release the side session; the panel's onClose hook calls this. */
+  endSideChat(): void {
+    const sideId = this.sideChatSessionId;
+    this.sideChatSessionId = null;
+    if (!sideId) return;
+    const client = this.deps.runtime.getClient();
+    if (client?.getAgentCapabilities?.()?.sessionCapabilities?.close) {
+      void client.closeSession(sideId).catch((e) => console.error('[co-ober] close side session:', e));
+    }
+  }
+
+  async resumeSession(sessionId: string): Promise<void> {    const client = this.deps.runtime.getClient();
     if (!client) return;
     const collector = new SessionReplayCollector();
     await client.resumeSession(sessionId, this.getVaultCwd(), (u) => collector.handle(u));
@@ -1392,6 +1465,8 @@ export class CoOberViewController {
   resetConversationView(): void {
     this.deps.inlineEditPanel.clearState();
     this.deps.permissionBanner.dismiss();
+    this.endSideChat();
+    this.callbacks.onCloseSideChat?.();
     this.deps.welcomeView.hide();
     this.deps.renderer.clear();
     this.streamCtrl.reset();

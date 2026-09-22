@@ -26,6 +26,7 @@ import { Autocomplete } from './autocomplete';
 import { DragDropManager } from './dragDropManager';
 import { PermissionBanner } from './permissionBanner';
 import { InlineEditPanel } from './inlineEditPanel';
+import { SideChatPanel, type SideChatAsk } from './sideChatPanel';
 import { WelcomeView } from './welcomeView';
 import { KeybindingManager } from './keybindingManager';
 import { CoOberViewController } from './CoOberViewController';
@@ -61,6 +62,7 @@ export class CoOberView extends ItemView {
   private permissionBanner!: PermissionBanner;
   private fileCommandSource: FileCommandStorage | null = null;
   private inlineEditPanel!: InlineEditPanel;
+  private sideChatPanel: SideChatPanel | null = null;
   private pendingImageParts: PromptPart[] = [];
   private lastAutoRefId: string | null = null;
   private headerTitleEl: HTMLDivElement | null = null;
@@ -298,6 +300,8 @@ export class CoOberView extends ItemView {
       onOpenSessions: () => {
         void this.toggleSessions();
       },
+      onOpenSideChat: (ask, question) => this.showSideChat(ask, question),
+      onCloseSideChat: () => this.sideChatPanel?.close(),
     };
 
     this.controller = new CoOberViewController(deps, callbacks);
@@ -443,6 +447,8 @@ export class CoOberView extends ItemView {
     this.permissionBanner?.dispose();
     this.welcomeView?.dispose();
     this.inlineEditPanel?.dispose();
+    this.sideChatPanel?.close();
+    this.sideChatPanel = null;
     this.renderer?.dispose();
     this.closeSessionDropdown();
     this.closeAutocomplete();
@@ -531,6 +537,22 @@ export class CoOberView extends ItemView {
   }
 
   // ── Reconnect button (view-owned DOM) ──
+
+  /** Lazily mount the /btw side-chat panel and forward the question to it. */
+  private showSideChat(ask: SideChatAsk, question: string): void {
+    if (!this.sideChatPanel) {
+      this.sideChatPanel = new SideChatPanel({
+        containerEl: this.contentEl,
+        ask,
+        isMainBusy: () => this.controller.isBusy(),
+        onClose: () => {
+          this.sideChatPanel = null;
+          void this.controller.endSideChat();
+        },
+      });
+    }
+    this.sideChatPanel.open(question);
+  }
 
   private showReconnectBtn(): void {
     if (this.reconnectBtn) return;

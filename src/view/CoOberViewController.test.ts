@@ -148,6 +148,8 @@ function createMockCallbacks(): ControllerCallbacks {
     getPendingImageParts: () => [],
     onClearPendingImageChips: vi.fn(),
     onAutoRefActiveFile: vi.fn(),
+    onOpenSideChat: vi.fn(),
+    onCloseSideChat: vi.fn(),
   };
 }
 
@@ -1897,5 +1899,144 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
       setLocale('en');
       expect(commandRegistry.find('compact')!.title).toBe(enTitle);
     });
+  });
+});
+
+describe('CoOberViewController — side chat (/btw)', () => {
+  let deps: ControllerDeps;
+  let callbacks: ReturnType<typeof createMockCallbacks>;
+  let controller: CoOberViewController;
+  let addError: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    setLocale('en');
+    deps = createMockDeps();
+    callbacks = createMockCallbacks();
+    addError = vi.fn();
+    (deps.renderer as unknown as { addError: ReturnType<typeof vi.fn> }).addError = addError;
+    (deps.renderer as unknown as { addUserMessage: ReturnType<typeof vi.fn> }).addUserMessage = vi.fn();
+    controller = new CoOberViewController(deps, callbacks);
+  });
+
+  function forkClient(capOverrides: Record<string, unknown> = {}) {
+    const client = createMockClient({
+      getAgentCapabilities: vi.fn(() => ({ sessionCapabilities: { fork: true, close: true } })),
+      ...capOverrides,
+    });
+    (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+    return client;
+  }
+
+  it('registers /btw as a builtin slash command', () => {
+    const def = commandRegistry.find('btw');
+    expect(def).toBeDefined();
+    expect(def!.title).toBe(t().slashTitles.btw);
+    expect(def!.enabled?.()).toBe(false);
+  });
+
+  it('reports not-connected when there is no client', async () => {
+    await controller.startSideChat('hello');
+    expect(addError).toHaveBeenCalledWith(t().sideChat.notConnected);
+  });
+
+  it('refuses when the agent cannot fork sessions', async () => {
+    const client = createMockClient();
+    (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+    await controller.startSideChat('hello');
+    expect(addError).toHaveBeenCalledWith(t().sideChat.forkUnsupported);
+    expect(client.forkSession).not.toHaveBeenCalled();
+    expect(callbacks.onOpenSideChat).not.toHaveBeenCalled();
+  });
+
+  it('defers while the main conversation is busy', async () => {
+    const client = forkClient();
+    (controller as unknown as { busy: boolean }).busy = true;
+    await controller.startSideChat('hello');
+    expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().sideChat.busy);
+    expect(client.forkSession).not.toHaveBeenCalled();
+  });
+
+  it('forks once, leaves the main session untouched, and routes asks to the side session', async () => {
+    const client = forkClient();
+    controller.state.sessionId = 'local-1';
+
+    await controller.startSideChat('what is X?');
+
+    expect(client.forkSession).toHaveBeenCalledTimes(1);
+    expect(client.forkSession).toHaveBeenCalledWith('local-1', '/vault');
+    expect(callbacks.onOpenSideChat).toHaveBeenCalledTimes(1);
+    const sideCalls = (callbacks.onOpenSideChat as unknown as ReturnType<typeof vi.fn>).mock.calls as Array<
+      [(text: string, onChunk: (u: NormalizedUpdate) => void) => Promise<AcpResponse>, string]
+    >;
+    const ask = sideCalls[0][0];
+    const question = sideCalls[0][1];
+    expect(question).toBe('what is X?');
+    expect(controller.getSessionId()).toBe('local-1');
+    expect(deps.renderer.addUserMessage).not.toHaveBeenCalled();
+    expect(deps.sessionStore.append).not.toHaveBeenCalled();
+
+    await ask('follow up', () => {});
+    expect(client.sendMessage).toHaveBeenCalledWith('forked-session', [{ type: 'text', text: 'follow up' }], expect.any(Function));
+
+    await controller.startSideChat('another question');
+    expect(client.forkSession).toHaveBeenCalledTimes(1);
+    expect(callbacks.onOpenSideChat).toHaveBeenCalledTimes(2);
+  });
+
+  it('closes the side session on endSideChat and rejects later asks', async () => {
+    const client = forkClient();
+    controller.state.sessionId = 'local-1';
+    await controller.startSideChat('hi');
+    const ask = (callbacks.onOpenSideChat as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as (
+      text: string,
+      onChunk: (u: NormalizedUpdate) => void,
+    ) => Promise<AcpResponse>;
+
+    controller.endSideChat();
+
+    expect(client.closeSession).toHaveBeenCalledWith('forked-session');
+    await expect(ask('later', () => {})).rejects.toThrow(t().sideChat.notConnected);
+  });
+
+  it('skips the close RPC when the agent lacks the close capability', async () => {
+    const client = forkClient({
+      getAgentCapabilities: vi.fn(() => ({ sessionCapabilities: { fork: true } })),
+    });
+    controller.state.sessionId = 'local-1';
+    await controller.startSideChat('hi');
+
+    controller.endSideChat();
+    expect(client.closeSession).not.toHaveBeenCalled();
+  });
+
+  it('tears the panel down from resetConversationView', async () => {
+    const client = forkClient();
+    controller.state.sessionId = 'local-1';
+    await controller.startSideChat('hi');
+
+    controller.resetConversationView();
+
+    expect(callbacks.onCloseSideChat).toHaveBeenCalledTimes(1);
+    expect(client.closeSession).toHaveBeenCalledWith('forked-session');
+  });
+
+  it('routes /btw <question> through the slash registry', async () => {
+    const client = forkClient();
+    controller.state.sessionId = 'local-1';
+
+    await commandRegistry.find('btw')!.run('quick question');
+
+    expect(client.forkSession).toHaveBeenCalledWith('local-1', '/vault');
+    expect(callbacks.onOpenSideChat).toHaveBeenCalledWith(expect.any(Function), 'quick question');
+  });
+
+  it('surfaces fork failures as errors', async () => {
+    forkClient({ forkSession: vi.fn().mockRejectedValue(new Error('fork boom')) });
+    controller.state.sessionId = 'local-1';
+
+    await controller.startSideChat('hi');
+
+    expect(addError).toHaveBeenCalledWith(expect.stringContaining('fork boom'));
+    expect(callbacks.onOpenSideChat).not.toHaveBeenCalled();
   });
 });

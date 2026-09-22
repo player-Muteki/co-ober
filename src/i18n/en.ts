@@ -64,6 +64,19 @@ const en = {
     title: 'Image preview',
   },
 
+  sideChat: {
+    title: 'Side chat',
+    subtitle: 'A forked scratch thread — the main conversation is untouched.',
+    placeholder: 'Ask a side question…',
+    send: 'Ask',
+    close: 'Close',
+    thinking: 'Thinking…',
+    notConnected: 'Connect to OpenCode before starting a side chat.',
+    forkUnsupported: 'This OpenCode agent does not support session forking, so side chat is unavailable.',
+    busy: 'Wait for the current response to finish before asking the side chat.',
+    failed: 'Side chat request failed: {error}',
+  },
+
   permission: {
     title: 'Permission: {title}',
     allowOnce: 'Allow Once',
@@ -176,6 +189,7 @@ const en = {
     addDir: 'add external context directory',
     resume: 'resume a previous conversation',
     fork: 'fork entire conversation to new session',
+    btw: 'ask a side question in a forked scratch thread (/btw <question>)',
     model: 'switch AI model',
     mode: 'switch agent mode',
     export: 'save the conversation as a note',
@@ -195,6 +209,7 @@ const en = {
     addDir: 'Add Context Directory',
     resume: 'Resume Session',
     fork: 'Fork Session',
+    btw: 'Side Chat',
     model: 'Switch Model',
     mode: 'Switch Mode/Agent',
     export: 'Export to Note',

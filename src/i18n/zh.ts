@@ -66,6 +66,19 @@ const zh: Locale = {
     title: '图片预览',
   },
 
+  sideChat: {
+    title: '侧边对话',
+    subtitle: '基于当前会话 fork 的临时支线——主线对话不受影响。',
+    placeholder: '问一个支线问题…',
+    send: '提问',
+    close: '关闭',
+    thinking: '思考中…',
+    notConnected: '请先连接 OpenCode，再开启侧边对话。',
+    forkUnsupported: '当前 OpenCode agent 不支持会话 fork，无法使用侧边对话。',
+    busy: '请等待当前回复结束后再向侧边对话提问。',
+    failed: '侧边对话请求失败：{error}',
+  },
+
   permission: {
     title: '权限：{title}',
     allowOnce: '允许一次',
@@ -178,6 +191,7 @@ const zh: Locale = {
     addDir: '添加外部上下文目录',
     resume: '恢复之前的对话',
     fork: '将会话分叉到新会话',
+    btw: '在 fork 出的临时支线中提问（/btw <问题>）',
     model: '切换 AI 模型',
     mode: '切换 Agent 模式',
     export: '将对话保存为笔记',
@@ -197,6 +211,7 @@ const zh: Locale = {
     addDir: '添加上下文目录',
     resume: '恢复会话',
     fork: '分叉会话',
+    btw: '侧边对话',
     model: '切换模型',
     mode: '切换模式/Agent',
     export: '导出为笔记',
