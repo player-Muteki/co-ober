@@ -689,6 +689,23 @@
 .co-ober-toolbar .co-ober-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .co-ober-toolbar .co-ober-send-btn.mod-stop { background: var(--text-error); }
 
+.co-ober-toolbar .co-ober-attach-btn {
+  background: transparent;
+  color: var(--text-muted);
+  border: none;
+  border-radius: var(--radius-s);
+  padding: 4px 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+.co-ober-toolbar .co-ober-attach-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.co-ober-toolbar .co-ober-attach-btn:hover { color: var(--text-normal); }
+
 /* Input */
 .co-ober-input-area {
   display: flex;

@@ -29,6 +29,34 @@ describe('InputToolbar locale refresh', () => {
   });
 });
 
+describe('InputToolbar image attach', () => {
+  it('renders an attach button that fires onAttachImage', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const onAttachImage = vi.fn();
+    new InputToolbar(container, { onAttachImage });
+
+    const btn = container.querySelector('.co-ober-attach-btn') as HTMLButtonElement | null;
+    expect(btn).not.toBeNull();
+    expect(btn!.title).toBe('Attach image');
+    btn!.click();
+    expect(onAttachImage).toHaveBeenCalledTimes(1);
+  });
+
+  it('localizes the attach tooltip on refreshLocale', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const toolbar = new InputToolbar(container, {});
+    toolbar.refreshLocale();
+    setLocale('zh');
+    toolbar.refreshLocale();
+
+    const btn = container.querySelector('.co-ober-attach-btn') as HTMLButtonElement;
+    expect(btn.title).toBe('添加图片');
+    setLocale('en');
+  });
+});
+
 describe('InputToolbar cycle mode', () => {
   it('cycleMode advances to next agent and wraps around', () => {
     const container = document.createElement('div') as HTMLDivElement;

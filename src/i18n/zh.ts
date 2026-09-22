@@ -122,6 +122,7 @@ const zh: Locale = {
   toolbar: {
     send: '发送',
     stop: '停止',
+    attachImage: '添加图片',
     modelTitle: '模型',
     agentTitle: 'Agent 模式',
     effortTitle: '思考强度',

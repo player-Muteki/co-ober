@@ -6,6 +6,7 @@ export interface ToolbarCallbacks {
   onModelChange?: (model: string) => void;
   onEffortChange?: (effort: string) => void;
   onPermissionChange?: (mode: string) => void;
+  onAttachImage?: () => void;
   onSend?: () => void;
   onStop?: () => void;
 }
@@ -41,6 +42,9 @@ export class InputToolbar {
   private permLabelEl: HTMLSpanElement;
   private currentPermission: string = 'safe';
 
+  // Image attach button
+  private attachBtnEl: HTMLButtonElement;
+
   private readonly unsubscribeLocale: () => void;
 
   constructor(container: HTMLDivElement, private callbacks: ToolbarCallbacks) {
@@ -75,6 +79,12 @@ export class InputToolbar {
     this.permLabelEl = this.permToggleEl.createSpan({ cls: 'co-ober-perm-label' });
     this.permToggleEl.addEventListener('click', () => this.cyclePermission());
     this.updatePermissionDisplay();
+
+    // Image attach button
+    this.attachBtnEl = row.createEl('button', { cls: 'co-ober-attach-btn' });
+    setIcon(this.attachBtnEl, 'paperclip');
+    this.attachBtnEl.title = t().toolbar.attachImage;
+    this.attachBtnEl.onclick = () => this.callbacks.onAttachImage?.();
 
     // Send/Stop button
     this.sendBtn = row.createEl('button', { cls: 'co-ober-send-btn' });
@@ -269,6 +279,7 @@ export class InputToolbar {
     const selected = this.modeOptions.find(o => o.value === this.currentMode);
     this.modeCycleLabelEl.setText(selected?.label ?? this.modeOptions[0]?.label ?? '—');
     this.updatePermissionDisplay();
+    this.attachBtnEl.title = t().toolbar.attachImage;
     this.updateEffort([
       { value: 'default', label: t().toolbar.effort.default },
       { value: 'low', label: t().toolbar.effort.low },

@@ -254,4 +254,64 @@ describe('DragDropManager', () => {
       expect(handlers.onAddImagePart).not.toHaveBeenCalled();
     });
   });
+
+  describe('handleFiles (paste / file picker entry point)', () => {
+    function mockImageReader() {
+      function MockFileReader(this: any) {
+        this.onload = null;
+        this.onerror = null;
+        this.result = null;
+        this.readAsDataURL = vi.fn().mockImplementation(() => {
+          this.result = 'data:image/png;base64,aW1hZ2UtZGF0YQ==';
+          setTimeout(() => {
+            if (this.onload) this.onload({ target: this });
+          }, 0);
+        });
+      }
+      vi.spyOn(globalThis, 'FileReader').mockImplementation(MockFileReader as any);
+    }
+
+    it('accepts image files routed through handleFiles', async () => {
+      mockImageReader();
+      const file = new File(['image-data'], 'pasted.png', { type: 'image/png' });
+      Object.defineProperty(file, 'size', { value: 2048 });
+
+      await manager.handleFiles([file]);
+
+      expect(handlers.onAddImagePart).toHaveBeenCalledWith('aW1hZ2UtZGF0YQ==', 'image/png', 2048, 'pasted.png');
+    });
+
+    it('rejects images when image capability is false', async () => {
+      manager = new DragDropManager(dropZone, overlayContainer, handlers as any, () => ({ promptCapabilities: { image: false } }));
+      const file = new File(['image-data'], 'pasted.png', { type: 'image/png' });
+
+      await manager.handleFiles([file]);
+
+      expect(handlers.onAddImagePart).not.toHaveBeenCalled();
+      expect((Notice as any).messages).toContain('This OpenCode agent does not support image prompts');
+    });
+
+    it('does not track bytes for rejected images across multiple calls', async () => {
+      mockImageReader();
+      const file = new File(['image-data'], 'pasted.png', { type: 'image/png' });
+      Object.defineProperty(file, 'size', { value: 9 * 1024 * 1024 });
+
+      await manager.handleFiles([file]);
+      // Total now 9MB; a second 2MB image would exceed the 10MB budget and be skipped.
+      const second = new File(['more'], 'second.png', { type: 'image/png' });
+      Object.defineProperty(second, 'size', { value: 2 * 1024 * 1024 });
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      await manager.handleFiles([second]);
+
+      expect(handlers.onAddImagePart).toHaveBeenCalledTimes(1);
+      expect(warnSpy).toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
+    it('ignores an empty file list', async () => {
+      await manager.handleFiles([]);
+      expect(handlers.onAddImagePart).not.toHaveBeenCalled();
+      expect(handlers.onAddNoteRef).not.toHaveBeenCalled();
+    });
+  });
 });

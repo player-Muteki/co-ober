@@ -35,6 +35,7 @@ export interface ControllerCallbacks {
 	onClearUI(): void;
 	onRefreshLocale?(): void;
 	onClearChips(): void;
+	getPendingImageParts(): PromptPart[];
 	onClearPendingImageChips(): void;
 	onAutoRefActiveFile(): void;
 }
@@ -591,6 +592,7 @@ export class CoOberViewController {
 				? await this.buildParts(text, config.buildPartsWithRefs)
 				: [{ type: 'text' as const, text }];
 			if (this.state.sessionId !== sessionId || !this.busy) return;
+			parts.push(...this.callbacks.getPendingImageParts());
 			this.callbacks.onClearPendingImageChips();
 			const response = await c.sendMessage(sessionId, parts, (ch: NormalizedUpdate) => {
 				if (this.genId !== currentGen || !this.busy || this.state.sessionId !== sessionId) return;

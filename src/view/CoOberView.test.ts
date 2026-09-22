@@ -164,7 +164,7 @@ function createController(plugin: CoOberPlugin): CoOberViewController {
   const callbacks: ControllerCallbacks = {
     onShowWelcome: noop, onHideWelcome: noop, onShowReconnectBtn: noop, onHideReconnectBtn: noop,
     onShowNewMessagesBtn: noop, onHideNewMessagesBtn: noop, onScrollToBottom: noop, onClearUI: noop,
-    onClearChips: noop, onClearPendingImageChips: noop, onAutoRefActiveFile: noop,
+    onClearChips: noop, getPendingImageParts: () => [], onClearPendingImageChips: noop, onAutoRefActiveFile: noop,
   };
   return new CoOberViewController(deps, callbacks);
 }

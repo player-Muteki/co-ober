@@ -120,6 +120,7 @@ const en = {
   toolbar: {
     send: 'Send',
     stop: 'Stop',
+    attachImage: 'Attach image',
     modelTitle: 'Model',
     agentTitle: 'Agent mode',
     effortTitle: 'Thinking effort',

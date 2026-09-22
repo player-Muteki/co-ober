@@ -102,5 +102,6 @@ export class ChatInput {
   }
 
   focus(): void { this.textarea.focus(); }
+  get textareaEl(): HTMLTextAreaElement { return this.textarea; }
   appendValue(text: string): void { this.textarea.value += text; }
 }

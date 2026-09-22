@@ -73,6 +73,8 @@ export class CoOberView extends ItemView {
 
 	// Event listener references for cleanup on close
 	private scrollHandler: (() => void) | null = null;
+	private pasteHandler: ((e: ClipboardEvent) => void) | null = null;
+	private imageFileInputEl: HTMLInputElement | null = null;
 
 	private get doc(): Document { return this.contentEl?.ownerDocument ?? activeDocument; }
 
@@ -218,6 +220,7 @@ export class CoOberView extends ItemView {
 			},
 			onSend: () => this.input.triggerSend(),
 			onStop: () => this.input.triggerStop(),
+			onAttachImage: () => this.openImagePicker(),
 		});
 
 		// ── Create controller ──
@@ -259,6 +262,7 @@ export class CoOberView extends ItemView {
 				this.mention.clear();
 			},
 			onClearChips: () => this.contextChipsEl.empty(),
+			getPendingImageParts: () => [...this.pendingImageParts],
 			onClearPendingImageChips: () => this.clearPendingImageChips(),
 			onAutoRefActiveFile: () => this.autoRefActiveFile(),
 		};
@@ -365,6 +369,17 @@ export class CoOberView extends ItemView {
 			onRemoveImagePart: (_data, _size) => {}
 		}, () => this.plugin.getClient()?.getAgentCapabilities() ?? null);
 		this.dragDropManager.setup();
+
+		// Paste images into the composer
+		this.pasteHandler = (e: ClipboardEvent) => {
+			const files = e.clipboardData?.files;
+			if (!files?.length || !this.dragDropManager) return;
+			const hasImage = Array.from(files).some(f => f.type.startsWith('image/'));
+			if (!hasImage) return;
+			e.preventDefault();
+			void this.dragDropManager.handleFiles(files);
+		};
+		this.input.textareaEl.addEventListener('paste', this.pasteHandler);
 	}
 
 	override async onClose(): Promise<void> {
@@ -388,6 +403,14 @@ export class CoOberView extends ItemView {
 		}
 		if (this.dragDropManager) {
 			this.dragDropManager.teardown();
+		}
+		if (this.pasteHandler && this.input) {
+			this.input.textareaEl.removeEventListener('paste', this.pasteHandler);
+			this.pasteHandler = null;
+		}
+		if (this.imageFileInputEl) {
+			this.imageFileInputEl.remove();
+			this.imageFileInputEl = null;
 		}
 	}
 
@@ -492,6 +515,25 @@ export class CoOberView extends ItemView {
 		this.contextChipsEl.querySelectorAll('.co-ober-chip').forEach((el) => {
 			if ((el as HTMLDivElement).dataset.kind === 'image') el.remove();
 		});
+	}
+
+	private openImagePicker(): void {
+		const doc = this.doc;
+		if (!this.imageFileInputEl) {
+			this.imageFileInputEl = doc.createElement('input');
+			this.imageFileInputEl.type = 'file';
+			this.imageFileInputEl.accept = 'image/*';
+			this.imageFileInputEl.multiple = true;
+			this.imageFileInputEl.style.display = 'none';
+			doc.body.appendChild(this.imageFileInputEl);
+		}
+		const input = this.imageFileInputEl;
+		input.onchange = () => {
+			const files = input.files;
+			if (files?.length && this.dragDropManager) void this.dragDropManager.handleFiles(files);
+			input.value = '';
+		};
+		input.click();
 	}
 
 	private clearAutoRefs(): void {

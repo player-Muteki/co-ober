@@ -58,7 +58,7 @@ function createMockCallbacks(): ControllerCallbacks {
 	return {
 		onShowWelcome: vi.fn(), onHideWelcome: vi.fn(), onShowReconnectBtn: vi.fn(), onHideReconnectBtn: vi.fn(),
 		onShowNewMessagesBtn: vi.fn(), onHideNewMessagesBtn: vi.fn(), onScrollToBottom: vi.fn(), onClearUI: vi.fn(),
-		onClearChips: vi.fn(), onClearPendingImageChips: vi.fn(), onAutoRefActiveFile: vi.fn(),
+		onClearChips: vi.fn(), getPendingImageParts: () => [], onClearPendingImageChips: vi.fn(), onAutoRefActiveFile: vi.fn(),
 	};
 }
 
@@ -598,6 +598,34 @@ describe('CoOberViewController', () => {
 
 			expect(deps.resolver.resolveNote).toHaveBeenCalledWith('note.md');
 			expect(parts.length).toBeGreaterThanOrEqual(2);
+		});
+	});
+
+	describe('pending image parts', () => {
+		it('appends pending image parts to the prompt and clears chips', async () => {
+			const client = createMockClient();
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+			callbacks.getPendingImageParts = vi.fn((): PromptPart[] => [
+				{ type: 'image', mimeType: 'image/png', data: 'aGVsbG8=' },
+			]);
+
+			await controller.send('look at this', []);
+
+			const parts = client.sendMessage.mock.calls[0][1] as PromptPart[];
+			expect(parts.some(p => p.type === 'image' && p.mimeType === 'image/png' && p.data === 'aGVsbG8=')).toBe(true);
+			expect(callbacks.onClearPendingImageChips).toHaveBeenCalled();
+		});
+
+		it('sends text-only parts when no images are pending', async () => {
+			const client = createMockClient();
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+			await controller.send('hello', []);
+
+			const parts = client.sendMessage.mock.calls[0][1] as PromptPart[];
+			expect(parts.every(p => p.type === 'text')).toBe(true);
 		});
 	});
 

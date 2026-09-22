@@ -49,7 +49,7 @@ export class DragDropManager {
 		this.dropHandler = (e: DragEvent) => {
 			e.preventDefault();
 			this.hideDragOverlay();
-			void this.handleDrop(e);
+			if (e.dataTransfer?.files?.length) void this.handleFiles(e.dataTransfer.files);
 		};
 		this.dropZoneEl.addEventListener('drop', this.dropHandler);
 	}
@@ -90,10 +90,7 @@ export class DragDropManager {
 		this.handlers.onRemoveImagePart(data, size);
 	}
 
-	private async handleDrop(e: DragEvent): Promise<void> {
-		const files = e.dataTransfer?.files;
-		if (!files?.length) return;
-
+	async handleFiles(files: FileList | File[]): Promise<void> {
 		for (const file of Array.from(files)) {
 			if (file.name.endsWith('.md')) {
 				// Markdown file → ContextRef
