@@ -1,6 +1,7 @@
 ﻿import { Plugin, Notice } from 'obsidian';
 import { AgentRuntime } from './client/agent';
 import { AcpClient } from './client/acp';
+import { applyPermissionTier } from './client/permissionTier';
 import { CoOberView } from './view/CoOberView';
 import { CoOberSettingsTab } from './settings';
 import { DEFAULT_SETTINGS, VIEW_TYPE } from './types';
@@ -170,6 +171,7 @@ export default class CoOberPlugin extends Plugin {
       await acp.connect();
       this.client = new AgentRuntime(acp);
       this.client.permissionMode = this.settings.permissionMode;
+      applyPermissionTier(this.client, this.settings.permissionMode, this.settings);
       this.client.idleTimeoutMs = this.settings.idleTimeoutMs ?? 300000;
       this._clientReady = true;
       this.resolveClientWaiters(true);

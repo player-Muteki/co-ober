@@ -82,3 +82,38 @@ describe('InputToolbar cycle mode', () => {
     expect(onAgentChange).not.toHaveBeenCalled();
   });
 });
+
+describe('InputToolbar permission cycle', () => {
+  it('cycles safe -> readonly -> plan -> yolo -> safe via the toggle', () => {
+    const container = document.createElement('div') as HTMLDivElement;
+    const onPermissionChange = vi.fn();
+    new InputToolbar(container, { onPermissionChange });
+    const toggle = container.querySelector('.co-ober-perm-toggle') as HTMLElement;
+    expect(toggle).not.toBeNull();
+
+    const expected: Array<[string, string]> = [
+      ['readonly', '🛡️ Readonly'],
+      ['plan', '📋 Plan'],
+      ['yolo', '⚡ Yolo'],
+      ['safe', '🔒 Safe'],
+    ];
+    for (const [mode, label] of expected) {
+      toggle.click();
+      expect(onPermissionChange).toHaveBeenLastCalledWith(mode);
+      expect(container.querySelector('.co-ober-perm-label')?.textContent).toBe(label);
+    }
+    expect(onPermissionChange).toHaveBeenCalledTimes(4);
+  });
+
+  it('updatePermission sets the display without emitting a change', () => {
+    const container = document.createElement('div') as HTMLDivElement;
+    const onPermissionChange = vi.fn();
+    const toolbar = new InputToolbar(container, { onPermissionChange });
+
+    toolbar.updatePermission('readonly');
+
+    expect(onPermissionChange).not.toHaveBeenCalled();
+    expect(container.querySelector('.co-ober-perm-label')?.textContent).toBe('🛡️ Readonly');
+    expect(container.querySelector('.co-ober-perm-toggle')?.classList.contains('mod-readonly')).toBe(true);
+  });
+});

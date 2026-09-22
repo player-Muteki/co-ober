@@ -19,6 +19,7 @@ import { SyncEngine } from '../sync/engine';
 import type { SessionStore } from '../chat/session';
 import { SessionDropdown } from './sessionDropdown';
 import { listNativeSessions } from '../opencode/NativeSessionReader';
+import { applyPermissionTier } from '../client/permissionTier';
 import { commandRegistry } from '../commands/registry';
 import { FileCommandStorage } from '../commands/storage/FileCommandStorage';
 import { Autocomplete } from './autocomplete';
@@ -210,7 +211,10 @@ export class CoOberView extends ItemView {
 				this.plugin.settings.permissionMode = mode as import('../types').PermissionLevel;
 				void this.plugin.savePluginData();
 				const client = this.plugin.getClient();
-				if (client) client.permissionMode = mode as import('../types').PermissionLevel;
+				if (client) {
+					client.permissionMode = mode as import('../types').PermissionLevel;
+					applyPermissionTier(client, this.plugin.settings.permissionMode, this.plugin.settings);
+				}
 			},
 			onSend: () => this.input.triggerSend(),
 			onStop: () => this.input.triggerStop(),

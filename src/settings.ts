@@ -7,6 +7,7 @@ import type { AgentCapabilities, AvailableCommand, CustomAgentDefinition, Custom
 import type { OpencodeClient } from './client';
 import { setLocale, t as locale } from './i18n/index';
 import { CLIENT_VERSION } from './client/acp';
+import { applyPermissionTier } from './client/permissionTier';
 
 import { addCustomAgentBlock, addCustomSkillBlock, addCommonModelToggle, addMcpServerBlock, addSyncRuleBlock, renameCustomAgent, renameCustomSkill } from './settings/settingBlocks';
 
@@ -128,12 +129,16 @@ export class CoOberSettingsTab extends PluginSettingTab {
         yolo: labels.permissionMode.yolo,
         plan: labels.permissionMode.plan,
         safe: labels.permissionMode.safe,
+        readonly: labels.permissionMode.readonly,
       })
         .setValue(s.permissionMode)
         .onChange(async (v) => {
           s.permissionMode = v as PermissionLevel;
           await this.save();
-          if (this.plugin.client) this.plugin.client.permissionMode = v as PermissionLevel;
+          if (this.plugin.client) {
+            this.plugin.client.permissionMode = v as PermissionLevel;
+            applyPermissionTier(this.plugin.client, s.permissionMode, s);
+          }
         }));
 
     new Setting(containerEl)

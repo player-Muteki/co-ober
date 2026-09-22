@@ -100,6 +100,18 @@ export class AgentRuntime implements OpencodeClient {
       return req.options[0]?.optionId ?? 'reject_once';
     }
 
+    // Readonly tier: non-mutating tools auto-allow, everything that could
+    // change state (edit/delete/move/execute/...) auto-rejects without UI.
+    if (this.permissionMode === 'readonly') {
+      if (['read', 'search', 'fetch'].includes(req.toolCall.kind)) {
+        const allow = req.options.find((o) => o.kind === 'allow_always' || o.kind === 'allow_once');
+        if (allow) return allow.optionId;
+      }
+      const reject = req.options.find((o) => o.kind === 'reject_always' || o.kind === 'reject_once');
+      if (reject) return reject.optionId;
+      return req.options[0]?.optionId ?? 'reject_once';
+    }
+
     const reject = req.options.find((o) => o.kind === 'reject_always' || o.kind === 'reject_once');
     return reject?.optionId ?? req.options[0]?.optionId ?? 'reject_once';
   }

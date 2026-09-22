@@ -558,6 +558,10 @@
   color: var(--text-success);
 }
 
+.co-ober-perm-toggle.mod-readonly {
+  color: var(--text-normal);
+}
+
 .co-ober-perm-toggle.mod-plan {
   color: var(--text-accent);
 }

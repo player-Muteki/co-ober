@@ -215,6 +215,45 @@ describe('AgentRuntime', () => {
       expect(result).toBe('reject_always');
     });
 
+    it('readonly mode: auto-allows read, search and fetch tools', async () => {
+      runtime.permissionMode = 'readonly';
+      for (const kind of ['read', 'search', 'fetch'] as const) {
+        const req = createRequest([
+          { optionId: 'reject', kind: 'reject_once' },
+          { optionId: 'allow', kind: 'allow_once' },
+        ]);
+        req.toolCall.kind = kind;
+
+        const result = await runtime.requestPermission(req);
+        expect(result).toBe('allow');
+      }
+    });
+
+    it('readonly mode: rejects edit and execute tools', async () => {
+      runtime.permissionMode = 'readonly';
+      for (const kind of ['edit', 'execute', 'delete', 'move'] as const) {
+        const req = createRequest([
+          { optionId: 'allow_always', kind: 'allow_always' },
+          { optionId: 'reject', kind: 'reject_once' },
+        ]);
+        req.toolCall.kind = kind;
+
+        const result = await runtime.requestPermission(req);
+        expect(result).toBe('reject');
+      }
+    });
+
+    it('readonly mode: falls back to first option when no reject exists', async () => {
+      runtime.permissionMode = 'readonly';
+      const req = createRequest([
+        { optionId: 'allow', kind: 'allow_once' },
+      ]);
+      req.toolCall.kind = 'execute';
+
+      const result = await runtime.requestPermission(req);
+      expect(result).toBe('allow');
+    });
+
     it('safe mode: rejects by default', async () => {
       runtime.permissionMode = 'safe';
       const req = createRequest([

@@ -141,7 +141,7 @@ export interface AcpResponse {
   _meta?: Record<string, unknown>;
 }
 
-export type PermissionLevel = 'yolo' | 'plan' | 'safe';
+export type PermissionLevel = 'yolo' | 'plan' | 'safe' | 'readonly';
 export type FsCapabilityMode = 'enabled' | 'readonly' | 'disabled';
 export type TerminalCapabilityMode = 'enabled' | 'disabled';
 

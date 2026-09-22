@@ -226,7 +226,7 @@ export class InputToolbar {
   }
 
   private cyclePermission(): void {
-    const modes = ['safe', 'plan', 'yolo'];
+    const modes = ['safe', 'readonly', 'plan', 'yolo'];
     const idx = modes.indexOf(this.currentPermission);
     const next = modes[(idx + 1) % modes.length];
     this.currentPermission = next;
@@ -237,6 +237,7 @@ export class InputToolbar {
   private updatePermissionDisplay(): void {
     const labels: Record<string, string> = {
       safe: '🔒 Safe',
+      readonly: '🛡️ Readonly',
       plan: '📋 Plan',
       yolo: '⚡ Yolo',
     };

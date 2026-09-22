@@ -255,6 +255,7 @@ const en = {
       yolo: 'Yolo — auto-approve all',
       plan: 'Plan — auto-approve safe',
       safe: 'Safe — confirm all',
+      readonly: 'Readonly — read/search only, all writes and execution rejected',
     },
     systemPrompt: {
       heading: 'System Prompt',

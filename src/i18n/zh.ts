@@ -257,6 +257,7 @@ const zh: Locale = {
       yolo: 'Yolo — 全部自动批准',
       plan: 'Plan — 自动批准安全操作',
       safe: 'Safe — 全部确认',
+      readonly: 'Readonly — 仅读取/搜索，拒绝一切写入与执行',
     },
     systemPrompt: {
       heading: '系统提示词',
