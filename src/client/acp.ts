@@ -41,7 +41,7 @@ import {
 } from './acpSchemas';
 import { z } from 'zod';
 
-export const CLIENT_VERSION = '0.1.29';
+export const CLIENT_VERSION = '0.1.30';
 
 export interface AcpSessionMeta {
   availableCommands: AvailableCommand[];

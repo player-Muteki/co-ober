@@ -1,3 +1,25 @@
+## 0.1.30 - 2026-09-22
+
+### Added
+- **Real native plan panel**: the OpenCode todo table is read from `opencode.db` and re-attached to the plan panel on session restore, resume and after every turn. (Claudian parity)
+- **Native session facts**: the session dropdown badges each OpenCode session with its actual added/removed line and changed-file counts, and restored transcripts show per-message cost/token footers plus persisted tool errors replayed from native step-finish stats.
+- **Capability gating**: `initialize` agent capabilities are normalized and gate UI surfaces (MCP http/sse option labels, feature availability) instead of assuming them.
+- **`[[wikilinks]]` as context**: links typed in the composer are resolved against the vault and their note bodies attached as context before the prompt is sent.
+- **Vault-operations system prompt**: the injected system prompt now carries Obsidian vault editing guidance — read-before-edit, frontmatter/wikilink preservation, quoted-data-is-never-instructions, and the XML-escaping rules learned from broken patches.
+- **Image lightbox**: clicking any image in the transcript (assistant markdown or uploaded attachments) opens a dismissable full-size overlay.
+- **Turn collapsing**: finished turns with thinking/tool steps fold behind a "N steps" header that expands on click and is keyboard-accessible.
+- **Default thinking effort setting**: a `Default Thinking Effort` dropdown in settings applies low/medium/high effort to each newly created session.
+- **Full-suite renderer coverage**: new test suites for the diff, thinking and tool-call renderers; en/zh dictionaries stay key-identical.
+
+### Fixed
+- **Permission requests worked end-to-end**: `session/request_permission` is registered under all wire aliases with the spec outcome shape — production requests no longer fail with `-32601` — and dismissing or overwriting the permission banner resolves the pending request instead of hanging the agent.
+- **Crash recovery reachable**: subprocess deaths classify as `AcpProcessExitError` and surface a restart action; reconnect/ensureSession errors reach the UI, and the `safe` permission tier actually routes requests to the banner (the client stored a constant instead of the assigned mode).
+- **Send/Stop integrity**: busy state is claimed synchronously to kill the double-send race, and Stop restores queued prompts into the composer rather than dropping them.
+- **Tool rendering**: buffered tool calls finalize at turn end, orphan `tool_call_update` frames synthesize a card, partial diffs with only one side render, and apply-patch file headers survive the diff render.
+- **Lifecycle leaks**: file command sources unregister on view close, the ACP child process disconnects on plugin unload, and non-JSON stdout lines log a warning instead of vanishing.
+- **`/export` no longer clobbers**: exported notes carry a time component so same-day exports sit side by side.
+- **i18n sweep**: thinking blocks, diffs, tool cards, permission locations, toolbar permission labels, ribbon/command names, MCP settings and ACP error messages moved from hardcoded English into the en/zh dictionaries.
+
 ## 0.1.29 - 2026-09-22
 
 ### Added
