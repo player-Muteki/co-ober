@@ -1,3 +1,10 @@
+## 0.1.28 - 2026-09-22
+
+### Added
+- **Image pipeline completion**: pasted or picker-selected images now actually reach the agent — every send drains pending image parts into the prompt, drag-drop shares the same budgeted entry point, a paperclip button opens the file picker, and unsupported agents are gated with a notice. (Claudian parity)
+- **Transcript replay on session load**: `session/load` and `session/resume` replay updates are collected and adopted, so opening a native OpenCode session renders its full conversation instead of an empty pane. (Claudian parity)
+- **Regenerate / edit-and-resend**: user bubbles gain hover actions to re-run or edit any earlier turn. Since ACP has no server-side truncate, the rewind rotates to a fresh agent session and replays the retained turns as a context-only block, truncating the local transcript under the edited turn. (Claudian parity)
+
 ## 0.1.27 - 2026-09-22
 
 ### Added
