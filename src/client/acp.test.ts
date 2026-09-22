@@ -1,4 +1,4 @@
-import { AcpProtocolError } from './AcpErrors';
+import { AcpProtocolError, AcpSessionMissingError } from './AcpErrors';
 import { describe, it, expect, vi } from 'vitest';
 import pkg from '../../package.json';
 import { AcpClient, CLIENT_VERSION, buildMcpServers, parseSessionUpdate, extractSessionSnapshot, extractConfigMeta, mergeAvailableCommands } from './acp';
@@ -329,6 +329,40 @@ describe('AcpClient session loading', () => {
       ],
     });
     expect(client.getCurrentSessionId()).toBe('s1');
+  });
+
+  it('loadSession classifies session-missing protocol errors as AcpSessionMissingError', async () => {
+    const client = new AcpClient('opencode');
+    Reflect.set(client, 'requestWithFallback', vi.fn().mockRejectedValue(
+      new AcpProtocolError('Session not found', 'session/load', -32000),
+    ));
+
+    await expect(client.loadSession('ses_gone')).rejects.toBeInstanceOf(AcpSessionMissingError);
+    expect(client.getCurrentSessionId()).toBeUndefined();
+  });
+
+  it('loadSession rethrows unrelated errors unchanged', async () => {
+    const client = new AcpClient('opencode');
+    const err = new AcpProtocolError('Internal error', 'session/load', -32603);
+    Reflect.set(client, 'requestWithFallback', vi.fn().mockRejectedValue(err));
+
+    await expect(client.loadSession('ses_1')).rejects.toBe(err);
+  });
+
+  it('resumeSession classifies session-missing errors as AcpSessionMissingError', async () => {
+    const client = new AcpClient('opencode');
+    Reflect.set(client, 'requestWithFallback', vi.fn().mockRejectedValue(
+      new Error('unknown session ses_gone'),
+    ));
+
+    await expect(client.resumeSession('ses_gone')).rejects.toBeInstanceOf(AcpSessionMissingError);
+  });
+
+  it('disposeConnection bumps the connection generation', async () => {
+    const client = new AcpClient('opencode');
+    const before = client.generation;
+    await Reflect.get(client, 'disposeConnection').call(client, new Error('gone'));
+    expect(client.generation).toBe(before + 1);
   });
 });
 

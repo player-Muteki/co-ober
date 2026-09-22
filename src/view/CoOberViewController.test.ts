@@ -3,7 +3,8 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { CoOberViewController } from './CoOberViewController';
 import type { ControllerCallbacks, ControllerDeps } from './CoOberViewController';
 import type { AcpResponse, ContextRef, NormalizedUpdate, PromptPart } from '../types';
-import { setLocale } from '../i18n/index';
+import { setLocale, t } from '../i18n/index';
+import { AcpSessionMissingError } from '../client/AcpErrors';
 
 setLocale('en');
 
@@ -24,6 +25,7 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): ControllerDeps
 			flushTextRender: vi.fn().mockResolvedValue(undefined),
 			addError: noop, showUsage: noop, forceScrollToBottom: noop,
 			addToolCall: noop, updateToolCall: noop, setPlanEntries: noop,
+			addSystemMessage: vi.fn(),
 		} as unknown as ControllerDeps['renderer'],
 		input: { setStreaming: noop, focus: noop, appendValue: noop, triggerSend: noop, triggerStop: noop } as unknown as ControllerDeps['input'],
 		toolbar: { setSending: noop, updateAgents: noop, updateModels: noop, updateEffort: noop, updatePermission: noop } as unknown as ControllerDeps['toolbar'],
@@ -432,6 +434,55 @@ describe('CoOberViewController', () => {
 			expect(deps.sessionStore.setActive).toHaveBeenCalledWith('target-session');
 			expect(callbacks.onClearUI).toHaveBeenCalled();
 			expect(callbacks.onAutoRefActiveFile).toHaveBeenCalled();
+		});
+
+		it('shows a dedicated error when a native OpenCode session is gone', async () => {
+			const client = createMockClient({
+				loadSession: vi.fn().mockRejectedValue(new AcpSessionMissingError('ses_gone')),
+			});
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+			await controller.switchSession('ses_gone', 'opencode');
+
+			expect(deps.renderer.addError).toHaveBeenCalledWith(t().session.nativeSessionMissing);
+			expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(t().session.loadedNative);
+		});
+
+		it('shows the generic failure error for other load errors on native sessions', async () => {
+			const client = createMockClient({
+				loadSession: vi.fn().mockRejectedValue(new Error('transport died')),
+			});
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+			await controller.switchSession('ses_x', 'opencode');
+
+			expect(deps.renderer.addError).toHaveBeenCalledWith(t().session.loadNativeFailed);
+		});
+	});
+
+	describe('session loss reporting', () => {
+		it('informs the user when the agent dropped the session on connect', async () => {
+			const client = createMockClient({
+				loadSession: vi.fn().mockRejectedValue(new AcpSessionMissingError('local-1')),
+			});
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			controller.state.sessionId = 'local-1';
+
+			await controller.ensureClientConnected();
+
+			expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().session.runtimeSessionLost);
+		});
+
+		it('stays silent on connect for unrelated sync errors', async () => {
+			const client = createMockClient({
+				loadSession: vi.fn().mockRejectedValue(new Error('timeout')),
+			});
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			controller.state.sessionId = 'local-1';
+
+			await controller.ensureClientConnected();
+
+			expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(t().session.runtimeSessionLost);
 		});
 	});
 

@@ -3,7 +3,7 @@ import { getSpawnInfo } from '../utils/commandResolution';
 import { AcpSubprocess, type AcpSubprocessLaunchSpec } from './AcpSubprocess';
 
 import { type AcpLogicalMethod, getAcpMethodCandidates } from './AcpMethodNames';
-import { AcpProtocolError } from './AcpErrors';
+import { AcpProtocolError, AcpSessionMissingError, isSessionMissingError } from './AcpErrors';
 import type {
 	SessionUpdate,
 	PromptPart,
@@ -251,6 +251,13 @@ export class AcpClient implements OpencodeClient {
 	private isIntentionalDisconnect = false;
 	private methodCache = new Map<AcpLogicalMethod, string>();
 	private reconnectTimer: number | null = null;
+	/**
+	 * Incremented every time a subprocess connection is created or disposed.
+	 * Async continuations capture the current generation and abort themselves
+	 * when it no longer matches, so a superseded connect can never mutate or
+	 * tear down the newer connection's state.
+	 */
+	private kernelGeneration = 0;
 
   constructor(cmdPath: string, cwd?: string) {
     this.cmdPath = cmdPath;
@@ -262,10 +269,14 @@ export class AcpClient implements OpencodeClient {
 
   isConnected(): boolean { return this.connected; }
 
+  /** Monotonic counter identifying the current subprocess connection attempt. */
+  get generation(): number { return this.kernelGeneration; }
+
 	async connect(): Promise<void> {
 		if (this.connected) return;
 		this.isIntentionalDisconnect = false;
 		this.clearReconnectTimer();
+		const generation = ++this.kernelGeneration;
 
 		const cmd = this.cmdPath.replace(/^"(.+)"$/, '$1').replace(/^'(.+)'$/, '$1');
 		const args = ['acp'];
@@ -280,6 +291,9 @@ export class AcpClient implements OpencodeClient {
 		const subprocess = new AcpSubprocess(launchSpec);
 		this.subprocess = subprocess;
 
+		let transport: AcpJsonRpcTransport | null = null;
+		let requestHandler: AcpRequestHandler | null = null;
+
 		try {
 			subprocess.start();
 			subprocess.onClose((error) => this.handleSubprocessClose(subprocess, error));
@@ -289,47 +303,60 @@ export class AcpClient implements OpencodeClient {
 				throw new Error(t().acp.stdinNotWritable);
 			}
 
-			const transport = new AcpJsonRpcTransport({ input, output });
+			transport = new AcpJsonRpcTransport({ input, output });
 			this.transport = transport;
 			transport.start();
 
 			// Initialize AcpRequestHandler (manages FS, terminal, permission handlers)
-			this.requestHandler = new AcpRequestHandler({
+			requestHandler = new AcpRequestHandler({
 				transport,
 				vaultPath: cwd,
 				onPermissionRequest: this.onPermissionRequest,
 			});
+			this.requestHandler = requestHandler;
 
-		transport.onNotification('session/update', (params) => {
-			const p = params as Record<string, unknown> | undefined;
-			const update = this.parseUpdate(p?.update as Record<string, unknown> | undefined);
-			if (update) {
-				if (update.sessionUpdate === 'usage_update') {
-					// Usage updates are frequent in long sessions; only log when debug is enabled.
-					if (typeof process.env.DEBUG_CO_OBER !== 'undefined') {
-						console.debug('[co-ober] usage_update:', JSON.stringify(update));
+			transport.onNotification('session/update', (params) => {
+				// Drop updates from a transport that has since been replaced or disposed.
+				if (this.transport !== transport) return;
+				const p = params as Record<string, unknown> | undefined;
+				const update = this.parseUpdate(p?.update as Record<string, unknown> | undefined);
+				if (update) {
+					if (update.sessionUpdate === 'usage_update') {
+						// Usage updates are frequent in long sessions; only log when debug is enabled.
+						if (typeof process.env.DEBUG_CO_OBER !== 'undefined') {
+							console.debug('[co-ober] usage_update:', JSON.stringify(update));
+						}
+					}
+					this.applySessionUpdate(update);
+					if (this.chunkHandler) {
+						const norm = this.normalizer.normalize(update);
+						if (norm) this.chunkHandler(norm);
 					}
 				}
-				this.applySessionUpdate(update);
-				if (this.chunkHandler) {
-					const norm = this.normalizer.normalize(update);
-					if (norm) this.chunkHandler(norm);
-				}
-			}
-		});
+			});
 
 			const response = await this.requestWithFallback('initialize', {
 				protocolVersion: 1,
 				clientInfo: { name: 'co-ober', version: CLIENT_VERSION },
-				clientCapabilities: this.requestHandler.buildClientCapabilities(),
+				clientCapabilities: requestHandler.buildClientCapabilities(),
 			});
+			if (this.kernelGeneration !== generation) {
+				throw new Error('ACP connection was superseded by a newer connection attempt');
+			}
 			const initResult = z.object({ agentCapabilities: z.unknown().optional() }).safeParse(response);
 			this.agentCapabilities = (initResult.success ? initResult.data.agentCapabilities as AgentCapabilities : null) ?? null;
 			this.methodCache.clear();
 			this.connected = true;
 		} catch (error) {
-			this.onClose?.();
-			await this.disposeConnection(error instanceof Error ? error : new Error(String(error)), true);
+			if (this.kernelGeneration === generation) {
+				this.onClose?.();
+				await this.disposeConnection(error instanceof Error ? error : new Error(String(error)), true);
+			} else {
+				// A newer connection owns the client state now; only clean up our own resources.
+				requestHandler?.dispose();
+				transport?.dispose(error instanceof Error ? error : new Error(String(error)));
+				await subprocess.shutdown().catch(() => {});
+			}
 			throw error;
 		}
 	}
@@ -356,9 +383,14 @@ export class AcpClient implements OpencodeClient {
   }
 
   async loadSession(id: string, cwd?: string, mcpServers: McpServerConfig[] = []): Promise<void> {
-    const r = await this.requestWithFallback('loadSession', { sessionId: id, cwd: this.resolveCwd(cwd), mcpServers: buildMcpServers(mcpServers) });
-    this.applySessionSnapshot(r as Record<string, unknown>);
-    this.sessionId_ = id;
+    try {
+      const r = await this.requestWithFallback('loadSession', { sessionId: id, cwd: this.resolveCwd(cwd), mcpServers: buildMcpServers(mcpServers) });
+      this.applySessionSnapshot(r as Record<string, unknown>);
+      this.sessionId_ = id;
+    } catch (e) {
+      if (isSessionMissingError(e)) throw new AcpSessionMissingError(id, e);
+      throw e;
+    }
   }
 
   async listSessions(cwd?: string): Promise<SessionMeta[]> {
@@ -375,9 +407,14 @@ export class AcpClient implements OpencodeClient {
   }
 
   async resumeSession(id: string, cwd?: string): Promise<void> {
-    const r = await this.requestWithFallback('resumeSession', { sessionId: id, cwd: this.resolveCwd(cwd) });
-    this.applySessionSnapshot(r as Record<string, unknown>);
-    this.sessionId_ = id;
+    try {
+      const r = await this.requestWithFallback('resumeSession', { sessionId: id, cwd: this.resolveCwd(cwd) });
+      this.applySessionSnapshot(r as Record<string, unknown>);
+      this.sessionId_ = id;
+    } catch (e) {
+      if (isSessionMissingError(e)) throw new AcpSessionMissingError(id, e);
+      throw e;
+    }
   }
 
   async closeSession(id: string): Promise<void> {
@@ -604,6 +641,8 @@ export class AcpClient implements OpencodeClient {
   }
 
   private async disposeConnection(error?: Error, shutdownSubprocess = false): Promise<void> {
+    // Invalidate any in-flight connect()/reconnect continuation for the old generation.
+    this.kernelGeneration++;
     const transport = this.transport;
     const subprocess = this.subprocess;
     const requestHandler = this.requestHandler;
@@ -661,9 +700,11 @@ export class AcpClient implements OpencodeClient {
     if (this.isIntentionalDisconnect || this.reconnectTimer) return;
     this.reconnectAttempts++;
     const delay = ACP_RECONNECT_BACKOFF_BASE_MS * this.reconnectAttempts;
+    const generation = this.kernelGeneration;
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectTimer = null;
       if (this.isIntentionalDisconnect || this.connected || !this.onReconnect) return;
+      if (this.kernelGeneration !== generation) return; // a newer connection superseded this attempt
       this.connect().then(() => {
           if (!this.isIntentionalDisconnect) return this.onReconnect?.();
         }).then(() => {

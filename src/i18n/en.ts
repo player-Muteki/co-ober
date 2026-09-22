@@ -37,6 +37,8 @@ const en = {
     defaultTitle: 'Chat {time}',
     loadedNative: 'Loaded an OpenCode session. Earlier turns live in OpenCode history; new replies continue here.',
     loadNativeFailed: 'Could not load this OpenCode session (session/load not supported or session unavailable).',
+    nativeSessionMissing: 'This OpenCode session no longer exists (it may have been deleted from OpenCode).',
+    runtimeSessionLost: 'The agent no longer holds this session (it may have restarted). Local history is kept; your next message starts a fresh agent session.',
   },
 
   reconnect: {

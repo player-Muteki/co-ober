@@ -19,7 +19,7 @@ import type { WelcomeView } from './welcomeView';
 import type { PermissionBanner } from './permissionBanner';
 import type { InlineEditPanel } from './inlineEditPanel';
 import { buildSystemPrompt } from '../context/injection';
-import { AcpTimeoutError, AcpProcessExitError, AcpAbortError } from '../client/AcpErrors';
+import { AcpTimeoutError, AcpProcessExitError, AcpAbortError, AcpSessionMissingError } from '../client/AcpErrors';
 import { commandRegistry } from '../commands/registry';
 import { parseSlashCommand } from '../commands/executor';
 import { NOTECACHE_MAX_SIZE } from '../constants';
@@ -295,6 +295,7 @@ export class CoOberViewController {
 				await this.syncRuntimeSession(this.state.sessionId);
 			} catch (e) {
 				console.error('[co-ober] session sync on connect:', e);
+				this.notifyLostSession(e);
 			}
 		}
 		this.loadToolbarOptions();
@@ -314,6 +315,7 @@ export class CoOberViewController {
 					await this.syncRuntimeSession(this.state.sessionId);
 				} catch (e) {
 					console.error('[co-ober] session resync:', e);
+					this.notifyLostSession(e);
 				}
 				this.loadToolbarOptions();
 				if (this.busy) {
@@ -363,6 +365,7 @@ export class CoOberViewController {
 				await this.syncRuntimeSession(this.state.sessionId);
 			} catch (e) {
 				console.error('[co-ober] session resync:', e);
+				this.notifyLostSession(e);
 			}
 			this.loadToolbarOptions();
 			this.state.isConnected = true;
@@ -384,6 +387,15 @@ export class CoOberViewController {
 			if (client.getCurrentSessionId() === sessionId) return;
 			await client.loadSession(sessionId, this.getVaultCwd(), this.deps.runtime.settings.mcpServers);
 		});
+	}
+
+	/** Inform the user when the agent dropped a session (e.g. after an agent restart). */
+	private notifyLostSession(err: unknown): boolean {
+		if (err instanceof AcpSessionMissingError) {
+			this.deps.renderer.addSystemMessage(t().session.runtimeSessionLost);
+			return true;
+		}
+		return false;
 	}
 
 	async cancelActiveGeneration(): Promise<void> {
@@ -501,7 +513,9 @@ export class CoOberViewController {
 		} catch (e) {
 			console.error('[co-ober] session switch sync:', e);
 			if (source === 'opencode') {
-				this.deps.renderer.addError(t().session.loadNativeFailed);
+				this.deps.renderer.addError(
+					e instanceof AcpSessionMissingError ? t().session.nativeSessionMissing : t().session.loadNativeFailed,
+				);
 			}
 		}
 		await this.restoreSession();

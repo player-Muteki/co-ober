@@ -4,6 +4,8 @@ import {
   AcpProtocolError,
   AcpTimeoutError,
   AcpProcessExitError,
+  AcpSessionMissingError,
+  isSessionMissingError,
 } from './AcpErrors';
 
 describe('AcpErrors', () => {
@@ -76,5 +78,45 @@ describe('AcpErrors', () => {
       expect(error).toBeInstanceOf(AcpTransportError);
       expect(error).toBeInstanceOf(Error);
     });
+  });
+
+  describe('AcpSessionMissingError', () => {
+    it('should store sessionId and cause', () => {
+      const cause = new AcpProtocolError('Session not found', 'session/load', -32000);
+      const error = new AcpSessionMissingError('ses_1', cause);
+
+      expect(error.name).toBe('AcpSessionMissingError');
+      expect(error.sessionId).toBe('ses_1');
+      expect(error.cause).toBe(cause);
+    });
+  });
+});
+
+describe('isSessionMissingError', () => {
+  it('matches protocol errors whose message says the session is gone', () => {
+    expect(isSessionMissingError(new AcpProtocolError('Session not found', 'session/load', -32000))).toBe(true);
+    expect(isSessionMissingError(new AcpProtocolError('unknown session ses_abc', 'session/resume', -32000))).toBe(true);
+    expect(isSessionMissingError(new AcpProtocolError("the session doesn't exist anymore", 'loadSession'))).toBe(true);
+    expect(isSessionMissingError(new AcpProtocolError('Invalid sessionId', 'session/load'))).toBe(true);
+  });
+
+  it('matches session-missing hints inside protocol error data', () => {
+    const error = new AcpProtocolError('Internal error', 'session/load', -32603, {
+      message: 'Session ses_123 not found',
+    });
+    expect(isSessionMissingError(error)).toBe(true);
+  });
+
+  it('unwraps AcpSessionMissingError', () => {
+    expect(isSessionMissingError(new AcpSessionMissingError('ses_1'))).toBe(true);
+  });
+
+  it('does not match unrelated or transport errors', () => {
+    expect(isSessionMissingError(new AcpProtocolError('Method not found', 'session/load', -32601))).toBe(false);
+    expect(isSessionMissingError(new Error('boom'))).toBe(false);
+    expect(isSessionMissingError(new AcpTimeoutError('session/load', 30000))).toBe(false);
+    expect(isSessionMissingError(new AcpTransportError('Session transport closed'))).toBe(false);
+    expect(isSessionMissingError(undefined)).toBe(false);
+    expect(isSessionMissingError('Session not found')).toBe(false);
   });
 });
