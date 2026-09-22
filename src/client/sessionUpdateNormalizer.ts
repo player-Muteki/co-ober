@@ -90,11 +90,24 @@ export class SessionUpdateNormalizer {
       case 'current_mode_update':
         return { kind: 'mode', currentModeId: raw.currentModeId ?? null, availableModes: raw.availableModes ?? [] };
       case 'current_model_update':
-        return { kind: 'model', currentModelId: raw.currentModelId ?? null, availableModels: raw.availableModels ?? [] };
+        return {
+          kind: 'model',
+          currentModelId: raw.currentModelId ?? null,
+          availableModels: raw.availableModels ?? [],
+        };
       case 'session_info_update':
         return { kind: 'session_info', sessionId: raw.sessionId, title: raw.title, cwd: raw.cwd };
       case 'usage_update':
-        return { kind: 'usage', totalTokens: raw.totalTokens, inputTokens: raw.inputTokens, outputTokens: raw.outputTokens, thoughtTokens: raw.thoughtTokens, cost: raw.cost, used: raw.used, size: raw.size };
+        return {
+          kind: 'usage',
+          totalTokens: raw.totalTokens,
+          inputTokens: raw.inputTokens,
+          outputTokens: raw.outputTokens,
+          thoughtTokens: raw.thoughtTokens,
+          cost: raw.cost,
+          used: raw.used,
+          size: raw.size,
+        };
       default:
         return null;
     }

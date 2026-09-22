@@ -13,10 +13,7 @@
 import { setIcon } from 'obsidian';
 import type { ToolCallContent } from '../types';
 import { setupCollapsible, collapseElement, type CollapsibleState } from './collapsible';
-import {
-  parseDiffLines,
-  renderDiffContent,
-} from './DiffRenderer';
+import { parseDiffLines, renderDiffContent } from './DiffRenderer';
 import { createWriteEditBlock, updateWriteEditContent, type WriteEditState } from './writeEditRenderer';
 
 // ---- Constants ----
@@ -78,11 +75,7 @@ export function getToolDisplayName(kind: string): string {
 }
 
 /** Extract a one-line summary of a tool call from its input. */
-export function getToolSummary(
-  kind: string,
-  input?: Record<string, unknown>,
-  locations?: { path: string }[],
-): string {
+export function getToolSummary(kind: string, input?: Record<string, unknown>, locations?: { path: string }[]): string {
   const locs = locations ?? [];
   const rawInput = input ?? {};
 
@@ -200,7 +193,8 @@ function createWriteEditToolCall(
   locations?: { path: string }[],
 ): ToolCallState {
   const bw = createWriteEditBlock(
-    parentEl, toolCallId,
+    parentEl,
+    toolCallId,
     getToolDisplayName(kind),
     getToolSummary(kind, input, locations),
   );
@@ -212,7 +206,13 @@ function createWriteEditToolCall(
   const statusEl = header.querySelector('.tc-stat') as HTMLElement;
 
   return {
-    wrapper, header, body, iconEl, kindEl, summaryEl, statusEl,
+    wrapper,
+    header,
+    body,
+    iconEl,
+    kindEl,
+    summaryEl,
+    statusEl,
     collapsibleState,
     writeEditState: bw,
   };
@@ -331,7 +331,7 @@ function renderToolBodyContent(
 
   const text = textParts.join('\n');
   const outputText = rawOutput
-    ? (rawOutput.text ?? rawOutput.output ?? rawOutput.result ?? rawOutput.content) as string | undefined
+    ? ((rawOutput.text ?? rawOutput.output ?? rawOutput.result ?? rawOutput.content) as string | undefined)
     : undefined;
 
   // Tool-specific rendering
@@ -404,11 +404,7 @@ function renderToolBodyContent(
 /**
  * Render bash/execute tool expanded content — command + stdout + stderr.
  */
-function renderBashExpanded(
-  container: HTMLElement,
-  text: string,
-  rawOutput?: Record<string, unknown>,
-): void {
+function renderBashExpanded(container: HTMLElement, text: string, rawOutput?: Record<string, unknown>): void {
   if (text) {
     renderLinesExpanded(container, text, 30);
   }
@@ -438,10 +434,7 @@ function renderBashExpanded(
 /**
  * Render search/grep tool expanded content with file paths.
  */
-function renderSearchExpanded(
-  container: HTMLElement,
-  result: string,
-): void {
+function renderSearchExpanded(container: HTMLElement, result: string): void {
   const lines = result.split(/\r?\n/).filter(Boolean);
   if (lines.length === 0) {
     container.createDiv({ cls: 'co-ober-tool-empty', text: 'No matches found' });
@@ -506,14 +499,10 @@ function renderApplyPatchExpanded(
       for (const fd of fileDiffs) {
         const section = container.createDiv({ cls: 'co-ober-patch-section' });
         const fileHeader = section.createDiv({ cls: 'co-ober-patch-file' });
-        const icon = fd.operation === 'add' ? 'file-plus'
-          : fd.operation === 'delete' ? 'trash'
-          : 'file-pen';
+        const icon = fd.operation === 'add' ? 'file-plus' : fd.operation === 'delete' ? 'trash' : 'file-pen';
         setIcon(fileHeader.createSpan({ cls: 'co-ober-patch-file-icon' }), icon);
         fileHeader.createSpan({ cls: 'co-ober-patch-file-name', text: fd.filePath });
-        const opText = fd.operation === 'add' ? 'ADD'
-          : fd.operation === 'delete' ? 'DELETE'
-          : 'UPDATE';
+        const opText = fd.operation === 'add' ? 'ADD' : fd.operation === 'delete' ? 'DELETE' : 'UPDATE';
         fileHeader.createSpan({ cls: `co-ober-patch-op co-ober-patch-op-${fd.operation}`, text: opText });
 
         if (fd.diffLines.length > 0) {
@@ -618,12 +607,7 @@ function parseApplyPatchFileDiffs(patchText: string): ParsedFileDiff[] {
  * Render lines with truncation — the unified "renderLinesExpanded" pattern.
  * Shows up to `maxLines` lines, then "X more lines" truncation.
  */
-export function renderLinesExpanded(
-  container: HTMLElement,
-  result: string,
-  maxLines: number,
-  hoverable = false,
-): void {
+export function renderLinesExpanded(container: HTMLElement, result: string, maxLines: number, hoverable = false): void {
   const lines = result.split(/\r?\n/);
   const truncated = lines.length > maxLines;
   const displayLines = truncated ? lines.slice(0, maxLines) : lines;
@@ -659,15 +643,8 @@ function truncateText(text: string, maxLength: number): string {
   return text.substring(0, maxLength) + '...';
 }
 
-function rawPathFromInput(
-  rawInput: Record<string, unknown>,
-  locs: { path: string }[],
-): string {
+function rawPathFromInput(rawInput: Record<string, unknown>, locs: { path: string }[]): string {
   return (
-    locs[0]?.path ??
-    (rawInput.file_path as string) ??
-    (rawInput.filePath as string) ??
-    (rawInput.path as string) ??
-    ''
+    locs[0]?.path ?? (rawInput.file_path as string) ?? (rawInput.filePath as string) ?? (rawInput.path as string) ?? ''
   );
 }

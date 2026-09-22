@@ -7,7 +7,7 @@ interface PendingRequest {
   method: string;
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
-		timeout: number | null;
+  timeout: number | null;
   abortHandler: (() => void) | null;
 }
 

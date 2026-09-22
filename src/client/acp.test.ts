@@ -1,7 +1,15 @@
 import { AcpProtocolError, AcpSessionMissingError } from './AcpErrors';
 import { describe, it, expect, vi } from 'vitest';
 import pkg from '../../package.json';
-import { AcpClient, CLIENT_VERSION, buildMcpServers, parseSessionUpdate, extractSessionSnapshot, extractConfigMeta, mergeAvailableCommands } from './acp';
+import {
+  AcpClient,
+  CLIENT_VERSION,
+  buildMcpServers,
+  parseSessionUpdate,
+  extractSessionSnapshot,
+  extractConfigMeta,
+  mergeAvailableCommands,
+} from './acp';
 import { AcpRequestHandler } from './AcpRequestHandler';
 import { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
 import type { SessionUpdate } from '../types';
@@ -114,7 +122,9 @@ describe('parseSessionUpdate', () => {
   it('should parse config_option_update', () => {
     const result = parseSessionUpdate({
       sessionUpdate: 'config_option_update',
-      configOptions: [{ id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: 'gpt-4', options: [] }],
+      configOptions: [
+        { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: 'gpt-4', options: [] },
+      ],
     });
     expect(result).not.toBeNull();
     if (!result) return;
@@ -278,17 +288,37 @@ describe('mergeAvailableCommands', () => {
 describe('buildMcpServers', () => {
   it('should include enabled stdio servers with command and name', () => {
     const result = buildMcpServers([
-      { type: 'stdio', id: '1', enabled: true, name: ' filesystem ', command: ' npx ', args: [' -y ', '', '@modelcontextprotocol/server-filesystem'] },
+      {
+        type: 'stdio',
+        id: '1',
+        enabled: true,
+        name: ' filesystem ',
+        command: ' npx ',
+        args: [' -y ', '', '@modelcontextprotocol/server-filesystem'],
+      },
     ]);
 
     expect(result).toEqual([
-      { type: 'stdio', name: 'filesystem', command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem'], env: [] },
+      {
+        type: 'stdio',
+        name: 'filesystem',
+        command: 'npx',
+        args: ['-y', '@modelcontextprotocol/server-filesystem'],
+        env: [],
+      },
     ]);
   });
 
   it('should include enabled http/sse servers with url and name', () => {
     const result = buildMcpServers([
-      { type: 'http', id: '2', enabled: true, name: ' my_http ', url: ' http://localhost:8000 ', headers: [{ name: 'Auth', value: '123' }] },
+      {
+        type: 'http',
+        id: '2',
+        enabled: true,
+        name: ' my_http ',
+        url: ' http://localhost:8000 ',
+        headers: [{ name: 'Auth', value: '123' }],
+      },
       { type: 'sse', id: '3', enabled: true, name: ' my_sse ', url: ' http://localhost:8001 ', headers: [] },
     ]);
 
@@ -317,7 +347,14 @@ describe('AcpClient session loading', () => {
     Reflect.set(client, 'requestWithFallback', requestWithFallback);
 
     await client.loadSession('s1', '/vault', [
-      { type: 'stdio', id: 'fs', enabled: true, name: ' filesystem ', command: ' npx ', args: [' -y ', '', '@modelcontextprotocol/server-filesystem'] },
+      {
+        type: 'stdio',
+        id: 'fs',
+        enabled: true,
+        name: ' filesystem ',
+        command: ' npx ',
+        args: [' -y ', '', '@modelcontextprotocol/server-filesystem'],
+      },
       { type: 'stdio', id: 'off', enabled: false, name: 'disabled', command: 'npx', args: [] },
     ]);
 
@@ -325,7 +362,13 @@ describe('AcpClient session loading', () => {
       sessionId: 's1',
       cwd: '/vault',
       mcpServers: [
-        { type: 'stdio', name: 'filesystem', command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem'], env: [] },
+        {
+          type: 'stdio',
+          name: 'filesystem',
+          command: 'npx',
+          args: ['-y', '@modelcontextprotocol/server-filesystem'],
+          env: [],
+        },
       ],
     });
     expect(client.getCurrentSessionId()).toBe('s1');
@@ -333,9 +376,11 @@ describe('AcpClient session loading', () => {
 
   it('loadSession classifies session-missing protocol errors as AcpSessionMissingError', async () => {
     const client = new AcpClient('opencode');
-    Reflect.set(client, 'requestWithFallback', vi.fn().mockRejectedValue(
-      new AcpProtocolError('Session not found', 'session/load', -32000),
-    ));
+    Reflect.set(
+      client,
+      'requestWithFallback',
+      vi.fn().mockRejectedValue(new AcpProtocolError('Session not found', 'session/load', -32000)),
+    );
 
     await expect(client.loadSession('ses_gone')).rejects.toBeInstanceOf(AcpSessionMissingError);
     expect(client.getCurrentSessionId()).toBeUndefined();
@@ -351,9 +396,7 @@ describe('AcpClient session loading', () => {
 
   it('resumeSession classifies session-missing errors as AcpSessionMissingError', async () => {
     const client = new AcpClient('opencode');
-    Reflect.set(client, 'requestWithFallback', vi.fn().mockRejectedValue(
-      new Error('unknown session ses_gone'),
-    ));
+    Reflect.set(client, 'requestWithFallback', vi.fn().mockRejectedValue(new Error('unknown session ses_gone')));
 
     await expect(client.resumeSession('ses_gone')).rejects.toBeInstanceOf(AcpSessionMissingError);
   });
@@ -365,7 +408,6 @@ describe('AcpClient session loading', () => {
     expect(client.generation).toBe(before + 1);
   });
 });
-
 
 describe('AcpRequestHandler permission handling', () => {
   it('falls back to a reject decision when permission UI handler fails', async () => {
@@ -400,14 +442,14 @@ describe('AcpRequestHandler permission handling', () => {
 
     expect(result).toEqual({
       sessionId: 's1',
-      decision: { optionId: 'reject' }
+      decision: { optionId: 'reject' },
     });
     consoleSpy.mockRestore();
     handler.dispose();
   });
 
   it('uses the current release version for ACP clientInfo', () => {
-	expect(CLIENT_VERSION).toBe(pkg.version);
+    expect(CLIENT_VERSION).toBe(pkg.version);
   });
 });
 
@@ -426,7 +468,7 @@ describe('sendMessage flow', () => {
     const update = {
       sessionUpdate: 'agent_message_chunk',
       messageId: 'm1',
-      content: { type: 'text', text: 'Hello' }
+      content: { type: 'text', text: 'Hello' },
     };
 
     // Replicate the onNotification('session/update') logic:
@@ -448,8 +490,8 @@ describe('sendMessage flow', () => {
         role: 'agent',
         messageId: 'm1',
         chunkText: 'Hello',
-        accumulatedText: 'Hello'
-      })
+        accumulatedText: 'Hello',
+      }),
     );
   });
 });
@@ -458,9 +500,10 @@ describe('requestWithFallback', () => {
   it('falls back to second candidate when first throws -32601', async () => {
     const client = new AcpClient('opencode');
     const transport = {
-      request: vi.fn()
+      request: vi
+        .fn()
         .mockRejectedValueOnce(new AcpProtocolError('Method not found', 'session/new', -32601))
-        .mockResolvedValueOnce({ sessionId: 's2' })
+        .mockResolvedValueOnce({ sessionId: 's2' }),
     };
     Reflect.set(client, 'transport', transport);
 
@@ -475,10 +518,11 @@ describe('requestWithFallback', () => {
   it('uses cached candidate without retrying first', async () => {
     const client = new AcpClient('opencode');
     const transport = {
-      request: vi.fn()
+      request: vi
+        .fn()
         .mockRejectedValueOnce(new AcpProtocolError('Method not found', 'session/new', -32601))
         .mockResolvedValueOnce({ sessionId: 's2' })
-        .mockResolvedValueOnce({ sessionId: 's3' })
+        .mockResolvedValueOnce({ sessionId: 's3' }),
     };
     Reflect.set(client, 'transport', transport);
 
@@ -497,12 +541,13 @@ describe('requestWithFallback', () => {
     const client = new AcpClient('opencode');
     const expectedError = new AcpProtocolError('Server error', 'session/new', -32000);
     const transport = {
-      request: vi.fn().mockRejectedValueOnce(expectedError)
+      request: vi.fn().mockRejectedValueOnce(expectedError),
     };
     Reflect.set(client, 'transport', transport);
 
-    await expect(Reflect.get(client, 'requestWithFallback').call(client, 'newSession', { cwd: '/test' }))
-      .rejects.toThrow(expectedError);
+    await expect(
+      Reflect.get(client, 'requestWithFallback').call(client, 'newSession', { cwd: '/test' }),
+    ).rejects.toThrow(expectedError);
 
     expect(transport.request).toHaveBeenCalledTimes(1);
   });
@@ -512,14 +557,13 @@ describe('requestWithFallback', () => {
     const expectedError1 = new AcpProtocolError('Method not found', 'session/new', -32601);
     const expectedError2 = new AcpProtocolError('Method not found', 'newSession', -32601);
     const transport = {
-      request: vi.fn()
-        .mockRejectedValueOnce(expectedError1)
-        .mockRejectedValueOnce(expectedError2)
+      request: vi.fn().mockRejectedValueOnce(expectedError1).mockRejectedValueOnce(expectedError2),
     };
     Reflect.set(client, 'transport', transport);
 
-    await expect(Reflect.get(client, 'requestWithFallback').call(client, 'newSession', { cwd: '/test' }))
-      .rejects.toThrow(expectedError2);
+    await expect(
+      Reflect.get(client, 'requestWithFallback').call(client, 'newSession', { cwd: '/test' }),
+    ).rejects.toThrow(expectedError2);
 
     expect(transport.request).toHaveBeenCalledTimes(2);
   });

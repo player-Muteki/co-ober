@@ -27,7 +27,7 @@ describe('AcpJsonRpcTransport', () => {
     input.write(JSON.stringify({ jsonrpc: '2.0', method: 'test' }) + '\n');
 
     // wait for event loop to process
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(handlerCalled).toBe(true);
   });
@@ -42,7 +42,7 @@ describe('AcpJsonRpcTransport', () => {
       sentMsg += chunk.toString();
     });
 
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     const parsed = JSON.parse(sentMsg.trim());
     expect(parsed.method).toBe('hello');
@@ -75,7 +75,7 @@ describe('AcpJsonRpcTransport', () => {
 
     transport.notify('someEvent', { value: 42 });
 
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
     const parsed = JSON.parse(sentMsg.trim());
     expect(parsed.method).toBe('someEvent');
     expect(parsed.id).toBeUndefined();
@@ -91,7 +91,7 @@ describe('AcpJsonRpcTransport', () => {
 
     transport.notify('someEvent', { value: 42 });
 
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(sentMsg).toBe('');
   });
 
@@ -102,14 +102,14 @@ describe('AcpJsonRpcTransport', () => {
     const unsubscribe = transport.onNotification('myNotification', handler);
 
     input.write(JSON.stringify({ jsonrpc: '2.0', method: 'myNotification', params: { test: true } }) + '\n');
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(handler).toHaveBeenCalledWith({ test: true });
 
     // test unsubscribe
     unsubscribe();
     input.write(JSON.stringify({ jsonrpc: '2.0', method: 'myNotification', params: { test: false } }) + '\n');
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(handler).toHaveBeenCalledTimes(1);
   });
@@ -128,16 +128,19 @@ describe('AcpJsonRpcTransport', () => {
 
     input.write(JSON.stringify({ jsonrpc: '2.0', id: 99, method: 'myRequest', params: 'hello' }) + '\n');
 
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await new Promise((resolve) => setTimeout(resolve, 20));
 
-    const responses = sentMsg.trim().split('\n').map(l => JSON.parse(l));
+    const responses = sentMsg
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l));
     expect(responses[0]).toEqual({ jsonrpc: '2.0', id: 99, result: { echo: 'hello' } });
 
     // test unsubscribe — the request now has no handler, so it gets a method-not-found reply
     unsubscribe();
     sentMsg = '';
     input.write(JSON.stringify({ jsonrpc: '2.0', id: 100, method: 'myRequest', params: 'hello2' }) + '\n');
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await new Promise((resolve) => setTimeout(resolve, 20));
     const afterUnsub = JSON.parse(sentMsg.trim());
     expect(afterUnsub).toEqual({
       jsonrpc: '2.0',
@@ -156,9 +159,12 @@ describe('AcpJsonRpcTransport', () => {
 
     input.write(JSON.stringify({ jsonrpc: '2.0', id: 55, method: 'unknownMethod', params: {} }) + '\n');
 
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await new Promise((resolve) => setTimeout(resolve, 20));
 
-    const responses = sentMsg.trim().split('\n').map(l => JSON.parse(l));
+    const responses = sentMsg
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l));
     expect(responses[0]).toEqual({
       jsonrpc: '2.0',
       id: 55,
@@ -176,11 +182,12 @@ describe('AcpJsonRpcTransport', () => {
 
     input.write(JSON.stringify({ jsonrpc: '2.0', method: 'unknownNotification' }) + '\n');
 
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await new Promise((resolve) => setTimeout(resolve, 20));
     expect(sentMsg).toBe('');
   });
 
-  it('onRequest() registers handler and sends error when handler rejects', async () => {    transport.start();
+  it('onRequest() registers handler and sends error when handler rejects', async () => {
+    transport.start();
 
     let sentMsg = '';
     output.on('data', (chunk) => {
@@ -193,9 +200,12 @@ describe('AcpJsonRpcTransport', () => {
 
     input.write(JSON.stringify({ jsonrpc: '2.0', id: 101, method: 'failRequest' }) + '\n');
 
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await new Promise((resolve) => setTimeout(resolve, 20));
 
-    const responses = sentMsg.trim().split('\n').map(l => JSON.parse(l));
+    const responses = sentMsg
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l));
     expect(responses[0]).toEqual({ jsonrpc: '2.0', id: 101, error: { code: -32000, message: 'Something went wrong' } });
   });
 
@@ -232,7 +242,7 @@ describe('AcpJsonRpcTransport', () => {
     input.write('not a json\n');
     input.write('{"jsonrpc": "2.0", "method": "test"}\n');
 
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(handler).toHaveBeenCalledTimes(1);
   });
@@ -246,7 +256,7 @@ describe('AcpJsonRpcTransport', () => {
       sentMsg += chunk.toString();
     });
 
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
     const parsed = JSON.parse(sentMsg.trim());
     const reqId = parsed.id;
 
@@ -264,7 +274,7 @@ describe('AcpJsonRpcTransport', () => {
       sentMsg += chunk.toString();
     });
 
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
     const parsed = JSON.parse(sentMsg.trim());
     const reqId = parsed.id;
 
@@ -279,7 +289,9 @@ describe('AcpJsonRpcTransport', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const badOutput = new PassThrough();
-    badOutput.write = () => { throw new Error('Write failed'); };
+    badOutput.write = () => {
+      throw new Error('Write failed');
+    };
 
     const badTransport = new AcpJsonRpcTransport({ input, output: badOutput });
 

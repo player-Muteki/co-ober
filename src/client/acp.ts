@@ -5,17 +5,17 @@ import { AcpSubprocess, type AcpSubprocessLaunchSpec } from './AcpSubprocess';
 import { type AcpLogicalMethod, getAcpMethodCandidates } from './AcpMethodNames';
 import { AcpProtocolError, AcpSessionMissingError, isSessionMissingError } from './AcpErrors';
 import type {
-	SessionUpdate,
-	PromptPart,
-	SessionConfigOption,
-	PermissionLevel,
-	PermissionRequest,
-	AvailableCommand,
-	ModelOption,
-	ModeOption,
-	SessionSnapshot,
-	McpServerConfig,
-	AgentCapabilities,
+  SessionUpdate,
+  PromptPart,
+  SessionConfigOption,
+  PermissionLevel,
+  PermissionRequest,
+  AvailableCommand,
+  ModelOption,
+  ModeOption,
+  SessionSnapshot,
+  McpServerConfig,
+  AgentCapabilities,
 } from '../types';
 import type { OpencodeClient } from './index';
 import type { SessionMeta } from '../types';
@@ -110,7 +110,8 @@ export function parseSessionUpdate(u: Record<string, unknown> | undefined | null
       const r = zSessionInfoUpdate.safeParse(u);
       return r.success ? r.data : null;
     }
-    default: return null;
+    default:
+      return null;
   }
 }
 
@@ -134,8 +135,13 @@ export function mergeAvailableCommands(commands: AvailableCommand[]): AvailableC
 }
 
 /** Extract model and mode metadata from config options */
-export function extractConfigMeta(configOptions: SessionConfigOption[]): Pick<AcpSessionMeta, 'currentModelId' | 'availableModels' | 'currentModeId' | 'availableModes' | 'configOptions'> {
-  const meta: Pick<AcpSessionMeta, 'currentModelId' | 'availableModels' | 'currentModeId' | 'availableModes' | 'configOptions'> = {
+export function extractConfigMeta(
+  configOptions: SessionConfigOption[],
+): Pick<AcpSessionMeta, 'currentModelId' | 'availableModels' | 'currentModeId' | 'availableModes' | 'configOptions'> {
+  const meta: Pick<
+    AcpSessionMeta,
+    'currentModelId' | 'availableModels' | 'currentModeId' | 'availableModes' | 'configOptions'
+  > = {
     configOptions: [...configOptions],
     currentModelId: null,
     availableModels: [],
@@ -224,147 +230,156 @@ export type AcpMcpServer =
   | { type: 'sse'; name: string; url: string; headers: Array<{ name: string; value: string }> };
 
 export class AcpClient implements OpencodeClient {
-	private subprocess: AcpSubprocess | null = null;
-	private connected = false;
-	private transport: AcpJsonRpcTransport | null = null;
-	private requestHandler: AcpRequestHandler | null = null;
-	private agentCapabilities: AgentCapabilities | null = null;
-	private activeStreamSessionId: string | null = null;
-	private activeAbortController: AbortController | null = null;
-	private chunkHandler: ((update: NormalizedUpdate) => void) | null = null;
-	private replayHandler: ((update: NormalizedUpdate) => void) | null = null;
-	private normalizer = new SessionUpdateNormalizer();
-	private sessionId_: string | null = null;
-	private cmdPath: string;
-	private cwd?: string;
-	private availableCommands: AvailableCommand[] = [{ name: 'compact', description: t().slash.compact }];
-	private availableModels: ModelOption[] = [];
-	private availableModes: ModeOption[] = [];
-	private configOptions: SessionConfigOption[] = [];
-	private currentModelId: string | null = null;
-	private currentModeId: string | null = null;
-	private sessionInfo: { sessionId?: string; title?: string; cwd?: string } | null = null;
-	onClose?: () => void;
-	onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
-	onReconnect?: () => Promise<void>;
-	onReconnectFailed?: () => void;
-	private reconnectAttempts = 0;
-	private readonly maxReconnectAttempts = 3;
-	private isIntentionalDisconnect = false;
-	private methodCache = new Map<AcpLogicalMethod, string>();
-	private reconnectTimer: number | null = null;
-	/**
-	 * Incremented every time a subprocess connection is created or disposed.
-	 * Async continuations capture the current generation and abort themselves
-	 * when it no longer matches, so a superseded connect can never mutate or
-	 * tear down the newer connection's state.
-	 */
-	private kernelGeneration = 0;
+  private subprocess: AcpSubprocess | null = null;
+  private connected = false;
+  private transport: AcpJsonRpcTransport | null = null;
+  private requestHandler: AcpRequestHandler | null = null;
+  private agentCapabilities: AgentCapabilities | null = null;
+  private activeStreamSessionId: string | null = null;
+  private activeAbortController: AbortController | null = null;
+  private chunkHandler: ((update: NormalizedUpdate) => void) | null = null;
+  private replayHandler: ((update: NormalizedUpdate) => void) | null = null;
+  private normalizer = new SessionUpdateNormalizer();
+  private sessionId_: string | null = null;
+  private cmdPath: string;
+  private cwd?: string;
+  private availableCommands: AvailableCommand[] = [{ name: 'compact', description: t().slash.compact }];
+  private availableModels: ModelOption[] = [];
+  private availableModes: ModeOption[] = [];
+  private configOptions: SessionConfigOption[] = [];
+  private currentModelId: string | null = null;
+  private currentModeId: string | null = null;
+  private sessionInfo: { sessionId?: string; title?: string; cwd?: string } | null = null;
+  onClose?: () => void;
+  onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
+  onReconnect?: () => Promise<void>;
+  onReconnectFailed?: () => void;
+  private reconnectAttempts = 0;
+  private readonly maxReconnectAttempts = 3;
+  private isIntentionalDisconnect = false;
+  private methodCache = new Map<AcpLogicalMethod, string>();
+  private reconnectTimer: number | null = null;
+  /**
+   * Incremented every time a subprocess connection is created or disposed.
+   * Async continuations capture the current generation and abort themselves
+   * when it no longer matches, so a superseded connect can never mutate or
+   * tear down the newer connection's state.
+   */
+  private kernelGeneration = 0;
 
   constructor(cmdPath: string, cwd?: string) {
     this.cmdPath = cmdPath;
     this.cwd = cwd;
   }
 
-  get permissionMode(): PermissionLevel { return 'yolo'; }
-  set permissionMode(_v: PermissionLevel) { /* not used at this level */ }
+  get permissionMode(): PermissionLevel {
+    return 'yolo';
+  }
+  set permissionMode(_v: PermissionLevel) {
+    /* not used at this level */
+  }
 
-  isConnected(): boolean { return this.connected; }
+  isConnected(): boolean {
+    return this.connected;
+  }
 
   /** Monotonic counter identifying the current subprocess connection attempt. */
-  get generation(): number { return this.kernelGeneration; }
+  get generation(): number {
+    return this.kernelGeneration;
+  }
 
-	async connect(): Promise<void> {
-		if (this.connected) return;
-		this.isIntentionalDisconnect = false;
-		this.clearReconnectTimer();
-		const generation = ++this.kernelGeneration;
+  async connect(): Promise<void> {
+    if (this.connected) return;
+    this.isIntentionalDisconnect = false;
+    this.clearReconnectTimer();
+    const generation = ++this.kernelGeneration;
 
-		const cmd = this.cmdPath.replace(/^"(.+)"$/, '$1').replace(/^'(.+)'$/, '$1');
-		const args = ['acp'];
-		const cwd = this.cwd ?? process.cwd();
+    const cmd = this.cmdPath.replace(/^"(.+)"$/, '$1').replace(/^'(.+)'$/, '$1');
+    const args = ['acp'];
+    const cwd = this.cwd ?? process.cwd();
 
-		const spawnInfo = getSpawnInfo(cmd, args, process.platform, process.env);
-		const launchSpec: AcpSubprocessLaunchSpec = {
-			command: spawnInfo.command,
-			args: spawnInfo.args,
-			cwd,
-		};
-		const subprocess = new AcpSubprocess(launchSpec);
-		this.subprocess = subprocess;
+    const spawnInfo = getSpawnInfo(cmd, args, process.platform, process.env);
+    const launchSpec: AcpSubprocessLaunchSpec = {
+      command: spawnInfo.command,
+      args: spawnInfo.args,
+      cwd,
+    };
+    const subprocess = new AcpSubprocess(launchSpec);
+    this.subprocess = subprocess;
 
-		let transport: AcpJsonRpcTransport | null = null;
-		let requestHandler: AcpRequestHandler | null = null;
+    let transport: AcpJsonRpcTransport | null = null;
+    let requestHandler: AcpRequestHandler | null = null;
 
-		try {
-			subprocess.start();
-			subprocess.onClose((error) => this.handleSubprocessClose(subprocess, error));
-			const input = subprocess.stdout;
-			const output = subprocess.stdin;
-			if (!input || !output) {
-				throw new Error(t().acp.stdinNotWritable);
-			}
+    try {
+      subprocess.start();
+      subprocess.onClose((error) => this.handleSubprocessClose(subprocess, error));
+      const input = subprocess.stdout;
+      const output = subprocess.stdin;
+      if (!input || !output) {
+        throw new Error(t().acp.stdinNotWritable);
+      }
 
-			transport = new AcpJsonRpcTransport({ input, output });
-			this.transport = transport;
-			transport.start();
+      transport = new AcpJsonRpcTransport({ input, output });
+      this.transport = transport;
+      transport.start();
 
-			// Initialize AcpRequestHandler (manages FS, terminal, permission handlers)
-			requestHandler = new AcpRequestHandler({
-				transport,
-				vaultPath: cwd,
-				onPermissionRequest: this.onPermissionRequest,
-			});
-			this.requestHandler = requestHandler;
+      // Initialize AcpRequestHandler (manages FS, terminal, permission handlers)
+      requestHandler = new AcpRequestHandler({
+        transport,
+        vaultPath: cwd,
+        onPermissionRequest: this.onPermissionRequest,
+      });
+      this.requestHandler = requestHandler;
 
-			transport.onNotification('session/update', (params) => {
-				// Drop updates from a transport that has since been replaced or disposed.
-				if (this.transport !== transport) return;
-				const p = params as Record<string, unknown> | undefined;
-				const update = this.parseUpdate(p?.update as Record<string, unknown> | undefined);
-				if (update) {
-					if (update.sessionUpdate === 'usage_update') {
-						// Usage updates are frequent in long sessions; only log when debug is enabled.
-						if (typeof process.env.DEBUG_CO_OBER !== 'undefined') {
-							console.debug('[co-ober] usage_update:', JSON.stringify(update));
-						}
-					}
-					this.applySessionUpdate(update);
-					if (this.chunkHandler) {
-						const norm = this.normalizer.normalize(update);
-						if (norm) this.chunkHandler(norm);
-					} else if (this.replayHandler) {
-						const norm = this.normalizer.normalize(update);
-						if (norm) this.replayHandler(norm);
-					}
-				}
-			});
+      transport.onNotification('session/update', (params) => {
+        // Drop updates from a transport that has since been replaced or disposed.
+        if (this.transport !== transport) return;
+        const p = params as Record<string, unknown> | undefined;
+        const update = this.parseUpdate(p?.update as Record<string, unknown> | undefined);
+        if (update) {
+          if (update.sessionUpdate === 'usage_update') {
+            // Usage updates are frequent in long sessions; only log when debug is enabled.
+            if (typeof process.env.DEBUG_CO_OBER !== 'undefined') {
+              console.debug('[co-ober] usage_update:', JSON.stringify(update));
+            }
+          }
+          this.applySessionUpdate(update);
+          if (this.chunkHandler) {
+            const norm = this.normalizer.normalize(update);
+            if (norm) this.chunkHandler(norm);
+          } else if (this.replayHandler) {
+            const norm = this.normalizer.normalize(update);
+            if (norm) this.replayHandler(norm);
+          }
+        }
+      });
 
-			const response = await this.requestWithFallback('initialize', {
-				protocolVersion: 1,
-				clientInfo: { name: 'co-ober', version: CLIENT_VERSION },
-				clientCapabilities: requestHandler.buildClientCapabilities(),
-			});
-			if (this.kernelGeneration !== generation) {
-				throw new Error('ACP connection was superseded by a newer connection attempt');
-			}
-			const initResult = z.object({ agentCapabilities: z.unknown().optional() }).safeParse(response);
-			this.agentCapabilities = (initResult.success ? initResult.data.agentCapabilities as AgentCapabilities : null) ?? null;
-			this.methodCache.clear();
-			this.connected = true;
-		} catch (error) {
-			if (this.kernelGeneration === generation) {
-				this.onClose?.();
-				await this.disposeConnection(error instanceof Error ? error : new Error(String(error)), true);
-			} else {
-				// A newer connection owns the client state now; only clean up our own resources.
-				requestHandler?.dispose();
-				transport?.dispose(error instanceof Error ? error : new Error(String(error)));
-				await subprocess.shutdown().catch(() => {});
-			}
-			throw error;
-		}
-	}
+      const response = await this.requestWithFallback('initialize', {
+        protocolVersion: 1,
+        clientInfo: { name: 'co-ober', version: CLIENT_VERSION },
+        clientCapabilities: requestHandler.buildClientCapabilities(),
+      });
+      if (this.kernelGeneration !== generation) {
+        throw new Error('ACP connection was superseded by a newer connection attempt');
+      }
+      const initResult = z.object({ agentCapabilities: z.unknown().optional() }).safeParse(response);
+      this.agentCapabilities =
+        (initResult.success ? (initResult.data.agentCapabilities as AgentCapabilities) : null) ?? null;
+      this.methodCache.clear();
+      this.connected = true;
+    } catch (error) {
+      if (this.kernelGeneration === generation) {
+        this.onClose?.();
+        await this.disposeConnection(error instanceof Error ? error : new Error(String(error)), true);
+      } else {
+        // A newer connection owns the client state now; only clean up our own resources.
+        requestHandler?.dispose();
+        transport?.dispose(error instanceof Error ? error : new Error(String(error)));
+        await subprocess.shutdown().catch(() => {});
+      }
+      throw error;
+    }
+  }
 
   getAgentCapabilities(): AgentCapabilities | null {
     return this.agentCapabilities;
@@ -379,7 +394,10 @@ export class AcpClient implements OpencodeClient {
   }
 
   async createSession(cwd?: string, mcpServers: McpServerConfig[] = []): Promise<string> {
-    const r = await this.requestWithFallback('newSession', { cwd: this.resolveCwd(cwd), mcpServers: buildMcpServers(mcpServers) });
+    const r = await this.requestWithFallback('newSession', {
+      cwd: this.resolveCwd(cwd),
+      mcpServers: buildMcpServers(mcpServers),
+    });
     const parsed = z.object({ sessionId: z.string() }).safeParse(r);
     if (!parsed.success) throw new Error('Server did not return a valid session ID');
     this.applySessionSnapshot(r as Record<string, unknown>);
@@ -387,11 +405,20 @@ export class AcpClient implements OpencodeClient {
     return this.sessionId_;
   }
 
-  async loadSession(id: string, cwd?: string, mcpServers: McpServerConfig[] = [], onReplayUpdate?: (u: NormalizedUpdate) => void): Promise<void> {
+  async loadSession(
+    id: string,
+    cwd?: string,
+    mcpServers: McpServerConfig[] = [],
+    onReplayUpdate?: (u: NormalizedUpdate) => void,
+  ): Promise<void> {
     this.normalizer.reset();
     this.replayHandler = onReplayUpdate ?? null;
     try {
-      const r = await this.requestWithFallback('loadSession', { sessionId: id, cwd: this.resolveCwd(cwd), mcpServers: buildMcpServers(mcpServers) });
+      const r = await this.requestWithFallback('loadSession', {
+        sessionId: id,
+        cwd: this.resolveCwd(cwd),
+        mcpServers: buildMcpServers(mcpServers),
+      });
       this.applySessionSnapshot(r as Record<string, unknown>);
       this.sessionId_ = id;
     } catch (e) {
@@ -403,9 +430,14 @@ export class AcpClient implements OpencodeClient {
   }
 
   async listSessions(cwd?: string): Promise<SessionMeta[]> {
-    const r = await this.requestWithFallback('listSessions', { cwd: this.resolveCwd(cwd), limit: ACP_LIST_SESSIONS_LIMIT });
-    const parsed = z.object({ sessions: z.array(z.object({ sessionId: z.string() }).passthrough()).optional() }).safeParse(r);
-    return parsed.success ? parsed.data.sessions as SessionMeta[] : [];
+    const r = await this.requestWithFallback('listSessions', {
+      cwd: this.resolveCwd(cwd),
+      limit: ACP_LIST_SESSIONS_LIMIT,
+    });
+    const parsed = z
+      .object({ sessions: z.array(z.object({ sessionId: z.string() }).passthrough()).optional() })
+      .safeParse(r);
+    return parsed.success ? (parsed.data.sessions as SessionMeta[]) : [];
   }
 
   async forkSession(id: string, cwd?: string): Promise<string> {
@@ -451,7 +483,7 @@ export class AcpClient implements OpencodeClient {
   async setConfigOption(id: string, configId: string, value: string): Promise<SessionConfigOption[]> {
     const r = await this.requestWithFallback('setConfigOption', { sessionId: id, configId, value });
     const parsed = z.object({ configOptions: z.array(z.any()).optional() }).safeParse(r);
-    const configOptions = parsed.success ? parsed.data.configOptions as SessionConfigOption[] ?? [] : [];
+    const configOptions = parsed.success ? ((parsed.data.configOptions as SessionConfigOption[]) ?? []) : [];
     this.applyConfigOptions(configOptions);
     return configOptions;
   }
@@ -469,15 +501,25 @@ export class AcpClient implements OpencodeClient {
     // Use 0 timeout to disable transport-level timeout for streaming
     // The idle timeout in AgentRuntime handles cancellation
     const zAcpResponse = z.object({
-      stopReason: z.enum(['end_turn', 'max_tokens', 'max_turn_requests', 'tool_calls', 'interrupted', 'refusal', 'cancelled']),
-      usage: z.object({
-        totalTokens: z.number(),
-        inputTokens: z.number(),
-        outputTokens: z.number(),
-        thoughtTokens: z.number().optional(),
-        cachedReadTokens: z.number().optional(),
-        cachedWriteTokens: z.number().optional(),
-      }).optional(),
+      stopReason: z.enum([
+        'end_turn',
+        'max_tokens',
+        'max_turn_requests',
+        'tool_calls',
+        'interrupted',
+        'refusal',
+        'cancelled',
+      ]),
+      usage: z
+        .object({
+          totalTokens: z.number(),
+          inputTokens: z.number(),
+          outputTokens: z.number(),
+          thoughtTokens: z.number().optional(),
+          cachedReadTokens: z.number().optional(),
+          cachedWriteTokens: z.number().optional(),
+        })
+        .optional(),
       _meta: z.record(z.string(), z.unknown()).optional(),
     });
     return this.requestWithFallback('prompt', { sessionId: id, prompt: parts }, 0, signal)
@@ -506,14 +548,22 @@ export class AcpClient implements OpencodeClient {
     this.activeStreamSessionId = null;
     this.chunkHandler = null;
 
-    return this.requestWithFallback('cancel', { sessionId: id }).then(() => {}).catch((e) => {
-      console.warn('[co-ober] cancel RPC failed:', e);
-    });
+    return this.requestWithFallback('cancel', { sessionId: id })
+      .then(() => {})
+      .catch((e) => {
+        console.warn('[co-ober] cancel RPC failed:', e);
+      });
   }
 
-  getAvailableAgents(): Promise<ModeOption[]> { return Promise.resolve([...this.availableModes]); }
-  getAvailableModels(): Promise<ModelOption[]> { return Promise.resolve([...this.availableModels]); }
-  getAvailableCommands(): Promise<AvailableCommand[]> { return Promise.resolve([...this.availableCommands]); }
+  getAvailableAgents(): Promise<ModeOption[]> {
+    return Promise.resolve([...this.availableModes]);
+  }
+  getAvailableModels(): Promise<ModelOption[]> {
+    return Promise.resolve([...this.availableModels]);
+  }
+  getAvailableCommands(): Promise<AvailableCommand[]> {
+    return Promise.resolve([...this.availableCommands]);
+  }
   getSessionInfo(): { sessionId?: string; title?: string; cwd?: string } | null {
     return this.sessionInfo;
   }
@@ -528,7 +578,9 @@ export class AcpClient implements OpencodeClient {
     };
   }
 
-  getCurrentSessionId(): string | undefined { return this.sessionId_ ?? undefined; }
+  getCurrentSessionId(): string | undefined {
+    return this.sessionId_ ?? undefined;
+  }
 
   abort(): void {
     if (this.activeAbortController) {
@@ -551,7 +603,11 @@ export class AcpClient implements OpencodeClient {
     this.requestHandler?.setFsCapabilityMode(mode, maxBytes);
   }
 
-  setTerminalCapabilityMode(mode: import('../types').TerminalCapabilityMode, timeoutMs?: number, maxOutputBytes?: number): void {
+  setTerminalCapabilityMode(
+    mode: import('../types').TerminalCapabilityMode,
+    timeoutMs?: number,
+    maxOutputBytes?: number,
+  ): void {
     this.requestHandler?.setTerminalCapabilityMode(mode, timeoutMs, maxOutputBytes);
   }
 
@@ -620,7 +676,12 @@ export class AcpClient implements OpencodeClient {
     return parseSessionUpdate(u);
   }
 
-  private async requestWithFallback(logicalMethod: AcpLogicalMethod, params?: Record<string, unknown>, timeoutMs?: number, signal?: AbortSignal): Promise<unknown> {
+  private async requestWithFallback(
+    logicalMethod: AcpLogicalMethod,
+    params?: Record<string, unknown>,
+    timeoutMs?: number,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
     if (!this.transport) throw new Error(t().acp.stdinNotWritable);
 
     const cachedMethod = this.methodCache.get(logicalMethod);
@@ -719,22 +780,24 @@ export class AcpClient implements OpencodeClient {
       this.reconnectTimer = null;
       if (this.isIntentionalDisconnect || this.connected || !this.onReconnect) return;
       if (this.kernelGeneration !== generation) return; // a newer connection superseded this attempt
-      this.connect().then(() => {
+      this.connect()
+        .then(() => {
           if (!this.isIntentionalDisconnect) return this.onReconnect?.();
-        }).then(() => {
+        })
+        .then(() => {
           this.reconnectAttempts = 0;
-        }).catch(() => {
-        if (this.isIntentionalDisconnect) return;
-        if (this.reconnectAttempts < this.maxReconnectAttempts) {
-          this.scheduleReconnect();
-        } else {
-          this.onReconnectFailed?.();
-        }
-      });
+        })
+        .catch(() => {
+          if (this.isIntentionalDisconnect) return;
+          if (this.reconnectAttempts < this.maxReconnectAttempts) {
+            this.scheduleReconnect();
+          } else {
+            this.onReconnectFailed?.();
+          }
+        });
     }, delay);
   }
 }
-
 
 export function buildMcpServers(servers: McpServerConfig[]): AcpMcpServer[] {
   return servers

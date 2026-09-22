@@ -51,7 +51,9 @@ export default class CoOberPlugin extends Plugin {
     });
   }
 
-  override onunload(): void { void this.client?.disconnect(); }
+  override onunload(): void {
+    void this.client?.disconnect();
+  }
 
   // ── Unified storage ──
 
@@ -59,9 +61,10 @@ export default class CoOberPlugin extends Plugin {
     const saved: unknown = await super.loadData();
     if (!saved) return null;
 
-    const hasPluginData = typeof saved === 'object'
-      && saved !== null
-      && ('settings' in saved || 'sessions' in saved || 'activeSessionId' in saved);
+    const hasPluginData =
+      typeof saved === 'object' &&
+      saved !== null &&
+      ('settings' in saved || 'sessions' in saved || 'activeSessionId' in saved);
 
     if (hasPluginData) {
       const data = saved as Partial<PluginData>;
@@ -114,7 +117,10 @@ export default class CoOberPlugin extends Plugin {
 
   // ── Client ──
 
-  async aiEditSelection(editor: import('obsidian').Editor, _view: import('obsidian').MarkdownView | import('obsidian').MarkdownFileInfo): Promise<void> {
+  async aiEditSelection(
+    editor: import('obsidian').Editor,
+    _view: import('obsidian').MarkdownView | import('obsidian').MarkdownFileInfo,
+  ): Promise<void> {
     const selected = editor.getSelection();
     if (!selected || selected.trim().length === 0) {
       new Notice(t().notice.noSelection);
@@ -187,9 +193,13 @@ export default class CoOberPlugin extends Plugin {
     }
   }
 
-  getClient(): AgentRuntime | null { return this.client; }
+  getClient(): AgentRuntime | null {
+    return this.client;
+  }
 
-  getVaultCwd(): string { return getVaultPath(this.app); }
+  getVaultCwd(): string {
+    return getVaultPath(this.app);
+  }
 
   /** Write a markdown note, creating missing parent folders; overwrites an existing file. */
   async createNote(path: string, content: string): Promise<void> {

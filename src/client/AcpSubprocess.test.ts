@@ -37,7 +37,7 @@ describe('AcpSubprocess', () => {
     mockProc.killed = false;
     mockProc.kill = vi.fn();
     // Use the actual removeAllListeners implementation from EventEmitter
-    mockProc.removeAllListeners = vi.fn(function(this: any, event?: string | symbol) {
+    mockProc.removeAllListeners = vi.fn(function (this: any, event?: string | symbol) {
       return EventEmitter.prototype.removeAllListeners.call(this, event);
     });
 
@@ -155,7 +155,6 @@ describe('AcpSubprocess', () => {
     const subprocess = new AcpSubprocess(launchSpec);
     subprocess.start();
 
-
     mockProc.kill.mockImplementation((signal?: string) => {
       // Dont emit close on SIGTERM; simulate a stuck process.
       if (signal === 'SIGKILL') {
@@ -207,7 +206,9 @@ describe('AcpSubprocess', () => {
 
   it('onClose() listener ignores exceptions in listeners', () => {
     const subprocess = new AcpSubprocess(launchSpec);
-    const badListener = vi.fn().mockImplementation(() => { throw new Error('bad'); });
+    const badListener = vi.fn().mockImplementation(() => {
+      throw new Error('bad');
+    });
     const goodListener = vi.fn();
 
     subprocess.onClose(badListener);
@@ -224,15 +225,15 @@ describe('AcpSubprocess', () => {
   });
 
   it('ignores exceptions from onData for error', () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      const subprocess = new AcpSubprocess(launchSpec);
-      subprocess.start();
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const subprocess = new AcpSubprocess(launchSpec);
+    subprocess.start();
 
-      const errorEvent = new Error('stdin write error');
-      mockStdin.emit('error', errorEvent);
+    const errorEvent = new Error('stdin write error');
+    mockStdin.emit('error', errorEvent);
 
-      expect(consoleSpy).toHaveBeenCalledWith('[co-ober] stdin:', errorEvent);
-      consoleSpy.mockRestore();
+    expect(consoleSpy).toHaveBeenCalledWith('[co-ober] stdin:', errorEvent);
+    consoleSpy.mockRestore();
   });
 
   it('onClose() listener receives process error event', () => {

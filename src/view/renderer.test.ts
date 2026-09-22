@@ -106,19 +106,34 @@ describe('ChatRenderer', () => {
   describe('renderStructuredMessage', () => {
     it('renders nothing without content blocks (legacy content is not re-rendered)', () => {
       const wrap = renderer.renderStructuredMessage({
-        role: 'assistant', content: 'legacy text', type: 'text', timestamp: 1,
+        role: 'assistant',
+        content: 'legacy text',
+        type: 'text',
+        timestamp: 1,
       });
       expect(wrap.childElementCount).toBe(0);
     });
 
     it('statically re-renders a persisted tool_use block with title and status', () => {
       const wrap = document.createElement('div');
-      renderer.renderStructuredMessage({
-        role: 'assistant', content: '', type: 'text', timestamp: 1,
-        contentBlocks: [
-          { type: 'tool_use', toolCallId: 'call-9', toolTitle: 'Search notes', toolKind: 'search', toolStatus: 'completed' },
-        ],
-      }, wrap);
+      renderer.renderStructuredMessage(
+        {
+          role: 'assistant',
+          content: '',
+          type: 'text',
+          timestamp: 1,
+          contentBlocks: [
+            {
+              type: 'tool_use',
+              toolCallId: 'call-9',
+              toolTitle: 'Search notes',
+              toolKind: 'search',
+              toolStatus: 'completed',
+            },
+          ],
+        },
+        wrap,
+      );
       const tool = wrap.querySelector('.co-ober-tool-call') as HTMLElement | null;
       expect(tool).not.toBeNull();
       expect(tool?.dataset.toolId).toBe('call-9');
@@ -129,12 +144,16 @@ describe('ChatRenderer', () => {
 
     it('renders text blocks in order', () => {
       const wrap = document.createElement('div');
-      renderer.renderStructuredMessage({
-        role: 'assistant', content: 'answer', type: 'text', timestamp: 1,
-        contentBlocks: [
-          { type: 'text', text: 'answer' },
-        ],
-      }, wrap);
+      renderer.renderStructuredMessage(
+        {
+          role: 'assistant',
+          content: 'answer',
+          type: 'text',
+          timestamp: 1,
+          contentBlocks: [{ type: 'text', text: 'answer' }],
+        },
+        wrap,
+      );
       expect(wrap.querySelector('.co-ober-text-block')).not.toBeNull();
     });
   });
@@ -352,7 +371,15 @@ describe('ChatRenderer', () => {
 
     it('updates status to completed', () => {
       renderer.addToolCall('call-1', 'Search', 'search', {});
-      renderer.updateToolCall('call-1', 'completed', {}, [{ type: 'content', content: { type: 'text', text: 'Result' } }], undefined, undefined, 'search');
+      renderer.updateToolCall(
+        'call-1',
+        'completed',
+        {},
+        [{ type: 'content', content: { type: 'text', text: 'Result' } }],
+        undefined,
+        undefined,
+        'search',
+      );
       flushToolRenders();
       const stat = container.querySelector('.tc-stat');
       expect(stat?.classList.contains('tc-stat-done')).toBe(true);
@@ -383,12 +410,22 @@ describe('ChatRenderer', () => {
 
     it('renders diff content', () => {
       renderer.addToolCall('call-1', 'Edit', 'edit', {});
-      renderer.updateToolCall('call-1', 'completed', {}, [{
-        type: 'diff',
-        path: '/file.ts',
-        oldText: 'old',
-        newText: 'new',
-      }], undefined, undefined, 'edit');
+      renderer.updateToolCall(
+        'call-1',
+        'completed',
+        {},
+        [
+          {
+            type: 'diff',
+            path: '/file.ts',
+            oldText: 'old',
+            newText: 'new',
+          },
+        ],
+        undefined,
+        undefined,
+        'edit',
+      );
       flushToolRenders();
       const writeEdit = container.querySelector('.co-ober-write-edit');
       expect(writeEdit).not.toBeNull();

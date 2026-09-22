@@ -187,7 +187,9 @@ export class CommandRegistry {
         description: cmd.description ?? '',
         category: 'agent',
         source: 'acp',
-        run: async () => { /* dispatched by send() path */ },
+        run: async () => {
+          /* dispatched by send() path */
+        },
       });
     }
     this.rebuildOrder();
@@ -198,7 +200,9 @@ export class CommandRegistry {
   /** Subscribe to command list changes (e.g. to refresh the popover). */
   subscribe(callback: () => void): () => void {
     this.onChange = callback;
-    return () => { this.onChange = null; };
+    return () => {
+      this.onChange = null;
+    };
   }
 
   // ── Lookup ──
@@ -208,8 +212,7 @@ export class CommandRegistry {
     const lower = prefix.toLowerCase();
     return this.ordered.filter(
       (d) =>
-        d.trigger.toLowerCase().startsWith(lower) ||
-        (d.aliases ?? []).some((a) => a.toLowerCase().startsWith(lower)),
+        d.trigger.toLowerCase().startsWith(lower) || (d.aliases ?? []).some((a) => a.toLowerCase().startsWith(lower)),
     );
   }
 
@@ -269,7 +272,11 @@ export class CommandRegistry {
   /** Dispose all watchers (call on plugin unload). */
   dispose(): void {
     for (const unwatch of this.unwatches) {
-      try { unwatch(); } catch { /* ignore */ }
+      try {
+        unwatch();
+      } catch {
+        /* ignore */
+      }
     }
     this.unwatches = [];
     this.sources = [];
