@@ -51,6 +51,10 @@ export class AgentRuntime implements OpencodeClient {
       const resetTimeout = () => {
         if (timeout) window.clearTimeout(timeout);
         timeout = window.setTimeout(() => {
+          // Cancel the underlying stream too, otherwise the pending prompt and
+          // activeStreamSessionId linger and any retry fails with
+          // "A stream is already active".
+          void this.acp.cancel(id);
           reject(new AcpTimeoutError('sendMessage', timeoutMs));
         }, timeoutMs);
       };
@@ -77,6 +81,7 @@ export class AgentRuntime implements OpencodeClient {
   setClientHandlers(handlers: ClientHandlers): void {
     this.acp.onClose = handlers.onClose ?? undefined;
     this.acp.onReconnect = handlers.onReconnect ?? undefined;
+    this.acp.onReconnectFailed = handlers.onReconnectFailed ?? undefined;
     this.acp.onPermissionRequest = handlers.onPermissionRequest ?? ((req) => this.requestPermission(req));
   }
 

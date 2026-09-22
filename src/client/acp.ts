@@ -247,6 +247,7 @@ export class AcpClient implements OpencodeClient {
 	onClose?: () => void;
 	onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
 	onReconnect?: () => Promise<void>;
+	onReconnectFailed?: () => void;
 	private reconnectAttempts = 0;
 	private readonly maxReconnectAttempts = 3;
 	private isIntentionalDisconnect = false;
@@ -468,7 +469,7 @@ export class AcpClient implements OpencodeClient {
     // Use 0 timeout to disable transport-level timeout for streaming
     // The idle timeout in AgentRuntime handles cancellation
     const zAcpResponse = z.object({
-      stopReason: z.enum(['end_turn', 'max_tokens', 'tool_calls', 'interrupted']),
+      stopReason: z.enum(['end_turn', 'max_tokens', 'max_turn_requests', 'tool_calls', 'interrupted', 'refusal', 'cancelled']),
       usage: z.object({
         totalTokens: z.number(),
         inputTokens: z.number(),
@@ -539,6 +540,7 @@ export class AcpClient implements OpencodeClient {
   setClientHandlers(handlers: import('./index').ClientHandlers): void {
     this.onClose = handlers.onClose ?? undefined;
     this.onReconnect = handlers.onReconnect ?? undefined;
+    this.onReconnectFailed = handlers.onReconnectFailed ?? undefined;
     this.onPermissionRequest = handlers.onPermissionRequest ?? undefined;
     if (this.requestHandler && handlers.onPermissionRequest) {
       this.requestHandler.onPermissionRequest = handlers.onPermissionRequest;
@@ -722,8 +724,11 @@ export class AcpClient implements OpencodeClient {
         }).then(() => {
           this.reconnectAttempts = 0;
         }).catch(() => {
-        if (!this.isIntentionalDisconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
+        if (this.isIntentionalDisconnect) return;
+        if (this.reconnectAttempts < this.maxReconnectAttempts) {
           this.scheduleReconnect();
+        } else {
+          this.onReconnectFailed?.();
         }
       });
     }, delay);

@@ -190,6 +190,14 @@ export class AcpJsonRpcTransport {
             const message = err instanceof Error ? err.message : String(err);
             this.send({ jsonrpc: '2.0', id, error: { code: -32000, message } });
           });
+      } else {
+        // A server→client request we cannot answer still needs a response,
+        // otherwise the agent blocks forever waiting for it.
+        this.send({
+          jsonrpc: '2.0',
+          id,
+          error: { code: -32601, message: `Method not found: ${parsed.method as string}` },
+        });
       }
     }
   }

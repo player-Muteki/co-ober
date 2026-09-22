@@ -331,6 +331,10 @@ export class CoOberViewController {
 					this.deps.renderer.addError(t().error.reconnected);
 				}
 			},
+				onReconnectFailed: () => {
+					this.deps.renderer.addError(t().error.reconnectFailed);
+					this.handleDisconnect();
+				},
 				onPermissionRequest: async (req) => (
 					client.permissionMode === 'safe'
 						? this.deps.permissionBanner.show(req)
@@ -605,14 +609,22 @@ export class CoOberViewController {
 		if (!text) return;
 
 		const history = session.messages.slice(0, idx);
-		session.messages.splice(idx);
-		session.updatedAt = Date.now();
-
+		// Only truncate the local transcript after the fresh agent session is
+		// confirmed; otherwise a failed renew would silently drop context.
+		let renewed: string | null;
 		try {
-			await this.renewAgentSession();
+			renewed = await this.renewAgentSession();
 		} catch (e) {
 			console.error('[co-ober] rewind session renew:', e);
+			renewed = null;
 		}
+		if (!renewed) {
+			this.deps.renderer.addSystemMessage(t().rewind.renewFailed);
+			return;
+		}
+		session.messages.splice(idx);
+		session.updatedAt = Date.now();
+		await this.deps.sessionStore.save();
 
 		this.resetConversationView();
 		await this.restoreSession();

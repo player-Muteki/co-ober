@@ -20,6 +20,7 @@ import type {
 export interface ClientHandlers {
   onClose?: () => void;
   onReconnect?: () => Promise<void>;
+  onReconnectFailed?: () => void;
   onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
 }
 

@@ -203,4 +203,61 @@ describe('AcpClient generation fencing', () => {
     FakeTransport.instances[0].deferred.reject(new Error('stop after test'));
     await vi.advanceTimersByTimeAsync(0);
   });
+
+  it('scheduleReconnect fires onReconnectFailed once the attempt budget is exhausted', async () => {
+    vi.useFakeTimers();
+    const client = new AcpClient('opencode', '/vault');
+    Reflect.set(client, 'onReconnect', vi.fn());
+    const onReconnectFailed = vi.fn();
+    client.onReconnectFailed = onReconnectFailed;
+    Reflect.set(client, 'reconnectAttempts', 3); // max: this attempt cannot reschedule
+
+    Reflect.get(client, 'scheduleReconnect').call(client);
+    await vi.advanceTimersByTimeAsync(600_000);
+
+    expect(FakeSubprocess.instances.length).toBe(1);
+    FakeTransport.instances[0].deferred.reject(new Error('still down'));
+    await vi.advanceTimersByTimeAsync(600_000);
+
+    expect(onReconnectFailed).toHaveBeenCalledTimes(1);
+  });
+
+  describe('prompt response schema', () => {
+    async function connectedClient(): Promise<{ client: AcpClient; transport: InstanceType<typeof FakeTransport> }> {
+      const client = new AcpClient('opencode', '/vault');
+      const connecting = client.connect();
+      await tick();
+      FakeTransport.instances[0].deferred.resolve({});
+      await connecting;
+      const transport = FakeTransport.instances[0];
+      let resolve!: (v: unknown) => void;
+      let reject!: (e: unknown) => void;
+      const promise = new Promise<unknown>((res, rej) => { resolve = res; reject = rej; });
+      transport.deferred = { promise, resolve, reject };
+      return { client, transport };
+    }
+
+    it('accepts the full SDK stopReason union incl. cancelled and refusal', async () => {
+      for (const stopReason of ['end_turn', 'max_tokens', 'max_turn_requests', 'refusal', 'cancelled', 'tool_calls', 'interrupted']) {
+        FakeSubprocess.instances.length = 0;
+        FakeTransport.instances.length = 0;
+        const { client, transport } = await connectedClient();
+        const p = client.sendMessage('ses-1', [{ type: 'text', text: 'hi' }], () => {});
+        await tick();
+        transport.deferred.resolve({ stopReason });
+        await expect(p).resolves.toMatchObject({ stopReason });
+        await client.disconnect().catch(() => {});
+      }
+    });
+
+    it('rejects an unknown stopReason instead of passing it through', async () => {
+      FakeSubprocess.instances.length = 0;
+      FakeTransport.instances.length = 0;
+      const { client, transport } = await connectedClient();
+      const p = client.sendMessage('ses-1', [{ type: 'text', text: 'hi' }], () => {});
+      await tick();
+      transport.deferred.resolve({ stopReason: 'some_new_reason' });
+      await expect(p).rejects.toThrow(/Invalid ACP response format/);
+    });
+  });
 });

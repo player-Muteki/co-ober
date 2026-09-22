@@ -294,12 +294,14 @@ describe('AgentRuntime', () => {
     it('sets handlers on acp', () => {
       const onClose = vi.fn();
       const onReconnect = vi.fn();
+      const onReconnectFailed = vi.fn();
       const onPermissionRequest = vi.fn();
 
-      runtime.setClientHandlers({ onClose, onReconnect, onPermissionRequest });
+      runtime.setClientHandlers({ onClose, onReconnect, onReconnectFailed, onPermissionRequest });
 
       expect(mockAcp.onClose).toBe(onClose);
       expect(mockAcp.onReconnect).toBe(onReconnect);
+      expect(mockAcp.onReconnectFailed).toBe(onReconnectFailed);
       expect(mockAcp.onPermissionRequest).toBe(onPermissionRequest);
     });
 
@@ -308,6 +310,7 @@ describe('AgentRuntime', () => {
 
       expect(mockAcp.onClose).toBeUndefined();
       expect(mockAcp.onReconnect).toBeUndefined();
+      expect(mockAcp.onReconnectFailed).toBeUndefined();
       expect(mockAcp.onPermissionRequest).toBeDefined();
     });
   });
@@ -332,7 +335,11 @@ describe('AgentRuntime', () => {
       vi.advanceTimersByTime(5 * 60 * 1000 + 1);
 
       await expect(promise).rejects.toThrow();
+      // The idle timeout must also abort the underlying stream, otherwise the
+      // next send fails with "A stream is already active".
+      expect(mockAcp.cancel).toHaveBeenCalledWith('session-1');
       vi.useRealTimers();
+      await promise.catch(() => {});
     });
   });
 });

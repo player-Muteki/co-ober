@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { Notice } from '../test/obsidianMock';
 import { SessionDropdown } from './sessionDropdown';
 import { installObsidianDomHelpers } from '../test/domHelpers';
 import { setLocale } from '../i18n/index';
@@ -186,6 +187,38 @@ describe('SessionDropdown', () => {
       await new Promise(r => setTimeout(r, 10));
       expect(callbacks.onDelete).toHaveBeenCalledWith('session-2');
       expect(callbacks.onNewSession).not.toHaveBeenCalled();
+    });
+
+    it('notices the user when a session action rejects', async () => {
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      Notice.messages.length = 0;
+      callbacks.onSwitch = vi.fn().mockRejectedValue(new Error('load boom'));
+      dropdown.open();
+      const items = container.querySelectorAll('.co-ober-session-item');
+      (items[1] as HTMLElement).click();
+      await new Promise(r => setTimeout(r, 10));
+      expect(Notice.messages.some((m) => m.includes('load boom'))).toBe(true);
+      errSpy.mockRestore();
+    });
+
+    it('notices the user when fork rejects', async () => {
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      Notice.messages.length = 0;
+      const onFork = vi.fn().mockRejectedValue(new Error('fork boom'));
+      const dd = new SessionDropdown(
+        container,
+        anchor,
+        sessionStore as any,
+        () => 'session-1',
+        { ...callbacks, onFork } as any,
+        () => ({ sessionCapabilities: { close: true, fork: true, list: true, resume: true } }),
+      );
+      dd.open();
+      (container.querySelector('.session-fork') as HTMLElement).click();
+      await new Promise(r => setTimeout(r, 10));
+      expect(Notice.messages.some((m) => m.includes('fork boom'))).toBe(true);
+      errSpy.mockRestore();
+      dd.destroy();
     });
   });
 

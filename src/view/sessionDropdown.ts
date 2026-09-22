@@ -1,3 +1,4 @@
+import { Notice } from 'obsidian';
 import type { SessionStore } from '../chat/session';
 import { t } from '../i18n/index';
 import type { AgentCapabilities, SessionMeta } from '../types';
@@ -84,8 +85,8 @@ export class SessionDropdown {
 					await this.callbacks.onDelete(s.sessionId);
 					this.close();
 				});
-				it.onclick = async () => {
-					await this.callbacks.onSwitch(s.sessionId, 'local');
+				it.onclick = () => {
+					void this.callbacks.onSwitch(s.sessionId, 'local').catch((e) => this.reportActionError(e));
 				};
 			}
 
@@ -150,8 +151,8 @@ export class SessionDropdown {
 			if (s.updatedAt) {
 				it.createSpan({ cls: 'session-time', text: s.updatedAt.slice(0, 10) });
 			}
-			it.onclick = async () => {
-				await this.callbacks.onSwitch(s.sessionId, 'opencode');
+			it.onclick = () => {
+				void this.callbacks.onSwitch(s.sessionId, 'opencode').catch((e) => this.reportActionError(e));
 			};
 		}
 	}
@@ -200,7 +201,12 @@ export class SessionDropdown {
 		}
 		button.onclick = (e: MouseEvent) => {
 			e.stopPropagation();
-			void onClick();
+			void onClick().catch((err) => this.reportActionError(err));
 		};
+	}
+
+	private reportActionError(e: unknown): void {
+		console.error('[co-ober] session action:', e);
+		new Notice(t().sessionDropdown.actionFailed.replace('{error}', e instanceof Error ? e.message : String(e)));
 	}
 }

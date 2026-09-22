@@ -133,16 +133,54 @@ describe('AcpJsonRpcTransport', () => {
     const responses = sentMsg.trim().split('\n').map(l => JSON.parse(l));
     expect(responses[0]).toEqual({ jsonrpc: '2.0', id: 99, result: { echo: 'hello' } });
 
-    // test unsubscribe
+    // test unsubscribe — the request now has no handler, so it gets a method-not-found reply
     unsubscribe();
     sentMsg = '';
     input.write(JSON.stringify({ jsonrpc: '2.0', id: 100, method: 'myRequest', params: 'hello2' }) + '\n');
     await new Promise(resolve => setTimeout(resolve, 20));
+    const afterUnsub = JSON.parse(sentMsg.trim());
+    expect(afterUnsub).toEqual({
+      jsonrpc: '2.0',
+      id: 100,
+      error: { code: -32601, message: 'Method not found: myRequest' },
+    });
+  });
+
+  it('answers unregistered server→client requests with -32601 so the agent does not block', async () => {
+    transport.start();
+
+    let sentMsg = '';
+    output.on('data', (chunk) => {
+      sentMsg += chunk.toString();
+    });
+
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: 55, method: 'unknownMethod', params: {} }) + '\n');
+
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    const responses = sentMsg.trim().split('\n').map(l => JSON.parse(l));
+    expect(responses[0]).toEqual({
+      jsonrpc: '2.0',
+      id: 55,
+      error: { code: -32601, message: 'Method not found: unknownMethod' },
+    });
+  });
+
+  it('does not answer unregistered notifications (no id)', async () => {
+    transport.start();
+
+    let sentMsg = '';
+    output.on('data', (chunk) => {
+      sentMsg += chunk.toString();
+    });
+
+    input.write(JSON.stringify({ jsonrpc: '2.0', method: 'unknownNotification' }) + '\n');
+
+    await new Promise(resolve => setTimeout(resolve, 20));
     expect(sentMsg).toBe('');
   });
 
-  it('onRequest() registers handler and sends error when handler rejects', async () => {
-    transport.start();
+  it('onRequest() registers handler and sends error when handler rejects', async () => {    transport.start();
 
     let sentMsg = '';
     output.on('data', (chunk) => {

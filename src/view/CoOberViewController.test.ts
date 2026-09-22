@@ -225,6 +225,21 @@ describe('CoOberViewController', () => {
 		});
 	});
 
+	describe('reconnect failure handling', () => {
+		it('surfaces the failure and drops to the disconnected state', () => {
+			const client = createMockClient();
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+			controller.bindClientHandlers();
+			const handlers = (client.setClientHandlers as ReturnType<typeof vi.fn>).mock.calls[0][0];
+			handlers.onReconnectFailed();
+
+			expect(deps.renderer.addError).toHaveBeenCalledWith(t().error.reconnectFailed);
+			expect(controller.state.isConnected).toBe(false);
+			expect(callbacks.onShowReconnectBtn).toHaveBeenCalled();
+		});
+	});
+
 	describe('newSession', () => {
 		it('creates session and updates state', async () => {
 			const client = createMockClient();
@@ -729,6 +744,22 @@ describe('CoOberViewController', () => {
 			expect(client.sendMessage).not.toHaveBeenCalled();
 			expect(controller.state.sessionId).toBe('old-ses');
 			expect(shared.messages).toHaveLength(1);
+		});
+
+		it('leaves the transcript untouched when the fresh agent session cannot be created', async () => {
+			const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+			const { shared, store, client } = rewindSetup([userMsg('q1'), asstMsg('a1'), userMsg('q2')], {
+				createSession: vi.fn().mockRejectedValue(new Error('spawn boom')),
+			});
+
+			await controller.rewindUserTurn(2);
+
+			expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().rewind.renewFailed);
+			expect(shared.messages).toHaveLength(3);
+			expect(store.rekey).not.toHaveBeenCalled();
+			expect(client.sendMessage).not.toHaveBeenCalled();
+			expect(controller.state.sessionId).toBe('old-ses');
+			errSpy.mockRestore();
 		});
 	});
 

@@ -21,6 +21,7 @@ const en = {
     closeDisabled: 'Close is not supported by this OpenCode agent',
     nativeSection: 'OpenCode sessions',
     loadingNative: 'Loading OpenCode sessions…',
+    actionFailed: 'Session action failed: {error}',
   },
 
   header: {
@@ -68,6 +69,7 @@ const en = {
     timeout: 'Request timed out',
     processExit: 'OpenCode process exited',
     reconnected: 'Connection restored. The previous request was interrupted.',
+    reconnectFailed: 'The agent could not be reached after repeated reconnect attempts. Click "Connect" to retry.',
   },
 
   rewind: {
@@ -76,6 +78,7 @@ const en = {
     submit: 'Send edited message',
     cancel: 'Cancel edit',
     busy: 'Wait for the current response to finish before rewinding.',
+    renewFailed: 'Could not start a fresh agent session; the conversation was left unchanged.',
     contextHeader: '=== EARLIER CONVERSATION (context only — these turns already happened; do not answer them again) ===',
     contextFooter: '=== END OF EARLIER CONVERSATION — respond only to the newest user message ===',
   },

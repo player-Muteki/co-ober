@@ -23,6 +23,7 @@ const zh: Locale = {
     closeDisabled: '当前 OpenCode Agent 不支持关闭会话',
     nativeSection: 'OpenCode 会话',
     loadingNative: '正在加载 OpenCode 会话…',
+    actionFailed: '会话操作失败：{error}',
   },
 
   header: {
@@ -70,6 +71,7 @@ const zh: Locale = {
     timeout: '请求超时',
     processExit: 'OpenCode 进程已退出',
     reconnected: '连接已恢复，之前的请求已中断。',
+    reconnectFailed: '多次重连后仍无法联系 Agent，请点击“连接”重试。',
   },
 
   rewind: {
@@ -78,6 +80,7 @@ const zh: Locale = {
     submit: '发送编辑后的消息',
     cancel: '取消编辑',
     busy: '请等待当前回复完成后再回退。',
+    renewFailed: '无法启动新的 Agent 会话，对话未做改动。',
     contextHeader: '=== 历史对话（仅作上下文——以下轮次已经发生，请勿再次作答）===',
     contextFooter: '=== 历史对话结束——仅回复最新的用户消息 ===',
   },
