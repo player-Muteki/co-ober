@@ -24,6 +24,8 @@ const zh: Locale = {
     nativeSection: 'OpenCode 会话',
     loadingNative: '正在加载 OpenCode 会话…',
     actionFailed: '会话操作失败：{error}',
+    rename: '重命名会话',
+    confirmDelete: '再次点击以确认删除',
   },
 
   header: {
@@ -96,6 +98,30 @@ const zh: Locale = {
   copy: {
     button: '复制',
     copied: '已复制',
+    transcript: '对话已复制到剪贴板',
+  },
+
+  interrupted: {
+    badge: '已中断',
+    hint: '接下来做什么？',
+  },
+
+  queue: {
+    one: '⌙ 已排队 1 条消息',
+    many: '⌙ 已排队 {count} 条消息',
+  },
+
+  export: {
+    noSession: '当前没有可导出的会话。',
+    saved: '对话已导出到 {path}',
+    failed: '导出失败：{error}',
+  },
+
+  transcript: {
+    user: '用户',
+    assistant: '助手',
+    system: '系统',
+    image: '[图片]',
   },
 
   thinking: {
@@ -116,6 +142,26 @@ const zh: Locale = {
     fork: '将会话分叉到新会话',
     model: '切换 AI 模型',
     mode: '切换 Agent 模式',
+    export: '将对话保存为笔记',
+    copy: '复制整段对话到剪贴板',
+    helpHeader: '可用命令',
+    availableModels: '可用模型：',
+    modelSwitched: '已切换模型：',
+    availableModes: '可用模式：',
+    modeSwitched: '已切换模式：',
+  },
+  slashTitles: {
+    compact: '压缩会话',
+    new: '新建会话',
+    clear: '清空屏幕',
+    help: '帮助',
+    addDir: '添加上下文目录',
+    resume: '恢复会话',
+    fork: '分叉会话',
+    model: '切换模型',
+    mode: '切换模式/Agent',
+    export: '导出为笔记',
+    copy: '复制对话',
   },
   badge: {
     builtin: '内置',
@@ -159,6 +205,9 @@ const zh: Locale = {
     input: '输入',
     output: '输出',
     thinking: '思考',
+    context: '上下文',
+    tokensUnit: 'tokens',
+    approachingLimit: '⚠ 接近上限——请运行 /compact',
   },
 
   sync: {

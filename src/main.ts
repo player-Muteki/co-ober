@@ -1,4 +1,4 @@
-﻿import { Plugin, Notice } from 'obsidian';
+﻿import { Plugin, Notice, TFile } from 'obsidian';
 import { AgentRuntime } from './client/agent';
 import { AcpClient } from './client/acp';
 import { applyPermissionTier } from './client/permissionTier';
@@ -190,4 +190,26 @@ export default class CoOberPlugin extends Plugin {
   getClient(): AgentRuntime | null { return this.client; }
 
   getVaultCwd(): string { return getVaultPath(this.app); }
+
+  /** Write a markdown note, creating missing parent folders; overwrites an existing file. */
+  async createNote(path: string, content: string): Promise<void> {
+    const cleanPath = path.replace(/^\/+|\/+$/g, '');
+    if (!cleanPath) throw new Error('empty note path');
+    const folder = cleanPath.split('/').slice(0, -1).join('/');
+    if (folder) {
+      let current = '';
+      for (const part of folder.split('/')) {
+        current = current ? `${current}/${part}` : part;
+        if (!this.app.vault.getAbstractFileByPath(current)) {
+          await this.app.vault.createFolder(current);
+        }
+      }
+    }
+    const existing = this.app.vault.getAbstractFileByPath(cleanPath);
+    if (existing instanceof TFile) {
+      await this.app.vault.modify(existing, content);
+      return;
+    }
+    await this.app.vault.create(cleanPath, content);
+  }
 }

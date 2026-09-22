@@ -3,12 +3,15 @@ import type { SessionStore } from '../chat/session';
 import { t } from '../i18n/index';
 import type { AgentCapabilities, SessionMeta } from '../types';
 
+const DELETE_CONFIRM_TIMEOUT_MS = 3000;
+
 export interface SessionDropdownCallbacks {
 	onSwitch(sessionId: string, source?: 'local' | 'opencode'): Promise<void>;
 	onDelete(sessionId: string): Promise<void>;
 	onNewSession(): Promise<void>;
 	onFork?(sessionId: string): Promise<void>;
 	onResume?(sessionId: string): Promise<void>;
+	onRename?(sessionId: string, newTitle: string): Promise<void>;
 }
 
 export class SessionDropdown {
@@ -75,16 +78,16 @@ export class SessionDropdown {
 					cls: `co-ober-session-item${s.sessionId === currentId ? ' active' : ''}`,
 				});
 				it.createSpan({ text: s.title || s.sessionId, cls: 'session-label' });
+				this.createActionButton(it, 'session-rename', '✎', capabilities?.list !== false, t().sessionDropdown.rename, async () => {
+					this.startInlineRename(it, s);
+				});
 				this.createActionButton(it, 'session-fork', '⎇', capabilities?.fork === true, t().sessionDropdown.forkDisabled, async () => {
 					await this.callbacks.onFork?.(s.sessionId);
 				});
 				this.createActionButton(it, 'session-resume', '↻', capabilities?.resume === true, t().sessionDropdown.resumeDisabled, async () => {
 					await this.callbacks.onResume?.(s.sessionId);
 				});
-				this.createActionButton(it, 'session-delete', '×', capabilities?.close === true, t().sessionDropdown.closeDisabled, async () => {
-					await this.callbacks.onDelete(s.sessionId);
-					this.close();
-				});
+				this.createDeleteButton(it, s.sessionId, capabilities?.close === true);
 				it.onclick = () => {
 					void this.callbacks.onSwitch(s.sessionId, 'local').catch((e) => this.reportActionError(e));
 				};
@@ -203,6 +206,88 @@ export class SessionDropdown {
 			e.stopPropagation();
 			void onClick().catch((err) => this.reportActionError(err));
 		};
+	}
+
+	/** Delete needs a second confirming click; a timeout reverts to the armed-off state. */
+	private createDeleteButton(container: HTMLElement, sessionId: string, enabled: boolean): void {
+		const button = container.createEl('button', { text: '×', cls: 'session-delete' });
+		if (!enabled) {
+			button.disabled = true;
+			button.addClass('is-disabled');
+			button.setAttribute('title', t().sessionDropdown.closeDisabled);
+			return;
+		}
+		let confirmTimer: number | null = null;
+		const reset = (): void => {
+			if (confirmTimer !== null) {
+				window.clearTimeout(confirmTimer);
+				confirmTimer = null;
+			}
+			button.classList.remove('is-confirm');
+			button.textContent = '×';
+			button.removeAttribute('title');
+		};
+		button.onclick = (e: MouseEvent) => {
+			e.stopPropagation();
+			if (!button.classList.contains('is-confirm')) {
+				button.classList.add('is-confirm');
+				button.textContent = '✓';
+				button.setAttribute('title', t().sessionDropdown.confirmDelete);
+				confirmTimer = window.setTimeout(reset, DELETE_CONFIRM_TIMEOUT_MS);
+				return;
+			}
+			reset();
+			void this.callbacks.onDelete(sessionId)
+				.then(() => this.close())
+				.catch((err) => this.reportActionError(err));
+		};
+	}
+
+	private startInlineRename(item: HTMLElement, session: SessionMeta): void {
+		if (item.querySelector('.session-rename-input')) return;
+		const label = item.querySelector('.session-label');
+		if (!label) return;
+		const original = session.title || session.sessionId;
+		const input = item.createEl('input', {
+			cls: 'session-rename-input',
+			attr: { type: 'text' },
+		});
+		label.replaceWith(input);
+		input.value = original;
+		input.focus();
+		input.select();
+		let settled = false;
+		const commit = async (): Promise<void> => {
+			if (settled) return;
+			settled = true;
+			const value = input.value.trim();
+			if (value && value !== original) {
+				await this.callbacks.onRename?.(session.sessionId, value);
+			}
+			this.rerender();
+		};
+		const cancel = (): void => {
+			if (settled) return;
+			settled = true;
+			this.rerender();
+		};
+		input.addEventListener('keydown', (e: KeyboardEvent) => {
+			if (e.key === 'Enter') {
+				e.preventDefault();
+				e.stopPropagation();
+				void commit().catch((err) => this.reportActionError(err));
+			} else if (e.key === 'Escape') {
+				e.preventDefault();
+				e.stopPropagation();
+				cancel();
+			}
+		});
+		// Keep clicks/typing inside the input from switching or closing the dropdown.
+		input.onclick = (e: MouseEvent) => e.stopPropagation();
+		input.onmousedown = (e: MouseEvent) => e.stopPropagation();
+		input.addEventListener('blur', () => {
+			void commit().catch((err) => this.reportActionError(err));
+		});
 	}
 
 	private reportActionError(e: unknown): void {

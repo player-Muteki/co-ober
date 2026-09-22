@@ -22,6 +22,8 @@ const en = {
     nativeSection: 'OpenCode sessions',
     loadingNative: 'Loading OpenCode sessions…',
     actionFailed: 'Session action failed: {error}',
+    rename: 'Rename session',
+    confirmDelete: 'Click again to confirm deletion',
   },
 
   header: {
@@ -94,6 +96,30 @@ const en = {
   copy: {
     button: 'Copy',
     copied: 'Copied',
+    transcript: 'Conversation copied to the clipboard',
+  },
+
+  interrupted: {
+    badge: 'Interrupted',
+    hint: 'What should I do instead?',
+  },
+
+  queue: {
+    one: '⌙ 1 message queued',
+    many: '⌙ {count} messages queued',
+  },
+
+  export: {
+    noSession: 'No active session to export.',
+    saved: 'Conversation exported to {path}',
+    failed: 'Export failed: {error}',
+  },
+
+  transcript: {
+    user: 'User',
+    assistant: 'Assistant',
+    system: 'System',
+    image: '[image]',
   },
 
   thinking: {
@@ -114,6 +140,26 @@ const en = {
     fork: 'fork entire conversation to new session',
     model: 'switch AI model',
     mode: 'switch agent mode',
+    export: 'save the conversation as a note',
+    copy: 'copy the whole conversation to the clipboard',
+    helpHeader: 'Available Commands',
+    availableModels: 'Available models:',
+    modelSwitched: 'Switched to model:',
+    availableModes: 'Available modes:',
+    modeSwitched: 'Switched to mode:',
+  },
+  slashTitles: {
+    compact: 'Compact Session',
+    new: 'New Session',
+    clear: 'Clear Screen',
+    help: 'Help',
+    addDir: 'Add Context Directory',
+    resume: 'Resume Session',
+    fork: 'Fork Session',
+    model: 'Switch Model',
+    mode: 'Switch Mode/Agent',
+    export: 'Export to Note',
+    copy: 'Copy Conversation',
   },
   badge: {
     builtin: 'Builtin',
@@ -157,6 +203,9 @@ const en = {
     input: 'Input',
     output: 'Output',
     thinking: 'Thinking',
+    context: 'Context',
+    tokensUnit: 'tokens',
+    approachingLimit: '⚠ Approaching limit — run /compact',
   },
 
   sync: {

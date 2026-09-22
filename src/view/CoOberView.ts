@@ -308,6 +308,9 @@ export class CoOberView extends ItemView {
 					await this.controller.resumeSession(sessionId);
 					this.closeSessionDropdown();
 				},
+				onRename: async (sessionId: string, newTitle: string) => {
+					await this.controller.renameSession(sessionId, newTitle);
+				},
 			},
 			() => this.plugin.getClient()?.getAgentCapabilities() ?? null,
 			async () => listNativeSessions(this.plugin.getVaultCwd()),
@@ -758,11 +761,11 @@ export class CoOberView extends ItemView {
 
 		const fmt = (n: number) => n >= K_FORMAT_THRESHOLD ? `${(n / K_FORMAT_THRESHOLD).toFixed(1)}k` : String(n);
 		const tooltip = [
-			`Context: ${fmt(used)} / ${fmt(contextWindow)} tokens`,
-			`Input: ${fmt(usage.inputTokens)}`,
-			usage.thoughtTokens ? `Thinking: ${fmt(usage.thoughtTokens)}` : '',
-			`Output: ${fmt(usage.outputTokens)}`,
-			pct >= 80 ? '⚠ Approaching limit — run /compact' : '',
+			`${t().usage.context}: ${fmt(used)} / ${fmt(contextWindow)} ${t().usage.tokensUnit}`,
+			`${t().usage.input}: ${fmt(usage.inputTokens)}`,
+			usage.thoughtTokens ? `${t().usage.thinking}: ${fmt(usage.thoughtTokens)}` : '',
+			`${t().usage.output}: ${fmt(usage.outputTokens)}`,
+			pct >= 80 ? t().usage.approachingLimit : '',
 		].filter(Boolean).join('\n');
 		this.meterEl.setAttribute('data-tooltip', tooltip);
 	}

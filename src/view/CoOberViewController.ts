@@ -21,6 +21,7 @@ import type { PermissionBanner } from './permissionBanner';
 import type { InlineEditPanel } from './inlineEditPanel';
 import { buildSystemPrompt } from '../context/injection';
 import { buildHistoryBlock } from '../context/historyRewind';
+import { buildTranscriptMarkdown, sanitizeNoteName } from '../chat/transcript';
 import { AcpTimeoutError, AcpProcessExitError, AcpAbortError, AcpSessionMissingError } from '../client/AcpErrors';
 import { readNativeSessionUsage } from '../opencode/NativeSessionReader';
 import { commandRegistry } from '../commands/registry';
@@ -48,6 +49,8 @@ export interface ControllerRuntime {
 	getClient(): OpencodeClient | null;
 	initClient(): Promise<boolean>;
 	getVaultCwd(): string;
+	/** Write a markdown note into the vault, creating parent folders as needed. */
+	createNote(path: string, content: string): Promise<void>;
 }
 
 export interface ControllerDeps {
@@ -106,7 +109,7 @@ export class CoOberViewController {
 			id: 'compact',
 			trigger: 'compact',
 			aliases: ['summarize'],
-			title: 'Compact Session',
+			title: t().slashTitles.compact,
 			description: t().slash.compact,
 			category: 'session',
 			source: 'builtin',
@@ -115,7 +118,7 @@ export class CoOberViewController {
 		registry.registerBuiltin({
 			id: 'new',
 			trigger: 'new',
-			title: 'New Session',
+			title: t().slashTitles.new,
 			description: t().slash.new,
 			category: 'session',
 			source: 'builtin',
@@ -124,7 +127,7 @@ export class CoOberViewController {
 		registry.registerBuiltin({
 			id: 'clear',
 			trigger: 'clear',
-			title: 'Clear Screen',
+			title: t().slashTitles.clear,
 			description: t().slash.clear,
 			category: 'view',
 			source: 'builtin',
@@ -142,7 +145,7 @@ export class CoOberViewController {
 		registry.registerBuiltin({
 			id: 'help',
 			trigger: 'help',
-			title: 'Help',
+			title: t().slashTitles.help,
 			description: t().slash.help,
 			category: 'view',
 			source: 'builtin',
@@ -152,13 +155,13 @@ export class CoOberViewController {
 					`- **/${c.trigger}**${c.aliases?.length ? ` (${c.aliases.join(', ')})` : ''}: ${c.description}`
 				).join('\n');
 				this.deps.renderer.addUserMessage('/help');
-				this.deps.renderer.addSystemMessage(`### Available Commands\n\n${helpText}`);
+				this.deps.renderer.addSystemMessage(`### ${t().slash.helpHeader}\n\n${helpText}`);
 			},
 		});
 		registry.registerBuiltin({
 			id: 'add-dir',
 			trigger: 'add-dir',
-			title: 'Add Context Directory',
+			title: t().slashTitles.addDir,
 			description: t().slash.addDir,
 			argumentHint: '[path/to/directory]',
 			category: 'session',
@@ -174,7 +177,7 @@ export class CoOberViewController {
 		registry.registerBuiltin({
 			id: 'resume',
 			trigger: 'resume',
-			title: 'Resume Session',
+			title: t().slashTitles.resume,
 			description: t().slash.resume,
 			category: 'session',
 			source: 'builtin',
@@ -186,7 +189,7 @@ export class CoOberViewController {
 		registry.registerBuiltin({
 			id: 'fork',
 			trigger: 'fork',
-			title: 'Fork Session',
+			title: t().slashTitles.fork,
 			description: t().slash.fork,
 			category: 'session',
 			source: 'builtin',
@@ -197,9 +200,27 @@ export class CoOberViewController {
 			},
 		});
 		registry.registerBuiltin({
+			id: 'export',
+			trigger: 'export',
+			title: t().slashTitles.export,
+			description: t().slash.export,
+			category: 'session',
+			source: 'builtin',
+			run: async () => { await this.exportSessionToNote(); },
+		});
+		registry.registerBuiltin({
+			id: 'copy',
+			trigger: 'copy',
+			title: t().slashTitles.copy,
+			description: t().slash.copy,
+			category: 'session',
+			source: 'builtin',
+			run: async () => { this.copyTranscript(); },
+		});
+		registry.registerBuiltin({
 			id: 'model',
 			trigger: 'model',
-			title: 'Switch Model',
+			title: t().slashTitles.model,
 			description: t().slash.model,
 			argumentHint: '<model-id>',
 			category: 'agent',
@@ -209,20 +230,20 @@ export class CoOberViewController {
 				const modelId = args.trim();
 				if (!modelId) {
 					this.deps.renderer.addSystemMessage(
-						`Available models:\n${this.state.availableModels.map((m) => `- \`${m.modelId}\`: ${m.name}`).join('\n')}`
+						`${t().slash.availableModels}\n${this.state.availableModels.map((m) => `- \`${m.modelId}\`: ${m.name}`).join('\n')}`
 					);
 					return;
 				}
 				const c = client();
 				if (!c || !this.state.sessionId) return;
 				await c.setModel(this.state.sessionId, modelId);
-				this.deps.renderer.addSystemMessage(`Switched to model: \`${modelId}\``);
+				this.deps.renderer.addSystemMessage(`${t().slash.modelSwitched} \`${modelId}\``);
 			},
 		});
 		registry.registerBuiltin({
 			id: 'mode',
 			trigger: 'mode',
-			title: 'Switch Mode/Agent',
+			title: t().slashTitles.mode,
 			description: t().slash.mode,
 			argumentHint: '<mode-id>',
 			category: 'agent',
@@ -232,14 +253,14 @@ export class CoOberViewController {
 				const modeId = args.trim();
 				if (!modeId) {
 					this.deps.renderer.addSystemMessage(
-						`Available modes:\n${this.state.availableModes.map((m) => `- \`${m.id}\`: ${m.name}`).join('\n')}`
+						`${t().slash.availableModes}\n${this.state.availableModes.map((m) => `- \`${m.id}\`: ${m.name}`).join('\n')}`
 					);
 					return;
 				}
 				const c = client();
 				if (!c || !this.state.sessionId) return;
 				await c.setMode(this.state.sessionId, modeId);
-				this.deps.renderer.addSystemMessage(`Switched to mode: \`${modeId}\``);
+				this.deps.renderer.addSystemMessage(`${t().slash.modeSwitched} \`${modeId}\``);
 			},
 		});
 	}
@@ -904,8 +925,8 @@ export class CoOberViewController {
 
 		if (this.promptQueue.length > 0) {
 			const text = this.promptQueue.length === 1
-				? `⌙ 1 message queued`
-				: `⌙ ${this.promptQueue.length} messages queued`;
+				? t().queue.one
+				: t().queue.many.replace('{count}', String(this.promptQueue.length));
 			indicatorEl.createSpan({ cls: 'co-ober-queue-text', text });
 			indicatorEl.addClass('co-ober-visible');
 		} else {
@@ -977,6 +998,54 @@ export class CoOberViewController {
 				break;
 			}
 		}
+	}
+
+	/** Rename a local session mirror title (the OpenCode session keeps its own name). */
+	async renameSession(sessionId: string, title: string): Promise<void> {
+		const clean = title.trim();
+		if (!clean) return;
+		if (this.deps.sessionStore.rename(sessionId, clean)) {
+			await this.deps.sessionStore.save();
+		}
+	}
+
+	async exportSessionToNote(): Promise<void> {
+		const id = this.state.sessionId;
+		const session = id ? this.deps.sessionStore.get(id) : undefined;
+		if (!session || session.messages.length === 0) {
+			this.deps.renderer.addSystemMessage(t().export.noSession);
+			return;
+		}
+		const markdown = buildTranscriptMarkdown(session);
+		const folder = this.deps.runtime.settings.defaultNoteFolder?.trim() ?? '';
+		const name = `${sanitizeNoteName(session.title)} ${this.exportTimestamp()}.md`;
+		const path = folder ? `${folder}/${name}` : name;
+		try {
+			await this.deps.runtime.createNote(path, markdown);
+			this.deps.renderer.addSystemMessage(t().export.saved.replace('{path}', path));
+		} catch (e) {
+			this.deps.renderer.addSystemMessage(
+				t().export.failed.replace('{error}', e instanceof Error ? e.message : String(e))
+			);
+		}
+	}
+
+	copyTranscript(): void {
+		const id = this.state.sessionId;
+		const session = id ? this.deps.sessionStore.get(id) : undefined;
+		if (!session || session.messages.length === 0) {
+			this.deps.renderer.addSystemMessage(t().export.noSession);
+			return;
+		}
+		void navigator.clipboard.writeText(buildTranscriptMarkdown(session)).then(() => {
+			this.deps.renderer.addSystemMessage(t().copy.transcript);
+		});
+	}
+
+	private exportTimestamp(): string {
+		const d = new Date();
+		const pad = (n: number) => String(n).padStart(2, '0');
+		return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 	}
 
 	// ── Toolbar sync ──

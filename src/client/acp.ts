@@ -127,7 +127,7 @@ export function mergeAvailableCommands(commands: AvailableCommand[]): AvailableC
   }
 
   if (!seen.has('compact')) {
-    merged.push({ name: 'compact', description: 'compact the session' });
+    merged.push({ name: 'compact', description: t().slash.compact });
   }
 
   return merged;
@@ -168,7 +168,7 @@ export function extractConfigMeta(configOptions: SessionConfigOption[]): Pick<Ac
 /** Extract session metadata from a server result object */
 export function extractSessionSnapshot(result: Record<string, unknown>): AcpSessionMeta {
   const snapshot: AcpSessionMeta = {
-    availableCommands: [{ name: 'compact', description: 'compact the session' }],
+    availableCommands: [{ name: 'compact', description: t().slash.compact }],
     availableModels: [],
     availableModes: [],
     configOptions: [],
@@ -237,7 +237,7 @@ export class AcpClient implements OpencodeClient {
 	private sessionId_: string | null = null;
 	private cmdPath: string;
 	private cwd?: string;
-	private availableCommands: AvailableCommand[] = [{ name: 'compact', description: 'compact the session' }];
+	private availableCommands: AvailableCommand[] = [{ name: 'compact', description: t().slash.compact }];
 	private availableModels: ModelOption[] = [];
 	private availableModes: ModeOption[] = [];
 	private configOptions: SessionConfigOption[] = [];

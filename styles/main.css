@@ -1557,6 +1557,12 @@ pre:hover .co-ober-copy-btn {
 .co-ober-text-block:hover .co-ober-text-copy-btn {
   display: block;
 }
+.co-ober-msg.user {
+  position: relative;
+}
+.co-ober-msg.user:hover .co-ober-text-copy-btn {
+  display: block;
+}
 
 /* Thinking block — new structured variant (complements .co-ober-thinking) */
 .co-ober-thinking-block {

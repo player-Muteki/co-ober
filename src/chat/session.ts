@@ -9,6 +9,7 @@ export interface SessionStore {
   append(id: string, msg: SerializedMessage): void;
   rekey(oldId: string, newId: string): void;
   setActive(id: string): void;
+  rename(id: string, title: string): boolean;
   list(): SessionMeta[];
   save(): Promise<void>;
   remove(id: string): void;
@@ -94,6 +95,14 @@ export class SessionRepository implements SessionStore {
 
   setActive(id: string): void {
     this.activeSessionId = id;
+  }
+
+  rename(id: string, title: string): boolean {
+    const session = this.sessions.get(id);
+    if (!session) return false;
+    session.title = title;
+    session.updatedAt = Date.now();
+    return true;
   }
 
   list(): SessionMeta[] {

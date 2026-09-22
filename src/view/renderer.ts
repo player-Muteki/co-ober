@@ -120,6 +120,7 @@ export class ChatRenderer {
     wrap.dataset.timestamp = this.formatTimestamp(timestamp ?? Date.now());
     const body = wrap.createDiv({ cls: 'co-ober-msg-body' });
     body.textContent = text;
+    if (text) this.addTextCopyButton(wrap, text);
     if (images && images.length > 0) {
       const gallery = wrap.createDiv({ cls: 'co-ober-user-images' });
       for (const img of images) {
@@ -244,14 +245,14 @@ export class ChatRenderer {
 
     // Add interrupted indicator as styled inline elements
     const indicatorEl = this.currentAssistantEl.createDiv({ cls: 'co-ober-interrupted-row' });
-    const badgeEl = indicatorEl.createSpan({ cls: 'co-ober-interrupted-badge', text: 'Interrupted' });
+    const badgeEl = indicatorEl.createSpan({ cls: 'co-ober-interrupted-badge', text: t().interrupted.badge });
     badgeEl.createSpan({
       cls: 'co-ober-interrupted-hint',
-      text: ' \u00B7 What should I do instead?',
+      text: ` \u00B7 ${t().interrupted.hint}`,
     });
 
     // Also append to the text content so it renders in stored messages
-    this.currentAssistantText += '\n\n*Interrupted*';
+    this.currentAssistantText += `\n\n*${t().interrupted.badge}*`;
   }
 
   /**

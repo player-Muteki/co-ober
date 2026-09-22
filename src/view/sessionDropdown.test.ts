@@ -175,6 +175,7 @@ describe('SessionDropdown', () => {
       dropdown.open();
       const deleteBtn = container.querySelector('.co-ober-session-item.active .session-delete') as HTMLElement;
       deleteBtn.click();
+      deleteBtn.click();
       await new Promise(r => setTimeout(r, 10));
       expect(callbacks.onDelete).toHaveBeenCalledWith('session-1');
     });
@@ -184,9 +185,87 @@ describe('SessionDropdown', () => {
       const items = container.querySelectorAll('.co-ober-session-item');
       const deleteBtn = items[1].querySelector('.session-delete') as HTMLElement;
       deleteBtn.click();
+      deleteBtn.click();
       await new Promise(r => setTimeout(r, 10));
       expect(callbacks.onDelete).toHaveBeenCalledWith('session-2');
       expect(callbacks.onNewSession).not.toHaveBeenCalled();
+    });
+
+    it('requires a second click to confirm deletion', async () => {
+      dropdown.open();
+      const deleteBtn = container.querySelector('.session-delete') as HTMLElement;
+      deleteBtn.click();
+      await new Promise(r => setTimeout(r, 10));
+      expect(callbacks.onDelete).not.toHaveBeenCalled();
+      expect(deleteBtn.classList.contains('is-confirm')).toBe(true);
+      expect(deleteBtn.getAttribute('title')).toBe('Click again to confirm deletion');
+      deleteBtn.click();
+      await new Promise(r => setTimeout(r, 10));
+      expect(callbacks.onDelete).toHaveBeenCalledTimes(1);
+    });
+
+    it('reverts the delete confirmation after the timeout elapses', async () => {
+      vi.useFakeTimers();
+      try {
+        dropdown.open();
+        const deleteBtn = container.querySelector('.session-delete') as HTMLElement;
+        deleteBtn.click();
+        expect(deleteBtn.classList.contains('is-confirm')).toBe(true);
+        vi.advanceTimersByTime(3100);
+        expect(deleteBtn.classList.contains('is-confirm')).toBe(false);
+        expect(deleteBtn.textContent).toBe('×');
+        deleteBtn.click();
+        expect(callbacks.onDelete).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('renames a session through the inline editor on Enter', async () => {
+      const onRename = vi.fn().mockResolvedValue(undefined);
+      const dd = new SessionDropdown(
+        container,
+        anchor,
+        sessionStore as any,
+        () => 'session-1',
+        { ...callbacks, onRename } as any,
+        () => ({ sessionCapabilities: { close: true, fork: true, list: true, resume: true } }),
+      );
+      dd.open();
+      const item = container.querySelector('.co-ober-session-item')!;
+      (item.querySelector('.session-rename') as HTMLElement).click();
+      const input = item.querySelector('.session-rename-input') as HTMLInputElement;
+      expect(input).not.toBeNull();
+      expect(input.value).toBe('Chat 1');
+      input.value = '  My new title  ';
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await new Promise(r => setTimeout(r, 10));
+      expect(onRename).toHaveBeenCalledWith('session-1', 'My new title');
+      dd.destroy();
+    });
+
+    it('cancels the inline rename on Escape without calling onRename', async () => {
+      const onRename = vi.fn().mockResolvedValue(undefined);
+      const dd = new SessionDropdown(
+        container,
+        anchor,
+        sessionStore as any,
+        () => 'session-1',
+        { ...callbacks, onRename } as any,
+        () => ({ sessionCapabilities: { close: true, fork: true, list: true, resume: true } }),
+      );
+      dd.open();
+      const item = container.querySelector('.co-ober-session-item')!;
+      (item.querySelector('.session-rename') as HTMLElement).click();
+      const input = item.querySelector('.session-rename-input') as HTMLInputElement;
+      input.value = 'Discarded';
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await new Promise(r => setTimeout(r, 10));
+      expect(onRename).not.toHaveBeenCalled();
+      // rerender restores the plain label
+      expect(container.querySelector('.session-rename-input')).toBeNull();
+      expect(container.querySelector('.session-label')?.textContent).toBe('Chat 1');
+      dd.destroy();
     });
 
     it('notices the user when a session action rejects', async () => {

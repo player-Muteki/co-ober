@@ -41,7 +41,7 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): ControllerDeps
 		resolver: { resolveNote: vi.fn() } as unknown as ControllerDeps['resolver'],
 		syncEngine: { process: vi.fn() } as unknown as ControllerDeps['syncEngine'],
 		sessionStore: {
-			get: vi.fn().mockReturnValue({ messages: [], updatedAt: 0 }), getOrCreate: vi.fn().mockReturnValue({ messages: [], updatedAt: 0 }), setActive: vi.fn(), save: vi.fn(), load: vi.fn(), remove: vi.fn(), list: vi.fn(() => []), append: vi.fn(),
+			get: vi.fn().mockReturnValue({ messages: [], updatedAt: 0 }), getOrCreate: vi.fn().mockReturnValue({ messages: [], updatedAt: 0 }), setActive: vi.fn(), save: vi.fn(), load: vi.fn(), remove: vi.fn(), list: vi.fn(() => []), append: vi.fn(), rename: vi.fn(() => true),
 			sessions: new Map(), activeId: null,
 		} as unknown as ControllerDeps['sessionStore'],
 		welcomeView: { show: noop, hide: noop, updateStatus: noop } as unknown as ControllerDeps['welcomeView'],
@@ -49,11 +49,12 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): ControllerDeps
 			settings: {
 				maxNoteSize: 8000, syncRules: [], mcpServers: [], defaultAgent: 'build', defaultModel: '',
 				defaultEffort: 'default', systemPrompt: '', customAgents: [], customSkills: [],
-				activeCustomAgentId: '', commonModels: [], autoScrollEnabled: true,
+				activeCustomAgentId: '', commonModels: [], autoScrollEnabled: true, defaultNoteFolder: 'co-ober-notes',
 			},
 			getClient: vi.fn(() => null),
 			initClient: vi.fn().mockResolvedValue(false),
 			getVaultCwd: vi.fn(() => '/vault'),
+			createNote: vi.fn().mockResolvedValue(undefined),
 		} as unknown as ControllerDeps['runtime'],
 		updateContextMeter: noop,
 		...overrides,
@@ -1051,6 +1052,89 @@ describe('CoOberViewController', () => {
 			controller.copyLastAssistantMessage();
 
 			expect(writeText).toHaveBeenCalledWith('answer');
+		});
+	});
+
+	describe('exportSessionToNote', () => {
+		it('reports when there is no session content to export', async () => {
+			await controller.exportSessionToNote();
+			expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().export.noSession);
+			expect(deps.runtime.createNote).not.toHaveBeenCalled();
+		});
+
+		it('writes the transcript as a dated vault note under the configured folder', async () => {
+			controller.state.sessionId = 'exp-1';
+			(deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue({
+				sessionId: 'exp-1', title: 'Research chat', messages: [
+					{ role: 'user', content: 'question', type: 'text', timestamp: 1 },
+					{ role: 'assistant', content: 'answer', type: 'text', timestamp: 2 },
+				],
+			});
+
+			await controller.exportSessionToNote();
+
+			const createNote = deps.runtime.createNote as ReturnType<typeof vi.fn>;
+			expect(createNote).toHaveBeenCalledTimes(1);
+			const [path, content] = createNote.mock.calls[0] as [string, string];
+			expect(path).toMatch(/^co-ober-notes\/Research chat \d{4}-\d{2}-\d{2}\.md$/);
+			expect(content).toContain('# Research chat');
+			expect(content).toContain('question');
+			expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(expect.stringContaining(path));
+		});
+
+		it('surfaces note write failures', async () => {
+			controller.state.sessionId = 'exp-2';
+			(deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue({
+				sessionId: 'exp-2', title: 'x', messages: [{ role: 'user', content: 'hi', type: 'text', timestamp: 1 }],
+			});
+			(deps.runtime.createNote as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('disk full'));
+
+			await controller.exportSessionToNote();
+
+			expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(expect.stringContaining('disk full'));
+		});
+	});
+
+	describe('copyTranscript', () => {
+		it('copies the rendered transcript to the clipboard and confirms', async () => {
+			controller.state.sessionId = 'cp-1';
+			(deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue({
+				sessionId: 'cp-1', title: 'Chat', messages: [{ role: 'user', content: 'hi there', type: 'text', timestamp: 1 }],
+			});
+			const writeText = vi.fn().mockResolvedValue(undefined);
+			Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+
+			controller.copyTranscript();
+			await new Promise((r) => setTimeout(r, 0));
+
+			expect(writeText).toHaveBeenCalledWith(expect.stringContaining('# Chat'));
+			expect(writeText.mock.calls[0][0]).toContain('hi there');
+			expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().copy.transcript);
+		});
+
+		it('reports when there is nothing to copy', () => {
+			controller.copyTranscript();
+			expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().export.noSession);
+		});
+	});
+
+	describe('renameSession', () => {
+		it('renames through the store and persists', async () => {
+			await controller.renameSession('s-1', ' New title ');
+			expect(deps.sessionStore.rename).toHaveBeenCalledWith('s-1', 'New title');
+			expect(deps.sessionStore.save).toHaveBeenCalled();
+		});
+
+		it('ignores blank titles', async () => {
+			await controller.renameSession('s-1', '   ');
+			expect(deps.sessionStore.rename).not.toHaveBeenCalled();
+			expect(deps.sessionStore.save).not.toHaveBeenCalled();
+		});
+
+		it('skips saving when the session is unknown', async () => {
+			(deps.sessionStore.rename as ReturnType<typeof vi.fn>).mockReturnValue(false);
+			await controller.renameSession('missing', 'Title');
+			expect(deps.sessionStore.save).not.toHaveBeenCalled();
 		});
 	});
 });

@@ -46,6 +46,21 @@ describe('SessionRepository', () => {
     expect(repository.activeId).toBe('new-id');
   });
 
+  it('renames an existing session and reports the title in listings', () => {
+    const { repository } = createRepository();
+    repository.hydrate([createSession('s1')], 's1');
+
+    expect(repository.rename('s1', 'Thesis brainstorming')).toBe(true);
+
+    expect(repository.get('s1')!.title).toBe('Thesis brainstorming');
+    expect(repository.list()[0].title).toBe('Thesis brainstorming');
+  });
+
+  it('returns false when renaming an unknown session', () => {
+    const { repository } = createRepository();
+    expect(repository.rename('missing', 'x')).toBe(false);
+  });
+
   it('localizes new session titles', () => {
     setLocale('zh');
     const { repository } = createRepository();

@@ -69,6 +69,38 @@ describe('ChatRenderer', () => {
       renderer.addUserMessage('plain');
       expect(container.querySelector('.co-ober-user-images')).toBeNull();
     });
+
+    it('adds a per-message copy button that writes the message text', () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+      renderer.addUserMessage('copy me');
+      const btn = container.querySelector('.co-ober-msg.user .co-ober-text-copy-btn') as HTMLButtonElement;
+      expect(btn).not.toBeNull();
+      expect(btn.textContent).toBe('Copy');
+      expect(container.querySelector('.co-ober-msg-body')?.textContent).toBe('copy me');
+      btn.click();
+      expect(writeText).toHaveBeenCalledWith('copy me');
+    });
+
+    it('omits the copy button for empty user messages', () => {
+      renderer.addUserMessage('');
+      expect(container.querySelector('.co-ober-text-copy-btn')).toBeNull();
+    });
+  });
+
+  describe('appendInterruptIndicator', () => {
+    it('renders the localized badge and hint', () => {
+      renderer.appendInterruptIndicator();
+      expect(container.querySelector('.co-ober-interrupted-badge')).not.toBeNull();
+      expect(container.querySelector('.co-ober-interrupted-hint')?.textContent).toContain('What should I do instead?');
+    });
+
+    it('follows the active locale', () => {
+      setLocale('zh');
+      renderer.appendInterruptIndicator();
+      expect(container.querySelector('.co-ober-interrupted-hint')?.textContent).toContain('接下来做什么？');
+      setLocale('en');
+    });
   });
 
   describe('renderStructuredMessage', () => {
@@ -150,7 +182,7 @@ describe('ChatRenderer', () => {
       renderer.addUserMessage('original');
 
       const wrap = container.querySelector('.co-ober-msg.user')!;
-      (wrap.querySelectorAll('button')[1] as HTMLElement).click();
+      (wrap.querySelector('.co-ober-user-actions button:nth-child(2)') as HTMLElement).click();
       const textarea = wrap.querySelector('.co-ober-user-edit textarea') as HTMLTextAreaElement;
       expect(textarea).not.toBeNull();
       expect(textarea.value).toBe('original');
@@ -171,7 +203,7 @@ describe('ChatRenderer', () => {
       renderer.addUserMessage('keep me');
 
       const wrap = container.querySelector('.co-ober-msg.user')!;
-      (wrap.querySelectorAll('button')[1] as HTMLElement).click();
+      (wrap.querySelector('.co-ober-user-actions button:nth-child(2)') as HTMLElement).click();
       const textarea = wrap.querySelector('.co-ober-user-edit textarea') as HTMLTextAreaElement;
       textarea.value = 'discarded';
       (wrap.querySelectorAll('.co-ober-user-edit-actions button')[1] as HTMLElement).click();
@@ -187,7 +219,7 @@ describe('ChatRenderer', () => {
       renderer.addUserMessage('text');
 
       const wrap = container.querySelector('.co-ober-msg.user')!;
-      (wrap.querySelectorAll('button')[1] as HTMLElement).click();
+      (wrap.querySelector('.co-ober-user-actions button:nth-child(2)') as HTMLElement).click();
       (wrap.querySelector('.co-ober-user-edit textarea') as HTMLTextAreaElement).value = '   ';
       (wrap.querySelectorAll('.co-ober-user-edit-actions button')[0] as HTMLElement).click();
 
