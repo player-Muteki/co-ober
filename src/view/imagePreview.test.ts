@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, afterEach } from 'vitest';
 import { openImagePreview, closeImagePreview, isImagePreviewOpen } from './imagePreview';
+import { setLocale, t } from '../i18n/index';
 
 describe('imagePreview', () => {
   afterEach(() => {
@@ -40,5 +41,49 @@ describe('imagePreview', () => {
   it('close is a no-op when nothing is open', () => {
     closeImagePreview();
     expect(isImagePreviewOpen()).toBe(false);
+  });
+
+  it('moves focus into the dialog overlay and restores it on close', () => {
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    trigger.focus();
+
+    openImagePreview('x', 'pic');
+    const overlay = document.querySelector('.co-ober-img-overlay') as HTMLElement;
+    expect(document.activeElement).toBe(overlay);
+    expect(overlay.getAttribute('role')).toBe('dialog');
+    expect(overlay.getAttribute('aria-modal')).toBe('true');
+    expect(overlay.getAttribute('aria-label')).toBe('pic');
+
+    closeImagePreview();
+    expect(document.activeElement).toBe(trigger);
+    trigger.remove();
+  });
+
+  it('keeps aria-label on the localized title when no alt text exists', () => {
+    setLocale('en');
+    openImagePreview('x');
+    const overlay = document.querySelector('.co-ober-img-overlay') as HTMLElement;
+    expect(overlay.getAttribute('aria-label')).toBe(t().lightbox.title);
+    closeImagePreview();
+  });
+
+  it('traps Tab focus inside the overlay', () => {
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    trigger.focus();
+
+    openImagePreview('x');
+    const overlay = document.querySelector('.co-ober-img-overlay') as HTMLElement;
+    trigger.focus();
+    expect(document.activeElement).toBe(trigger);
+
+    const event = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+    document.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(overlay);
+
+    closeImagePreview();
+    trigger.remove();
   });
 });

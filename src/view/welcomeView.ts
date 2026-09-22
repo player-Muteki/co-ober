@@ -5,10 +5,11 @@ export class WelcomeView {
 	private welcomeEl: HTMLDivElement | null = null;
 	private containerEl: HTMLElement;
 	private isConnected = false;
+	private unsubscribeLocale: () => void;
 
 	constructor(containerEl: HTMLElement, private getAgentCapabilities: () => AgentCapabilities | null = () => null) {
 		this.containerEl = containerEl;
-		onLocaleChange(() => {
+		this.unsubscribeLocale = onLocaleChange(() => {
 			if (this.isVisible()) {
 				this.show(this.isConnected);
 			}
@@ -67,5 +68,10 @@ export class WelcomeView {
 
 	isVisible(): boolean {
 		return this.welcomeEl !== null;
+	}
+
+	dispose(): void {
+		this.unsubscribeLocale();
+		this.hide();
 	}
 }

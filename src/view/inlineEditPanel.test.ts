@@ -104,4 +104,22 @@ describe('InlineEditPanel', () => {
 		expect(applyBtn?.textContent).toBe('应用');
 		expect(discardBtn?.textContent).toBe('放弃');
 	});
+
+	it('locale changes refresh a visible panel automatically; dispose() stops them', () => {
+		setLocale('en');
+		const container = document.createElement('div');
+		const panel = new InlineEditPanel(container);
+		panel.showDiff('old text', 'new text');
+
+		const refreshSpy = vi.spyOn(panel, 'refreshLocale');
+		setLocale('zh');
+		expect(refreshSpy).toHaveBeenCalled();
+		expect(container.querySelector('.co-ober-inline-edit-title')?.textContent).toBe('AI 编辑预览');
+
+		refreshSpy.mockClear();
+		panel.dispose();
+		setLocale('en');
+		expect(refreshSpy).not.toHaveBeenCalled();
+		expect(container.querySelector('.co-ober-inline-edit-panel')).toBeNull();
+	});
 });

@@ -57,6 +57,11 @@ const en = {
 
   dragDrop: {
     imageNotSupported: 'This OpenCode agent does not support image prompts',
+    audioNotSupported: 'Audio attachments are not supported',
+  },
+
+  lightbox: {
+    title: 'Image preview',
   },
 
   permission: {
@@ -180,6 +185,7 @@ const en = {
     modelSwitched: 'Switched to model:',
     availableModes: 'Available modes:',
     modeSwitched: 'Switched to mode:',
+    resumeHint: 'Pass a session id (/resume <id>) or open the history dropdown to pick a session.',
   },
   slashTitles: {
     compact: 'Compact Session',

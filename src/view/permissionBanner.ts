@@ -5,6 +5,7 @@ import { PERMISSION_MAX_LOCATIONS, PERMISSION_SUMMARY_MAX_KEYS, PERMISSION_TRUNC
 export class PermissionBanner {
   private el: HTMLDivElement | null = null;
   private currentReq: { req: PermissionRequest; resolve: (val: string) => void } | null = null;
+  private readonly queue: Array<{ req: PermissionRequest; resolve: (val: string) => void }> = [];
   private readonly unsubscribeLocale: () => void;
 
   constructor(private containerEl: HTMLElement) {
@@ -21,18 +22,21 @@ export class PermissionBanner {
 
   show(req: PermissionRequest): Promise<string> {
     return new Promise((resolve) => {
-      // A request that is overwritten without an answer would leave the
-      // agent blocked forever; settle the old one with a reject first.
-      this.settlePending();
-      this.currentReq = { req, resolve };
-      // Remove existing UI element but keep currentReq intact.
-      if (this.el) {
-        this.el.remove();
-        this.el = null;
-      }
-      this.renderBanner(req);
-      this.containerEl.scrollTop = this.containerEl.scrollHeight;
+      // Concurrent requests queue up behind the visible one; force-rejecting
+      // the previous request would punish work that was never shown.
+      this.queue.push({ req, resolve });
+      if (!this.currentReq) this.showNext();
+      else this.containerEl.scrollTop = this.containerEl.scrollHeight;
     });
+  }
+
+  private showNext(): void {
+    const next = this.queue.shift();
+    this.dismissInternal();
+    if (!next) return;
+    this.currentReq = next;
+    this.renderBanner(next.req);
+    this.containerEl.scrollTop = this.containerEl.scrollHeight;
   }
 
   private renderBanner(req: PermissionRequest): void {
@@ -85,9 +89,9 @@ export class PermissionBanner {
         cls: `perm-btn perm-${opt.kind}`,
       });
       btn.onclick = () => {
-        const resolve = this.currentReq?.resolve;
-        this.dismissInternal();
-        if (resolve) resolve(opt.optionId);
+        const pending = this.currentReq;
+        this.showNext();
+        if (pending) pending.resolve(opt.optionId);
       };
     }
   }
@@ -118,13 +122,14 @@ export class PermissionBanner {
     this.currentReq = null;
   }
 
-  /** Drop the banner UI and resolve the pending request with a reject, so the agent never blocks. */
+  /** Drop the banner UI and resolve every outstanding request with a reject, so the agent never blocks. */
   private settlePending(): void {
-    const pending = this.currentReq;
+    const outstanding = this.currentReq ? [this.currentReq, ...this.queue.splice(0)] : this.queue.splice(0);
     this.dismissInternal();
-    if (!pending) return;
-    const reject = pending.req.options.find((o) => o.kind === 'reject_once' || o.kind === 'reject_always');
-    pending.resolve(reject?.optionId ?? 'reject_once');
+    for (const pending of outstanding) {
+      const reject = pending.req.options.find((o) => o.kind === 'reject_once' || o.kind === 'reject_always');
+      pending.resolve(reject?.optionId ?? 'reject_once');
+    }
   }
 
   dismiss(): void {

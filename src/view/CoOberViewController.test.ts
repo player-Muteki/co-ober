@@ -11,6 +11,8 @@ import type {
   SerializedMessage,
 } from '../types';
 import { setLocale, t } from '../i18n/index';
+import zhLocale from '../i18n/zh';
+import { commandRegistry } from '../commands/registry';
 import { AcpSessionMissingError, AcpProcessExitError } from '../client/AcpErrors';
 import {
   readNativeMessageStats,
@@ -1631,6 +1633,269 @@ describe('CoOberViewController', () => {
       (deps.sessionStore.rename as ReturnType<typeof vi.fn>).mockReturnValue(false);
       await controller.renameSession('missing', 'Title');
       expect(deps.sessionStore.save).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('CoOberViewController — 0.1.31 correctness patches', () => {
+  let deps: ControllerDeps;
+  let callbacks: ReturnType<typeof createMockCallbacks>;
+  let controller: CoOberViewController;
+
+  beforeEach(() => {
+    setLocale('en');
+    deps = createMockDeps();
+    callbacks = createMockCallbacks();
+    (readNativeSessionUsage as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    (readNativeSessionTodos as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (readNativeMessageStats as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (readNativeToolErrors as ReturnType<typeof vi.fn>).mockResolvedValue({});
+    controller = new CoOberViewController(deps, callbacks);
+  });
+
+  function noteRef(path: string): ContextRef {
+    return { id: path, type: 'note', name: path, path } as ContextRef;
+  }
+
+  describe('forkSession', () => {
+    it('copies the source transcript into the fork and re-renders it', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      const sourceMsg = { role: 'user', content: 'hello', type: 'text', timestamp: 1 };
+      const forked = { sessionId: 'forked-session', title: 'New Chat', messages: [] as unknown[], updatedAt: 0 };
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockImplementation((id: string) => {
+        if (id === 'local-1') return { sessionId: 'local-1', title: 'Source', messages: [sourceMsg], updatedAt: 0 };
+        if (id === 'forked-session') return forked;
+        return undefined;
+      });
+      (deps.sessionStore.getOrCreate as ReturnType<typeof vi.fn>).mockImplementation((id: string) =>
+        id === 'forked-session' ? forked : { sessionId: id, title: 'x', messages: [], updatedAt: 0 },
+      );
+
+      await controller.forkSession('local-1');
+
+      expect(controller.getSessionId()).toBe('forked-session');
+      expect(forked.messages).toEqual([sourceMsg]);
+      expect(client.loadSession).toHaveBeenCalledWith('forked-session', '/vault', [], expect.any(Function));
+      expect(deps.sessionStore.setActive).toHaveBeenCalledWith('forked-session');
+      expect(deps.renderer.addUserMessage).toHaveBeenCalledWith('hello', 1, undefined);
+    });
+
+    it('surfaces agent errors instead of throwing', async () => {
+      const client = createMockClient({ forkSession: vi.fn().mockRejectedValue(new Error('fork boom')) });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      await expect(controller.forkSession('local-1')).resolves.toBeUndefined();
+
+      expect(deps.renderer.addError).toHaveBeenCalledWith('fork boom');
+      expect(deps.sessionStore.setActive).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('queue robustness', () => {
+    it('releases queued prompts when the agent call fails before sending', async () => {
+      const initDeferred = deferred<boolean>();
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(initDeferred.promise)
+        .mockResolvedValue(false);
+
+      const first = controller.send('first', []);
+      expect(controller.isBusy()).toBe(true);
+      await controller.send('second', []);
+      initDeferred.resolve(false);
+      await first;
+
+      expect(controller.isBusy()).toBe(false);
+      const queue = (controller as unknown as { promptQueue: unknown[] }).promptQueue;
+      expect(queue).toHaveLength(0);
+      expect(deps.runtime.getClient()).toBeNull();
+    });
+
+    it('keeps draining the queue after a failing slash command', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      commandRegistry.registerBuiltin({
+        id: 'boom-test',
+        trigger: 'boom-test',
+        title: 'Boom',
+        description: 'throws',
+        category: 'session',
+        source: 'builtin',
+        run: async () => {
+          throw new Error('boom');
+        },
+      });
+      try {
+        controller.state.sessionId = 'local-1';
+        const first = controller.send('hold', []);
+        await controller.send('/boom-test', []);
+        await controller.send('tail', []);
+        await first;
+
+        expect(deps.renderer.addError).toHaveBeenCalledWith('boom');
+        // drainQueue is fire-and-forget; wait for the tail prompt to reach the client.
+        await vi.waitFor(() => {
+          const calls = client.sendMessage.mock.calls as unknown as Array<[string, Array<{ text?: string }>, unknown]>;
+          const lastParts = calls[calls.length - 1]?.[1] ?? [];
+          expect(lastParts.some((p) => p.text === 'tail')).toBe(true);
+        });
+      } finally {
+        const builtins = Reflect.get(commandRegistry, 'builtins') as Map<string, unknown>;
+        builtins.delete('boom-test');
+        (Reflect.get(commandRegistry, 'rebuildOrder') as () => void).call(commandRegistry);
+      }
+    });
+  });
+
+  describe('restore', () => {
+    it('renders system messages instead of dropping them', async () => {
+      controller.state.sessionId = 'local-1';
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue({
+        sessionId: 'local-1',
+        title: 't',
+        messages: [{ role: 'system', content: 'Transcript saved to notes/x.md', type: 'text', timestamp: 1 }],
+        updatedAt: 0,
+      });
+
+      await controller.restoreSession();
+
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith('Transcript saved to notes/x.md');
+    });
+  });
+
+  describe('/resume', () => {
+    it('resumes the session when an id is given', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      await commandRegistry.find('resume')!.run('ses_42');
+
+      expect(client.resumeSession).toHaveBeenCalledWith('ses_42', '/vault', expect.any(Function));
+      expect(controller.getSessionId()).toBe('ses_42');
+    });
+
+    it('opens the session dropdown when no id is given', async () => {
+      const onOpenSessions = vi.fn();
+      const local = new CoOberViewController(deps, { ...callbacks, onOpenSessions });
+      expect(local).toBeInstanceOf(CoOberViewController);
+
+      await commandRegistry.find('resume')!.run('');
+
+      expect(onOpenSessions).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows a usage hint when no dropdown callback exists', async () => {
+      await commandRegistry.find('resume')!.run('');
+
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(expect.stringContaining('/resume'));
+    });
+  });
+
+  describe('syncRuntimeSession capability gating', () => {
+    it('falls back to resume when the agent cannot load sessions', async () => {
+      const client = createMockClient({
+        getAgentCapabilities: vi.fn(() => ({ loadSession: false, sessionCapabilities: { resume: true } })),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      await controller.syncRuntimeSession('ses_a');
+
+      expect(client.loadSession).not.toHaveBeenCalled();
+      expect(client.resumeSession).toHaveBeenCalledWith('ses_a', '/vault', undefined);
+    });
+
+    it('skips the sync when neither load nor resume is supported', async () => {
+      const client = createMockClient({ getAgentCapabilities: vi.fn(() => ({ loadSession: false })) });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      await controller.syncRuntimeSession('ses_a');
+
+      expect(client.loadSession).not.toHaveBeenCalled();
+      expect(client.resumeSession).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('note content cache', () => {
+    it('reuses cached notes and drops the entry on invalidateNoteCache', async () => {
+      controller.state.sessionId = 'local-1';
+      const resolve = deps.resolver.resolveNote as ReturnType<typeof vi.fn>;
+      resolve.mockResolvedValue({ name: 'a', content: 'body' });
+      const ref = noteRef('a.md');
+
+      await controller.buildParts('q', [ref]);
+      await controller.buildParts('q', [ref]);
+      expect(resolve).toHaveBeenCalledTimes(1);
+
+      controller.invalidateNoteCache('a.md');
+      await controller.buildParts('q', [ref]);
+      expect(resolve).toHaveBeenCalledTimes(2);
+    });
+
+    it('evicts the least recently used entry beyond the cache cap', async () => {
+      controller.state.sessionId = 'local-1';
+      const resolve = deps.resolver.resolveNote as ReturnType<typeof vi.fn>;
+      resolve.mockImplementation((p: string) => Promise.resolve({ name: p, content: p }));
+
+      for (let i = 0; i < 100; i++) await controller.buildParts('q', [noteRef(`p${i}.md`)]);
+      // Touch p0 so p1 becomes the least recently used entry.
+      await controller.buildParts('q', [noteRef('p0.md')]);
+      expect(resolve).toHaveBeenCalledTimes(100);
+
+      resolve.mockClear();
+      await controller.buildParts('q', [noteRef('new.md')]);
+      // Insertion at the cap evicts p1, not the freshly touched p0.
+      expect(resolve.mock.calls.map((c) => c[0])).toEqual(['new.md']);
+
+      await controller.buildParts('q', [noteRef('p0.md')]);
+      expect(resolve).toHaveBeenCalledTimes(1);
+      await controller.buildParts('q', [noteRef('p1.md')]);
+      expect(resolve.mock.calls.map((c) => c[0])).toEqual(['new.md', 'p1.md']);
+    });
+  });
+
+  describe('prompt capability gating', () => {
+    it('skips note embedding when the agent reports no embeddedContext', async () => {
+      const client = createMockClient({
+        getAgentCapabilities: vi.fn(() => ({ promptCapabilities: { embeddedContext: false } })),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      controller.state.sessionId = 'local-1';
+
+      const parts = await controller.buildParts('question', [noteRef('a.md')]);
+
+      expect(deps.resolver.resolveNote).not.toHaveBeenCalled();
+      // The system prompt documents the `=== NOTE:` marker, so assert on the block footer instead.
+      expect(parts.some((p) => (p.text ?? '').includes('=== END NOTE ==='))).toBe(false);
+      expect(parts[parts.length - 1]).toEqual({ type: 'text', text: 'question' });
+    });
+
+    it('does not send image parts when the agent lost image capability', async () => {
+      const client = createMockClient({
+        getAgentCapabilities: vi.fn(() => ({ promptCapabilities: { image: false } })),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      controller.state.sessionId = 'local-1';
+      callbacks.getPendingImageParts = () => [{ type: 'image', mimeType: 'image/png', data: 'AAA' }];
+
+      await controller.send('look', []);
+
+      const parts = client.sendMessage.mock.calls[0][1] as Array<{ type: string }>;
+      expect(parts.some((p) => p.type === 'image')).toBe(false);
+    });
+  });
+
+  describe('builtin slash registration follows the locale', () => {
+    it('re-registers builtin titles when the locale changes', async () => {
+      setLocale('en');
+      const enTitle = commandRegistry.find('compact')!.title;
+
+      setLocale('zh');
+      const zhTitle = commandRegistry.find('compact')!.title;
+      expect(zhTitle).not.toBe(enTitle);
+      expect(zhTitle).toBe(zhLocale.slashTitles.compact);
+
+      setLocale('en');
+      expect(commandRegistry.find('compact')!.title).toBe(enTitle);
     });
   });
 });

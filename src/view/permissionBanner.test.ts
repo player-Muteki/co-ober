@@ -121,7 +121,7 @@ describe('PermissionBanner', () => {
     expect(await promise).toBe('reject_once');
   });
 
-  it('a second show() settles the previous pending request with a reject', async () => {
+  it('a second concurrent show() queues behind the visible request', async () => {
     const container = document.createElement('div');
     const banner = new PermissionBanner(container);
 
@@ -142,20 +142,53 @@ describe('PermissionBanner', () => {
       options: [{ optionId: 'yes2', name: 'Yes2', kind: 'allow_once' }],
     } as any);
 
-    // The overwritten first request resolves instead of hanging forever.
-    expect(await first).toBe('no1');
+    // The first request stays visible; nothing is force-rejected.
+    let banners = container.querySelectorAll('.co-ober-permission-banner');
+    expect(banners.length).toBe(1);
+    expect(banners[0].querySelector('.perm-title')?.textContent).toContain('First?');
 
-    // The second request is still live and can be answered normally.
-    const buttons = container.querySelectorAll('.perm-actions button');
-    (buttons[0] as HTMLButtonElement).click();
+    // Answering the first promotes the queued second request.
+    (banners[0].querySelector('.perm-actions button') as HTMLButtonElement).click();
+    expect(await first).toBe('yes1');
+
+    banners = container.querySelectorAll('.co-ober-permission-banner');
+    expect(banners.length).toBe(1);
+    expect(banners[0].querySelector('.perm-title')?.textContent).toContain('Second?');
+    (banners[0].querySelector('.perm-actions button') as HTMLButtonElement).click();
     expect(await second).toBe('yes2');
+    expect(container.querySelector('.co-ober-permission-banner')).toBeNull();
   });
 
-  it('cleans up old banner when show is called consecutively', () => {
+  it('dismiss() settles every queued request with a reject', async () => {
     const container = document.createElement('div');
     const banner = new PermissionBanner(container);
 
-    banner.show({
+    const first = banner.show({
+      id: 'req-q1',
+      message: 'First?',
+      toolCall: { toolCallId: 'q1', status: 'pending', rawInput: {}, title: 'First?', kind: 'edit', locations: [] },
+      options: [{ optionId: 'yes1', name: 'Yes1', kind: 'allow_once' }],
+    } as any);
+
+    const second = banner.show({
+      id: 'req-q2',
+      message: 'Second?',
+      toolCall: { toolCallId: 'q2', status: 'pending', rawInput: {}, title: 'Second?', kind: 'edit', locations: [] },
+      options: [{ optionId: 'yes2', name: 'Yes2', kind: 'allow_once' }],
+    } as any);
+
+    banner.dismiss();
+
+    expect(await first).toBe('reject_once');
+    expect(await second).toBe('reject_once');
+    expect(container.querySelector('.co-ober-permission-banner')).toBeNull();
+  });
+
+  it('shows exactly one banner while requests queue', async () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    const req1 = banner.show({
       id: 'req3',
       message: 'Old req',
       toolCall: { toolCallId: '3', status: 'pending', rawInput: {}, title: 'Old req', kind: 'edit', locations: [] },
@@ -173,13 +206,14 @@ describe('PermissionBanner', () => {
     expect(banners.length).toBe(1);
 
     const title = banners[0].querySelector('.perm-title');
-    expect(title?.textContent).toContain('New req');
+    expect(title?.textContent).toContain('Old req');
 
-    // Resolve new request to finish cleanly
+    // Resolve first request to finish cleanly; the queued one then renders.
     (banners[0].querySelector('button') as HTMLButtonElement).click();
-
-    return req2.then((res) => {
-      expect(res).toBe('ok2');
-    });
+    expect(await req1).toBe('ok');
+    const nextBanner = container.querySelector('.co-ober-permission-banner');
+    expect(nextBanner?.querySelector('.perm-title')?.textContent).toContain('New req');
+    (nextBanner?.querySelector('button') as HTMLButtonElement).click();
+    expect(await req2).toBe('ok2');
   });
 });

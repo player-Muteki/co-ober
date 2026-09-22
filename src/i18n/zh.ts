@@ -59,6 +59,11 @@ const zh: Locale = {
 
   dragDrop: {
     imageNotSupported: '当前 OpenCode Agent 不支持图片提示词',
+    audioNotSupported: '不支持音频附件',
+  },
+
+  lightbox: {
+    title: '图片预览',
   },
 
   permission: {
@@ -182,6 +187,7 @@ const zh: Locale = {
     modelSwitched: '已切换模型：',
     availableModes: '可用模式：',
     modeSwitched: '已切换模式：',
+    resumeHint: '请传入会话 ID（/resume <id>），或打开历史下拉框选择要恢复的会话。',
   },
   slashTitles: {
     compact: '压缩会话',

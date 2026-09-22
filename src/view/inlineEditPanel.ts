@@ -9,9 +9,15 @@ export interface InlineEditState {
 export class InlineEditPanel {
 	private el: HTMLDivElement | null = null;
 	public pendingState: InlineEditState | null = null;
+	private unsubscribeLocale: () => void;
 
 	constructor(private containerEl: HTMLElement) {
-		onLocaleChange(() => this.refreshLocale());
+		this.unsubscribeLocale = onLocaleChange(() => this.refreshLocale());
+	}
+
+	dispose(): void {
+		this.unsubscribeLocale();
+		this.clearState();
 	}
 
 	request(selected: string, editor: Editor): string {

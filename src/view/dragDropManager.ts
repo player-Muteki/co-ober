@@ -16,6 +16,7 @@ export class DragDropManager {
 	private dragOverHandler: ((e: DragEvent) => void) | null = null;
 	private dragLeaveHandler: ((e: DragEvent) => void) | null = null;
 	private dropHandler: ((e: DragEvent) => void) | null = null;
+	private unsubscribeLocale: () => void;
 
 	constructor(
 		private dropZoneEl: HTMLElement,
@@ -23,7 +24,7 @@ export class DragDropManager {
 		private handlers: DragDropHandlers,
 		private getAgentCapabilities: () => AgentCapabilities | null = () => null
 	) {
-		onLocaleChange(() => {
+		this.unsubscribeLocale = onLocaleChange(() => {
 			if (this.dragOverlayEl) {
 				const textDiv = this.dragOverlayEl.querySelector('div');
 				if (textDiv) textDiv.textContent = t().dragOverlay;
@@ -55,6 +56,7 @@ export class DragDropManager {
 	}
 
 	teardown(): void {
+		this.unsubscribeLocale();
 		if (this.dragOverHandler) {
 			this.dropZoneEl.removeEventListener('dragover', this.dragOverHandler);
 			this.dragOverHandler = null;
@@ -102,6 +104,9 @@ export class DragDropManager {
 					path,
 				};
 				this.handlers.onAddNoteRef(ref);
+			} else if (file.type.startsWith('audio/')) {
+				// No audio prompt pipeline exists; tell the user instead of silently dropping.
+				new Notice(t().dragDrop.audioNotSupported);
 			} else if (file.type.startsWith('image/')) {
 				if (this.getAgentCapabilities()?.promptCapabilities?.image === false) {
 					new Notice(t().dragDrop.imageNotSupported);

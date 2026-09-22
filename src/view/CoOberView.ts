@@ -295,6 +295,9 @@ export class CoOberView extends ItemView {
       getPendingImageParts: () => [...this.pendingImageParts],
       onClearPendingImageChips: () => this.clearPendingImageChips(),
       onAutoRefActiveFile: () => this.autoRefActiveFile(),
+      onOpenSessions: () => {
+        void this.toggleSessions();
+      },
     };
 
     this.controller = new CoOberViewController(deps, callbacks);
@@ -438,6 +441,8 @@ export class CoOberView extends ItemView {
     this.input?.dispose();
     this.toolbar?.dispose();
     this.permissionBanner?.dispose();
+    this.welcomeView?.dispose();
+    this.inlineEditPanel?.dispose();
     this.renderer?.dispose();
     this.closeSessionDropdown();
     this.closeAutocomplete();
@@ -671,6 +676,12 @@ export class CoOberView extends ItemView {
   }
 
   private setupActiveFileTracking(): void {
+    this.registerEvent(
+      this.plugin.app.vault.on('modify', (file) => this.controller?.invalidateNoteCache(file.path)),
+    );
+    this.registerEvent(
+      this.plugin.app.vault.on('delete', (file) => this.controller?.invalidateNoteCache(file.path)),
+    );
     this.registerEvent(
       this.plugin.app.workspace.on('active-leaf-change', (leaf) => {
         if (!leaf) return;

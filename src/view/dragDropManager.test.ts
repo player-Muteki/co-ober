@@ -2,7 +2,8 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { DragDropManager } from './dragDropManager';
 import { installObsidianDomHelpers } from '../test/domHelpers';
-import { setLocale } from '../i18n/index';
+import { setLocale, t } from '../i18n/index';
+import zhLocale from '../i18n/zh';
 import { Notice } from 'obsidian';
 
 installObsidianDomHelpers();
@@ -312,6 +313,51 @@ describe('DragDropManager', () => {
       await manager.handleFiles([]);
       expect(handlers.onAddImagePart).not.toHaveBeenCalled();
       expect(handlers.onAddNoteRef).not.toHaveBeenCalled();
+    });
+
+    it('notifies the user about audio files instead of silently dropping them', async () => {
+      const file = new File(['data'], 'voice.wav', { type: 'audio/wav' });
+
+      await manager.handleFiles([file]);
+
+      expect((Notice as any).messages).toContain('Audio attachments are not supported');
+      expect(handlers.onAddImagePart).not.toHaveBeenCalled();
+      expect(handlers.onAddNoteRef).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('locale subscription', () => {
+    function showOverlay() {
+      manager.setup();
+      const event = new DragEvent('dragover', { bubbles: true });
+      Object.defineProperty(event, 'dataTransfer', { value: { dropEffect: '' } });
+      dropZone.dispatchEvent(event);
+      return overlayContainer.querySelector('.co-ober-drag-overlay div') as HTMLDivElement;
+    }
+
+    it('live overlay text follows locale changes while setup', () => {
+      setLocale('en');
+      const textDiv = showOverlay();
+      const enText = t().dragOverlay;
+      expect(textDiv.textContent).toBe(enText);
+
+      setLocale('zh');
+      expect(textDiv.textContent).toBe(zhLocale.dragOverlay);
+      expect(zhLocale.dragOverlay).not.toBe(enText);
+      setLocale('en');
+    });
+
+    it('teardown() unsubscribes the locale listener', () => {
+      setLocale('en');
+      const textDiv = showOverlay();
+      const enText = textDiv.textContent;
+
+      manager.teardown();
+      setLocale('zh');
+      // Listener is gone: the leftover overlay keeps its stale English text.
+      expect(textDiv.textContent).toBe(enText);
+      expect(enText).not.toBe(zhLocale.dragOverlay);
+      setLocale('en');
     });
   });
 });

@@ -13,7 +13,7 @@ import type {
 import type { CoOberSettings } from '../types';
 import type { OpencodeClient } from '../client';
 import { SessionReplayCollector } from '../client/sessionReplay';
-import { t } from '../i18n/index';
+import { t, onLocaleChange } from '../i18n/index';
 import type { ChatRenderer } from './renderer';
 import type { ChatInput } from '../chat/input';
 import type { InputToolbar } from '../chat/toolbar';
@@ -60,6 +60,8 @@ export interface ControllerCallbacks {
   getPendingImageParts(): PromptPart[];
   onClearPendingImageChips(): void;
   onAutoRefActiveFile(): void;
+  /** Open the session dropdown (used by /resume without arguments). */
+  onOpenSessions?(): void;
 }
 
 export interface ControllerRuntime {
@@ -93,6 +95,7 @@ export class CoOberViewController {
   private busy = false;
   private sendStartTime = 0;
   private genId = 0;
+  private unsubscribeLocale: (() => void) | null = null;
   private promptQueue: Array<{ text: string; refs: ContextRef[] }> = [];
   queueIndicatorEl: HTMLDivElement | null = null;
 
@@ -116,6 +119,9 @@ export class CoOberViewController {
 
     // Register builtin slash commands
     this.registerBuiltinCommands();
+    // Builtin titles/descriptions are captured at registration time, so
+    // re-register them whenever the locale changes.
+    this.unsubscribeLocale = onLocaleChange(() => this.registerBuiltinCommands());
   }
 
   private registerBuiltinCommands(): void {
@@ -204,8 +210,14 @@ export class CoOberViewController {
       category: 'session',
       source: 'builtin',
       enabled: () => caps()?.sessionCapabilities?.resume ?? false,
-      run: async () => {
-        // Handled by the session dropdown UI, not text input.
+      run: async (args: string) => {
+        const id = args.trim();
+        if (id) {
+          await this.resumeSession(id);
+          return;
+        }
+        if (this.callbacks.onOpenSessions) this.callbacks.onOpenSessions();
+        else this.deps.renderer.addSystemMessage(t().slash.resumeHint);
       },
     });
     registry.registerBuiltin({
@@ -308,6 +320,8 @@ export class CoOberViewController {
   }
 
   async dispose(): Promise<void> {
+    this.unsubscribeLocale?.();
+    this.unsubscribeLocale = null;
     await this.streamCtrl.dispose();
     this.noteContentCache.clear();
     this.cacheSessionId = null;
@@ -439,6 +453,14 @@ export class CoOberViewController {
       const client = this.deps.runtime.getClient();
       if (!client) return;
       if (client.getCurrentSessionId() === sessionId) return;
+      const caps = client.getAgentCapabilities?.();
+      if (caps && caps.loadSession === false) {
+        // Agents without session/load can still hand a stored session back.
+        if (caps.sessionCapabilities?.resume) {
+          await client.resumeSession(sessionId, this.getVaultCwd(), onReplayUpdate);
+        }
+        return;
+      }
       await client.loadSession(sessionId, this.getVaultCwd(), this.deps.runtime.settings.mcpServers, onReplayUpdate);
     });
   }
@@ -521,6 +543,8 @@ export class CoOberViewController {
       const restoreId = `restore-${msg.timestamp}-${idx++}`;
       if (msg.role === 'user') {
         this.deps.renderer.addUserMessage(msg.content, msg.timestamp, msg.images);
+      } else if (msg.role === 'system') {
+        this.deps.renderer.addSystemMessage(msg.content);
       } else if (msg.role === 'assistant') {
         if (msg.contentBlocks && msg.contentBlocks.length > 0) {
           this.deps.renderer.renderStructuredMessage(msg);
@@ -614,11 +638,29 @@ export class CoOberViewController {
   async forkSession(sessionId: string): Promise<void> {
     const client = this.deps.runtime.getClient();
     if (!client) return;
-    const forkedId = await client.forkSession(sessionId, this.getVaultCwd());
-    this.state.sessionId = forkedId;
-    this.deps.sessionStore.getOrCreate(forkedId);
-    this.deps.sessionStore.setActive(forkedId);
-    await this.deps.sessionStore.save();
+    try {
+      const source = this.deps.sessionStore.get(sessionId);
+      const forkedId = await client.forkSession(sessionId, this.getVaultCwd());
+      this.resetConversationView();
+      this.state.sessionId = forkedId;
+      const forked = this.deps.sessionStore.getOrCreate(forkedId);
+      if (source && forked.messages.length === 0) {
+        forked.messages.push(...source.messages.map((m) => ({ ...m })));
+        forked.title = source.title;
+        forked.updatedAt = Date.now();
+      }
+      this.deps.sessionStore.setActive(forkedId);
+      await this.deps.sessionStore.save();
+      const collector = new SessionReplayCollector();
+      await this.syncRuntimeSession(forkedId, (u) => collector.handle(u));
+      await this.adoptReplay(forkedId, collector.finish());
+      await this.restoreSession();
+      this.loadToolbarOptions();
+      this.callbacks.onShowWelcome(true);
+    } catch (e) {
+      console.error('[co-ober] fork session:', e);
+      this.deps.renderer.addError(e instanceof Error ? e.message : String(e));
+    }
   }
 
   async resumeSession(sessionId: string): Promise<void> {
@@ -755,11 +797,14 @@ export class CoOberViewController {
     } catch (e) {
       releaseBusy();
       this.deps.renderer.addError(e instanceof Error ? e.message : String(e));
+      // Release queued prompts too, or the queue stalls forever.
+      config.onFinally?.();
       return;
     }
     const c = this.deps.runtime.getClient();
     if (!c || !sessionId) {
       releaseBusy();
+      config.onFinally?.();
       return;
     }
 
@@ -788,7 +833,9 @@ export class CoOberViewController {
           )
         : [{ type: 'text' as const, text }];
       if (this.state.sessionId !== sessionId || !this.busy) return;
-      parts.push(...imageParts);
+      // Capabilities can change across reconnects; re-check before sending.
+      const caps = c.getAgentCapabilities?.();
+      parts.push(...(caps?.promptCapabilities?.image === false ? [] : imageParts));
       const response = await c.sendMessage(sessionId, parts, (ch: NormalizedUpdate) => {
         if (this.genId !== currentGen || !this.busy || this.state.sessionId !== sessionId) return;
         this.streamCtrl.handleChunk(ch);
@@ -1042,7 +1089,13 @@ export class CoOberViewController {
     while (this.promptQueue.length > 0 && !this.busy) {
       const next = this.promptQueue.shift()!;
       this.updateQueueIndicator();
-      await this.send(next.text, next.refs);
+      try {
+        await this.send(next.text, next.refs);
+      } catch (e) {
+        // One failing queued command must not strand the rest of the queue.
+        console.error('[co-ober] queued prompt failed:', e);
+        this.deps.renderer.addError(e instanceof Error ? e.message : String(e));
+      }
     }
   }
 
@@ -1101,16 +1154,23 @@ export class CoOberViewController {
     }
   }
 
-  /** Cache note content by path to avoid re-reading the same file. */
+  /** Cache note content by path (LRU) to avoid re-reading the same file. */
   private noteContentCache = new Map<string, { name: string; content: string }>();
   private cacheSessionId: string | null = null;
 
   private setCacheEntry(path: string, entry: { name: string; content: string }): void {
-    if (this.noteContentCache.size >= NOTECACHE_MAX_SIZE) {
-      const firstKey = this.noteContentCache.keys().next().value;
-      if (firstKey !== undefined) this.noteContentCache.delete(firstKey);
+    if (this.noteContentCache.has(path)) this.noteContentCache.delete(path);
+    else if (this.noteContentCache.size >= NOTECACHE_MAX_SIZE) {
+      // Map iteration order is insertion order, so the first key is the LRU entry.
+      const oldest = this.noteContentCache.keys().next().value;
+      if (oldest !== undefined) this.noteContentCache.delete(oldest);
     }
     this.noteContentCache.set(path, entry);
+  }
+
+  /** Drop a cached note after the vault reports the file changed or was removed. */
+  invalidateNoteCache(path: string): void {
+    this.noteContentCache.delete(path);
   }
 
   async buildParts(text: string, refs: ContextRef[], historyBlock?: string): Promise<PromptPart[]> {
@@ -1130,17 +1190,27 @@ export class CoOberViewController {
     }
     const allRefs = expandWikilinkRefs(text, refs, vaultNotes);
 
+    // Agents that report no embedded-context support get the plain user text;
+    // inlined note bodies are skipped instead of bloating the prompt.
+    const embedAllowed =
+      this.deps.runtime.getClient()?.getAgentCapabilities?.()?.promptCapabilities?.embeddedContext !== false;
+
     const resolved: Array<{ name: string; content: string }> = [];
-    for (const ref of allRefs) {
-      const cached = this.noteContentCache.get(ref.path);
-      if (cached) {
-        resolved.push(cached);
-        continue;
-      }
-      const result = await this.deps.resolver.resolveNote(ref.path);
-      if (result) {
-        resolved.push(result);
-        this.setCacheEntry(ref.path, result);
+    if (embedAllowed) {
+      for (const ref of allRefs) {
+        const cached = this.noteContentCache.get(ref.path);
+        if (cached) {
+          // Touch: keep the recently-used entry at the fresh end of the LRU.
+          this.noteContentCache.delete(ref.path);
+          this.noteContentCache.set(ref.path, cached);
+          resolved.push(cached);
+          continue;
+        }
+        const result = await this.deps.resolver.resolveNote(ref.path);
+        if (result) {
+          resolved.push(result);
+          this.setCacheEntry(ref.path, result);
+        }
       }
     }
     const activeAgent = getValidActiveCustomAgent(

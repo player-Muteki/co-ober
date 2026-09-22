@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { WelcomeView } from './welcomeView';
 import { installObsidianDomHelpers } from '../test/domHelpers';
-import { t } from '../i18n/index';
+import { t, setLocale } from '../i18n/index';
+import zhLocale from '../i18n/zh';
 
 installObsidianDomHelpers();
 
@@ -123,5 +124,36 @@ describe('WelcomeView', () => {
 
 		const status = elements[0].querySelector('.co-ober-welcome-status span');
 		expect(status?.textContent).toBe(t().welcome.disconnected);
+	});
+
+	describe('locale subscription', () => {
+		it('re-renders visible content when the locale changes', () => {
+			setLocale('en');
+			const container = document.createElement('div');
+			const view = new WelcomeView(container);
+			view.show(false);
+
+			setLocale('zh');
+			expect(container.querySelector('.co-ober-welcome-title')?.textContent).toBe(zhLocale.appName);
+			setLocale('en');
+			expect(container.querySelector('.co-ober-welcome-title')?.textContent).toBe(t().appName);
+			view.dispose();
+		});
+
+		it('dispose() unsubscribes the locale listener and hides the view', () => {
+			setLocale('en');
+			const container = document.createElement('div');
+			const view = new WelcomeView(container);
+			view.show(false);
+			const showSpy = vi.spyOn(view, 'show');
+
+			view.dispose();
+			expect(view.isVisible()).toBe(false);
+
+			showSpy.mockClear();
+			setLocale('zh');
+			expect(showSpy).not.toHaveBeenCalled();
+			setLocale('en');
+		});
 	});
 });

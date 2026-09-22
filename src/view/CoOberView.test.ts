@@ -177,7 +177,11 @@ function createPlugin(overrides: {
   const client = overrides.client ?? null;
   const plugin = {
     app: {
-      vault: { adapter: { getBasePath: () => '/vault' }, getMarkdownFiles: vi.fn(() => []) },
+      vault: {
+        adapter: { getBasePath: () => '/vault' },
+        getMarkdownFiles: vi.fn(() => []),
+        on: vi.fn(() => ({ unload: vi.fn() })),
+      },
       workspace: {
         getLeavesOfType: vi.fn(() => []),
         getMostRecentLeaf: vi.fn(() => null),
