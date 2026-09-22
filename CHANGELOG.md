@@ -1,3 +1,19 @@
+## 0.1.29 - 2026-09-22
+
+### Added
+- **Real cost and context usage**: adopting a native OpenCode session (load, resume, or selection from the dropdown) now pulls actual cost and token totals from `opencode.db`, and per-response `_meta` usage (context fill, window size, cost) feeds the context meter instead of leaving it stale.
+- **`/export` and `/copy`**: save the whole conversation as a dated Markdown note under the configured sync folder, or put the rendered transcript on the clipboard; user bubbles gained per-message copy buttons.
+- **Session rename**: pencil action in the session dropdown opens an inline editor for the local session title.
+- **Delete confirmation**: removing a session now requires a second confirming click, with the confirmation reverting automatically after a few seconds.
+- **Full i18n coverage**: the interrupt indicator, queue badge, help/model/mode command output, builtin command titles and the context-meter tooltip moved into the en/zh dictionaries.
+
+### Fixed
+- **Transport correctness**: unknown JSON-RPC requests now answer with `-32601` instead of a silent hang, `stopReason` values outside the ACP enum are normalized, and the idle timeout aborts the underlying request stream rather than only the client-side wait. (Claudian parity)
+- **Visible session errors**: fork, resume and reconnection failures are surfaced as notices instead of being swallowed.
+- **Rewind truncation timing**: regenerate / edit-and-resend truncates the local transcript before the fresh agent session replays, so the rewind block and stored history stay consistent.
+- **Structured history replay**: restoring a session re-renders persisted tool-call blocks (status, title, kind) and image attachments instead of dropping them; image parts sent with a user message are now persisted and re-rendered on restore.
+- **Context meter honesty**: the meter no longer falls back to per-turn token totals as an approximation of context fill.
+
 ## 0.1.28 - 2026-09-22
 
 ### Added
