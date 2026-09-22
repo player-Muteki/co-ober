@@ -2237,3 +2237,108 @@ body.theme-light .co-ober-msg.user .co-ober-msg-body {
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
   background: var(--background-primary);
 }
+/* ── Side chat (/btw) ── */
+
+.co-ober-side-chat {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  bottom: 8px;
+  width: min(360px, 85%);
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.co-ober-side-chat-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--size-4-2);
+  padding: var(--size-4-2) var(--size-4-3);
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+
+.co-ober-side-chat-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.co-ober-side-chat-title {
+  font-weight: var(--font-semibold);
+  font-size: var(--font-ui-small);
+}
+
+.co-ober-side-chat-subtitle {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.co-ober-side-chat-close {
+  font-size: var(--font-ui-smaller);
+}
+
+.co-ober-side-chat-transcript {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--size-4-2) var(--size-4-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+}
+
+.co-ober-side-chat-msg {
+  padding: var(--size-4-1) var(--size-4-2);
+  border-radius: var(--radius-s);
+  font-size: var(--font-ui-small);
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.co-ober-side-chat-msg-user {
+  align-self: flex-end;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.co-ober-side-chat-msg-agent {
+  align-self: stretch;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.co-ober-side-chat-msg-error {
+  align-self: stretch;
+  color: var(--text-error);
+  border: 1px solid var(--text-error);
+  border-radius: var(--radius-s);
+  padding: var(--size-4-1) var(--size-4-2);
+  font-size: var(--font-ui-smaller);
+}
+
+.co-ober-side-chat-msg.is-streaming {
+  opacity: 0.85;
+}
+
+.co-ober-side-chat-input {
+  display: flex;
+  gap: var(--size-4-1);
+  padding: var(--size-4-2) var(--size-4-3);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.co-ober-side-chat-textarea {
+  flex: 1;
+  resize: none;
+  font-size: var(--font-ui-small);
+}
+
+.co-ober-side-chat-send {
+  align-self: flex-end;
+}
