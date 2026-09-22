@@ -59,6 +59,7 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): ControllerDeps
       addToolCall: noop,
       updateToolCall: noop,
       setPlanEntries: noop,
+      collapseTurns: vi.fn(),
       addSystemMessage: vi.fn(),
     } as unknown as ControllerDeps['renderer'],
     input: {
@@ -560,6 +561,50 @@ describe('CoOberViewController', () => {
 
       expect(setPlanEntries).not.toHaveBeenCalled();
     });
+
+    it('folds restored turns behind collapse headers', async () => {
+      controller.state.sessionId = 'test';
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue({
+        sessionId: 'test',
+        messages: [{ role: 'user', content: 'hi', type: 'text', timestamp: 1000 }],
+      });
+
+      await controller.restoreSession();
+
+      expect(deps.renderer.collapseTurns).toHaveBeenCalled();
+    });
+  });
+
+  describe('buildParts', () => {
+    it('embeds notes referenced by [[wikilinks]] in the submitted text', async () => {
+      (deps.mention.listAllNotes as ReturnType<typeof vi.fn>).mockReturnValue([
+        { id: 'areas/alpha.md', type: 'note', name: 'alpha', path: 'areas/alpha.md' },
+      ]);
+      (deps.resolver.resolveNote as ReturnType<typeof vi.fn>).mockResolvedValue({
+        name: 'alpha',
+        content: 'Alpha note body.',
+      });
+
+      const parts = await controller.buildParts('summarize [[Alpha]] for me', []);
+
+      expect(deps.resolver.resolveNote).toHaveBeenCalledWith('areas/alpha.md');
+      expect(parts[0].text).toContain('=== NOTE: [[alpha]] ===');
+      expect(parts[0].text).toContain('Alpha note body.');
+      expect(parts[parts.length - 1].text).toBe('summarize [[Alpha]] for me');
+    });
+
+    it('includes the Obsidian operations guidance in the system section', async () => {
+      const parts = await controller.buildParts('plain question', []);
+      expect(parts[0].text).toContain('Obsidian Vault Operations');
+      expect(parts[0].text).toContain('&amp;');
+    });
+
+    it('leaves unresolvable links in the text without embedding anything', async () => {
+      (deps.mention.listAllNotes as ReturnType<typeof vi.fn>).mockReturnValue([]);
+      const parts = await controller.buildParts('see [[Nowhere Land]]', []);
+      expect(deps.resolver.resolveNote).not.toHaveBeenCalled();
+      expect(parts[parts.length - 1].text).toBe('see [[Nowhere Land]]');
+    });
   });
 
   describe('send', () => {
@@ -620,6 +665,7 @@ describe('CoOberViewController', () => {
       await controller.send('hello', []);
 
       await vi.waitFor(() => expect(setPlanEntries).toHaveBeenCalledWith(todos));
+      expect(deps.renderer.collapseTurns).toHaveBeenCalled();
     });
 
     it('applies context usage reported in the response _meta', async () => {

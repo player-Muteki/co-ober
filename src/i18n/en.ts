@@ -105,6 +105,11 @@ const en = {
     hint: 'What should I do instead?',
   },
 
+  turnCollapse: {
+    summary: '{count} steps',
+    toggle: 'Show or hide this turn\'s intermediate steps',
+  },
+
   queue: {
     one: '⌙ 1 message queued',
     many: '⌙ {count} messages queued',

@@ -12,6 +12,7 @@ import {
   type ThinkingState,
 } from './thinkingBlockRenderer';
 import { collapseElement } from './collapsible';
+import { openImagePreview } from './imagePreview';
 import {
   createToolCallElement,
   updateToolCallElement,
@@ -77,13 +78,25 @@ export class ChatRenderer {
     this.doc = container.ownerDocument ?? activeDocument;
     this.shouldAutoScroll = shouldAutoScroll;
     this.unsubscribeLocale = onLocaleChange(() => this.refreshLocale());
+    this.container.addEventListener('click', this.imageClickHandler);
   }
+
+  private imageClickHandler = (event: MouseEvent): void => {
+    const target = event.target as HTMLElement | null;
+    const img = target?.closest?.('img');
+    if (!img) return;
+    if (img.closest('.co-ober-img-overlay')) return;
+    const src = img.getAttribute('src') || img.getAttribute('data-src');
+    if (!src) return;
+    openImagePreview(src, img.getAttribute('alt') ?? undefined);
+  };
 
   dispose(): void {
     this.cancelTextRender();
     this.cancelThinkingRender();
     this.cancelAllToolRenders();
     this.unsubscribeLocale();
+    this.container.removeEventListener('click', this.imageClickHandler);
   }
 
   clear(): void {
@@ -207,6 +220,80 @@ export class ChatRenderer {
   removeAssistantPlaceholder(): void {
     this.placeholderEl?.remove();
     this.placeholderEl = null;
+  }
+
+  // ============================================
+  // Whole-turn collapsing
+  // ============================================
+
+  /**
+   * Fold every completed assistant turn: all intermediate thinking/tool wraps
+   * of a turn move into a collapsible summary, leaving the final message of
+   * the run visible. Idempotent — collapsed groups are no longer bare
+   * assistant wraps, so re-running only picks up new turns.
+   */
+  collapseTurns(): void {
+    const children = Array.from(this.container.children) as HTMLElement[];
+    let i = 0;
+    while (i < children.length) {
+      if (!this.isTurnWrap(children[i])) {
+        i++;
+        continue;
+      }
+      let end = i;
+      while (end + 1 < children.length && this.isTurnWrap(children[end + 1])) end++;
+      if (end > i) this.collapseTurnGroup(children, i, end);
+      i = end + 1;
+    }
+  }
+
+  private isTurnWrap(el: HTMLElement): boolean {
+    return el.classList?.contains('co-ober-msg') === true && el.classList.contains('assistant');
+  }
+
+  private collapseTurnGroup(children: HTMLElement[], start: number, lastIdx: number): void {
+    const hidden = children.slice(start, lastIdx);
+    const last = children[lastIdx];
+    // Only worth folding when the hidden part actually contains steps
+    // (thinking/tool wraps have no .co-ober-msg-body child; text answers do).
+    const hasStep = hidden.some((w) => !Array.from(w.children).some((c) => c.classList.contains('co-ober-msg-body')));
+    if (!hasStep) return;
+
+    const group = this.doc.createElement('div');
+    group.className = 'co-ober-turn-collapsed';
+    const header = this.doc.createElement('div');
+    header.className = 'co-ober-turn-collapsed-header';
+    header.setAttribute('role', 'button');
+    header.setAttribute('tabindex', '0');
+    header.setAttribute('aria-expanded', 'false');
+    header.title = t().turnCollapse.toggle;
+    const chevron = this.doc.createElement('span');
+    chevron.className = 'co-ober-turn-chevron';
+    setIcon(chevron, 'chevron-right');
+    header.appendChild(chevron);
+    const summary = this.doc.createElement('span');
+    summary.className = 'co-ober-turn-summary';
+    summary.textContent = t().turnCollapse.summary.replace('{count}', String(hidden.length));
+    header.appendChild(summary);
+    const body = this.doc.createElement('div');
+    body.className = 'co-ober-turn-collapsed-body';
+
+    const toggle = () => {
+      const open = group.classList.toggle('is-open');
+      header.setAttribute('aria-expanded', String(open));
+    };
+    header.addEventListener('click', toggle);
+    header.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggle();
+      }
+    });
+
+    group.appendChild(header);
+    group.appendChild(body);
+    last.parentNode?.insertBefore(group, last);
+    for (const w of hidden) body.appendChild(w);
   }
 
   // ============================================

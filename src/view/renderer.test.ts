@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { ChatRenderer, formatMessageUsage } from './renderer';
+import { closeImagePreview } from './imagePreview';
 import { installObsidianDomHelpers } from '../test/domHelpers';
 import { setLocale } from '../i18n/index';
 
@@ -554,6 +555,99 @@ describe('ChatRenderer', () => {
       expect(container.querySelectorAll('.diff-line').length).toBeGreaterThanOrEqual(2);
       expect(container.textContent).toContain('added line only');
       expect(container.textContent).toContain('removed line only');
+    });
+  });
+
+  describe('image click preview', () => {
+    it('opens a lightbox overlay when a chat image is clicked', () => {
+      renderer.addUserMessage('look', 1, [{ mimeType: 'image/png', data: 'AAA=' }]);
+      const img = container.querySelector('.co-ober-user-image') as HTMLImageElement;
+      img.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const preview = document.querySelector('.co-ober-img-overlay img') as HTMLImageElement | null;
+      expect(preview).not.toBeNull();
+      expect(preview?.getAttribute('src')).toBe('data:image/png;base64,AAA=');
+      closeImagePreview();
+    });
+
+    it('ignores clicks that do not land on an image', () => {
+      renderer.addUserMessage('plain text');
+      (container.querySelector('.co-ober-msg-body') as HTMLElement).dispatchEvent(
+        new MouseEvent('click', { bubbles: true }),
+      );
+      expect(document.querySelector('.co-ober-img-overlay')).toBeNull();
+    });
+  });
+
+  describe('collapseTurns', () => {
+    async function buildStepTurn() {
+      renderer.addUserMessage('question');
+      renderer.appendThinking('deep thought', 'm1');
+      renderer.addToolCall('call-1', 'Search notes', 'search', {});
+      renderer.appendText('the answer', 'm2');
+      renderer.finalizeCurrentThinking();
+      await renderer.flushTextRender();
+    }
+
+    it('folds thinking and tool wraps of a finished turn behind a summary header', async () => {
+      await buildStepTurn();
+      renderer.collapseTurns();
+
+      const group = container.querySelector('.co-ober-turn-collapsed');
+      expect(group).not.toBeNull();
+      expect(group?.querySelector('.co-ober-turn-summary')?.textContent).toBe('2 steps');
+      const body = group?.querySelector('.co-ober-turn-collapsed-body');
+      expect(body?.querySelectorAll('.co-ober-msg.assistant')).toHaveLength(2);
+      // user message and the final answer stay outside the group
+      const directMsgs = Array.from(container.children).filter((c) => c.classList.contains('co-ober-msg'));
+      expect(directMsgs).toHaveLength(2);
+      expect(directMsgs[0].classList.contains('user')).toBe(true);
+      expect(directMsgs[1].classList.contains('assistant')).toBe(true);
+      // the answer wrap is the text wrap (direct .co-ober-msg-body child), not a step wrap
+      expect(Array.from(directMsgs[1].children).some((c) => c.classList.contains('co-ober-msg-body'))).toBe(true);
+    });
+
+    it('toggles expansion when the header is clicked', async () => {
+      await buildStepTurn();
+      renderer.collapseTurns();
+      const group = container.querySelector('.co-ober-turn-collapsed') as HTMLElement;
+      const header = group.querySelector('.co-ober-turn-collapsed-header') as HTMLElement;
+      header.click();
+      expect(group.classList.contains('is-open')).toBe(true);
+      expect(header.getAttribute('aria-expanded')).toBe('true');
+      header.click();
+      expect(group.classList.contains('is-open')).toBe(false);
+    });
+
+    it('is idempotent and only folds completed runs', async () => {
+      await buildStepTurn();
+      renderer.collapseTurns();
+      const structure = container.innerHTML;
+      renderer.collapseTurns();
+      expect(container.innerHTML).toBe(structure);
+
+      // a new turn after the collapsed one folds independently
+      renderer.addUserMessage('follow-up');
+      renderer.appendThinking('again', 'm3');
+      renderer.appendText('second answer', 'm4');
+      renderer.finalizeCurrentThinking();
+      renderer.collapseTurns();
+      expect(container.querySelectorAll('.co-ober-turn-collapsed')).toHaveLength(2);
+    });
+
+    it('leaves runs without thinking or tool steps expanded', () => {
+      renderer.addUserMessage('q');
+      renderer.appendText('first', 'x1');
+      renderer.appendText('second', 'x2');
+      renderer.collapseTurns();
+      expect(container.querySelector('.co-ober-turn-collapsed')).toBeNull();
+    });
+
+    it('uses the localized summary text', async () => {
+      setLocale('zh');
+      await buildStepTurn();
+      renderer.collapseTurns();
+      expect(container.querySelector('.co-ober-turn-summary')?.textContent).toContain('个步骤');
+      setLocale('en');
     });
   });
 });

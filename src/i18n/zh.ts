@@ -107,6 +107,11 @@ const zh: Locale = {
     hint: '接下来做什么？',
   },
 
+  turnCollapse: {
+    summary: '{count} 个步骤',
+    toggle: '展开或收起本轮中间步骤',
+  },
+
   queue: {
     one: '⌙ 已排队 1 条消息',
     many: '⌙ 已排队 {count} 条消息',

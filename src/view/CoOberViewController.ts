@@ -31,6 +31,7 @@ import type { WelcomeView } from './welcomeView';
 import type { PermissionBanner } from './permissionBanner';
 import type { InlineEditPanel } from './inlineEditPanel';
 import { buildSystemPrompt } from '../context/injection';
+import { expandWikilinkRefs } from '../context/wikilinks';
 import { buildHistoryBlock } from '../context/historyRewind';
 import { buildTranscriptMarkdown, sanitizeNoteName } from '../chat/transcript';
 import { AcpTimeoutError, AcpProcessExitError, AcpAbortError, AcpSessionMissingError } from '../client/AcpErrors';
@@ -530,6 +531,7 @@ export class CoOberViewController {
         }
       }
     }
+    this.deps.renderer.collapseTurns?.();
     await this.refreshNativePlan(session.sessionId);
   }
 
@@ -839,6 +841,8 @@ export class CoOberViewController {
         config.onFinally?.();
         // The agent may have rewritten its todo list this turn; resync the plan panel.
         void this.refreshNativePlan(sessionId).catch(() => {});
+        // Fold the finished turn: thinking/tool steps behind a summary header.
+        this.deps.renderer.collapseTurns?.();
       }
     }
   }
@@ -1118,8 +1122,16 @@ export class CoOberViewController {
     }
     this.cacheSessionId = this.state.sessionId;
 
+    let vaultNotes: ContextRef[] = [];
+    try {
+      vaultNotes = this.deps.mention.listAllNotes();
+    } catch {
+      // wikilink expansion is best-effort
+    }
+    const allRefs = expandWikilinkRefs(text, refs, vaultNotes);
+
     const resolved: Array<{ name: string; content: string }> = [];
-    for (const ref of refs) {
+    for (const ref of allRefs) {
       const cached = this.noteContentCache.get(ref.path);
       if (cached) {
         resolved.push(cached);
