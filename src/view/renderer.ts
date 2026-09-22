@@ -766,7 +766,7 @@ export class ChatRenderer {
       }
       if (msg.isInterrupt) {
         if (msg.durationSeconds) footer.createSpan({ cls: 'footer-dot' });
-        footer.createSpan({ cls: 'co-ober-interrupt-badge', text: 'interrupted' });
+        footer.createSpan({ cls: 'co-ober-interrupt-badge', text: t().interrupted.badge.toLowerCase() });
       }
       if (msg.usage) {
         const usageText = formatMessageUsage(msg.usage);

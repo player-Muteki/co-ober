@@ -1568,7 +1568,7 @@ describe('CoOberViewController', () => {
       const createNote = deps.runtime.createNote as ReturnType<typeof vi.fn>;
       expect(createNote).toHaveBeenCalledTimes(1);
       const [path, content] = createNote.mock.calls[0] as [string, string];
-      expect(path).toMatch(/^co-ober-notes\/Research chat \d{4}-\d{2}-\d{2}\.md$/);
+      expect(path).toMatch(/^co-ober-notes\/Research chat \d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2}\.md$/);
       expect(content).toContain('# Research chat');
       expect(content).toContain('question');
       expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(expect.stringContaining(path));

@@ -65,6 +65,7 @@ const en = {
     allowAlways: 'Allow Always',
     rejectOnce: 'Reject',
     rejectAlways: 'Reject Always',
+    moreLocations: '+{count} more',
   },
 
   error: {
@@ -130,6 +131,32 @@ const en = {
 
   thinking: {
     header: 'Thinking',
+    thought: 'Thought',
+    showAll: 'Show all ›',
+    extendedAria: 'Extended thinking',
+  },
+
+  diff: {
+    moreLines: '... {count} more lines',
+    noChanges: 'No changes',
+  },
+
+  tool: {
+    noContent: 'No content',
+    noMatches: 'No matches',
+    noMatchesFound: 'No matches found',
+    noResult: 'No result',
+    source: 'Source: {url}',
+    exitCode: 'Exit code: {code}',
+    moreMatches: '... {count} more matches',
+    moreLines: '... {count} more lines',
+    fileDeleted: 'File deleted',
+  },
+
+  app: {
+    ribbon: 'Open Co-Ober',
+    cmdOpen: 'Open',
+    cmdEdit: 'AI Edit Selection',
   },
 
   plan: {
@@ -196,6 +223,11 @@ const en = {
       medium: 'Medium',
       high: 'High',
     },
+    permSafe: '🔒 Safe',
+    permReadonly: '🛡️ Readonly',
+    permPlan: '📋 Plan',
+    permYolo: '⚡ Yolo',
+    permTitle: 'Permission: {mode} (click to switch)',
   },
 
   notice: {
@@ -230,6 +262,12 @@ const en = {
     unknownCode: 'unknown',
     stdinNotWritable: 'OpenCode process stdin is not writable',
     requestTimeout: 'Request timeout (5 minutes)',
+    superseded: 'ACP connection was superseded by a newer connection attempt',
+    disconnected: 'Disconnected',
+    invalidSessionId: 'Server did not return a valid session ID',
+    invalidForkSessionId: 'Server did not return a valid session ID for fork',
+    streamActive: 'A stream is already active',
+    invalidResponse: 'Invalid ACP response format',
   },
 
   settings: {
@@ -407,6 +445,15 @@ const en = {
       name: 'Idle Timeout (ms)',
       desc: 'Maximum time to wait for agent response before timeout (default 300000, 0 to disable)',
     },
+    defaultEffort: {
+      name: 'Default Thinking Effort',
+      desc: 'Reasoning effort applied to each newly created session',
+    },
+    mcpType: 'Type',
+    mcpUrlDesc: 'Server URL',
+    mcpHeaders: 'Headers',
+    mcpName: 'Name',
+    mcpValue: 'Value',
   },
 };
 

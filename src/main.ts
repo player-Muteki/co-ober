@@ -37,16 +37,16 @@ export default class CoOberPlugin extends Plugin {
 
     this.registerView(VIEW_TYPE, (leaf) => new CoOberView(leaf, this));
     this.deduplicateCoOberLeaves();
-    this.addRibbonIcon('terminal-square', 'Open Co-Ober', () => this.activateView());
+    this.addRibbonIcon('terminal-square', t().app.ribbon, () => this.activateView());
     this.addSettingTab(new CoOberSettingsTab(this));
     this.addCommand({
       id: 'open',
-      name: 'Open',
+      name: t().app.cmdOpen,
       callback: () => this.activateView(),
     });
     this.addCommand({
       id: 'ai-edit-selection',
-      name: 'AI Edit Selection',
+      name: t().app.cmdEdit,
       editorCallback: (editor, view) => this.aiEditSelection(editor, view),
     });
   }

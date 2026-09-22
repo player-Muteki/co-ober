@@ -246,13 +246,16 @@ export class InputToolbar {
 
   private updatePermissionDisplay(): void {
     const labels: Record<string, string> = {
-      safe: '🔒 Safe',
-      readonly: '🛡️ Readonly',
-      plan: '📋 Plan',
-      yolo: '⚡ Yolo',
+      safe: t().toolbar.permSafe,
+      readonly: t().toolbar.permReadonly,
+      plan: t().toolbar.permPlan,
+      yolo: t().toolbar.permYolo,
     };
-    this.permLabelEl.setText(labels[this.currentPermission] ?? '🔒 Safe');
-    this.permToggleEl.setAttribute('title', `Permission: ${this.currentPermission} (click to switch)`);
+    this.permLabelEl.setText(labels[this.currentPermission] ?? t().toolbar.permSafe);
+    this.permToggleEl.setAttribute(
+      'title',
+      t().toolbar.permTitle.replace('{mode}', this.currentPermission),
+    );
     this.permToggleEl.className = 'co-ober-perm-toggle';
     this.permToggleEl.addClass(`mod-${this.currentPermission}`);
   }

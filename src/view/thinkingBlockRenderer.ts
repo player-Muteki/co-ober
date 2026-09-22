@@ -13,6 +13,7 @@
  */
 
 import { setupCollapsible, collapseElement, type CollapsibleState } from './collapsible';
+import { t } from '../i18n/index';
 import { THINKING_TIMER_INTERVAL_MS } from '../constants';
 
 const ANIMATION_INTERVAL_MS = 500;
@@ -63,7 +64,7 @@ export function renderLiveThinkingBlock(
   header.setAttribute('role', 'button');
   header.setAttribute('tabindex', '0');
 
-  const labelEl = header.createSpan({ cls: 'co-ober-thinking-label', text: 'Thinking' });
+  const labelEl = header.createSpan({ cls: 'co-ober-thinking-label', text: t().thinking.header });
   const timerEl = header.createSpan({ cls: 'co-ober-thinking-timer', text: '0s' });
   const dotEl = header.createSpan({ cls: 'co-ober-thinking-dot', text: '···' });
 
@@ -102,7 +103,7 @@ export function renderLiveThinkingBlock(
   // Use unified collapsible with scroll-into-view
   setupCollapsible(wrapper, header, body, collapsibleState, {
     initiallyExpanded: false,
-    baseAriaLabel: 'Extended thinking',
+    baseAriaLabel: t().thinking.extendedAria,
     scrollOnExpand: true,
     onExpand: () => handleThinkingExpand(state),
   });
@@ -154,7 +155,7 @@ function renderTruncatedBody(
 
   const showAllBtn = bodyEl.createEl('button', {
     cls: 'co-ober-thinking-show-all',
-    text: 'Show all ›',
+    text: t().thinking.showAll,
   });
   showAllBtn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -190,7 +191,7 @@ export function finalizeThinkingBlock(state: ThinkingState): number {
   }
 
   const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
-  state.labelEl.textContent = 'Thought';
+  state.labelEl.textContent = t().thinking.thought;
   state.timerEl.textContent = `for ${elapsed}s`;
 
   // Remove dot indicator
@@ -222,7 +223,7 @@ export function renderStoredThinkingBlock(
   header.setAttribute('role', 'button');
   header.setAttribute('tabindex', '0');
 
-  const label = durationSeconds ? 'Thought' : 'Thinking';
+  const label = durationSeconds ? t().thinking.thought : t().thinking.header;
   const durationText = durationSeconds
     ? `for ${durationSeconds}s`
     : '';
@@ -239,7 +240,7 @@ export function renderStoredThinkingBlock(
 
   setupCollapsible(wrapper, header, body, collapsibleState, {
     initiallyExpanded: false,
-    baseAriaLabel: 'Extended thinking',
+    baseAriaLabel: t().thinking.extendedAria,
     scrollOnExpand: true,
     onExpand: () => {
       // On first expand, truncate long content

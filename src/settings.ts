@@ -123,6 +123,18 @@ export class CoOberSettingsTab extends PluginSettingTab {
         .onChange(async (v) => { s.defaultModel = v; await this.save(); }));
 
     new Setting(containerEl)
+      .setName(labels.defaultEffort.name)
+      .setDesc(labels.defaultEffort.desc)
+      .addDropdown((d) => d.addOptions({
+        default: locale().toolbar.effort.default,
+        low: locale().toolbar.effort.low,
+        medium: locale().toolbar.effort.medium,
+        high: locale().toolbar.effort.high,
+      })
+        .setValue(s.defaultEffort)
+        .onChange(async (v) => { s.defaultEffort = v; await this.save(); }));
+
+    new Setting(containerEl)
       .setName(labels.permissionMode.name)
       .setDesc(labels.permissionMode.desc)
       .addDropdown((d) => d.addOptions({

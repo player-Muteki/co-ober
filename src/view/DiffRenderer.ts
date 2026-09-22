@@ -6,6 +6,8 @@
  * @see claudian/src/utils/diff.ts for the reference implementation
  */
 
+import { t } from '../i18n/index';
+
 export interface DiffLine {
   text: string;
   type: 'equal' | 'insert' | 'delete';
@@ -268,7 +270,7 @@ export function renderDiffContent(
     const remaining = diffLines.length - NEW_FILE_DISPLAY_CAP;
     containerEl.createDiv({
       cls: 'diff-line truncated',
-      text: `... ${remaining} more lines`,
+      text: t().diff.moreLines.replace('{count}', String(remaining)),
     });
     return;
   }
@@ -276,7 +278,7 @@ export function renderDiffContent(
   const hunks = splitIntoHunks(diffLines, contextLines);
 
   if (hunks.length === 0) {
-    containerEl.createDiv({ cls: 'diff-line', text: 'No changes' });
+    containerEl.createDiv({ cls: 'diff-line', text: t().diff.noChanges });
     return;
   }
 
@@ -293,7 +295,7 @@ export function renderDiffContent(
       if (totalRendered >= MAX_DIFF_LINES) {
         containerEl.createDiv({
           cls: 'diff-line truncated',
-          text: `... ${diffLines.length - totalRendered} more lines`,
+          text: t().diff.moreLines.replace('{count}', String(diffLines.length - totalRendered)),
         });
         return;
       }

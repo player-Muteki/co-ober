@@ -311,12 +311,9 @@ export class AcpClient implements OpencodeClient {
     this.cwd = cwd;
   }
 
-  get permissionMode(): PermissionLevel {
-    return 'yolo';
-  }
-  set permissionMode(_v: PermissionLevel) {
-    /* not used at this level */
-  }
+  // Real state kept on the client: main.ts / toolbar assign the active
+  // permission tier here so onPermissionRequest can branch on 'safe'.
+  permissionMode: PermissionLevel = 'yolo';
 
   isConnected(): boolean {
     return this.connected;
@@ -402,7 +399,7 @@ export class AcpClient implements OpencodeClient {
         clientCapabilities: requestHandler.buildClientCapabilities(),
       });
       if (this.kernelGeneration !== generation) {
-        throw new Error('ACP connection was superseded by a newer connection attempt');
+        throw new Error(t().acp.superseded);
       }
       const initResult = z.object({ agentCapabilities: z.unknown().optional() }).safeParse(response);
       this.agentCapabilities = initResult.success ? normalizeAgentCapabilities(initResult.data.agentCapabilities) : null;
@@ -431,7 +428,7 @@ export class AcpClient implements OpencodeClient {
     this.reconnectAttempts = 0;
     this.clearReconnectTimer();
     this.onClose?.();
-    await this.disposeConnection(new Error('Disconnected'), true);
+    await this.disposeConnection(new Error(t().acp.disconnected), true);
   }
 
   async createSession(cwd?: string, mcpServers: McpServerConfig[] = []): Promise<string> {
@@ -440,7 +437,7 @@ export class AcpClient implements OpencodeClient {
       mcpServers: buildMcpServers(mcpServers),
     });
     const parsed = z.object({ sessionId: z.string() }).safeParse(r);
-    if (!parsed.success) throw new Error('Server did not return a valid session ID');
+    if (!parsed.success) throw new Error(t().acp.invalidSessionId);
     this.applySessionSnapshot(r as Record<string, unknown>);
     this.sessionId_ = parsed.data.sessionId;
     return this.sessionId_;
@@ -484,7 +481,7 @@ export class AcpClient implements OpencodeClient {
   async forkSession(id: string, cwd?: string): Promise<string> {
     const r = await this.requestWithFallback('forkSession', { sessionId: id, cwd: this.resolveCwd(cwd) });
     const parsed = z.object({ sessionId: z.string() }).safeParse(r);
-    if (!parsed.success) throw new Error('Server did not return a valid session ID for fork');
+    if (!parsed.success) throw new Error(t().acp.invalidForkSessionId);
     return parsed.data.sessionId;
   }
 
@@ -531,7 +528,7 @@ export class AcpClient implements OpencodeClient {
 
   sendMessage(id: string, parts: PromptPart[], onChunk: (u: NormalizedUpdate) => void): Promise<AcpResponse> {
     if (this.activeStreamSessionId !== null) {
-      return Promise.reject(new Error('A stream is already active'));
+      return Promise.reject(new Error(t().acp.streamActive));
     }
     this.normalizer.reset();
     this.activeStreamSessionId = id;
@@ -567,7 +564,7 @@ export class AcpClient implements OpencodeClient {
       .then((res) => {
         const parsed = zAcpResponse.safeParse(res);
         if (!parsed.success) {
-          throw new Error('Invalid ACP response format');
+          throw new Error(t().acp.invalidResponse);
         }
         return parsed.data as AcpResponse;
       })

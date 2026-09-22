@@ -15,6 +15,7 @@ import type { ToolCallContent } from '../types';
 import { setupCollapsible, collapseElement, type CollapsibleState } from './collapsible';
 import { parseDiffLines, renderDiffContent } from './DiffRenderer';
 import { createWriteEditBlock, updateWriteEditContent, type WriteEditState } from './writeEditRenderer';
+import { t } from '../i18n/index';
 
 // ---- Constants ----
 
@@ -348,7 +349,7 @@ function renderToolBodyContent(
       if (text || outputText) {
         renderLinesExpanded(body, text || outputText!, 15);
       } else if (!hasDiffContent) {
-        body.createDiv({ cls: 'co-ober-tool-empty', text: 'No content' });
+        body.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.noContent });
       }
       return;
     }
@@ -358,7 +359,7 @@ function renderToolBodyContent(
       if (searchResult) {
         renderSearchExpanded(body, searchResult);
       } else if (!hasDiffContent) {
-        body.createDiv({ cls: 'co-ober-tool-empty', text: 'No matches' });
+        body.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.noMatches });
       }
       return;
     }
@@ -369,11 +370,11 @@ function renderToolBodyContent(
         if (rawOutput?.url) {
           body.createDiv({
             cls: 'co-ober-tool-url',
-            text: `Source: ${rawOutput.url as string}`,
+            text: t().tool.source.replace('{url}', rawOutput.url as string),
           });
         }
       } else if (!hasDiffContent) {
-        body.createDiv({ cls: 'co-ober-tool-empty', text: 'No result' });
+        body.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.noResult });
       }
       return;
     }
@@ -418,7 +419,7 @@ function renderBashExpanded(container: HTMLElement, text: string, rawOutput?: Re
     if (typeof exitCode === 'number') {
       const statusEl = container.createDiv({
         cls: 'co-ober-tool-exit-status',
-        text: `Exit code: ${exitCode}`,
+        text: t().tool.exitCode.replace('{code}', String(exitCode)),
       });
       if (exitCode !== 0) {
         statusEl.addClass('error');
@@ -440,7 +441,7 @@ function renderBashExpanded(container: HTMLElement, text: string, rawOutput?: Re
 function renderSearchExpanded(container: HTMLElement, result: string): void {
   const lines = result.split(/\r?\n/).filter(Boolean);
   if (lines.length === 0) {
-    container.createDiv({ cls: 'co-ober-tool-empty', text: 'No matches found' });
+    container.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.noMatchesFound });
     return;
   }
 
@@ -457,7 +458,7 @@ function renderSearchExpanded(container: HTMLElement, result: string): void {
   if (truncated) {
     linesEl.createDiv({
       cls: 'co-ober-tool-truncated',
-      text: `... ${lines.length - maxLines} more matches`,
+      text: t().tool.moreMatches.replace('{count}', String(lines.length - maxLines)),
     });
   }
 }
@@ -489,7 +490,8 @@ function renderApplyPatchExpanded(
         setIcon(fileHeader.createSpan({ cls: 'co-ober-patch-file-icon' }), 'file');
         fileHeader.createSpan({ cls: 'co-ober-patch-file-name', text: item.path });
         const diffLines = parseDiffLines(item.oldText, item.newText);
-        renderDiffContent(section, diffLines);
+        // renderDiffContent empties its container first — give it a dedicated host so the header survives
+        renderDiffContent(section.createDiv({ cls: 'co-ober-patch-diff' }), diffLines);
         hasContent = true;
       }
     }
@@ -509,9 +511,9 @@ function renderApplyPatchExpanded(
         fileHeader.createSpan({ cls: `co-ober-patch-op co-ober-patch-op-${fd.operation}`, text: opText });
 
         if (fd.diffLines.length > 0) {
-          renderDiffContent(section, fd.diffLines);
+          renderDiffContent(section.createDiv({ cls: 'co-ober-patch-diff' }), fd.diffLines);
         } else if (fd.operation === 'delete') {
-          section.createDiv({ cls: 'co-ober-tool-empty', text: 'File deleted' });
+          section.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.fileDeleted });
         }
         hasContent = true;
       }
@@ -625,7 +627,7 @@ export function renderLinesExpanded(container: HTMLElement, result: string, maxL
   if (truncated) {
     linesEl.createDiv({
       cls: 'co-ober-tool-truncated',
-      text: `... ${lines.length - maxLines} more lines`,
+      text: t().tool.moreLines.replace('{count}', String(lines.length - maxLines)),
     });
   }
 }

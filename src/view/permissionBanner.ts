@@ -61,7 +61,10 @@ export class PermissionBanner {
       if (req.toolCall.locations.length > PERMISSION_MAX_LOCATIONS) {
         locationsEl.createDiv({
           cls: 'perm-path-more',
-          text: `+${req.toolCall.locations.length - PERMISSION_MAX_LOCATIONS} more`,
+          text: t().permission.moreLocations.replace(
+            '{count}',
+            String(req.toolCall.locations.length - PERMISSION_MAX_LOCATIONS),
+          ),
         });
       }
     }

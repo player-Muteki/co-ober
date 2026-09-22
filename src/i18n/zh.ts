@@ -67,6 +67,7 @@ const zh: Locale = {
     allowAlways: '总是允许',
     rejectOnce: '拒绝',
     rejectAlways: '总是拒绝',
+    moreLocations: '另有 {count} 处',
   },
 
   error: {
@@ -132,6 +133,32 @@ const zh: Locale = {
 
   thinking: {
     header: '思考',
+    thought: '已思考',
+    showAll: '展开全部 ›',
+    extendedAria: '扩展思考',
+  },
+
+  diff: {
+    moreLines: '... 另有 {count} 行',
+    noChanges: '无变更',
+  },
+
+  tool: {
+    noContent: '无内容',
+    noMatches: '无匹配',
+    noMatchesFound: '未找到匹配',
+    noResult: '无结果',
+    source: '来源：{url}',
+    exitCode: '退出码：{code}',
+    moreMatches: '... 另有 {count} 条匹配',
+    moreLines: '... 另有 {count} 行',
+    fileDeleted: '文件已删除',
+  },
+
+  app: {
+    ribbon: '打开 Co-Ober',
+    cmdOpen: '打开',
+    cmdEdit: 'AI 编辑选区',
   },
 
   plan: {
@@ -198,6 +225,11 @@ const zh: Locale = {
       medium: '中',
       high: '高',
     },
+    permSafe: '🔒 安全',
+    permReadonly: '🛡️ 只读',
+    permPlan: '📋 计划',
+    permYolo: '⚡ 放行',
+    permTitle: '权限模式：{mode}（点击切换）',
   },
 
   notice: {
@@ -232,6 +264,12 @@ const zh: Locale = {
     unknownCode: '未知',
     stdinNotWritable: 'OpenCode 进程 stdin 不可写',
     requestTimeout: '请求超时（5 分钟）',
+    superseded: 'ACP 连接已被新的连接取代',
+    disconnected: '连接已断开',
+    invalidSessionId: '服务端未返回有效的会话 ID',
+    invalidForkSessionId: '服务端未返回有效的分叉会话 ID',
+    streamActive: '已有消息流正在进行',
+    invalidResponse: '无效的 ACP 响应格式',
   },
 
   settings: {
@@ -409,6 +447,15 @@ const zh: Locale = {
       name: '空闲超时（毫秒）',
       desc: '等待 Agent 响应的最大时间（默认 300000，设为 0 禁用）',
     },
+    defaultEffort: {
+      name: '默认思考强度',
+      desc: '创建新会话时应用的推理强度',
+    },
+    mcpType: '类型',
+    mcpUrlDesc: '服务器 URL',
+    mcpHeaders: '请求头',
+    mcpName: '名称',
+    mcpValue: '值',
   },
 };
 

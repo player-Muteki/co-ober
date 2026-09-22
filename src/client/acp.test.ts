@@ -622,3 +622,14 @@ describe('normalizeAgentCapabilities', () => {
     expect(normalizeAgentCapabilities([])).toBeNull();
   });
 });
+
+describe('AcpClient.permissionMode', () => {
+  it('defaults to yolo and stores assigned permission levels', () => {
+    const client = new AcpClient('opencode');
+    expect(client.permissionMode).toBe('yolo');
+    client.permissionMode = 'safe';
+    expect(client.permissionMode).toBe('safe');
+    client.permissionMode = 'plan';
+    expect(client.permissionMode).toBe('plan');
+  });
+});

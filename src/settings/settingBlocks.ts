@@ -159,7 +159,7 @@ export function addMcpServerBlock(containerEl: HTMLElement, server: McpServerCon
     };
 
     new Setting(block)
-      .setName('Type')
+      .setName(locale().settings.mcpType)
       .addDropdown((d) => {
         d.addOptions(typeOptions);
         d.selectEl.querySelector<HTMLOptionElement>('option[value="http"]')!.disabled = !httpEnabled;
@@ -253,12 +253,12 @@ export function addMcpServerBlock(containerEl: HTMLElement, server: McpServerCon
       const httpServer = server as Extract<McpServerConfig, { type: 'http' }>;
       new Setting(block)
         .setName('URL')
-        .setDesc('Server URL')
+        .setDesc(locale().settings.mcpUrlDesc)
         .addText((text) => text.setValue(httpServer.url ?? '')
           .onChange(async (value) => { httpServer.url = value.trim(); await save(); }));
 
       const headersDetails = block.createEl('details', { cls: 'co-ober-mcp-headers-details' });
-      headersDetails.createEl('summary', { text: 'Headers' });
+      headersDetails.createEl('summary', { text: locale().settings.mcpHeaders });
 
       const renderHeaders = () => {
         headersDetails.querySelectorAll('.co-ober-mcp-header-var, .co-ober-mcp-header-add').forEach((el) => el.remove());
@@ -267,14 +267,14 @@ export function addMcpServerBlock(containerEl: HTMLElement, server: McpServerCon
           const headerVar = headersVars[i];
           const row = headersDetails.createDiv({ cls: 'co-ober-mcp-header-var' });
 
-          const nameInput = row.createEl('input', { type: 'text', placeholder: 'Name', cls: 'co-ober-mcp-header-input-name' });
+          const nameInput = row.createEl('input', { type: 'text', placeholder: locale().settings.mcpName, cls: 'co-ober-mcp-header-input-name' });
           nameInput.value = headerVar.name;
           nameInput.onchange = async () => {
             headerVar.name = nameInput.value.trim();
             await save();
           };
 
-          const valueInput = row.createEl('input', { type: 'text', placeholder: 'Value', cls: 'co-ober-mcp-header-input-value' });
+          const valueInput = row.createEl('input', { type: 'text', placeholder: locale().settings.mcpValue, cls: 'co-ober-mcp-header-input-value' });
           valueInput.value = headerVar.value;
           valueInput.onchange = async () => {
             headerVar.value = valueInput.value.trim();
