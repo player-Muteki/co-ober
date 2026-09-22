@@ -21,6 +21,8 @@ const zh: Locale = {
     forkDisabled: '当前 OpenCode Agent 不支持分叉会话',
     resumeDisabled: '当前 OpenCode Agent 不支持恢复会话',
     closeDisabled: '当前 OpenCode Agent 不支持关闭会话',
+    nativeSection: 'OpenCode 会话',
+    loadingNative: '正在加载 OpenCode 会话…',
   },
 
   header: {
@@ -35,6 +37,8 @@ const zh: Locale = {
     search: '搜索会话…',
     empty: '未找到会话',
     defaultTitle: '会话 {time}',
+    loadedNative: '已载入 OpenCode 会话。更早的对话保存在 OpenCode 历史中，新回复将在此继续。',
+    loadNativeFailed: '无法载入该 OpenCode 会话（不支持 session/load 或会话不可用）。',
   },
 
   reconnect: {

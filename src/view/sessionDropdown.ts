@@ -3,7 +3,7 @@ import { t } from '../i18n/index';
 import type { AgentCapabilities, SessionMeta } from '../types';
 
 export interface SessionDropdownCallbacks {
-	onSwitch(sessionId: string): Promise<void>;
+	onSwitch(sessionId: string, source?: 'local' | 'opencode'): Promise<void>;
 	onDelete(sessionId: string): Promise<void>;
 	onNewSession(): Promise<void>;
 	onFork?(sessionId: string): Promise<void>;
@@ -14,6 +14,9 @@ export class SessionDropdown {
 	private dropdownEl: HTMLDivElement | null = null;
 	private outsideHandler: ((e: MouseEvent) => void) | null = null;
 	private doc: Document;
+	private nativeSessions: SessionMeta[] = [];
+	private nativeLoading = false;
+	private nativeLoadedOnce = false;
 
 	constructor(
 		private container: HTMLElement,
@@ -22,6 +25,7 @@ export class SessionDropdown {
 		private getCurrentSessionId: () => string | null,
 		private callbacks: SessionDropdownCallbacks,
 		private getAgentCapabilities: () => AgentCapabilities | null = () => null,
+		private loadNativeSessions: (() => Promise<SessionMeta[]>) | null = null,
 	) {
 		this.doc = container.ownerDocument ?? activeDocument;
 	}
@@ -43,8 +47,7 @@ export class SessionDropdown {
 			'--dropdown-right': `${Math.max(8, window.innerWidth - rect.right)}px`,
 		});
 
-		const searchInput = canList
-			? dd.createEl('input', {
+		const searchInput = canList			? dd.createEl('input', {
 				cls: 'co-ober-session-search',
 				attr: { placeholder: t().session.search, type: 'text' },
 			})
@@ -63,7 +66,6 @@ export class SessionDropdown {
 					cls: 'co-ober-session-empty',
 					text: t().session.empty,
 				});
-				return;
 			}
 
 			const currentId = this.getCurrentSessionId();
@@ -83,15 +85,20 @@ export class SessionDropdown {
 					this.close();
 				});
 				it.onclick = async () => {
-					await this.callbacks.onSwitch(s.sessionId);
+					await this.callbacks.onSwitch(s.sessionId, 'local');
 				};
 			}
+
+			this.renderNativeSection(itemsContainer, currentId, filter);
 		};
 
 		searchInput?.addEventListener('input', () => {
 			renderItems(searchInput.value);
 		});
 
+		if (this.loadNativeSessions && !this.nativeLoadedOnce) {
+			this.nativeLoading = true;
+		}
 		renderItems('');
 
 		this.dropdownEl = dd;
@@ -102,6 +109,58 @@ export class SessionDropdown {
 			this.close();
 		};
 		this.doc.addEventListener('mousedown', this.outsideHandler, true);
+	}
+
+	private renderNativeSection(itemsContainer: HTMLElement, currentId: string | null, filter: string): void {
+		if (!this.loadNativeSessions) return;
+		const dd = itemsContainer.parentElement;
+		if (!dd) return;
+
+		const localIds = new Set(this.sessionStore.list().map((s) => s.sessionId));
+		const native = this.nativeSessions.filter((s) => !localIds.has(s.sessionId));
+		const filteredNative = filter
+			? native.filter((s) => s.title?.toLowerCase().includes(filter.toLowerCase()))
+			: native;
+
+		if (this.nativeLoading) {
+			const loadingSection = dd.createDiv({ cls: 'co-ober-session-native-section' });
+			loadingSection.createDiv({ cls: 'co-ober-session-native-loading', text: t().sessionDropdown.loadingNative });
+			this.nativeLoading = false;
+			void this.loadNativeSessions().then((sessions) => {
+				this.nativeSessions = sessions;
+				this.nativeLoadedOnce = true;
+				if (!this.dropdownEl) return;
+				this.rerender();
+			}).catch(() => {
+				this.nativeLoadedOnce = true;
+				if (this.dropdownEl) this.rerender();
+			});
+			return;
+		}
+		if (filteredNative.length === 0) return;
+
+		const section = dd.createDiv({ cls: 'co-ober-session-native-section' });
+		section.createDiv({ cls: 'co-ober-session-native-header', text: t().sessionDropdown.nativeSection });
+		const nativeList = section.createDiv({ cls: 'co-ober-session-native-items' });
+		for (const s of filteredNative) {
+			const it = nativeList.createDiv({
+				cls: `co-ober-session-item co-ober-session-native${s.sessionId === currentId ? ' active' : ''}`,
+			});
+			it.createSpan({ text: s.title || s.sessionId, cls: 'session-label' });
+			if (s.updatedAt) {
+				it.createSpan({ cls: 'session-time', text: s.updatedAt.slice(0, 10) });
+			}
+			it.onclick = async () => {
+				await this.callbacks.onSwitch(s.sessionId, 'opencode');
+			};
+		}
+	}
+
+	private rerender(): void {
+		// Re-open rendering by simulating a close/open is too disruptive; instead
+		// rebuild the items container content via a fresh open cycle on next toggle.
+		this.close();
+		this.open();
 	}
 
 	close(): void {

@@ -18,6 +18,7 @@ import { ContextResolver } from '../context/resolver';
 import { SyncEngine } from '../sync/engine';
 import type { SessionStore } from '../chat/session';
 import { SessionDropdown } from './sessionDropdown';
+import { listNativeSessions } from '../opencode/NativeSessionReader';
 import { commandRegistry } from '../commands/registry';
 import { FileCommandStorage } from '../commands/storage/FileCommandStorage';
 import { Autocomplete } from './autocomplete';
@@ -278,9 +279,9 @@ export class CoOberView extends ItemView {
 			this.sessionStore,
 			() => this.controller.getSessionId(),
 			{
-				onSwitch: async (sessionId: string) => {
+				onSwitch: async (sessionId: string, source?: 'local' | 'opencode') => {
 					this.closeSessionDropdown();
-					await this.controller.switchSession(sessionId);
+					await this.controller.switchSession(sessionId, source);
 				},
 				onDelete: async (sessionId: string) => {
 					this.closeSessionDropdown();
@@ -297,6 +298,7 @@ export class CoOberView extends ItemView {
 				},
 			},
 			() => this.plugin.getClient()?.getAgentCapabilities() ?? null,
+			async () => listNativeSessions(this.plugin.getVaultCwd()),
 		);
 
 		// Init connection - always try to connect when view opens

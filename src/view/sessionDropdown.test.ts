@@ -167,7 +167,7 @@ describe('SessionDropdown', () => {
       const items = container.querySelectorAll('.co-ober-session-item');
       (items[1] as HTMLElement).click();
       await new Promise(r => setTimeout(r, 10));
-      expect(callbacks.onSwitch).toHaveBeenCalledWith('session-2');
+      expect(callbacks.onSwitch).toHaveBeenCalledWith('session-2', 'local');
     });
 
     it('calls onNewSession when deleting current session', async () => {
@@ -218,6 +218,68 @@ describe('SessionDropdown', () => {
       search.dispatchEvent(new Event('input'));
       const items = container.querySelectorAll('.co-ober-session-item');
       expect(items.length).toBe(3);
+    });
+  });
+
+  describe('native OpenCode sessions', () => {
+    function makeDropdown(loader: (() => Promise<unknown[]>) | null): SessionDropdown {
+      return new SessionDropdown(
+        container,
+        anchor,
+        sessionStore as any,
+        () => 'session-1',
+        callbacks as any,
+        () => ({ sessionCapabilities: { close: true, fork: true, list: true, resume: true } }),
+        loader as any,
+      );
+    }
+
+    it('shows loading placeholder then renders native sessions', async () => {
+      let resolveLoader: (sessions: unknown[]) => void = () => {};
+      const loader = vi.fn(() => new Promise<unknown[]>((resolve) => { resolveLoader = resolve; }));
+      const dd = makeDropdown(loader);
+      dd.open();
+      expect(container.querySelector('.co-ober-session-native-loading')).not.toBeNull();
+
+      resolveLoader([
+        { sessionId: 'ses_native_1', title: 'Terminal chat', updatedAt: '2026-08-22T03:39:57.497Z' },
+        { sessionId: 'session-2', title: 'duplicate of local', updatedAt: '2026-08-22T03:39:57.497Z' },
+      ]);
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(container.querySelector('.co-ober-session-native-section')).not.toBeNull();
+      const nativeItems = container.querySelectorAll('.co-ober-session-native');
+      expect(nativeItems.length).toBe(1); // duplicates of local sessions are dropped
+      expect(nativeItems[0].querySelector('.session-label')?.textContent).toBe('Terminal chat');
+      dd.destroy();
+    });
+
+    it('switches to native session with opencode source', async () => {
+      const dd = makeDropdown(async () => [{ sessionId: 'ses_native_1', title: 'Terminal chat' }]);
+      dd.open();
+      await new Promise((r) => setTimeout(r, 10));
+      const nativeItem = container.querySelector('.co-ober-session-native') as HTMLElement;
+      expect(nativeItem).not.toBeNull();
+      nativeItem.click();
+      await new Promise((r) => setTimeout(r, 10));
+      expect(callbacks.onSwitch).toHaveBeenCalledWith('ses_native_1', 'opencode');
+      dd.destroy();
+    });
+
+    it('does not render native section when loader is absent', () => {
+      const dd = makeDropdown(null);
+      dd.open();
+      expect(container.querySelector('.co-ober-session-native-section')).toBeNull();
+      dd.destroy();
+    });
+
+    it('hides loading placeholder when loader rejects', async () => {
+      const dd = makeDropdown(() => Promise.reject(new Error('no sqlite')));
+      dd.open();
+      await new Promise((r) => setTimeout(r, 10));
+      expect(container.querySelector('.co-ober-session-native-loading')).toBeNull();
+      expect(container.querySelector('.co-ober-session-native-section')).toBeNull();
+      dd.destroy();
     });
   });
 

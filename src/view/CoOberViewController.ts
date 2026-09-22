@@ -487,7 +487,7 @@ export class CoOberViewController {
 
 	// ── Session dropdown actions ──
 
-	async switchSession(sessionId: string): Promise<void> {
+	async switchSession(sessionId: string, source?: 'local' | 'opencode'): Promise<void> {
 		this.state.sessionId = sessionId;
 		this.deps.sessionStore.getOrCreate(sessionId);
 		await this.cancelActiveGeneration();
@@ -495,8 +495,14 @@ export class CoOberViewController {
 		this.resetConversationView();
 		try {
 			await this.syncRuntimeSession(sessionId);
+			if (source === 'opencode') {
+				this.deps.renderer.addSystemMessage(t().session.loadedNative);
+			}
 		} catch (e) {
 			console.error('[co-ober] session switch sync:', e);
+			if (source === 'opencode') {
+				this.deps.renderer.addError(t().session.loadNativeFailed);
+			}
 		}
 		await this.restoreSession();
 		this.deps.sessionStore.setActive(sessionId);

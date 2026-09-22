@@ -19,6 +19,8 @@ const en = {
     forkDisabled: 'Fork is not supported by this OpenCode agent',
     resumeDisabled: 'Resume is not supported by this OpenCode agent',
     closeDisabled: 'Close is not supported by this OpenCode agent',
+    nativeSection: 'OpenCode sessions',
+    loadingNative: 'Loading OpenCode sessions…',
   },
 
   header: {
@@ -33,6 +35,8 @@ const en = {
     search: 'Search sessions…',
     empty: 'No sessions found',
     defaultTitle: 'Chat {time}',
+    loadedNative: 'Loaded an OpenCode session. Earlier turns live in OpenCode history; new replies continue here.',
+    loadNativeFailed: 'Could not load this OpenCode session (session/load not supported or session unavailable).',
   },
 
   reconnect: {

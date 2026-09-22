@@ -835,6 +835,34 @@
   padding: 4px 0;
 }
 
+/* Native OpenCode sessions section */
+.co-ober-session-native-section {
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.co-ober-session-native-header {
+  padding: 4px 12px;
+  font-size: var(--font-smallest);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.co-ober-session-native-loading {
+  padding: 4px 12px;
+  font-size: var(--font-smaller);
+  color: var(--text-faint);
+}
+
+.co-ober-session-item.co-ober-session-native .session-time {
+  margin-left: 8px;
+  color: var(--text-faint);
+  font-size: var(--font-smallest);
+  flex-shrink: 0;
+}
+
 .co-ober-session-item {
   display: flex;
   align-items: center;
