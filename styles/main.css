@@ -134,6 +134,22 @@
   justify-content: flex-end;
 }
 
+.co-ober-user-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.co-ober-user-images .co-ober-user-image {
+  max-width: 220px;
+  max-height: 160px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  object-fit: contain;
+}
+
 .co-ober-msg.assistant .co-ober-msg-body {
   background: var(--background-secondary);
   padding: 8px 12px;

@@ -1,31 +1,12 @@
-import type { SerializedMessage, SessionConfigOption, AvailableCommand, UsageInfo } from '../types';
-
-export interface PendingToolCall {
-	toolCallId: string;
-	title: string;
-	kind: string;
-	status: string;
-}
-
-export interface ThinkingState {
-	content: string;
-	collapsed: boolean;
-}
+import type { SessionConfigOption, AvailableCommand, UsageInfo } from '../types';
 
 export class ChatState {
 	// Session
 	sessionId: string | null = null;
 	isConnected = false;
 
-	// Messages
-	messages: SerializedMessage[] = [];
-
 	// Streaming
 	isStreaming = false;
-	currentMessageId: string | null = null;
-	currentTextContent = '';
-	currentThinking: ThinkingState | null = null;
-	pendingTools = new Map<string, PendingToolCall>();
 
 	// Usage
 	usage: UsageInfo | null = null;
@@ -41,26 +22,11 @@ export class ChatState {
 	// Auto-scroll
 	autoScrollEnabled = true;
 
-	// Attention
-	needsAttention = false;
-
-	// Error
-	lastError: string | null = null;
-
-	addMessage(msg: SerializedMessage): void {
-		this.messages.push(msg);
-	}
-
 	resetStreamingState(): void {
-		this.currentTextContent = '';
-		this.currentThinking = null;
-		this.pendingTools.clear();
 		this.isStreaming = false;
-		this.currentMessageId = null;
 	}
 
 	clear(): void {
-		this.messages = [];
 		this.usage = null;
 		this.configOptions = [];
 		this.availableCommands = [];
@@ -68,8 +34,6 @@ export class ChatState {
 		this.currentModelId = null;
 		this.currentModeId = null;
 		this.availableModes = [];
-		this.lastError = null;
-		this.needsAttention = false;
 		this.resetStreamingState();
 	}
 }

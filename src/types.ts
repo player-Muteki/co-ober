@@ -229,6 +229,12 @@ export interface ContentBlock {
   text?: string;
   /** References the tool call id for tool_use blocks */
   toolCallId?: string;
+  /** Snapshot of the tool title, so restored history can re-render the call */
+  toolTitle?: string;
+  /** Snapshot of the tool kind, so restored history can re-render the call */
+  toolKind?: string;
+  /** Last known status of the tool call (updated when it completes or fails) */
+  toolStatus?: 'pending' | 'in_progress' | 'completed' | 'failed';
   /** Duration in seconds (populated after completion for thinking blocks) */
   duration?: number;
   /** Sub-agent metadata for subagent blocks */
@@ -287,6 +293,8 @@ export interface SerializedMessage {
   durationSeconds?: number;
   /** @since Phase 1 — whether this message was interrupted mid-generation */
   isInterrupt?: boolean;
+  /** Image attachments sent with a user message (base64 payloads). */
+  images?: ImageAttachment[];
 }
 
 export interface SerializedSession {

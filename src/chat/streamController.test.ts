@@ -195,6 +195,23 @@ describe('StreamController', () => {
 		controller.handleChunk({ kind: 'message_chunk', role: 'user', messageId: 'msg-1', chunkText: 'Hello', accumulatedText: 'Hello' });
 	});
 
+	it('persists tool blocks with metadata and updates status in place on completion', () => {
+		const session: { messages: Array<{ contentBlocks?: Array<Record<string, unknown>> }>; updatedAt: number } = { messages: [], updatedAt: 0 };
+		deps.sessionStore.get.mockReturnValue(session);
+
+		controller.handleChunk({ kind: 'tool_call_snapshot', toolCallId: 'call-1', title: 'Search', toolKind: 'search', status: 'pending', rawInput: {}, contents: [] });
+		controller.handleChunk({ kind: 'message_chunk', role: 'agent', messageId: 'msg-1', chunkText: 'Hello', accumulatedText: 'Hello' });
+
+		const blocks = session.messages[0].contentBlocks;
+		expect(blocks).toEqual([
+			{ type: 'text', text: 'Hello' },
+			{ type: 'tool_use', toolCallId: 'call-1', toolTitle: 'Search', toolKind: 'search', toolStatus: 'pending' },
+		]);
+
+		controller.handleChunk({ kind: 'tool_call_snapshot', toolCallId: 'call-1', title: 'Search', toolKind: 'search', status: 'completed', contents: [] });
+		expect(session.messages[0].contentBlocks![1]).toMatchObject({ type: 'tool_use', toolCallId: 'call-1', toolStatus: 'completed' });
+	});
+
 	it('saveMessage appends a new message and schedules a save', () => {
 		controller.saveMessage('user', 'Hi', 'text');
 		expect(deps.sessionStore.append).toHaveBeenCalledWith('session-1', expect.objectContaining({ role: 'user', content: 'Hi', type: 'text' }));
@@ -202,6 +219,17 @@ describe('StreamController', () => {
 
 		vi.runAllTimers();
 		expect(deps.sessionStore.save).toHaveBeenCalled();
+	});
+
+	it('saveMessage stores image attachments on the persisted message', () => {
+		const images = [{ mimeType: 'image/png', data: 'AAA=' }];
+		controller.saveMessage('user', 'Hi', 'text', undefined, images);
+		expect(deps.sessionStore.append).toHaveBeenCalledWith('session-1', expect.objectContaining({
+			role: 'user',
+			content: 'Hi',
+			type: 'text',
+			images,
+		}));
 	});
 
 	it('saveMessage skips if no sessionId', () => {

@@ -7,7 +7,7 @@
  * @since Phase 1 (refactored)
  */
 
-import type { NormalizedUpdate, SessionConfigOption, ModeOption, AvailableCommand, ModelOption, ToolCallContent, ToolKind, ContentBlockType, ContentBlock } from '../types';
+import type { NormalizedUpdate, SessionConfigOption, ModeOption, AvailableCommand, ModelOption, ToolCallContent, ToolKind, ImageAttachment, ContentBlock } from '../types';
 import type { ChatState } from './chatState';
 import type { ChatRenderer } from '../view/renderer';
 import type { SyncEngine } from '../sync/engine';
@@ -38,8 +38,11 @@ export class StreamController {
 	private activeSave: Promise<void> | null = null;
 	private disposed = false;
 
-	// Track content block order for the current assistant message
-	private currentContentBlocks: Array<{ type: string; toolCallId?: string; subagentId?: string }> = [];
+	// Track content block order for the current assistant message.
+	// Tool blocks are shared objects mutated in place as calls complete, so
+	// persisted messages carry the final status for faithful restore.
+	private currentContentBlocks: ContentBlock[] = [];
+	private toolBlocks = new Map<string, ContentBlock>();
 	// Phase 4 — tool call buffering
 	private pendingToolBuffer: Array<{
 		toolCallId: string;
@@ -104,6 +107,11 @@ export class StreamController {
 					renderer.updateToolCall(ch.toolCallId, ch.status, ch.rawOutput, ch.contents, ch.rawInput, ch.locations, ch.toolKind);
 					// Safety net: ensure tool is collapsed on final states
 					renderer.collapseToolCall(ch.toolCallId);
+					const block = this.toolBlocks.get(ch.toolCallId);
+					if (block) {
+						block.toolStatus = ch.status === 'failed' ? 'failed' : 'completed';
+						if (ch.toolKind) block.toolKind = ch.toolKind;
+					}
 				}
 
 				if ((ch.status === 'completed' || ch.status === 'failed') && !this.syncedToolCalls.has(ch.toolCallId)) {
@@ -197,6 +205,7 @@ export class StreamController {
 		this.assistantMessageIndex.clear();
 		this.pendingToolBuffer = [];
 		this.currentContentBlocks = [];
+		this.toolBlocks.clear();
 		this.deps.state.resetStreamingState();
 	}
 
@@ -210,8 +219,17 @@ export class StreamController {
 		const { renderer } = this.deps;
 		for (const tc of this.pendingToolBuffer) {
 			renderer.addToolCall(tc.toolCallId, tc.title, tc.toolKind, tc.rawInput, tc.locations);
-			// Track tool call in content blocks for ordering
-			this.currentContentBlocks.push({ type: 'tool_use' as ContentBlockType, toolCallId: tc.toolCallId });
+			// Track tool call in content blocks for ordering, with enough
+			// metadata (title/kind/status) to re-render it after a restore.
+			const block: ContentBlock = {
+				type: 'tool_use',
+				toolCallId: tc.toolCallId,
+				toolTitle: tc.title,
+				toolKind: tc.toolKind,
+				toolStatus: tc.status === 'in_progress' ? 'in_progress' : 'pending',
+			};
+			this.currentContentBlocks.push(block);
+			this.toolBlocks.set(tc.toolCallId, block);
 		}
 		this.pendingToolBuffer = [];
 	}
@@ -233,14 +251,13 @@ export class StreamController {
 
 			// Add text/thinking content
 			if (accumulatedText) {
-				contentBlocks.push({ type: type as ContentBlockType, text: accumulatedText });
+				contentBlocks.push({ type, text: accumulatedText });
 			}
 
-			// Add all tracked tool call blocks
+			// Add all tracked tool call blocks (shared objects, so status
+			// updates after this message was created still land on it)
 			for (const cb of this.currentContentBlocks) {
-				if (cb.type === 'tool_use') {
-					contentBlocks.push({ type: 'tool_use' as ContentBlockType, toolCallId: cb.toolCallId });
-				}
+				if (cb.type === 'tool_use') contentBlocks.push(cb);
 			}
 
 			session.messages.push({
@@ -265,6 +282,14 @@ export class StreamController {
 							block.text = accumulatedText;
 						}
 					}
+				} else {
+					msg.contentBlocks = [];
+				}
+				// Tool calls can flush after this message was created; keep it in sync
+				for (const cb of this.currentContentBlocks) {
+					if (cb.type === 'tool_use' && !msg.contentBlocks.includes(cb)) {
+						msg.contentBlocks.push(cb);
+					}
 				}
 			}
 			session.updatedAt = Date.now();
@@ -278,6 +303,7 @@ export class StreamController {
 		content: string,
 		type: 'text' | 'tool-call' | 'tool-result' | 'thinking',
 		contentBlocks?: ContentBlock[],
+		images?: ImageAttachment[],
 	): void {
 		const sessionId = this.deps.getSessionId();
 		if (!sessionId) return;
@@ -287,6 +313,7 @@ export class StreamController {
 			content,
 			type,
 			contentBlocks,
+			images,
 			timestamp: Date.now(),
 		});
 		this.deps.sessionStore.setActive(sessionId);

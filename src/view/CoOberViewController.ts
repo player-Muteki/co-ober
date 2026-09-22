@@ -355,8 +355,6 @@ export class CoOberViewController {
 		this.state.isStreaming = false;
 		this.state.usage = null;
 		this.deps.updateContextMeter(null);
-		this.state.lastError = null;
-		this.state.needsAttention = false;
 		this.deps.input.setStreaming(false);
 		this.deps.toolbar.setSending(false);
 		this.deps.welcomeView.updateStatus(false);
@@ -471,10 +469,15 @@ export class CoOberViewController {
 		for (const msg of session.messages) {
 			const restoreId = `restore-${msg.timestamp}-${idx++}`;
 			if (msg.role === 'user') {
-				this.deps.renderer.addUserMessage(msg.content, msg.timestamp);
+				this.deps.renderer.addUserMessage(msg.content, msg.timestamp, msg.images);
 			} else if (msg.role === 'assistant') {
-				if (msg.type === 'thinking') this.deps.renderer.appendThinking(msg.content, restoreId, msg.timestamp);
-				else this.deps.renderer.appendText(msg.content, restoreId, msg.timestamp);
+				if (msg.contentBlocks && msg.contentBlocks.length > 0) {
+					this.deps.renderer.renderStructuredMessage(msg);
+				} else if (msg.type === 'thinking') {
+					this.deps.renderer.appendThinking(msg.content, restoreId, msg.timestamp);
+				} else {
+					this.deps.renderer.appendText(msg.content, restoreId, msg.timestamp);
+				}
 			}
 		}
 	}
@@ -683,8 +686,13 @@ export class CoOberViewController {
 		this.deps.input.setStreaming(true);
 		this.deps.toolbar.setSending(true);
 		this.sendStartTime = Date.now();
-		if (config.addUserMessage !== false) this.deps.renderer.addUserMessage(text);
-		if (config.saveMessage !== false) this.streamCtrl.saveMessage('user', text, 'text');
+		const imageParts = this.callbacks.getPendingImageParts();
+		this.callbacks.onClearPendingImageChips();
+		const images = imageParts
+			.filter((p) => p.type === 'image' && typeof p.mimeType === 'string' && typeof p.data === 'string')
+			.map((p) => ({ mimeType: p.mimeType as string, data: p.data as string }));
+		if (config.addUserMessage !== false) this.deps.renderer.addUserMessage(text, undefined, images.length > 0 ? images : undefined);
+		if (config.saveMessage !== false) this.streamCtrl.saveMessage('user', text, 'text', undefined, images.length > 0 ? images : undefined);
 		this.deps.renderer.addAssistantPlaceholder();
 
 		try {
@@ -694,8 +702,7 @@ export class CoOberViewController {
 				? await this.buildParts(text, config.buildPartsWithRefs, config.history ? buildHistoryBlock(config.history) : undefined)
 				: [{ type: 'text' as const, text }];
 			if (this.state.sessionId !== sessionId || !this.busy) return;
-			parts.push(...this.callbacks.getPendingImageParts());
-			this.callbacks.onClearPendingImageChips();
+			parts.push(...imageParts);
 			const response = await c.sendMessage(sessionId, parts, (ch: NormalizedUpdate) => {
 				if (this.genId !== currentGen || !this.busy || this.state.sessionId !== sessionId) return;
 				this.streamCtrl.handleChunk(ch);
@@ -1025,8 +1032,6 @@ export class CoOberViewController {
 		this.state.isStreaming = false;
 		this.state.usage = null;
 		this.deps.updateContextMeter(null);
-		this.state.lastError = null;
-		this.state.needsAttention = false;
 		this.deps.input.setStreaming(false);
 		this.deps.toolbar.setSending(false);
 		this.callbacks.onClearUI();

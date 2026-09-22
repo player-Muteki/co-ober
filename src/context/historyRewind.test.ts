@@ -46,4 +46,23 @@ describe('buildHistoryBlock', () => {
     expect(block).toContain('Assistant: same');
     expect((block!.match(/User: again/g) ?? [])).toHaveLength(2);
   });
+
+  it('annotates turns that carried images', () => {
+    const withImage: SerializedMessage = {
+      role: 'user', type: 'text', content: 'look at this', timestamp: 0,
+      images: [{ mimeType: 'image/png', data: 'AAA=' }],
+    };
+    const withTwoImages: SerializedMessage = {
+      role: 'user', type: 'text', content: '', timestamp: 0,
+      images: [
+        { mimeType: 'image/png', data: 'AAA=' },
+        { mimeType: 'image/jpeg', data: 'BBB=' },
+      ],
+    };
+
+    const block = buildHistoryBlock([withImage, withTwoImages]);
+
+    expect(block).toContain('User: look at this [+1 image not included]');
+    expect(block).toContain('[+2 images not included]');
+  });
 });

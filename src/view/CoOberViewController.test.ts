@@ -283,9 +283,37 @@ describe('CoOberViewController', () => {
 
 			await controller.restoreSession();
 
-			expect(deps.renderer.addUserMessage).toHaveBeenCalledWith('hello', 1000);
+			expect(deps.renderer.addUserMessage).toHaveBeenCalledWith('hello', 1000, undefined);
 			expect(deps.renderer.appendText).toHaveBeenCalledWith('hi there', expect.stringContaining('restore-'), 2000);
 			expect(deps.renderer.appendThinking).toHaveBeenCalledWith('thinking...', expect.stringContaining('restore-'), 3000);
+		});
+
+		it('routes assistant messages with content blocks to renderStructuredMessage', async () => {
+			const renderStructuredMessage = vi.fn();
+			deps.renderer = { ...deps.renderer, renderStructuredMessage, appendText: vi.fn() } as unknown as ControllerDeps['renderer'];
+			controller.state.sessionId = 'test';
+			const structured = {
+				role: 'assistant', content: 'hi there', type: 'text', timestamp: 2000,
+				contentBlocks: [{ type: 'text', text: 'hi there' }],
+			};
+			(deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue({ messages: [structured] });
+
+			await controller.restoreSession();
+
+			expect(renderStructuredMessage).toHaveBeenCalledWith(structured);
+			expect(deps.renderer.appendText).not.toHaveBeenCalled();
+		});
+
+		it('forwards persisted images when restoring user messages', async () => {
+			controller.state.sessionId = 'test';
+			const images = [{ mimeType: 'image/png', data: 'AAA=' }];
+			(deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue({
+				messages: [{ role: 'user', content: 'look', type: 'text', timestamp: 1000, images }],
+			});
+
+			await controller.restoreSession();
+
+			expect(deps.renderer.addUserMessage).toHaveBeenCalledWith('look', 1000, images);
 		});
 	});
 
@@ -328,11 +356,33 @@ describe('CoOberViewController', () => {
 			await controller.send('hello', []);
 
 			expect(callbacks.onHideWelcome).toHaveBeenCalled();
-			expect(deps.renderer.addUserMessage).toHaveBeenCalledWith('hello');
+			expect(deps.renderer.addUserMessage).toHaveBeenCalledWith('hello', undefined, undefined);
 			expect(deps.renderer.addAssistantPlaceholder).toHaveBeenCalled();
 			expect(client.sendMessage).toHaveBeenCalled();
 			expect(deps.renderer.removeAssistantPlaceholder).toHaveBeenCalled();
 			expect(controller.isBusy()).toBe(false);
+		});
+
+		it('renders, sends and persists pending image parts with the user message', async () => {
+			const client = createMockClient();
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+			const addUserMessage = vi.fn();
+			deps.renderer = { ...deps.renderer, addUserMessage } as unknown as ControllerDeps['renderer'];
+			const images = [{ mimeType: 'image/png', data: 'AAA=' }];
+			callbacks.getPendingImageParts = () => images.map(i => ({ type: 'image' as const, mimeType: i.mimeType, data: i.data }));
+			callbacks.onClearPendingImageChips = vi.fn();
+			controller = new CoOberViewController(deps, callbacks);
+
+			await controller.send('look', []);
+
+			expect(addUserMessage).toHaveBeenCalledWith('look', undefined, images);
+			const appendCalls = (deps.sessionStore.append as ReturnType<typeof vi.fn>).mock.calls;
+			const userAppend = appendCalls.find(call => call[1]?.role === 'user');
+			expect(userAppend?.[1]).toMatchObject({ content: 'look', type: 'text', images });
+			const parts = (client.sendMessage as ReturnType<typeof vi.fn>).mock.calls[0][1] as PromptPart[];
+			expect(parts[parts.length - 1]).toEqual({ type: 'image', mimeType: 'image/png', data: 'AAA=' });
+			expect(callbacks.onClearPendingImageChips).toHaveBeenCalled();
 		});
 
 		it('ignores late updates from a cancelled request after a new request starts', async () => {
@@ -594,7 +644,7 @@ describe('CoOberViewController', () => {
 			expect(shared.messages[1]).toMatchObject({ role: 'assistant', type: 'thinking', content: 'pondering' });
 			expect(shared.messages[2]).toMatchObject({ role: 'assistant', type: 'text', content: 'hi' });
 			expect(override.save).toHaveBeenCalled();
-			expect(deps.renderer.addUserMessage).toHaveBeenCalledWith('question', expect.anything());
+			expect(deps.renderer.addUserMessage).toHaveBeenCalledWith('question', expect.anything(), undefined);
 			expect(deps.renderer.appendThinking).toHaveBeenCalledWith('pondering', expect.anything(), expect.anything());
 			expect(deps.renderer.appendText).toHaveBeenCalledWith('hi', expect.anything(), expect.anything());
 		});
@@ -688,7 +738,7 @@ describe('CoOberViewController', () => {
 			expect((historyPart as { text: string }).text).not.toContain('q2');
 
 			// history is re-rendered before the new turn is sent
-			expect(addUserMessage).toHaveBeenCalledWith('q1', 1);
+			expect(addUserMessage).toHaveBeenCalledWith('q1', 1, undefined);
 		});
 
 		it('regenerating the first turn sends no history block', async () => {
@@ -709,7 +759,7 @@ describe('CoOberViewController', () => {
 			expect(shared.messages).toEqual([userMsg('q1'), asstMsg('a1')]);
 			const [, parts] = (client.sendMessage as ReturnType<typeof vi.fn>).mock.calls[0] as [string, PromptPart[]];
 			expect(parts[parts.length - 1]).toEqual({ type: 'text', text: 'edited question' });
-			expect(addUserMessage).toHaveBeenCalledWith('edited question');
+			expect(addUserMessage).toHaveBeenCalledWith('edited question', undefined, undefined);
 		});
 
 		it('refuses to rewind while a generation is in flight', async () => {

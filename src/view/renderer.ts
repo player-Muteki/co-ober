@@ -1,7 +1,7 @@
 import type { App } from 'obsidian';
 import { MarkdownRenderer, setIcon, type Component } from 'obsidian';
 import { t, onLocaleChange } from '../i18n/index';
-import type { UsageInfo, ContentBlock, SerializedMessage, ToolCallContent } from '../types';
+import type { UsageInfo, ContentBlock, SerializedMessage, ToolCallContent, ImageAttachment } from '../types';
 import { COPY_BUTTON_RESET_MS } from '../constants';
 import {
   renderLiveThinkingBlock,
@@ -55,10 +55,7 @@ export class ChatRenderer {
   // Layer 3: Tool output per-frame scheduling
   private toolRenderFrames = new Map<string, number>();
 
-  // Legacy fallback (pre-existing elements without ToolCallState)
-  private toolEls = new Map<string, HTMLDivElement>();
-
-  // Structured tool call states (new approach)
+  // Structured tool call states
   private toolCallStates = new Map<string, ToolCallState>();
 
   // Throttled thinking markdown render (RAF-based, ~16ms between frames)
@@ -85,7 +82,6 @@ export class ChatRenderer {
     this.cancelAllToolRenders();
 
     this.container.empty();
-    this.toolEls.clear();
     this.toolCallStates.clear();
     this.currentAssistantEl = null;
     this.currentAssistantWrap = null;
@@ -119,11 +115,20 @@ export class ChatRenderer {
     this.scrollToBottom();
   }
 
-  addUserMessage(text: string, timestamp?: number): void {
+  addUserMessage(text: string, timestamp?: number, images?: ImageAttachment[]): void {
     const wrap = this.container.createDiv({ cls: 'co-ober-msg user' });
     wrap.dataset.timestamp = this.formatTimestamp(timestamp ?? Date.now());
     const body = wrap.createDiv({ cls: 'co-ober-msg-body' });
     body.textContent = text;
+    if (images && images.length > 0) {
+      const gallery = wrap.createDiv({ cls: 'co-ober-user-images' });
+      for (const img of images) {
+        gallery.createEl('img', {
+          cls: 'co-ober-user-image',
+          attr: { src: `data:${img.mimeType};base64,${img.data}`, alt: img.mimeType },
+        });
+      }
+    }
     this.userTurnCount++;
     if (this.rewindHandlers) this.addUserTurnActions(wrap, body, this.userTurnCount);
     this.scrollToBottom();
@@ -528,96 +533,14 @@ export class ChatRenderer {
   ): void {
     // Use stored ToolCallState from createToolCallElement (with frame scheduling)
     const toolState = this.toolCallStates.get(id);
-    if (toolState) {
-      this.scheduleToolRender(id, () => {
-        updateToolCallElement(
-          toolState, status, kind ?? toolState.kindEl.textContent?.toLowerCase() ?? '',
-          rawOutput, content, rawInput, locations,
-        );
-        this.scrollToBottom();
-      });
-      return;
-    }
-
-    // Fallback: legacy DOM-based approach for pre-existing elements
-    const box = this.toolEls.get(id);
-    if (!box) return;
-    const hdr = box.querySelector('.co-ober-tool-call-header') as HTMLElement;
-    const statEl = hdr.querySelector('.tc-stat') as HTMLElement;
-
-    if (rawInput) {
-      const fileEl = hdr.querySelector('.tc-file') as HTMLElement;
-      if (fileEl) {
-        const rawPath = (locations?.[0]?.path ?? rawInput.file_path ?? rawInput.filePath ?? rawInput.path) as string | undefined;
-        if (rawPath) {
-          fileEl.textContent = rawPath.split(/[\\/]/).pop() ?? rawPath;
-        }
-      }
-    }
-
-    const body = box.querySelector('.co-ober-tool-call-body') as HTMLElement;
-
-    if (status === 'completed' && content) {
-      body.empty();
-      let added = 0, removed = 0;
-      for (const item of content) {
-        if (item.type === 'diff' && item.path && item.oldText !== undefined && item.newText !== undefined) {
-          const oldLines = item.oldText.split('\n');
-          const newLines = item.newText.split('\n');
-          for (let i = 0; i < Math.max(oldLines.length, newLines.length); i++) {
-            if (oldLines[i] === undefined) added++;
-            else if (newLines[i] === undefined) removed++;
-            else if (oldLines[i] !== newLines[i]) { added++; removed++; }
-          }
-          this.renderLegacyDiff(body, item.oldText, item.newText);
-        } else if (item.type === 'content' && item.content.type === 'text') {
-          body.createDiv({ text: item.content.text });
-        }
-      }
-      const statParts: string[] = [];
-      if (added) statParts.push(`+${added}`);
-      if (removed) statParts.push(`-${removed}`);
-      statEl.textContent = statParts.join(' ') || '✓';
-      statEl.className = 'tc-stat tc-stat-done';
-    } else if (status === 'in_progress') {
-      statEl.textContent = '…';
-    } else if (status === 'failed') {
-      statEl.textContent = '✗';
-      statEl.className = 'tc-stat tc-stat-fail';
-    }
-    this.scrollToBottom();
-  }
-
-  /**
-   * Legacy inline diff — used only when ToolCallState is unavailable
-   * (e.g., tool calls created before the new rendering was adopted).
-   */
-  private renderLegacyDiff(body: HTMLElement, oldText: string, newText: string): void {
-    const oldLines = oldText.split('\n');
-    const newLines = newText.split('\n');
-    const maxLen = Math.max(oldLines.length, newLines.length);
-    for (let i = 0; i < maxLen; i++) {
-      if (oldLines[i] === undefined) {
-        const line = body.createDiv({ cls: 'diff-line added' });
-        line.createSpan({ cls: 'diff-marker', text: '+' });
-        line.createSpan({ text: newLines[i] });
-      } else if (newLines[i] === undefined) {
-        const line = body.createDiv({ cls: 'diff-line removed' });
-        line.createSpan({ cls: 'diff-marker', text: '-' });
-        line.createSpan({ text: oldLines[i] });
-      } else if (oldLines[i] !== newLines[i]) {
-        const rmLine = body.createDiv({ cls: 'diff-line removed' });
-        rmLine.createSpan({ cls: 'diff-marker', text: '-' });
-        rmLine.createSpan({ text: oldLines[i] });
-        const addLine = body.createDiv({ cls: 'diff-line added' });
-        addLine.createSpan({ cls: 'diff-marker', text: '+' });
-        addLine.createSpan({ text: newLines[i] });
-      } else {
-        const line = body.createDiv({ cls: 'diff-line context' });
-        line.createSpan({ cls: 'diff-marker', text: ' ' });
-        line.createSpan({ text: oldLines[i] });
-      }
-    }
+    if (!toolState) return;
+    this.scheduleToolRender(id, () => {
+      updateToolCallElement(
+        toolState, status, kind ?? toolState.kindEl.textContent?.toLowerCase() ?? '',
+        rawOutput, content, rawInput, locations,
+      );
+      this.scrollToBottom();
+    });
   }
 
   /**
@@ -721,20 +644,12 @@ export class ChatRenderer {
   // ============================================================
 
   /**
-   * Render a full structured message using contentBlocks.
-   * Falls back to legacy rendering when contentBlocks is absent.
+   * Render a full structured message from its contentBlocks.
+   * Used when restoring a session so tool calls and block order survive.
    */
   renderStructuredMessage(msg: SerializedMessage, parentEl?: HTMLElement): HTMLElement {
     const wrap = parentEl ?? this.container.createDiv({ cls: 'co-ober-msg assistant' });
-
-    // If no contentBlocks, use legacy rendering
-    if (!msg.contentBlocks || msg.contentBlocks.length === 0) {
-      if (msg.content) {
-        const body = wrap.createDiv({ cls: 'co-ober-msg-body' });
-        this.renderInline(body, msg.content);
-      }
-      return wrap;
-    }
+    if (!msg.contentBlocks || msg.contentBlocks.length === 0) return wrap;
 
     // Duration + interrupt footer
     if (msg.durationSeconds || msg.isInterrupt) {
@@ -776,8 +691,7 @@ export class ChatRenderer {
       }
 
       case 'tool_use': {
-        // tool_use blocks reference existing tool calls already rendered.
-        // Check structured tool call states first, then fall back to DOM lookup.
+        // tool_use blocks reference existing tool calls already rendered live.
         if (block.toolCallId) {
           const toolState = this.toolCallStates.get(block.toolCallId);
           if (toolState) {
@@ -787,23 +701,18 @@ export class ChatRenderer {
             }
             break;
           }
-          const existing = this.toolEls.get(block.toolCallId);
-          if (existing) {
-            if (existing.parentElement !== parentEl) {
-              parentEl.appendChild(existing);
-            }
-            break;
+          // Restored history: re-render a static element from the block's
+          // persisted title/kind/status snapshot.
+          const holder = parentEl.createDiv();
+          const state = createToolCallElement(
+            holder,
+            block.toolCallId,
+            block.toolKind ?? '',
+            block.toolTitle ?? block.toolCallId,
+          );
+          if (block.toolStatus) {
+            updateToolCallElement(state, block.toolStatus, block.toolKind ?? '');
           }
-        }
-        // Fallback: render a minimal placeholder with truncated ID
-        if (block.toolCallId) {
-          const placeholder = parentEl.createDiv({ cls: 'co-ober-tool-call' });
-          placeholder.dataset.toolId = block.toolCallId;
-          const hdr = placeholder.createDiv({ cls: 'co-ober-tool-call-header' });
-          const shortId = block.toolCallId.length > 10
-            ? block.toolCallId.slice(0, 10) + '…'
-            : block.toolCallId;
-          hdr.createSpan({ text: `Tool: ${shortId}`, cls: 'tc-kind' });
         }
         break;
       }

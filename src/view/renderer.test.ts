@@ -10,6 +10,7 @@ installObsidianDomHelpers();
 vi.mock('obsidian', () => ({
   MarkdownRenderer: {
     renderMarkdown: vi.fn().mockResolvedValue(undefined),
+    render: vi.fn().mockResolvedValue(undefined),
   },
   setIcon: vi.fn(),
 }));
@@ -24,7 +25,7 @@ describe('ChatRenderer', () => {
     setLocale('en');
     container = document.createElement('div');
     document.body.appendChild(container);
-    app = { vault: { getFiles: vi.fn().mockReturnValue([]) } };
+    app = { vault: { getFiles: vi.fn().mockReturnValue([]), getRoot: () => ({ path: '' }) } };
     shouldAutoScroll = () => true;
     renderer = new ChatRenderer(container, app, shouldAutoScroll);
   });
@@ -49,6 +50,60 @@ describe('ChatRenderer', () => {
       renderer.addUserMessage('Hello', 1234567890000);
       const msg = container.querySelector('.co-ober-msg.user') as HTMLElement;
       expect(msg?.dataset.timestamp).toBeDefined();
+    });
+
+    it('renders an image gallery with data URIs', () => {
+      renderer.addUserMessage('Look', undefined, [
+        { mimeType: 'image/png', data: 'AAA=' },
+        { mimeType: 'image/jpeg', data: 'BBB=' },
+      ]);
+      const gallery = container.querySelector('.co-ober-user-images');
+      expect(gallery).not.toBeNull();
+      const imgs = container.querySelectorAll('.co-ober-user-image');
+      expect(imgs.length).toBe(2);
+      expect(imgs[0].getAttribute('src')).toBe('data:image/png;base64,AAA=');
+      expect(imgs[1].getAttribute('src')).toBe('data:image/jpeg;base64,BBB=');
+    });
+
+    it('renders no gallery when there are no images', () => {
+      renderer.addUserMessage('plain');
+      expect(container.querySelector('.co-ober-user-images')).toBeNull();
+    });
+  });
+
+  describe('renderStructuredMessage', () => {
+    it('renders nothing without content blocks (legacy content is not re-rendered)', () => {
+      const wrap = renderer.renderStructuredMessage({
+        role: 'assistant', content: 'legacy text', type: 'text', timestamp: 1,
+      });
+      expect(wrap.childElementCount).toBe(0);
+    });
+
+    it('statically re-renders a persisted tool_use block with title and status', () => {
+      const wrap = document.createElement('div');
+      renderer.renderStructuredMessage({
+        role: 'assistant', content: '', type: 'text', timestamp: 1,
+        contentBlocks: [
+          { type: 'tool_use', toolCallId: 'call-9', toolTitle: 'Search notes', toolKind: 'search', toolStatus: 'completed' },
+        ],
+      }, wrap);
+      const tool = wrap.querySelector('.co-ober-tool-call') as HTMLElement | null;
+      expect(tool).not.toBeNull();
+      expect(tool?.dataset.toolId).toBe('call-9');
+      expect(wrap.querySelector('.tc-kind')?.textContent).toBe('Search');
+      expect(wrap.querySelector('.co-ober-tool-call-header')?.getAttribute('aria-label')).toContain('Search notes');
+      expect(wrap.querySelector('.tc-stat')?.classList.contains('tc-stat-done')).toBe(true);
+    });
+
+    it('renders text blocks in order', () => {
+      const wrap = document.createElement('div');
+      renderer.renderStructuredMessage({
+        role: 'assistant', content: 'answer', type: 'text', timestamp: 1,
+        contentBlocks: [
+          { type: 'text', text: 'answer' },
+        ],
+      }, wrap);
+      expect(wrap.querySelector('.co-ober-text-block')).not.toBeNull();
     });
   });
 
