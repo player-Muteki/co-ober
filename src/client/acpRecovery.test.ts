@@ -156,6 +156,28 @@ describe('AcpClient generation fencing', () => {
     expect(client.getSessionInfo()?.title).toBe('live');
   });
 
+  it('forwards replay updates to loadSession while no prompt stream is active', async () => {
+    const client = new AcpClient('opencode', '/vault');
+    const connecting = client.connect();
+    await tick();
+    FakeTransport.instances[0].deferred.resolve({});
+    await connecting;
+
+    const notify = FakeTransport.instances[0].notifications.get('session/update')!;
+    const onReplay = vi.fn();
+    const loading = client.loadSession('ses_native', '/vault', [], onReplay);
+
+    notify({ update: { sessionUpdate: 'agent_message_chunk', messageId: 'm1', content: { type: 'text', text: 'from history' } } });
+    expect(onReplay).toHaveBeenCalledWith({
+      kind: 'message_chunk', role: 'agent', messageId: 'm1',
+      chunkText: 'from history', accumulatedText: 'from history',
+    });
+
+    await loading;
+    notify({ update: { sessionUpdate: 'agent_message_chunk', messageId: 'm2', content: { type: 'text', text: 'after load' } } });
+    expect(onReplay).toHaveBeenCalledTimes(1);
+  });
+
   it('scheduleReconnect skips when a newer generation took over', async () => {
     vi.useFakeTimers();
     const client = new AcpClient('opencode', '/vault');

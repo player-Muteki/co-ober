@@ -2,7 +2,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { CoOberViewController } from './CoOberViewController';
 import type { ControllerCallbacks, ControllerDeps } from './CoOberViewController';
-import type { AcpResponse, ContextRef, NormalizedUpdate, PromptPart } from '../types';
+import type { AcpResponse, ContextRef, NormalizedUpdate, PromptPart, SerializedMessage } from '../types';
 import { setLocale, t } from '../i18n/index';
 import { AcpSessionMissingError } from '../client/AcpErrors';
 
@@ -193,7 +193,7 @@ describe('CoOberViewController', () => {
 
 			await controller.syncRuntimeSession('test-session');
 
-			expect(client.loadSession).toHaveBeenCalledWith('test-session', '/vault', []);
+			expect(client.loadSession).toHaveBeenCalledWith('test-session', '/vault', [], undefined);
 		});
 
 		it('skips load when session already current', async () => {
@@ -528,9 +528,89 @@ describe('CoOberViewController', () => {
 
 			await controller.resumeSession('paused-session');
 
-			expect(client.resumeSession).toHaveBeenCalledWith('paused-session', '/vault');
+			expect(client.resumeSession).toHaveBeenCalledWith('paused-session', '/vault', expect.any(Function));
 			expect(controller.getSessionId()).toBe('paused-session');
 			expect(deps.sessionStore.setActive).toHaveBeenCalledWith('paused-session');
+		});
+	});
+
+	describe('native session replay adoption', () => {
+		function replayingClient() {
+			return createMockClient({
+				loadSession: vi.fn(async (_id: string, _cwd: string, _mcp: unknown, onReplay?: (u: NormalizedUpdate) => void) => {
+					onReplay?.({ kind: 'message_chunk', role: 'user', messageId: 'u1', chunkText: 'question', accumulatedText: 'question' });
+					onReplay?.({ kind: 'message_chunk', role: 'thought', messageId: 'a0', chunkText: 'pondering', accumulatedText: 'pondering' });
+					onReplay?.({ kind: 'message_chunk', role: 'agent', messageId: 'a1', chunkText: 'hi', accumulatedText: 'hi' });
+				}),
+			});
+		}
+
+		function sharedStore(messages: SerializedMessage[] = []) {
+			const shared = {
+				sessionId: 'ses_native', title: 'native', opencodeSessionId: 'ses_native',
+				messages, createdAt: 0, updatedAt: 0,
+			};
+			return {
+				shared,
+				override: {
+					get: vi.fn(() => shared),
+					getOrCreate: vi.fn(() => shared),
+					setActive: vi.fn(),
+					save: vi.fn(),
+					remove: vi.fn(),
+					list: vi.fn(() => []),
+					append: vi.fn(),
+				},
+			};
+		}
+
+		it('stores and renders the replayed transcript when the local mirror is empty', async () => {
+			const client = replayingClient();
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			const { shared, override } = sharedStore();
+			deps.sessionStore = { ...deps.sessionStore, ...override } as ControllerDeps['sessionStore'];
+			controller = new CoOberViewController(deps, callbacks);
+
+			await controller.switchSession('ses_native', 'opencode');
+
+			expect(shared.messages).toHaveLength(3);
+			expect(shared.messages[0]).toMatchObject({ role: 'user', type: 'text', content: 'question' });
+			expect(shared.messages[1]).toMatchObject({ role: 'assistant', type: 'thinking', content: 'pondering' });
+			expect(shared.messages[2]).toMatchObject({ role: 'assistant', type: 'text', content: 'hi' });
+			expect(override.save).toHaveBeenCalled();
+			expect(deps.renderer.addUserMessage).toHaveBeenCalledWith('question', expect.anything());
+			expect(deps.renderer.appendThinking).toHaveBeenCalledWith('pondering', expect.anything(), expect.anything());
+			expect(deps.renderer.appendText).toHaveBeenCalledWith('hi', expect.anything(), expect.anything());
+		});
+
+		it('keeps the existing local mirror when it already has messages', async () => {
+			const client = replayingClient();
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			const existing: SerializedMessage[] = [{ role: 'user', type: 'text', content: 'local only', timestamp: 1 }];
+			const { shared, override } = sharedStore(existing.slice());
+			deps.sessionStore = { ...deps.sessionStore, ...override } as ControllerDeps['sessionStore'];
+			controller = new CoOberViewController(deps, callbacks);
+
+			await controller.switchSession('ses_native', 'opencode');
+
+			expect(shared.messages).toEqual(existing);
+		});
+
+		it('resumeSession also adopts the replayed transcript', async () => {
+			const client = createMockClient({
+				resumeSession: vi.fn(async (_id: string, _cwd: string, onReplay?: (u: NormalizedUpdate) => void) => {
+					onReplay?.({ kind: 'message_chunk', role: 'agent', messageId: 'a1', chunkText: 'resumed text', accumulatedText: 'resumed text' });
+				}),
+			});
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			const { shared, override } = sharedStore();
+			deps.sessionStore = { ...deps.sessionStore, ...override } as ControllerDeps['sessionStore'];
+			controller = new CoOberViewController(deps, callbacks);
+
+			await controller.resumeSession('ses_native');
+
+			expect(shared.messages).toHaveLength(1);
+			expect(shared.messages[0]).toMatchObject({ role: 'assistant', content: 'resumed text' });
 		});
 	});
 

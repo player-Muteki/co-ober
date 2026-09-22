@@ -62,7 +62,13 @@ describe('AgentRuntime', () => {
 
     it('loadSession delegates to acp', async () => {
       await runtime.loadSession('session-1', '/path');
-      expect(mockAcp.loadSession).toHaveBeenCalledWith('session-1', '/path', undefined);
+      expect(mockAcp.loadSession).toHaveBeenCalledWith('session-1', '/path', undefined, undefined);
+    });
+
+    it('loadSession forwards the replay handler', async () => {
+      const onReplay = vi.fn();
+      await runtime.loadSession('session-1', '/path', undefined, onReplay);
+      expect(mockAcp.loadSession).toHaveBeenCalledWith('session-1', '/path', undefined, onReplay);
     });
 
     it('listSessions delegates to acp', async () => {
@@ -83,7 +89,7 @@ describe('AgentRuntime', () => {
 
     it('resumeSession delegates to acp', async () => {
       await runtime.resumeSession('session-1', '/path');
-      expect(mockAcp.resumeSession).toHaveBeenCalledWith('session-1', '/path');
+      expect(mockAcp.resumeSession).toHaveBeenCalledWith('session-1', '/path', undefined);
     });
 
     it('setMode delegates to acp', async () => {

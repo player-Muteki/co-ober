@@ -120,7 +120,7 @@ describe('CoOberView runtime session sync', () => {
     const controller = createController(plugin);
     await controller.syncRuntimeSession('restored-session');
 
-    expect(client.loadSession).toHaveBeenCalledWith('restored-session', '/vault', mcpServers);
+    expect(client.loadSession).toHaveBeenCalledWith('restored-session', '/vault', mcpServers, undefined);
   });
 });
 

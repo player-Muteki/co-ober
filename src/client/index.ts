@@ -30,11 +30,11 @@ export interface OpencodeClient {
   getAgentCapabilities(): AgentCapabilities | null;
 
   createSession(cwd?: string, mcpServers?: McpServerConfig[]): Promise<SessionId>;
-  loadSession(sessionId: SessionId, cwd?: string, mcpServers?: McpServerConfig[]): Promise<void>;
+  loadSession(sessionId: SessionId, cwd?: string, mcpServers?: McpServerConfig[], onReplayUpdate?: (chunk: NormalizedUpdate) => void): Promise<void>;
   listSessions(cwd?: string): Promise<SessionMeta[]>;
   closeSession(sessionId: SessionId): Promise<void>;
   forkSession(sessionId: SessionId, cwd?: string): Promise<SessionId>;
-  resumeSession(sessionId: SessionId, cwd?: string): Promise<void>;
+  resumeSession(sessionId: SessionId, cwd?: string, onReplayUpdate?: (chunk: NormalizedUpdate) => void): Promise<void>;
 
   setMode(sessionId: SessionId, modeId: string): Promise<void>;
   setModel(sessionId: SessionId, modelId: string): Promise<void>;

@@ -28,11 +28,11 @@ export class AgentRuntime implements OpencodeClient {
   connect(): Promise<void> { return this.acp.connect(); }
   disconnect(): Promise<void> { return this.acp.disconnect(); }
   createSession(cwd?: string, mcpServers?: McpServerConfig[]): Promise<string> { return this.acp.createSession(cwd, mcpServers); }
-  loadSession(id: string, cwd?: string, mcpServers?: McpServerConfig[]): Promise<void> { return this.acp.loadSession(id, cwd, mcpServers); }
+  loadSession(id: string, cwd?: string, mcpServers?: McpServerConfig[], onReplayUpdate?: (u: NormalizedUpdate) => void): Promise<void> { return this.acp.loadSession(id, cwd, mcpServers, onReplayUpdate); }
   listSessions(cwd?: string): Promise<SessionMeta[]> { return this.acp.listSessions(cwd); }
   closeSession(id: string): Promise<void> { return this.acp.closeSession(id); }
   forkSession(id: string, cwd?: string): Promise<string> { return this.acp.forkSession(id, cwd); }
-  resumeSession(id: string, cwd?: string): Promise<void> { return this.acp.resumeSession(id, cwd); }
+  resumeSession(id: string, cwd?: string, onReplayUpdate?: (u: NormalizedUpdate) => void): Promise<void> { return this.acp.resumeSession(id, cwd, onReplayUpdate); }
   setMode(id: string, mode: string): Promise<void> { return this.acp.setMode(id, mode); }
   setModel(id: string, model: string): Promise<void> { return this.acp.setModel(id, model); }
 

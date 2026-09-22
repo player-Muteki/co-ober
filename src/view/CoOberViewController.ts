@@ -1,6 +1,7 @@
-import type { NormalizedUpdate, ContextRef, PromptPart, SessionConfigOption, ModeOption, ModelOption, AcpResponse } from '../types';
+import type { NormalizedUpdate, ContextRef, PromptPart, SessionConfigOption, ModeOption, ModelOption, AcpResponse, SerializedMessage } from '../types';
 import type { CoOberSettings } from '../types';
 import type { OpencodeClient } from '../client';
+import { SessionReplayCollector } from '../client/sessionReplay';
 import { t } from '../i18n/index';
 import type { ChatRenderer } from './renderer';
 import type { ChatInput } from '../chat/input';
@@ -380,14 +381,24 @@ export class CoOberViewController {
 
 	// ── Session lifecycle ──
 
-	async syncRuntimeSession(sessionId: string | null): Promise<void> {
+	async syncRuntimeSession(sessionId: string | null, onReplayUpdate?: (u: NormalizedUpdate) => void): Promise<void> {
 		if (!sessionId) return;
 		return this.sessionMutex.runExclusive(async () => {
 			const client = this.deps.runtime.getClient();
 			if (!client) return;
 			if (client.getCurrentSessionId() === sessionId) return;
-			await client.loadSession(sessionId, this.getVaultCwd(), this.deps.runtime.settings.mcpServers);
+			await client.loadSession(sessionId, this.getVaultCwd(), this.deps.runtime.settings.mcpServers, onReplayUpdate);
 		});
+	}
+
+	/** Persist the agent-replayed transcript when we have no local mirror yet (e.g. native OpenCode sessions). */
+	private async adoptReplay(sessionId: string, replayed: SerializedMessage[]): Promise<void> {
+		if (replayed.length === 0) return;
+		const session = this.deps.sessionStore.getOrCreate(sessionId);
+		if (session.messages.length > 0) return;
+		session.messages.push(...replayed);
+		session.updatedAt = Date.now();
+		await this.deps.sessionStore.save();
 	}
 
 	/** Inform the user when the agent dropped a session (e.g. after an agent restart). */
@@ -507,7 +518,9 @@ export class CoOberViewController {
 		this.callbacks.onClearUI();
 		this.resetConversationView();
 		try {
-			await this.syncRuntimeSession(sessionId);
+			const collector = new SessionReplayCollector();
+			await this.syncRuntimeSession(sessionId, (u) => collector.handle(u));
+			await this.adoptReplay(sessionId, collector.finish());
 			if (source === 'opencode') {
 				this.deps.renderer.addSystemMessage(t().session.loadedNative);
 			}
@@ -548,10 +561,12 @@ export class CoOberViewController {
 	async resumeSession(sessionId: string): Promise<void> {
 		const client = this.deps.runtime.getClient();
 		if (!client) return;
-		await client.resumeSession(sessionId, this.getVaultCwd());
+		const collector = new SessionReplayCollector();
+		await client.resumeSession(sessionId, this.getVaultCwd(), (u) => collector.handle(u));
 		this.state.sessionId = sessionId;
 		this.deps.sessionStore.getOrCreate(sessionId);
 		this.deps.sessionStore.setActive(sessionId);
+		await this.adoptReplay(sessionId, collector.finish());
 		await this.deps.sessionStore.save();
 	}
 

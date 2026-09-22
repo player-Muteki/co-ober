@@ -232,6 +232,7 @@ export class AcpClient implements OpencodeClient {
 	private activeStreamSessionId: string | null = null;
 	private activeAbortController: AbortController | null = null;
 	private chunkHandler: ((update: NormalizedUpdate) => void) | null = null;
+	private replayHandler: ((update: NormalizedUpdate) => void) | null = null;
 	private normalizer = new SessionUpdateNormalizer();
 	private sessionId_: string | null = null;
 	private cmdPath: string;
@@ -331,6 +332,9 @@ export class AcpClient implements OpencodeClient {
 					if (this.chunkHandler) {
 						const norm = this.normalizer.normalize(update);
 						if (norm) this.chunkHandler(norm);
+					} else if (this.replayHandler) {
+						const norm = this.normalizer.normalize(update);
+						if (norm) this.replayHandler(norm);
 					}
 				}
 			});
@@ -382,7 +386,9 @@ export class AcpClient implements OpencodeClient {
     return this.sessionId_;
   }
 
-  async loadSession(id: string, cwd?: string, mcpServers: McpServerConfig[] = []): Promise<void> {
+  async loadSession(id: string, cwd?: string, mcpServers: McpServerConfig[] = [], onReplayUpdate?: (u: NormalizedUpdate) => void): Promise<void> {
+    this.normalizer.reset();
+    this.replayHandler = onReplayUpdate ?? null;
     try {
       const r = await this.requestWithFallback('loadSession', { sessionId: id, cwd: this.resolveCwd(cwd), mcpServers: buildMcpServers(mcpServers) });
       this.applySessionSnapshot(r as Record<string, unknown>);
@@ -390,6 +396,8 @@ export class AcpClient implements OpencodeClient {
     } catch (e) {
       if (isSessionMissingError(e)) throw new AcpSessionMissingError(id, e);
       throw e;
+    } finally {
+      this.replayHandler = null;
     }
   }
 
@@ -406,7 +414,9 @@ export class AcpClient implements OpencodeClient {
     return parsed.data.sessionId;
   }
 
-  async resumeSession(id: string, cwd?: string): Promise<void> {
+  async resumeSession(id: string, cwd?: string, onReplayUpdate?: (u: NormalizedUpdate) => void): Promise<void> {
+    this.normalizer.reset();
+    this.replayHandler = onReplayUpdate ?? null;
     try {
       const r = await this.requestWithFallback('resumeSession', { sessionId: id, cwd: this.resolveCwd(cwd) });
       this.applySessionSnapshot(r as Record<string, unknown>);
@@ -414,6 +424,8 @@ export class AcpClient implements OpencodeClient {
     } catch (e) {
       if (isSessionMissingError(e)) throw new AcpSessionMissingError(id, e);
       throw e;
+    } finally {
+      this.replayHandler = null;
     }
   }
 
