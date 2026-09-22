@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { setTimeout as nodeSetTimeout, clearTimeout as nodeClearTimeout } from 'timers';
+import { AcpProcessExitError } from './AcpErrors';
 const SIGKILL_TIMEOUT_MS = 3_000;
 const STDERR_BUFFER_LIMIT = 8_000;
 export interface AcpSubprocessLaunchSpec {
@@ -36,8 +37,7 @@ export class AcpSubprocess {
     });
     proc.on('error', (error) => this.notifyClose(error));
     proc.on('exit', (code, signal) => {
-      const exitError =
-        code === 0 && signal === null ? undefined : new Error(`ACP process exited (code=${code}, signal=${signal})`);
+      const exitError = code === 0 && signal === null ? undefined : new AcpProcessExitError(code, signal);
       this.notifyClose(exitError);
     });
     this.proc = proc;

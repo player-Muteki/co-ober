@@ -250,13 +250,16 @@ export function updateToolCallElement(
   // Handle write/edit tools through dedicated renderer
   if ((kind === 'write' || kind === 'edit') && content) {
     for (const item of content) {
-      if (item.type === 'diff' && item.path && item.oldText !== undefined && item.newText !== undefined) {
+      // File creations carry only newText; treat a missing side as empty.
+      if (item.type === 'diff' && item.path && (item.oldText !== undefined || item.newText !== undefined)) {
+        const oldText = item.oldText ?? '';
+        const newText = item.newText ?? '';
         if (state.writeEditState) {
-          updateWriteEditContent(state.writeEditState, item.path, item.oldText, item.newText);
+          updateWriteEditContent(state.writeEditState, item.path, oldText, newText);
         } else {
           // Fallback: inline diff via DiffRenderer
           body.empty();
-          const diffLines = parseDiffLines(item.oldText, item.newText);
+          const diffLines = parseDiffLines(oldText, newText);
           renderDiffContent(body, diffLines);
         }
       }

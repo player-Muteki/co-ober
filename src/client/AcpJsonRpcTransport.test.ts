@@ -247,6 +247,26 @@ describe('AcpJsonRpcTransport', () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
+  it('logs a warning for non-JSON lines and caps it at 5', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    transport.start();
+    const handler = vi.fn();
+    transport.onNotification('test', handler);
+
+    for (let i = 0; i < 7; i++) {
+      input.write(`garbage line ${i}\n`);
+    }
+    input.write(JSON.stringify({ jsonrpc: '2.0', method: 'test' }) + '\n');
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(warnSpy).toHaveBeenCalledTimes(5);
+    expect(warnSpy).toHaveBeenCalledWith('[co-ober] non-JSON stdout line dropped:', 'garbage line 0');
+    // Valid lines keep dispatching normally after malformed ones
+    expect(handler).toHaveBeenCalledTimes(1);
+    warnSpy.mockRestore();
+  });
+
   it('handleLine() dispatches to correct handlers', async () => {
     transport.start();
 

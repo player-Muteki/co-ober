@@ -225,12 +225,29 @@ export class StreamController {
   }
 
   reset(): void {
+    this.finalizeBufferedToolCalls();
     this.syncedToolCalls.clear();
     this.assistantMessageIndex.clear();
     this.pendingToolBuffer = [];
     this.currentContentBlocks = [];
     this.toolBlocks.clear();
     this.deps.state.resetStreamingState();
+  }
+
+  /**
+   * Render any buffered pending/in_progress tool calls and put them in a
+   * terminal state, so a turn that ends (or dies) mid-tool never loses the
+   * call or leaves a permanent spinner.
+   */
+  finalizeBufferedToolCalls(): void {
+    if (this.pendingToolBuffer.length === 0) return;
+    const ids = this.pendingToolBuffer.map((tc) => tc.toolCallId);
+    this.flushToolBuffer();
+    for (const id of ids) {
+      this.deps.renderer.updateToolCall(id, 'failed');
+      const block = this.toolBlocks.get(id);
+      if (block) block.toolStatus = 'failed';
+    }
   }
 
   /**

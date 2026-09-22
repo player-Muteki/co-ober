@@ -59,6 +59,7 @@ export class CoOberView extends ItemView {
   private keybindingMgr!: KeybindingManager;
   private dragDropManager!: DragDropManager;
   private permissionBanner!: PermissionBanner;
+  private fileCommandSource: FileCommandStorage | null = null;
   private inlineEditPanel!: InlineEditPanel;
   private pendingImageParts: PromptPart[] = [];
   private lastAutoRefId: string | null = null;
@@ -108,8 +109,10 @@ export class CoOberView extends ItemView {
     this.sessionStore = this.plugin.sessionStore;
 
     // Register file-based commands from .opencode/commands/*.md
-    const fileStorage = new FileCommandStorage(this.plugin.app.vault);
-    commandRegistry.registerSource(fileStorage);
+    // (unregistered in onClose: the registry is a singleton, re-registering
+    // on every reopen would stack duplicate vault watchers.)
+    this.fileCommandSource = new FileCommandStorage(this.plugin.app.vault);
+    commandRegistry.registerSource(this.fileCommandSource);
 
     // Restore active session
     const savedId = this.sessionStore.activeId;
@@ -426,6 +429,10 @@ export class CoOberView extends ItemView {
   }
 
   override async onClose(): Promise<void> {
+    if (this.fileCommandSource) {
+      commandRegistry.unregisterSource(this.fileCommandSource);
+      this.fileCommandSource = null;
+    }
     await this.controller?.stopGeneration();
     await this.controller?.dispose();
     this.input?.dispose();

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { AcpSubprocess, type AcpSubprocessLaunchSpec } from './AcpSubprocess';
+import { AcpProcessExitError } from './AcpErrors';
 import * as child_process from 'child_process';
 
 vi.mock('child_process', () => {
@@ -119,8 +120,21 @@ describe('AcpSubprocess', () => {
     mockProc.emit('exit', 1, null);
     expect(closeListener).toHaveBeenCalledTimes(1);
     const errorArg = closeListener.mock.calls[0][0];
-    expect(errorArg).toBeInstanceOf(Error);
+    expect(errorArg).toBeInstanceOf(AcpProcessExitError);
     expect(errorArg.message).toBe('ACP process exited (code=1, signal=null)');
+  });
+
+  it('onClose() listener receives AcpProcessExitError with signal on signal kill', () => {
+    const subprocess = new AcpSubprocess(launchSpec);
+    const closeListener = vi.fn();
+
+    subprocess.onClose(closeListener);
+    subprocess.start();
+
+    mockProc.emit('exit', null, 'SIGKILL');
+    const errorArg = closeListener.mock.calls[0][0];
+    expect(errorArg).toBeInstanceOf(AcpProcessExitError);
+    expect(errorArg.message).toBe('ACP process exited (code=null, signal=SIGKILL)');
   });
 
   it('onClose() can be unsubscribed', () => {

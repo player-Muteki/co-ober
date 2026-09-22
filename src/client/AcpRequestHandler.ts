@@ -4,6 +4,7 @@ import { FsDelegate } from './fsDelegate';
 import { TerminalManager, TerminalError } from './terminalManager';
 import { z } from 'zod';
 import { REQUEST_DEFAULT_TIMEOUT_MS, REQUEST_DEFAULT_MAX_OUTPUT_BYTES } from '../constants';
+import { ACP_SERVER_REQUEST_ALIASES } from './AcpMethodNames';
 
 const zPermissionParams = z
   .object({
@@ -74,33 +75,45 @@ export class AcpRequestHandler {
   }
 
   private registerHandlers(): void {
-    this.transport.onRequest('request_permission', (params) => {
+    // Register every wire-name alias: dispatch in AcpJsonRpcTransport is
+    // exact-match, and agents may send either the spec name
+    // (session/request_permission) or the legacy bare name.
+    this.registerServerRequest('requestPermission', (params) => {
       return this.handleServerRequestPermission(this.toRecord(params));
     });
 
-    this.transport.onRequest('fs/read_text_file', (params) => {
+    this.registerServerRequest('readTextFile', (params) => {
       return this.handleReadTextFile(this.toRecord(params));
     });
 
-    this.transport.onRequest('fs/write_text_file', (params) => {
+    this.registerServerRequest('writeTextFile', (params) => {
       return this.handleWriteTextFile(this.toRecord(params));
     });
 
-    this.transport.onRequest('terminal/create', (params) => {
+    this.registerServerRequest('createTerminal', (params) => {
       return this.handleTerminalCreate(this.toRecord(params));
     });
-    this.transport.onRequest('terminal/output', (params) => {
+    this.registerServerRequest('terminalOutput', (params) => {
       return this.handleTerminalOutput(this.toRecord(params));
     });
-    this.transport.onRequest('terminal/kill', (params) => {
+    this.registerServerRequest('killTerminal', (params) => {
       return this.handleTerminalKill(this.toRecord(params));
     });
-    this.transport.onRequest('terminal/release', (params) => {
+    this.registerServerRequest('releaseTerminal', (params) => {
       return this.handleTerminalRelease(this.toRecord(params));
     });
-    this.transport.onRequest('terminal/wait_for_exit', (params) => {
+    this.registerServerRequest('waitForTerminalExit', (params) => {
       return this.handleTerminalWaitForExit(this.toRecord(params));
     });
+  }
+
+  private registerServerRequest(
+    logical: keyof typeof ACP_SERVER_REQUEST_ALIASES,
+    handler: (params: unknown) => Promise<unknown>,
+  ): void {
+    for (const wireName of ACP_SERVER_REQUEST_ALIASES[logical]) {
+      this.transport.onRequest(wireName, handler);
+    }
   }
 
   private toRecord(params: unknown): Record<string, unknown> {
@@ -145,7 +158,7 @@ export class AcpRequestHandler {
   private handleServerRequestPermission = (params: Record<string, unknown>): Promise<unknown> => {
     const parsed = zPermissionParams.safeParse(params);
     if (!parsed.success) {
-      return Promise.resolve({ error: 'Invalid permission request params' });
+      return Promise.resolve({ outcome: { outcome: 'cancelled' } });
     }
     const req: PermissionRequest = {
       sessionId: parsed.data.sessionId,
@@ -156,16 +169,14 @@ export class AcpRequestHandler {
     const handler = this.onPermissionRequest ?? ((r: PermissionRequest) => this.requestPermission(r));
     return Promise.resolve(handler(req))
       .then((decision: string) => ({
-        sessionId: params.sessionId,
-        decision: { optionId: decision },
+        outcome: { outcome: 'selected', optionId: decision },
       }))
       .catch((error: unknown) => {
         // Only fall back to reject if the custom handler threw (e.g. programming error).
         // The default handler never throws.
         console.error('[co-ober] permission request handler failed, falling back to reject:', error);
         return this.requestPermission(req).then((decision: string) => ({
-          sessionId: params.sessionId,
-          decision: { optionId: decision },
+          outcome: { outcome: 'selected', optionId: decision },
         }));
       });
   };

@@ -135,12 +135,20 @@ export class AcpJsonRpcTransport {
     }
   }
 
+  private malformedLines = 0;
+
   private handleLine(line: string): void {
     if (!line.trim()) return;
     let parsed: Record<string, unknown>;
     try {
       parsed = JSON.parse(line) as Record<string, unknown>;
     } catch {
+      // A corrupted frame would silently hang the matching request until the
+      // timeout; surface the first few anomalies so the cause is visible.
+      this.malformedLines++;
+      if (this.malformedLines <= 5) {
+        console.warn('[co-ober] non-JSON stdout line dropped:', line.slice(0, 200));
+      }
       return;
     }
 

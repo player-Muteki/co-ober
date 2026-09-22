@@ -100,7 +100,7 @@ export type ToolKind = 'read' | 'edit' | 'delete' | 'move' | 'search' | 'execute
 export type ToolCallContent =
   | { type: 'content'; content: { type: 'text'; text: string } }
   | { type: 'content'; content: { type: 'image'; mimeType: string; data: string } }
-  | { type: 'diff'; path: string; oldText: string; newText: string }
+  | { type: 'diff'; path: string; oldText?: string; newText?: string }
   | { type: 'terminal'; terminalId: string };
 
 export type SessionUpdate =

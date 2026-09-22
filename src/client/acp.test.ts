@@ -410,9 +410,12 @@ describe('AcpClient session loading', () => {
 });
 
 describe('AcpRequestHandler permission handling', () => {
-  it('falls back to a reject decision when permission UI handler fails', async () => {
+  it('routes session/request_permission through transport dispatch and rejects when UI handler fails', async () => {
+    const registrations = new Map<string, (params: unknown) => Promise<unknown>>();
     const mockTransport = {
-      onRequest: vi.fn(),
+      onRequest: vi.fn((name: string, h: (params: unknown) => Promise<unknown>) => {
+        registrations.set(name, h);
+      }),
       request: vi.fn(),
       notify: vi.fn(),
       start: vi.fn(),
@@ -431,7 +434,13 @@ describe('AcpRequestHandler permission handling', () => {
       onPermissionRequest: uiHandler,
     });
 
-    const result = await Reflect.get(handler, 'handleServerRequestPermission').call(handler, {
+    // Dispatch in AcpJsonRpcTransport is exact-match: without a handler for
+    // the spec wire name every permission request would answer -32601 and
+    // the banner UI would be unreachable in production.
+    const dispatch = registrations.get('session/request_permission');
+    expect(dispatch).toBeTypeOf('function');
+
+    const result = await dispatch!({
       sessionId: 's1',
       toolCall: { kind: 'edit', title: 'Edit file' },
       options: [
@@ -441,8 +450,7 @@ describe('AcpRequestHandler permission handling', () => {
     });
 
     expect(result).toEqual({
-      sessionId: 's1',
-      decision: { optionId: 'reject' },
+      outcome: { outcome: 'selected', optionId: 'reject' },
     });
     consoleSpy.mockRestore();
     handler.dispose();

@@ -331,7 +331,7 @@ export class AcpClient implements OpencodeClient {
       });
       this.requestHandler = requestHandler;
 
-      transport.onNotification('session/update', (params) => {
+      const onSessionUpdate = (params: unknown): void => {
         // Drop updates from a transport that has since been replaced or disposed.
         if (this.transport !== transport) return;
         const p = params as Record<string, unknown> | undefined;
@@ -352,7 +352,10 @@ export class AcpClient implements OpencodeClient {
             if (norm) this.replayHandler(norm);
           }
         }
-      });
+      };
+      // Exact-match dispatch: accept both the spec and legacy wire names.
+      transport.onNotification('session/update', onSessionUpdate);
+      transport.onNotification('sessionUpdate', onSessionUpdate);
 
       const response = await this.requestWithFallback('initialize', {
         protocolVersion: 1,

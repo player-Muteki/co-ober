@@ -64,8 +64,24 @@ export class SessionUpdateNormalizer {
         return safeClone(snapshot);
       }
       case 'tool_call_update': {
-        const existing = this.toolCalls.get(raw.toolCallId);
-        if (!existing) return null;
+        let existing = this.toolCalls.get(raw.toolCallId);
+        if (!existing) {
+          // The originating tool_call was evicted by the trim (or never
+          // arrived); rebuilding from the update keeps the tool from being
+          // stuck in its last rendered state.
+          existing = {
+            kind: 'tool_call_snapshot',
+            toolCallId: raw.toolCallId,
+            title: raw.title ?? raw.toolCallId,
+            toolKind: raw.kind ?? 'other',
+            status: (raw.status as 'pending' | 'in_progress' | 'completed' | 'failed') ?? 'completed',
+            contents: raw.content ? [...raw.content] : [],
+          };
+          this.toolCalls.set(raw.toolCallId, existing);
+          this.trimMap(this.toolCalls, MAX_TOOL_CALLS);
+        } else if (raw.content) {
+          existing.contents = existing.contents.concat(raw.content);
+        }
 
         if (raw.status) existing.status = raw.status;
         if (raw.title) existing.title = raw.title;
@@ -73,9 +89,6 @@ export class SessionUpdateNormalizer {
         if (raw.rawInput) existing.rawInput = { ...existing.rawInput, ...raw.rawInput };
         if (raw.rawOutput) existing.rawOutput = { ...existing.rawOutput, ...raw.rawOutput };
         if (raw.locations) existing.locations = raw.locations;
-        if (raw.content) {
-          existing.contents = existing.contents.concat(raw.content);
-        }
 
         // Completed/failed tool calls are no longer needed for state tracking
         // but keep the latest snapshot for the current stream cycle.

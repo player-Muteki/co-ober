@@ -16,11 +16,14 @@ export class PermissionBanner {
 
   dispose(): void {
     this.unsubscribeLocale();
-    this.dismissInternal();
+    this.settlePending();
   }
 
   show(req: PermissionRequest): Promise<string> {
     return new Promise((resolve) => {
+      // A request that is overwritten without an answer would leave the
+      // agent blocked forever; settle the old one with a reject first.
+      this.settlePending();
       this.currentReq = { req, resolve };
       // Remove existing UI element but keep currentReq intact.
       if (this.el) {
@@ -112,7 +115,16 @@ export class PermissionBanner {
     this.currentReq = null;
   }
 
-  dismiss(): void {
+  /** Drop the banner UI and resolve the pending request with a reject, so the agent never blocks. */
+  private settlePending(): void {
+    const pending = this.currentReq;
     this.dismissInternal();
+    if (!pending) return;
+    const reject = pending.req.options.find((o) => o.kind === 'reject_once' || o.kind === 'reject_always');
+    pending.resolve(reject?.optionId ?? 'reject_once');
+  }
+
+  dismiss(): void {
+    this.settlePending();
   }
 }

@@ -499,6 +499,7 @@ export class CoOberViewController {
       this.callbacks.onAutoRefActiveFile();
     } catch (e) {
       console.error('[co-ober] newSession:', e);
+      this.deps.renderer.addError(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -554,6 +555,7 @@ export class CoOberViewController {
       return this.state.sessionId;
     } catch (e) {
       console.error('[co-ober] session init:', e);
+      this.deps.renderer.addError(e instanceof Error ? e.message : String(e));
       return null;
     }
   }
@@ -717,15 +719,36 @@ export class CoOberViewController {
       retryFn?: (text: string, refs?: ContextRef[]) => Promise<void>;
     },
   ): Promise<void> {
-    const sessionId = await this.ensureRuntimeSession();
-    const c = this.deps.runtime.getClient();
-    if (!c || !sessionId) return;
-
+    // Claim the busy flag synchronously, before any await: two Enter
+    // presses in the same tick must not both pass send()'s busy check.
     const currentGen = ++this.genId;
-    this.callbacks.onHideWelcome();
-
     this.busy = true;
     this.state.isStreaming = true;
+    this.deps.input.setStreaming(true);
+    this.deps.toolbar.setSending(true);
+    this.sendStartTime = Date.now();
+    this.callbacks.onHideWelcome();
+    const releaseBusy = (): void => {
+      this.busy = false;
+      this.state.isStreaming = false;
+      this.deps.input.setStreaming(false);
+      this.deps.toolbar.setSending(false);
+    };
+
+    let sessionId: string | null;
+    try {
+      sessionId = await this.ensureRuntimeSession();
+    } catch (e) {
+      releaseBusy();
+      this.deps.renderer.addError(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    const c = this.deps.runtime.getClient();
+    if (!c || !sessionId) {
+      releaseBusy();
+      return;
+    }
+
     this.deps.input.setStreaming(true);
     this.deps.toolbar.setSending(true);
     this.sendStartTime = Date.now();
@@ -773,7 +796,7 @@ export class CoOberViewController {
       }
       if (config.onAfterResponse) await config.onAfterResponse(response);
     } catch (e: unknown) {
-      if (!this.state.isConnected) return;
+      if (!this.state.isConnected && !(e instanceof AcpProcessExitError)) return;
       if (this.state.sessionId === sessionId) {
         if (e instanceof AcpAbortError) {
           // User cancelled, don't show error
@@ -791,6 +814,9 @@ export class CoOberViewController {
         }
       }
     } finally {
+      // Turn over: buffered tool calls that never received a final
+      // update must render with a terminal state instead of vanishing.
+      this.streamCtrl.finalizeBufferedToolCalls();
       this.deps.renderer.removeAssistantPlaceholder();
       if (this.genId === currentGen) {
         this.busy = false;
@@ -937,7 +963,16 @@ export class CoOberViewController {
     this.deps.renderer.flushTextRender().catch(() => {});
     this.busy = false;
     this.state.isStreaming = false;
-    this.promptQueue.length = 0;
+    // Stop means "pause everything", not "lose the queue": put queued
+    // messages back into the input so the user keeps their text.
+    if (this.promptQueue.length > 0) {
+      const queued = this.promptQueue.splice(0).map((q) => q.text);
+      const ta = this.deps.input.textareaEl;
+      const existing = ta.value.trim();
+      ta.value = existing ? `${existing}\n${queued.join('\n')}` : queued.join('\n');
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+      this.deps.input.focus();
+    }
     this.updateQueueIndicator();
   }
 

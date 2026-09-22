@@ -82,6 +82,8 @@ export class CommandRegistry {
   private ordered: SlashCommandDef[] = [];
   /** Unsubscribe functions for source watchers. */
   private unwatches: Array<() => void> = [];
+  /** Per-source unsubscribe, so a source can be unregistered cleanly. */
+  private sourceUnwatches = new Map<CommandSource, () => void>();
   /** Global onChange callback (notifies the view to refresh). */
   private onChange: (() => void) | null = null;
 
@@ -104,6 +106,7 @@ export class CommandRegistry {
         this.reloadSource(source);
       });
       this.unwatches.push(unwatch);
+      this.sourceUnwatches.set(source, unwatch);
     }
 
     // If load() returned a promise, resolve and re-ingest
@@ -117,6 +120,31 @@ export class CommandRegistry {
     } else {
       this.rebuildOrder();
     }
+  }
+
+  /**
+   * Unregister a previously registered source: stops its watcher and drops
+   * its definitions. Called on view close so reopening does not stack
+   * duplicate vault watchers on the singleton registry.
+   */
+  unregisterSource(source: CommandSource): void {
+    const idx = this.sources.indexOf(source);
+    if (idx === -1) return;
+    this.sources.splice(idx, 1);
+    const unwatch = this.sourceUnwatches.get(source);
+    if (unwatch) {
+      try {
+        unwatch();
+      } catch {
+        /* ignore */
+      }
+      this.sourceUnwatches.delete(source);
+      const uIdx = this.unwatches.indexOf(unwatch);
+      if (uIdx !== -1) this.unwatches.splice(uIdx, 1);
+    }
+    this.removeSourceDefs(source.type);
+    this.rebuildOrder();
+    this.onChange?.();
   }
 
   /** Reload a specific source and rebuild the ordered list. */
@@ -279,6 +307,7 @@ export class CommandRegistry {
       }
     }
     this.unwatches = [];
+    this.sourceUnwatches.clear();
     this.sources = [];
     this.builtins.clear();
     this.externals.clear();

@@ -4,7 +4,7 @@ import { CoOberViewController } from './CoOberViewController';
 import type { ControllerCallbacks, ControllerDeps } from './CoOberViewController';
 import type { AcpResponse, ContextRef, NormalizedUpdate, PromptPart, SerializedMessage } from '../types';
 import { setLocale, t } from '../i18n/index';
-import { AcpSessionMissingError } from '../client/AcpErrors';
+import { AcpSessionMissingError, AcpProcessExitError } from '../client/AcpErrors';
 import { readNativeSessionUsage } from '../opencode/NativeSessionReader';
 
 vi.mock('../opencode/NativeSessionReader', async (importOriginal) => {
@@ -49,6 +49,7 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): ControllerDeps
       appendValue: noop,
       triggerSend: noop,
       triggerStop: noop,
+      textareaEl: { value: '', dispatchEvent: vi.fn() },
     } as unknown as ControllerDeps['input'],
     toolbar: {
       setSending: noop,
@@ -563,6 +564,92 @@ describe('CoOberViewController', () => {
       await controller.send('hello', []);
 
       expect(deps.renderer.addError).toHaveBeenCalledWith('network error');
+      expect(controller.isBusy()).toBe(false);
+    });
+
+    it('claims busy synchronously so a same-tick double send queues instead of racing', async () => {
+      const gate = deferred<AcpResponse>();
+      const client = createMockClient({
+        sendMessage: vi.fn().mockImplementation(() => gate.promise),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      const first = controller.send('first', []);
+      const second = controller.send('second', []);
+      await second;
+
+      const queue = Reflect.get(controller, 'promptQueue') as Array<{ text: string }>;
+      expect(queue.map((q) => q.text)).toEqual(['second']);
+      await vi.waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(1));
+
+      gate.resolve({ stopReason: 'end_turn' });
+      await first;
+      // Queue drained after the first turn completed
+      await vi.waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(2));
+      expect(controller.isBusy()).toBe(false);
+    });
+
+    it('stop() restores queued prompts into the textarea instead of dropping them', async () => {
+      const gate = deferred<AcpResponse>();
+      const client = createMockClient({
+        sendMessage: vi.fn().mockImplementation(() => gate.promise),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      const first = controller.send('first', []);
+      await vi.waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(1));
+      await controller.send('queued-1', []);
+      await controller.send('queued-2', []);
+
+      await controller.stopGeneration();
+
+      const queue = Reflect.get(controller, 'promptQueue') as Array<{ text: string }>;
+      expect(queue).toHaveLength(0);
+      const ta = deps.input.textareaEl as unknown as { value: string; dispatchEvent: ReturnType<typeof vi.fn> };
+      expect(ta.value).toBe('queued-1\nqueued-2');
+      expect(ta.dispatchEvent).toHaveBeenCalled();
+      expect(controller.isBusy()).toBe(false);
+
+      gate.resolve({ stopReason: 'interrupted' });
+      await first;
+      // Stopped turn must not drain the (now-restored) queue
+      expect(client.sendMessage).toHaveBeenCalledTimes(1);
+      expect(ta.value).toBe('queued-1\nqueued-2');
+    });
+
+    it('appends restored queue text to an existing draft', async () => {
+      const gate = deferred<AcpResponse>();
+      const client = createMockClient({
+        sendMessage: vi.fn().mockImplementation(() => gate.promise),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      const first = controller.send('first', []);
+      await vi.waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(1));
+      await controller.send('queued-msg', []);
+      const ta = deps.input.textareaEl as unknown as { value: string };
+      ta.value = 'my draft';
+
+      await controller.stopGeneration();
+
+      expect(ta.value).toBe('my draft\nqueued-msg');
+      gate.resolve({ stopReason: 'interrupted' });
+      await first;
+    });
+
+    it('offers a restart action when the agent process exits mid-request', async () => {
+      const client = createMockClient({
+        sendMessage: vi.fn().mockRejectedValue(new AcpProcessExitError(1, null)),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      await controller.send('hello', []);
+
+      expect(deps.renderer.addError).toHaveBeenCalledWith(t().error.processExit, 'restart', expect.any(Function));
       expect(controller.isBusy()).toBe(false);
     });
   });

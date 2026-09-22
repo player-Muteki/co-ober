@@ -432,5 +432,47 @@ describe('ChatRenderer', () => {
       const diffLines = container.querySelectorAll('.diff-line');
       expect(diffLines.length).toBeGreaterThan(0);
     });
+
+    it('renders a partial diff that only carries newText (insertion) or oldText (deletion)', () => {
+      renderer.addToolCall('call-ins', 'Edit', 'edit', {});
+      renderer.updateToolCall(
+        'call-ins',
+        'completed',
+        {},
+        [
+          {
+            type: 'diff',
+            path: '/file.ts',
+            newText: 'added line only',
+          },
+        ],
+        undefined,
+        undefined,
+        'edit',
+      );
+      renderer.addToolCall('call-del', 'Edit', 'edit', {});
+      renderer.updateToolCall(
+        'call-del',
+        'completed',
+        {},
+        [
+          {
+            type: 'diff',
+            path: '/other.ts',
+            oldText: 'removed line only',
+          },
+        ],
+        undefined,
+        undefined,
+        'edit',
+      );
+      flushToolRenders();
+
+      const edits = container.querySelectorAll('.co-ober-write-edit');
+      expect(edits.length).toBe(2);
+      expect(container.querySelectorAll('.diff-line').length).toBeGreaterThanOrEqual(2);
+      expect(container.textContent).toContain('added line only');
+      expect(container.textContent).toContain('removed line only');
+    });
   });
 });

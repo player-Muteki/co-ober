@@ -34,7 +34,7 @@ export const ACP_SERVER_NOTIFICATION_ALIASES = {
 } as const;
 
 export const ACP_SERVER_REQUEST_ALIASES = {
-  requestPermission: ['session/request_permission', 'requestPermission'],
+  requestPermission: ['session/request_permission', 'requestPermission', 'request_permission'],
   readTextFile: ['fs/read_text_file', 'fs/readTextFile'],
   writeTextFile: ['fs/write_text_file', 'fs/writeTextFile'],
   createTerminal: ['terminal/create', 'terminalCreate'],

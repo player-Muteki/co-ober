@@ -71,6 +71,86 @@ describe('PermissionBanner', () => {
     expect(container.querySelector('.co-ober-permission-banner')).toBeNull();
   });
 
+  it('dismiss() resolves the pending request with a reject option so the agent never blocks', async () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    const promise = banner.show({
+      id: 'req-d1',
+      message: 'Dangerous?',
+      toolCall: {
+        toolCallId: 'd1',
+        status: 'pending',
+        rawInput: {},
+        title: 'Dangerous?',
+        kind: 'execute',
+        locations: [],
+      },
+      options: [
+        { optionId: 'yes', name: 'Yes', kind: 'allow_once' },
+        { optionId: 'no', name: 'No', kind: 'reject_once' },
+      ],
+    } as any);
+
+    banner.dismiss();
+
+    expect(await promise).toBe('no');
+    expect(container.querySelector('.co-ober-permission-banner')).toBeNull();
+  });
+
+  it('dismiss() falls back to reject_once when the request has no reject option', async () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    const promise = banner.show({
+      id: 'req-d2',
+      message: 'Only allow?',
+      toolCall: {
+        toolCallId: 'd2',
+        status: 'pending',
+        rawInput: {},
+        title: 'Only allow?',
+        kind: 'edit',
+        locations: [],
+      },
+      options: [{ optionId: 'ok', name: 'OK', kind: 'allow_once' }],
+    } as any);
+
+    banner.dismiss();
+
+    expect(await promise).toBe('reject_once');
+  });
+
+  it('a second show() settles the previous pending request with a reject', async () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    const first = banner.show({
+      id: 'req-o1',
+      message: 'First?',
+      toolCall: { toolCallId: 'o1', status: 'pending', rawInput: {}, title: 'First?', kind: 'edit', locations: [] },
+      options: [
+        { optionId: 'yes1', name: 'Yes1', kind: 'allow_once' },
+        { optionId: 'no1', name: 'No1', kind: 'reject_once' },
+      ],
+    } as any);
+
+    const second = banner.show({
+      id: 'req-o2',
+      message: 'Second?',
+      toolCall: { toolCallId: 'o2', status: 'pending', rawInput: {}, title: 'Second?', kind: 'edit', locations: [] },
+      options: [{ optionId: 'yes2', name: 'Yes2', kind: 'allow_once' }],
+    } as any);
+
+    // The overwritten first request resolves instead of hanging forever.
+    expect(await first).toBe('no1');
+
+    // The second request is still live and can be answered normally.
+    const buttons = container.querySelectorAll('.perm-actions button');
+    (buttons[0] as HTMLButtonElement).click();
+    expect(await second).toBe('yes2');
+  });
+
   it('cleans up old banner when show is called consecutively', () => {
     const container = document.createElement('div');
     const banner = new PermissionBanner(container);

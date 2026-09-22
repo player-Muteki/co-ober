@@ -456,6 +456,86 @@ describe('StreamController', () => {
     // Doesn't crash
   });
 
+  it('finalizeBufferedToolCalls flushes pending tools and marks them failed', () => {
+    controller.handleChunk({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'call-b1',
+      title: 'Read',
+      toolKind: 'read',
+      status: 'pending',
+      rawInput: {},
+      contents: [],
+    });
+    controller.handleChunk({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'call-b2',
+      title: 'Search',
+      toolKind: 'search',
+      status: 'in_progress',
+      rawInput: {},
+      contents: [],
+    });
+
+    controller.finalizeBufferedToolCalls();
+
+    expect(deps.renderer.addToolCall).toHaveBeenCalledWith('call-b1', 'Read', 'read', {}, undefined);
+    expect(deps.renderer.addToolCall).toHaveBeenCalledWith('call-b2', 'Search', 'search', {}, undefined);
+    expect(deps.renderer.updateToolCall).toHaveBeenCalledWith('call-b1', 'failed');
+    expect(deps.renderer.updateToolCall).toHaveBeenCalledWith('call-b2', 'failed');
+
+    // Buffer is emptied — a second call is a no-op
+    deps.renderer.addToolCall.mockClear();
+    controller.finalizeBufferedToolCalls();
+    expect(deps.renderer.addToolCall).not.toHaveBeenCalled();
+  });
+
+  it('finalizeBufferedToolCalls marks persisted tool blocks failed', () => {
+    const session: { messages: Array<{ contentBlocks?: Array<Record<string, unknown>> }>; updatedAt: number } = {
+      messages: [],
+      updatedAt: 0,
+    };
+    deps.sessionStore.get.mockReturnValue(session);
+
+    controller.handleChunk({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'call-b3',
+      title: 'Read',
+      toolKind: 'read',
+      status: 'pending',
+      rawInput: {},
+      contents: [],
+    });
+    controller.finalizeBufferedToolCalls();
+    controller.handleChunk({
+      kind: 'message_chunk',
+      role: 'agent',
+      messageId: 'msg-1',
+      chunkText: 'Done',
+      accumulatedText: 'Done',
+    });
+
+    const toolBlock = session.messages[0].contentBlocks?.find((b) => b.type === 'tool_use');
+    expect(toolBlock).toMatchObject({ toolCallId: 'call-b3', toolStatus: 'failed' });
+  });
+
+  it('reset() finalizes buffered tool calls before clearing state', () => {
+    controller.handleChunk({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'call-b4',
+      title: 'Read',
+      toolKind: 'read',
+      status: 'pending',
+      rawInput: {},
+      contents: [],
+    });
+
+    controller.reset();
+
+    expect(deps.renderer.addToolCall).toHaveBeenCalledWith('call-b4', 'Read', 'read', {}, undefined);
+    expect(deps.renderer.updateToolCall).toHaveBeenCalledWith('call-b4', 'failed');
+    expect(deps.state.resetStreamingState).toHaveBeenCalled();
+  });
+
   it('reset preserves a pending save', () => {
     controller.saveMessage('user', 'Hi', 'text');
     controller.reset();

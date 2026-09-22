@@ -4,7 +4,7 @@ const zToolKind = z.enum(['read', 'edit', 'delete', 'move', 'search', 'execute',
 const zToolCallContent = z.union([
   z.object({ type: z.literal('content'), content: z.object({ type: z.literal('text'), text: z.string() }) }),
   z.object({ type: z.literal('content'), content: z.object({ type: z.literal('image'), mimeType: z.string(), data: z.string() }) }),
-  z.object({ type: z.literal('diff'), path: z.string(), oldText: z.string(), newText: z.string() }),
+  z.object({ type: z.literal('diff'), path: z.string(), oldText: z.string().optional(), newText: z.string().optional() }),
   z.object({ type: z.literal('terminal'), terminalId: z.string() }),
 ]);
 const zLocation = z.object({ path: z.string() });

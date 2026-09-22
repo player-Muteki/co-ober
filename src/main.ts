@@ -52,7 +52,7 @@ export default class CoOberPlugin extends Plugin {
   }
 
   override onunload(): void {
-    void this.client?.disconnect();
+    void this.client?.disconnect().catch(() => {});
   }
 
   // ── Unified storage ──

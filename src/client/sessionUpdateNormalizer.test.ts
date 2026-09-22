@@ -147,13 +147,20 @@ describe('SessionUpdateNormalizer', () => {
     });
   });
 
-  it('returns null if tool_call_update comes before tool_call', () => {
+  it('synthesizes a snapshot if tool_call_update arrives before (or without) tool_call', () => {
     const norm = normalizer.normalize({
       sessionUpdate: 'tool_call_update',
       toolCallId: 'tc-unknown',
       status: 'completed',
     });
-    expect(norm).toBeNull();
+    expect(norm).toEqual({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'tc-unknown',
+      title: 'tc-unknown',
+      toolKind: 'other',
+      status: 'completed',
+      contents: [],
+    });
   });
 
   it('resets maps properly', () => {
@@ -184,7 +191,16 @@ describe('SessionUpdateNormalizer', () => {
       toolCallId: 'tc-1',
       status: 'completed',
     });
-    expect(normUpdate).toBeNull();
+    // After reset the map is empty, so the orphan update is rebuilt as a
+    // terminal snapshot instead of being dropped.
+    expect(normUpdate).toEqual({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'tc-1',
+      title: 'tc-1',
+      toolKind: 'other',
+      status: 'completed',
+      contents: [],
+    });
   });
 
   it('maps plan update directly', () => {
