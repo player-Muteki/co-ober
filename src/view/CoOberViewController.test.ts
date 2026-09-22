@@ -5,6 +5,12 @@ import type { ControllerCallbacks, ControllerDeps } from './CoOberViewController
 import type { AcpResponse, ContextRef, NormalizedUpdate, PromptPart, SerializedMessage } from '../types';
 import { setLocale, t } from '../i18n/index';
 import { AcpSessionMissingError } from '../client/AcpErrors';
+import { readNativeSessionUsage } from '../opencode/NativeSessionReader';
+
+vi.mock('../opencode/NativeSessionReader', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../opencode/NativeSessionReader')>();
+	return { ...actual, readNativeSessionUsage: vi.fn().mockResolvedValue(undefined) };
+});
 
 setLocale('en');
 
@@ -97,6 +103,7 @@ describe('CoOberViewController', () => {
 	beforeEach(() => {
 		deps = createMockDeps();
 		callbacks = createMockCallbacks();
+		(readNativeSessionUsage as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 		controller = new CoOberViewController(deps, callbacks);
 	});
 
@@ -363,6 +370,26 @@ describe('CoOberViewController', () => {
 			expect(controller.isBusy()).toBe(false);
 		});
 
+		it('applies context usage reported in the response _meta', async () => {
+			const client = createMockClient({
+				sendMessage: vi.fn().mockResolvedValue({
+					stopReason: 'end_turn',
+					_meta: { used: 12345, size: 200000, cost: { amount: 0.05, currency: 'USD' } },
+				}),
+			});
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+			const updateContextMeter = vi.fn();
+			deps.updateContextMeter = updateContextMeter;
+
+			await controller.send('hello', []);
+
+			expect(controller.state.usage?.contextTokens).toBe(12345);
+			expect(controller.state.usage?.contextWindow).toBe(200000);
+			expect(controller.state.usage?.cost).toEqual({ amount: 0.05, currency: 'USD' });
+			expect(updateContextMeter).toHaveBeenCalled();
+		});
+
 		it('renders, sends and persists pending image parts with the user message', async () => {
 			const client = createMockClient();
 			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
@@ -598,6 +625,22 @@ describe('CoOberViewController', () => {
 			expect(controller.getSessionId()).toBe('paused-session');
 			expect(deps.sessionStore.setActive).toHaveBeenCalledWith('paused-session');
 		});
+
+		it('refreshes native usage after resuming', async () => {
+			const client = createMockClient();
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			(readNativeSessionUsage as ReturnType<typeof vi.fn>).mockResolvedValue({
+				cost: 1.5, inputTokens: 10, outputTokens: 5, reasoningTokens: 0,
+				cacheReadTokens: 0, cacheWriteTokens: 0,
+			});
+
+			await controller.resumeSession('paused-session');
+
+			expect(readNativeSessionUsage).toHaveBeenCalledWith('paused-session');
+			expect(controller.state.usage?.cost).toEqual({ amount: 1.5, currency: 'USD' });
+			expect(controller.state.usage?.thoughtTokens).toBeUndefined();
+			expect(controller.state.usage?.contextTokens).toBeUndefined();
+		});
 	});
 
 	describe('native session replay adoption', () => {
@@ -647,6 +690,34 @@ describe('CoOberViewController', () => {
 			expect(deps.renderer.addUserMessage).toHaveBeenCalledWith('question', expect.anything(), undefined);
 			expect(deps.renderer.appendThinking).toHaveBeenCalledWith('pondering', expect.anything(), expect.anything());
 			expect(deps.renderer.appendText).toHaveBeenCalledWith('hi', expect.anything(), expect.anything());
+		});
+
+		it('refreshes cost and context from the native database when adopting', async () => {
+			const client = replayingClient();
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			const { override } = sharedStore();
+			deps.sessionStore = { ...deps.sessionStore, ...override } as ControllerDeps['sessionStore'];
+			const updateContextMeter = vi.fn();
+			deps.updateContextMeter = updateContextMeter;
+			(readNativeSessionUsage as ReturnType<typeof vi.fn>).mockResolvedValue({
+				cost: 0.42, inputTokens: 1000, outputTokens: 200, reasoningTokens: 50,
+				cacheReadTokens: 9000, cacheWriteTokens: 0, contextTokens: 32770,
+			});
+			controller = new CoOberViewController(deps, callbacks);
+
+			await controller.switchSession('ses_native', 'opencode');
+
+			expect(readNativeSessionUsage).toHaveBeenCalledWith('ses_native');
+			expect(controller.state.usage).toEqual({
+				totalTokens: 1250,
+				inputTokens: 1000,
+				outputTokens: 200,
+				thoughtTokens: 50,
+				cost: { amount: 0.42, currency: 'USD' },
+				contextWindow: undefined,
+				contextTokens: 32770,
+			});
+			expect(updateContextMeter).toHaveBeenCalled();
 		});
 
 		it('keeps the existing local mirror when it already has messages', async () => {

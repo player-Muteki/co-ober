@@ -729,7 +729,7 @@ export class CoOberView extends ItemView {
 		const R = 18;
 		const ARC_LEN = Math.PI * R;
 
-		if (!usage || (!usage.contextTokens && usage.totalTokens <= 0)) {
+		if (!usage || !usage.contextTokens) {
 			this.meterEl.addClass('empty');
 			this.meterEl.removeClass('warning', 'critical');
 			this.meterPctEl.setText('—');
@@ -740,7 +740,7 @@ export class CoOberView extends ItemView {
 
 		this.meterEl.removeClass('empty');
 
-		const used = usage.contextTokens ?? usage.totalTokens ?? 0;
+		const used = usage.contextTokens;
 		const contextWindow = usage.contextWindow ?? 0;
 		const pct = contextWindow > 0 ? Math.min(100, Math.round((used / contextWindow) * 100)) : 0;
 

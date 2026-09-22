@@ -1,4 +1,4 @@
-import type { NormalizedUpdate, ContextRef, PromptPart, SessionConfigOption, ModeOption, ModelOption, AcpResponse, SerializedMessage } from '../types';
+import type { NormalizedUpdate, ContextRef, PromptPart, SessionConfigOption, ModeOption, ModelOption, AcpResponse, SerializedMessage, UsageInfo } from '../types';
 import type { CoOberSettings } from '../types';
 import type { OpencodeClient } from '../client';
 import { SessionReplayCollector } from '../client/sessionReplay';
@@ -22,6 +22,7 @@ import type { InlineEditPanel } from './inlineEditPanel';
 import { buildSystemPrompt } from '../context/injection';
 import { buildHistoryBlock } from '../context/historyRewind';
 import { AcpTimeoutError, AcpProcessExitError, AcpAbortError, AcpSessionMissingError } from '../client/AcpErrors';
+import { readNativeSessionUsage } from '../opencode/NativeSessionReader';
 import { commandRegistry } from '../commands/registry';
 import { parseSlashCommand } from '../commands/executor';
 import { NOTECACHE_MAX_SIZE } from '../constants';
@@ -541,6 +542,7 @@ export class CoOberViewController {
 			}
 		}
 		await this.restoreSession();
+		if (source === 'opencode') await this.refreshNativeUsage(sessionId);
 		this.deps.sessionStore.setActive(sessionId);
 		await this.deps.sessionStore.save();
 		this.loadToolbarOptions();
@@ -576,6 +578,7 @@ export class CoOberViewController {
 		this.deps.sessionStore.setActive(sessionId);
 		await this.adoptReplay(sessionId, collector.finish());
 		await this.deps.sessionStore.save();
+		await this.refreshNativeUsage(sessionId);
 	}
 
 	// ── Rewind (regenerate / edit-and-resend) ──
@@ -717,7 +720,10 @@ export class CoOberViewController {
 					contextWindow: this.state.usage?.contextWindow,
 					contextTokens: this.state.usage?.contextTokens,
 				};
+				this.applyResponseMeta(response._meta);
 				this.deps.updateContextMeter(this.state.usage);
+			} else {
+				this.applyResponseMeta(response?._meta);
 			}
 			if (config.onAfterResponse) await config.onAfterResponse(response);
 		} catch (e: unknown) {
@@ -749,6 +755,47 @@ export class CoOberViewController {
 				config.onFinally?.();
 			}
 		}
+	}
+
+	/**
+	 * Pull authoritative cost/token totals for a session from the OpenCode
+	 * database. Silently no-ops when the database is unavailable.
+	 */
+	private async refreshNativeUsage(sessionId: string): Promise<void> {
+		const usage = await readNativeSessionUsage(sessionId);
+		if (!usage || this.state.sessionId !== sessionId) return;
+		this.state.usage = {
+			totalTokens: usage.inputTokens + usage.outputTokens + usage.reasoningTokens,
+			inputTokens: usage.inputTokens,
+			outputTokens: usage.outputTokens,
+			thoughtTokens: usage.reasoningTokens || undefined,
+			cost: { amount: usage.cost, currency: 'USD' },
+			contextWindow: this.state.usage?.contextWindow,
+			contextTokens: usage.contextTokens,
+		};
+		this.deps.updateContextMeter(this.state.usage);
+	}
+
+	/**
+	 * Apply context usage reported in the prompt response `_meta`
+	 * (`used`/`size`/`cost`), which agents send outside usage_update chunks.
+	 */
+	private applyResponseMeta(meta: Record<string, unknown> | undefined): void {
+		if (!meta) return;
+		const num = (v: unknown): number | undefined => typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+		const used = num(meta.used);
+		const size = num(meta.size);
+		const costObj = meta.cost && typeof meta.cost === 'object' ? meta.cost as Record<string, unknown> : undefined;
+		const costAmount = num(costObj?.amount);
+		if (used === undefined && size === undefined && costAmount === undefined) return;
+		const usage: UsageInfo = this.state.usage ?? { totalTokens: 0, inputTokens: 0, outputTokens: 0 };
+		if (used !== undefined) usage.contextTokens = used;
+		if (size !== undefined) usage.contextWindow = size;
+		if (costAmount !== undefined) {
+			usage.cost = { amount: costAmount, currency: typeof costObj?.currency === 'string' ? costObj.currency : 'USD' };
+		}
+		this.state.usage = usage;
+		this.deps.updateContextMeter(usage);
 	}
 
 	async send(text: string, refs: ContextRef[]): Promise<void> {

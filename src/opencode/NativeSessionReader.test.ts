@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { escapeSqlLiteral, escapeLikePattern, buildNativeSessionsSql, listNativeSessions } from './NativeSessionReader';
+import { escapeSqlLiteral, escapeLikePattern, buildNativeSessionsSql, listNativeSessions, buildSessionUsageSql, readNativeSessionUsage } from './NativeSessionReader';
 
 describe('NativeSessionReader SQL building', () => {
 	it('doubles embedded quotes', () => {
@@ -101,6 +101,100 @@ describe('listNativeSessions', () => {
 		});
 		expect(sessions).toEqual([]);
 		expect(warn).toHaveBeenCalled();
+		warn.mockRestore();
+	});
+});
+
+describe('readNativeSessionUsage', () => {
+	const dbPath = '/home/u/.local/share/opencode/opencode.db';
+	const fakeFs = {
+		existsSync: (p: string) => p === dbPath,
+		readdirSync: (): string[] => ['opencode.db'],
+	};
+
+	function sqliteBacked(rows: unknown[]) {
+		return {
+			requireSqliteModule: () => ({
+				DatabaseSync: class {
+					constructor() {}
+					close() {}
+					prepare() {
+						return { all: () => rows };
+					}
+				},
+			}),
+		};
+	}
+
+	it('builds a session-scoped usage query with context subselect', () => {
+		const sql = buildSessionUsageSql("ses_it's");
+		expect(sql).toContain("from session s where s.id = 'ses_it''s'");
+		expect(sql).toContain('s.cost');
+		expect(sql).toContain("json_extract(m.data, '$.tokens.total')");
+		expect(sql).toContain("json_extract(m.data, '$.role') = 'assistant'");
+		expect(sql).toContain('order by m.time_created desc limit 1');
+	});
+
+	it('maps the session row to usage totals', async () => {
+		const usage = await readNativeSessionUsage('ses_a', {
+			env: { HOME: '/home/u' },
+			fs: fakeFs,
+			sqlite: sqliteBacked([{
+				cost: 0.42,
+				tokens_input: 1000,
+				tokens_output: 200,
+				tokens_reasoning: 50,
+				tokens_cache_read: 9000,
+				tokens_cache_write: 0,
+				context_tokens: 32770,
+			}]) as never,
+		});
+		expect(usage).toEqual({
+			cost: 0.42,
+			inputTokens: 1000,
+			outputTokens: 200,
+			reasoningTokens: 50,
+			cacheReadTokens: 9000,
+			cacheWriteTokens: 0,
+			contextTokens: 32770,
+		});
+	});
+
+	it('omits contextTokens when the session has no assistant message', async () => {
+		const usage = await readNativeSessionUsage('ses_a', {
+			env: { HOME: '/home/u' },
+			fs: fakeFs,
+			sqlite: sqliteBacked([{
+				cost: 0,
+				tokens_input: 1,
+				tokens_output: 2,
+				tokens_reasoning: 0,
+				tokens_cache_read: 0,
+				tokens_cache_write: 0,
+				context_tokens: null,
+			}]) as never,
+		});
+		expect(usage?.contextTokens).toBeUndefined();
+		expect(usage?.outputTokens).toBe(2);
+	});
+
+	it('returns undefined when the session row is missing', async () => {
+		const usage = await readNativeSessionUsage('ses_missing', {
+			env: { HOME: '/home/u' },
+			fs: fakeFs,
+			sqlite: sqliteBacked([]) as never,
+		});
+		expect(usage).toBeUndefined();
+	});
+
+	it('degrades to undefined when the database is unavailable', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const usage = await readNativeSessionUsage('ses_a', {
+			env: { HOME: '/home/u' },
+			fs: { existsSync: () => false, readdirSync: () => [] },
+		});
+		expect(usage).toBeUndefined();
+		expect(warn).not.toHaveBeenCalled();
 		warn.mockRestore();
 	});
 });
