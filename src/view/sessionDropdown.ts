@@ -5,6 +5,18 @@ import type { AgentCapabilities, SessionMeta } from '../types';
 
 const DELETE_CONFIRM_TIMEOUT_MS = 3000;
 
+/** Diff-summary badge for OpenCode-native rows; null when nothing was changed. */
+export function nativeSummaryText(s: SessionMeta): string | null {
+	const files = s.files ?? 0;
+	const additions = s.additions ?? 0;
+	const deletions = s.deletions ?? 0;
+	if (files === 0 && additions === 0 && deletions === 0) return null;
+	return t().sessionDropdown.summaryBadge
+		.replace('{files}', String(files))
+		.replace('{additions}', String(additions))
+		.replace('{deletions}', String(deletions));
+}
+
 export interface SessionDropdownCallbacks {
 	onSwitch(sessionId: string, source?: 'local' | 'opencode'): Promise<void>;
 	onDelete(sessionId: string): Promise<void>;
@@ -51,10 +63,11 @@ export class SessionDropdown {
 			'--dropdown-right': `${Math.max(8, window.innerWidth - rect.right)}px`,
 		});
 
-		const searchInput = canList			? dd.createEl('input', {
-				cls: 'co-ober-session-search',
-				attr: { placeholder: t().session.search, type: 'text' },
-			})
+		const searchInput = canList
+			? dd.createEl('input', {
+					cls: 'co-ober-session-search',
+					attr: { placeholder: t().session.search, type: 'text' },
+				})
 			: null;
 
 		const itemsContainer = dd.createDiv({ cls: 'co-ober-session-items' });
@@ -151,6 +164,8 @@ export class SessionDropdown {
 				cls: `co-ober-session-item co-ober-session-native${s.sessionId === currentId ? ' active' : ''}`,
 			});
 			it.createSpan({ text: s.title || s.sessionId, cls: 'session-label' });
+			const summary = nativeSummaryText(s);
+			if (summary) it.createSpan({ cls: 'session-summary', text: summary });
 			if (s.updatedAt) {
 				it.createSpan({ cls: 'session-time', text: s.updatedAt.slice(0, 10) });
 			}

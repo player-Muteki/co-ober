@@ -1,5 +1,38 @@
 import { describe, expect, it, vi } from 'vitest';
-import { escapeSqlLiteral, escapeLikePattern, buildNativeSessionsSql, listNativeSessions, buildSessionUsageSql, readNativeSessionUsage } from './NativeSessionReader';
+import {
+	escapeSqlLiteral,
+	escapeLikePattern,
+	buildNativeSessionsSql,
+	listNativeSessions,
+	buildSessionUsageSql,
+	readNativeSessionUsage,
+	buildSessionTodosSql,
+	readNativeSessionTodos,
+	buildMessageStatsSql,
+	readNativeMessageStats,
+	buildToolErrorsSql,
+	readNativeToolErrors,
+} from './NativeSessionReader';
+
+const dbPath = '/home/u/.local/share/opencode/opencode.db';
+const fakeFs = {
+	existsSync: (p: string) => p === dbPath,
+	readdirSync: (): string[] => ['opencode.db'],
+};
+
+function sqliteBacked(rows: unknown[]) {
+	return {
+		requireSqliteModule: () => ({
+			DatabaseSync: class {
+				constructor() {}
+				close() {}
+				prepare() {
+					return { all: () => rows };
+				}
+			},
+		}),
+	};
+}
 
 describe('NativeSessionReader SQL building', () => {
 	it('doubles embedded quotes', () => {
@@ -36,26 +69,6 @@ describe('NativeSessionReader SQL building', () => {
 });
 
 describe('listNativeSessions', () => {
-	const dbPath = '/home/u/.local/share/opencode/opencode.db';
-	const fakeFs = {
-		existsSync: (p: string) => p === dbPath,
-		readdirSync: (): string[] => ['opencode.db'],
-	};
-
-	function sqliteBacked(rows: unknown[]) {
-		return {
-			requireSqliteModule: () => ({
-				DatabaseSync: class {
-					constructor() {}
-					close() {}
-					prepare() {
-						return { all: () => rows };
-					}
-				},
-			}),
-		};
-	}
-
 	it('maps rows to session metadata', async () => {
 		const rows = [
 			{ id: 'ses_a', title: 'Alpha', directory: '/vault', time_updated: 1787369997497 },
@@ -106,26 +119,6 @@ describe('listNativeSessions', () => {
 });
 
 describe('readNativeSessionUsage', () => {
-	const dbPath = '/home/u/.local/share/opencode/opencode.db';
-	const fakeFs = {
-		existsSync: (p: string) => p === dbPath,
-		readdirSync: (): string[] => ['opencode.db'],
-	};
-
-	function sqliteBacked(rows: unknown[]) {
-		return {
-			requireSqliteModule: () => ({
-				DatabaseSync: class {
-					constructor() {}
-					close() {}
-					prepare() {
-						return { all: () => rows };
-					}
-				},
-			}),
-		};
-	}
-
 	it('builds a session-scoped usage query with context subselect', () => {
 		const sql = buildSessionUsageSql("ses_it's");
 		expect(sql).toContain("from session s where s.id = 'ses_it''s'");
@@ -195,6 +188,131 @@ describe('readNativeSessionUsage', () => {
 		});
 		expect(usage).toBeUndefined();
 		expect(warn).not.toHaveBeenCalled();
+		warn.mockRestore();
+	});
+});
+describe('session summary columns', () => {
+	it('selects the summary columns in the listing query', () => {
+		const sql = buildNativeSessionsSql('/vault');
+		expect(sql).toContain('summary_additions');
+		expect(sql).toContain('summary_deletions');
+		expect(sql).toContain('summary_files');
+	});
+
+	it('maps summary counts onto session metadata', async () => {
+		const sessions = await listNativeSessions('/vault', {
+			env: { HOME: '/home/u' },
+			fs: fakeFs,
+			sqlite: sqliteBacked([
+				{ id: 'ses_a', title: 'Alpha', directory: '/vault', time_updated: 1, summary_additions: 12, summary_deletions: 3, summary_files: 4 },
+				{ id: 'ses_b', title: 'Beta', directory: '/vault', time_updated: 2 },
+			]) as never,
+		});
+		expect(sessions[0]).toMatchObject({ additions: 12, deletions: 3, files: 4 });
+		expect(sessions[1]).not.toHaveProperty('additions');
+		expect(sessions[1]).not.toHaveProperty('files');
+	});
+});
+
+describe('readNativeSessionTodos', () => {
+	it('builds a position-ordered todo query', () => {
+		const sql = buildSessionTodosSql("ses_it's");
+		expect(sql).toContain("from todo where session_id = 'ses_it''s'");
+		expect(sql).toContain('order by position asc');
+		expect(sql).toContain('select content, status, priority');
+	});
+
+	it('maps todo rows in order', async () => {
+		const todos = await readNativeSessionTodos('ses_a', {
+			env: { HOME: '/home/u' },
+			fs: fakeFs,
+			sqlite: sqliteBacked([
+				{ content: 'first', status: 'completed', priority: 'high' },
+				{ content: 'second', status: 'in_progress', priority: null },
+				{ content: 42, status: 'pending', priority: null },
+			]) as never,
+		});
+		expect(todos).toEqual([
+			{ content: 'first', status: 'completed', priority: 'high' },
+			{ content: 'second', status: 'in_progress' },
+		]);
+	});
+
+	it('degrades to an empty list when unavailable', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const todos = await readNativeSessionTodos('ses_a', {
+			env: { HOME: '/home/u' },
+			fs: fakeFs,
+			sqlite: { requireSqliteModule: () => null, spawn: () => { throw new Error('nope'); }, execPath: '', env: {} } as never,
+		});
+		expect(todos).toEqual([]);
+		warn.mockRestore();
+	});
+
+	it('returns empty without a session id', async () => {
+		expect(await readNativeSessionTodos('')).toEqual([]);
+	});
+});
+
+describe('readNativeMessageStats', () => {
+	it('builds a per-assistant-message aggregate query', () => {
+		const sql = buildMessageStatsSql('ses_a');
+		expect(sql).toContain("json_extract(p.data, '$.type') = 'step-finish'");
+		expect(sql).toContain("json_extract(m.data, '$.role') = 'assistant'");
+		expect(sql).toContain("p.session_id = 'ses_a'");
+		expect(sql).toContain('group by m.id');
+		expect(sql).toContain('order by m.time_created asc');
+	});
+
+	it('maps stat rows', async () => {
+		const stats = await readNativeMessageStats('ses_a', {
+			env: { HOME: '/home/u' },
+			fs: fakeFs,
+			sqlite: sqliteBacked([
+				{ message_id: 'msg_1', cost: 0.5, input_tokens: 100, output_tokens: 10, total_tokens: 110 },
+				{ message_id: 'bad', cost: null, input_tokens: null, output_tokens: null, total_tokens: null },
+			]) as never,
+		});
+		expect(stats).toEqual([
+			{ messageId: 'msg_1', cost: 0.5, inputTokens: 100, outputTokens: 10, totalTokens: 110 },
+			{ messageId: 'bad', cost: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+		]);
+	});
+
+	it('degrades to an empty list when the database is missing', async () => {
+		expect(await readNativeMessageStats('ses_a', { env: { HOME: '/home/u' }, fs: { existsSync: () => false, readdirSync: () => [] } })).toEqual([]);
+	});
+});
+
+describe('readNativeToolErrors', () => {
+	it('builds an errored-tool-part query', () => {
+		const sql = buildToolErrorsSql("ses_it's");
+		expect(sql).toContain("session_id = 'ses_it''s'");
+		expect(sql).toContain("json_extract(data, '$.type') = 'tool'");
+		expect(sql).toContain("json_extract(data, '$.state.error') is not null");
+	});
+
+	it('maps call ids to error messages', async () => {
+		const errors = await readNativeToolErrors('ses_a', {
+			env: { HOME: '/home/u' },
+			fs: fakeFs,
+			sqlite: sqliteBacked([
+				{ call_id: 'call_1', error: 'boom' },
+				{ call_id: 'call_2', error: null },
+				{ call_id: null, error: 'orphan' },
+			]) as never,
+		});
+		expect(errors).toEqual({ call_1: 'boom' });
+	});
+
+	it('degrades to an empty map on failure', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const errors = await readNativeToolErrors('ses_a', {
+			env: { HOME: '/home/u' },
+			fs: fakeFs,
+			sqlite: { requireSqliteModule: () => null, spawn: () => { throw new Error('nope'); }, execPath: '', env: {} } as never,
+		});
+		expect(errors).toEqual({});
 		warn.mockRestore();
 	});
 });

@@ -44,4 +44,14 @@ describe('SessionReplayCollector', () => {
     collector.handle(chunk('agent', 'a1', '   '));
     expect(collector.finish()).toEqual([]);
   });
+
+  it('carries the native message id for cost/token matching', () => {
+    const collector = new SessionReplayCollector();
+    collector.handle(chunk('agent', 'msg_0ad397', 'answer'));
+    collector.handle(chunk('thought', 'msg_0ad397', 'pondering'));
+
+    const messages = collector.finish();
+    expect(messages[0]?.nativeMessageId).toBe('msg_0ad397');
+    expect(messages[1]?.nativeMessageId).toBe('msg_0ad397');
+  });
 });

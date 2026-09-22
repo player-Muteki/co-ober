@@ -2,14 +2,32 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { CoOberViewController } from './CoOberViewController';
 import type { ControllerCallbacks, ControllerDeps } from './CoOberViewController';
-import type { AcpResponse, ContextRef, NormalizedUpdate, PromptPart, SerializedMessage } from '../types';
+import type {
+  AcpResponse,
+  ContentBlock,
+  ContextRef,
+  NormalizedUpdate,
+  PromptPart,
+  SerializedMessage,
+} from '../types';
 import { setLocale, t } from '../i18n/index';
 import { AcpSessionMissingError, AcpProcessExitError } from '../client/AcpErrors';
-import { readNativeSessionUsage } from '../opencode/NativeSessionReader';
+import {
+  readNativeMessageStats,
+  readNativeSessionTodos,
+  readNativeSessionUsage,
+  readNativeToolErrors,
+} from '../opencode/NativeSessionReader';
 
 vi.mock('../opencode/NativeSessionReader', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../opencode/NativeSessionReader')>();
-  return { ...actual, readNativeSessionUsage: vi.fn().mockResolvedValue(undefined) };
+  return {
+    ...actual,
+    readNativeSessionUsage: vi.fn().mockResolvedValue(undefined),
+    readNativeSessionTodos: vi.fn().mockResolvedValue([]),
+    readNativeMessageStats: vi.fn().mockResolvedValue([]),
+    readNativeToolErrors: vi.fn().mockResolvedValue({}),
+  };
 });
 
 setLocale('en');
@@ -172,6 +190,9 @@ describe('CoOberViewController', () => {
     deps = createMockDeps();
     callbacks = createMockCallbacks();
     (readNativeSessionUsage as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    (readNativeSessionTodos as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (readNativeMessageStats as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (readNativeToolErrors as ReturnType<typeof vi.fn>).mockResolvedValue({});
     controller = new CoOberViewController(deps, callbacks);
   });
 
@@ -357,7 +378,12 @@ describe('CoOberViewController', () => {
       await controller.restoreSession();
 
       expect(deps.renderer.addUserMessage).toHaveBeenCalledWith('hello', 1000, undefined);
-      expect(deps.renderer.appendText).toHaveBeenCalledWith('hi there', expect.stringContaining('restore-'), 2000);
+      expect(deps.renderer.appendText).toHaveBeenCalledWith(
+        'hi there',
+        expect.stringContaining('restore-'),
+        2000,
+        undefined,
+      );
       expect(deps.renderer.appendThinking).toHaveBeenCalledWith(
         'thinking...',
         expect.stringContaining('restore-'),
@@ -398,6 +424,141 @@ describe('CoOberViewController', () => {
       await controller.restoreSession();
 
       expect(deps.renderer.addUserMessage).toHaveBeenCalledWith('look', 1000, images);
+    });
+
+    it('attaches native per-message usage by native message id', async () => {
+      controller.state.sessionId = 'test';
+      const messages: SerializedMessage[] = [
+        { role: 'user', content: 'q', type: 'text', timestamp: 1000 },
+        { role: 'assistant', content: 'a1', type: 'text', timestamp: 2000, nativeMessageId: 'msg_1' },
+        { role: 'assistant', content: 'a2', type: 'text', timestamp: 3000, nativeMessageId: 'msg_2' },
+      ];
+      const session = { sessionId: 'test', messages };
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue(session);
+      (readNativeMessageStats as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { messageId: 'msg_2', cost: 0.05, inputTokens: 100, outputTokens: 20, totalTokens: 120 },
+      ]);
+
+      await controller.restoreSession();
+
+      expect(deps.renderer.appendText).toHaveBeenCalledWith(
+        'a2',
+        expect.stringContaining('restore-'),
+        3000,
+        { cost: 0.05, inputTokens: 100, outputTokens: 20, totalTokens: 120 },
+      );
+      expect(deps.renderer.appendText).toHaveBeenCalledWith('a1', expect.any(String), 2000, undefined);
+      expect(deps.sessionStore.save).toHaveBeenCalled();
+    });
+
+    it('claims each native stat once when thinking and text share a message id', async () => {
+      controller.state.sessionId = 'test';
+      const messages: SerializedMessage[] = [
+        { role: 'assistant', content: 'reasoning', type: 'thinking', timestamp: 1500, nativeMessageId: 'msg_1' },
+        { role: 'assistant', content: 'answer', type: 'text', timestamp: 2000, nativeMessageId: 'msg_1' },
+      ];
+      const session = { sessionId: 'test', messages };
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue(session);
+      (readNativeMessageStats as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { messageId: 'msg_1', cost: 0.01, inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+      ]);
+
+      await controller.restoreSession();
+
+      const usage = { cost: 0.01, inputTokens: 10, outputTokens: 5, totalTokens: 15 };
+      expect(messages[1].usage).toEqual(usage);
+      expect(messages[0].usage).toBeUndefined();
+    });
+
+    it('matches usage positionally only when legacy counts line up one-to-one', async () => {
+      controller.state.sessionId = 'test';
+      const session = {
+        sessionId: 'test',
+        messages: [
+          { role: 'assistant', content: 'one', type: 'text', timestamp: 1000 },
+          { role: 'assistant', content: 'two', type: 'text', timestamp: 2000 },
+        ],
+      };
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue(session);
+      (readNativeMessageStats as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { messageId: 'msg_x', cost: 0.02, inputTokens: 20, outputTokens: 7, totalTokens: 27 },
+      ]);
+
+      await controller.restoreSession();
+
+      expect(deps.renderer.appendText).toHaveBeenNthCalledWith(1, 'one', expect.any(String), 1000, undefined);
+      expect(deps.renderer.appendText).toHaveBeenNthCalledWith(2, 'two', expect.any(String), 2000, undefined);
+    });
+
+    it('marks restored tool blocks failed from native tool errors', async () => {
+      const renderStructuredMessage = vi.fn();
+      deps.renderer = {
+        ...deps.renderer,
+        renderStructuredMessage,
+      } as unknown as ControllerDeps['renderer'];
+      controller.state.sessionId = 'test';
+      const doneBlock: ContentBlock = {
+        type: 'tool_use',
+        toolCallId: 'call_1',
+        toolTitle: 'Edit note',
+        toolStatus: 'completed',
+      };
+      const hungBlock: ContentBlock = {
+        type: 'tool_use',
+        toolCallId: 'call_2',
+        toolTitle: 'Read note',
+        toolStatus: 'in_progress',
+      };
+      const session = {
+        sessionId: 'test',
+        messages: [
+          { role: 'assistant', content: '', type: 'text', timestamp: 2000, contentBlocks: [doneBlock, hungBlock] },
+        ],
+      };
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue(session);
+      (readNativeToolErrors as ReturnType<typeof vi.fn>).mockResolvedValue({ call_1: 'aborted', call_2: 'boom' });
+
+      await controller.restoreSession();
+
+      expect(doneBlock.toolError).toBe('aborted');
+      expect(doneBlock.toolStatus).toBe('completed');
+      expect(hungBlock.toolError).toBe('boom');
+      expect(hungBlock.toolStatus).toBe('failed');
+      expect(renderStructuredMessage).toHaveBeenCalledWith(session.messages[0]);
+    });
+
+    it('restores the plan panel from native todos', async () => {
+      controller.state.sessionId = 'test';
+      const setPlanEntries = vi.fn();
+      deps.renderer = { ...deps.renderer, setPlanEntries } as unknown as ControllerDeps['renderer'];
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue({
+        sessionId: 'test',
+        messages: [{ role: 'user', content: 'hi', type: 'text', timestamp: 1000 }],
+      });
+      const todos = [
+        { content: 'Read the note', status: 'completed' },
+        { content: 'Write the answer', status: 'pending' },
+      ];
+      (readNativeSessionTodos as ReturnType<typeof vi.fn>).mockResolvedValue(todos);
+
+      await controller.restoreSession();
+
+      expect(readNativeSessionTodos).toHaveBeenCalledWith('test');
+      expect(setPlanEntries).toHaveBeenCalledWith(todos);
+    });
+
+    it('leaves the plan panel untouched when native todos are empty', async () => {
+      controller.state.sessionId = 'test';
+      const setPlanEntries = vi.fn();
+      deps.renderer = { ...deps.renderer, setPlanEntries } as unknown as ControllerDeps['renderer'];
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue({
+        sessionId: 'test',
+        messages: [{ role: 'user', content: 'hi', type: 'text', timestamp: 1000 }],
+      });
+
+      await controller.restoreSession();
+
+      expect(setPlanEntries).not.toHaveBeenCalled();
     });
   });
 
@@ -445,6 +606,20 @@ describe('CoOberViewController', () => {
       expect(client.sendMessage).toHaveBeenCalled();
       expect(deps.renderer.removeAssistantPlaceholder).toHaveBeenCalled();
       expect(controller.isBusy()).toBe(false);
+    });
+
+    it('resyncs the plan panel when a turn completes', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      const setPlanEntries = vi.fn();
+      deps.renderer = { ...deps.renderer, setPlanEntries } as unknown as ControllerDeps['renderer'];
+      const todos = [{ content: 'Next step', status: 'pending' }];
+      (readNativeSessionTodos as ReturnType<typeof vi.fn>).mockResolvedValue(todos);
+
+      await controller.send('hello', []);
+
+      await vi.waitFor(() => expect(setPlanEntries).toHaveBeenCalledWith(todos));
     });
 
     it('applies context usage reported in the response _meta', async () => {
@@ -814,6 +989,20 @@ describe('CoOberViewController', () => {
       expect(controller.state.usage?.thoughtTokens).toBeUndefined();
       expect(controller.state.usage?.contextTokens).toBeUndefined();
     });
+
+    it('resyncs the native plan after resuming', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      const setPlanEntries = vi.fn();
+      deps.renderer = { ...deps.renderer, setPlanEntries } as unknown as ControllerDeps['renderer'];
+      const todos = [{ content: 'Keep going', status: 'in_progress' }];
+      (readNativeSessionTodos as ReturnType<typeof vi.fn>).mockResolvedValue(todos);
+
+      await controller.resumeSession('paused-session');
+
+      expect(readNativeSessionTodos).toHaveBeenCalledWith('paused-session');
+      expect(setPlanEntries).toHaveBeenCalledWith(todos);
+    });
   });
 
   describe('native session replay adoption', () => {
@@ -886,7 +1075,7 @@ describe('CoOberViewController', () => {
       expect(override.save).toHaveBeenCalled();
       expect(deps.renderer.addUserMessage).toHaveBeenCalledWith('question', expect.anything(), undefined);
       expect(deps.renderer.appendThinking).toHaveBeenCalledWith('pondering', expect.anything(), expect.anything());
-      expect(deps.renderer.appendText).toHaveBeenCalledWith('hi', expect.anything(), expect.anything());
+      expect(deps.renderer.appendText).toHaveBeenCalledWith('hi', expect.anything(), expect.anything(), undefined);
     });
 
     it('refreshes cost and context from the native database when adopting', async () => {

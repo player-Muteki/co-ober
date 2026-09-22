@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { ChatRenderer } from './renderer';
+import { ChatRenderer, formatMessageUsage } from './renderer';
 import { installObsidianDomHelpers } from '../test/domHelpers';
 import { setLocale } from '../i18n/index';
 
@@ -156,6 +156,79 @@ describe('ChatRenderer', () => {
       );
       expect(wrap.querySelector('.co-ober-text-block')).not.toBeNull();
     });
+
+    it('renders a native usage footer alongside duration', () => {
+      const wrap = document.createElement('div');
+      renderer.renderStructuredMessage(
+        {
+          role: 'assistant',
+          content: 'answer',
+          type: 'text',
+          timestamp: 1,
+          durationSeconds: 3,
+          usage: { inputTokens: 1200, outputTokens: 80, totalTokens: 1280, cost: 0.0123 },
+          contentBlocks: [{ type: 'text', text: 'answer' }],
+        },
+        wrap,
+      );
+      const footer = wrap.querySelector('.co-ober-response-footer');
+      expect(footer?.querySelector('.co-ober-baked-duration')?.textContent).toContain('3');
+      expect(footer?.querySelector('.co-ober-msg-usage')?.textContent).toBe('↑1200 · ↓80 · $0.0123');
+    });
+
+    it('re-renders a persisted tool_use block with its native error', () => {
+      const wrap = document.createElement('div');
+      renderer.renderStructuredMessage(
+        {
+          role: 'assistant',
+          content: '',
+          type: 'text',
+          timestamp: 1,
+          contentBlocks: [
+            {
+              type: 'tool_use',
+              toolCallId: 'call-err',
+              toolTitle: 'Edit note',
+              toolKind: 'read',
+              toolStatus: 'failed',
+              toolError: 'Could not find oldString',
+            },
+          ],
+        },
+        wrap,
+      );
+      const tool = wrap.querySelector('.co-ober-tool-call') as HTMLElement | null;
+      expect(tool).not.toBeNull();
+      expect(tool?.classList.contains('status-error')).toBe(true);
+      expect(tool?.querySelector('.co-ober-tool-call-body')?.textContent).toContain('Could not find oldString');
+    });
+
+    it('treats a block with only an error as failed', () => {
+      const wrap = document.createElement('div');
+      renderer.renderStructuredMessage(
+        {
+          role: 'assistant',
+          content: '',
+          type: 'text',
+          timestamp: 1,
+          contentBlocks: [
+            { type: 'tool_use', toolCallId: 'call-x', toolKind: 'search', toolError: 'boom' },
+          ],
+        },
+        wrap,
+      );
+      const tool = wrap.querySelector('.co-ober-tool-call') as HTMLElement | null;
+      expect(tool?.classList.contains('status-error')).toBe(true);
+    });
+  });
+
+  describe('formatMessageUsage', () => {
+    it('formats token deltas and cost', () => {
+      expect(formatMessageUsage({ inputTokens: 100, outputTokens: 20, cost: 0.001 })).toBe('↑100 · ↓20 · $0.0010');
+      expect(formatMessageUsage({ inputTokens: 100, outputTokens: 20, cost: 0 })).toBe('↑100 · ↓20');
+      expect(formatMessageUsage({ totalTokens: 500 })).toBe('500 tok');
+      expect(formatMessageUsage({})).toBe('');
+    });
   });
 
   describe('user-turn rewind actions', () => {
@@ -288,6 +361,14 @@ describe('ChatRenderer', () => {
       renderer.appendText('World', 'msg-2');
       const msgs = container.querySelectorAll('.co-ober-msg.assistant');
       expect(msgs.length).toBe(2);
+    });
+
+    it('attaches a native usage footer when restoring with stats', () => {
+      renderer.appendText('Hello', 'msg-1', 1, { inputTokens: 100, outputTokens: 20, cost: 0.001 });
+      const msg = container.querySelector('.co-ober-msg.assistant');
+      expect(msg?.querySelector('.co-ober-msg-usage')?.textContent).toBe('↑100 · ↓20 · $0.0010');
+      // The footer never replaces the message body.
+      expect(msg?.querySelector('.co-ober-msg-body')).not.toBeNull();
     });
   });
 

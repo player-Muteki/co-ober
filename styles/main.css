@@ -954,6 +954,16 @@
   flex-shrink: 0;
 }
 
+.co-ober-session-item.co-ober-session-native .session-summary {
+  margin-left: auto;
+  padding: 0 6px;
+  color: var(--text-faint);
+  font-size: var(--font-smallest);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .co-ober-session-item {
   display: flex;
   align-items: center;

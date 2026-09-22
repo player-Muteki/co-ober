@@ -24,6 +24,7 @@ const en = {
     actionFailed: 'Session action failed: {error}',
     rename: 'Rename session',
     confirmDelete: 'Click again to confirm deletion',
+    summaryBadge: '{files} files +{additions} -{deletions}',
   },
 
   header: {

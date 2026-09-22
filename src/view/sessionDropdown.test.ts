@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { Notice } from '../test/obsidianMock';
-import { SessionDropdown } from './sessionDropdown';
+import { SessionDropdown, nativeSummaryText } from './sessionDropdown';
 import { installObsidianDomHelpers } from '../test/domHelpers';
 import { setLocale } from '../i18n/index';
 
@@ -393,6 +393,19 @@ describe('SessionDropdown', () => {
       expect(container.querySelector('.co-ober-session-native-section')).toBeNull();
       dd.destroy();
     });
+
+    it('renders a diff-summary badge on native rows with changes', async () => {
+      const dd = makeDropdown(async () => [
+        { sessionId: 'ses_a', title: 'Edited stuff', additions: 12, deletions: 3, files: 4 },
+        { sessionId: 'ses_b', title: 'No changes', additions: 0, deletions: 0, files: 0 },
+      ]);
+      dd.open();
+      await new Promise((r) => setTimeout(r, 10));
+      const items = container.querySelectorAll('.co-ober-session-native');
+      expect(items[0].querySelector('.session-summary')?.textContent).toBe('4 files +12 -3');
+      expect(items[1].querySelector('.session-summary')).toBeNull();
+      dd.destroy();
+    });
   });
 
   describe('destroy', () => {
@@ -401,5 +414,15 @@ describe('SessionDropdown', () => {
       dropdown.destroy();
       expect(dropdown.isOpen()).toBe(false);
     });
+  });
+});
+
+describe('nativeSummaryText', () => {
+  it('formats counts and hides all-zero summaries', () => {
+    setLocale('en');
+    expect(nativeSummaryText({ sessionId: 's', additions: 5, deletions: 2, files: 3 })).toBe('3 files +5 -2');
+    expect(nativeSummaryText({ sessionId: 's' })).toBeNull();
+    expect(nativeSummaryText({ sessionId: 's', additions: 0, deletions: 0, files: 0 })).toBeNull();
+    expect(nativeSummaryText({ sessionId: 's', additions: 7 })).toBe('0 files +7 -0');
   });
 });

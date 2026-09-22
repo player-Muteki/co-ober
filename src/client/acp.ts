@@ -229,6 +229,45 @@ export type AcpMcpServer =
   | { type: 'http'; name: string; url: string; headers: Array<{ name: string; value: string }> }
   | { type: 'sse'; name: string; url: string; headers: Array<{ name: string; value: string }> };
 
+const CAPABILITY_GROUP_KEYS = ['sessionCapabilities', 'promptCapabilities', 'mcpCapabilities'] as const;
+
+function normalizeCapabilityValue(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  // OpenCode signals support with an empty object, e.g. sessionCapabilities.fork = {}.
+  if (value && typeof value === 'object' && !Array.isArray(value)) return true;
+  return undefined;
+}
+
+/**
+ * Normalize agent capabilities from the initialize response so UI gating can
+ * rely on plain booleans: some agents mark support with `{}` instead of `true`.
+ */
+export function normalizeAgentCapabilities(raw: unknown): AgentCapabilities | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const src = raw as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(src)) {
+    if ((CAPABILITY_GROUP_KEYS as readonly string[]).includes(key)) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+      const group: Record<string, boolean> = {};
+      for (const [capKey, capValue] of Object.entries(value as Record<string, unknown>)) {
+        const bool = normalizeCapabilityValue(capValue);
+        if (bool !== undefined) group[capKey] = bool;
+      }
+      if (Object.keys(group).length > 0) out[key] = group;
+      continue;
+    }
+    if (key === 'authMethods') {
+      if (Array.isArray(value)) out.authMethods = value;
+      continue;
+    }
+    if (typeof value === 'boolean' || typeof value === 'string' || typeof value === 'number') {
+      out[key] = value;
+    }
+  }
+  return out as AgentCapabilities;
+}
+
 export class AcpClient implements OpencodeClient {
   private subprocess: AcpSubprocess | null = null;
   private connected = false;
@@ -366,8 +405,7 @@ export class AcpClient implements OpencodeClient {
         throw new Error('ACP connection was superseded by a newer connection attempt');
       }
       const initResult = z.object({ agentCapabilities: z.unknown().optional() }).safeParse(response);
-      this.agentCapabilities =
-        (initResult.success ? (initResult.data.agentCapabilities as AgentCapabilities) : null) ?? null;
+      this.agentCapabilities = initResult.success ? normalizeAgentCapabilities(initResult.data.agentCapabilities) : null;
       this.methodCache.clear();
       this.connected = true;
     } catch (error) {

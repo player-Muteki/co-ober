@@ -5,6 +5,7 @@ import {
   AcpClient,
   CLIENT_VERSION,
   buildMcpServers,
+  normalizeAgentCapabilities,
   parseSessionUpdate,
   extractSessionSnapshot,
   extractConfigMeta,
@@ -574,5 +575,50 @@ describe('requestWithFallback', () => {
     ).rejects.toThrow(expectedError2);
 
     expect(transport.request).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('normalizeAgentCapabilities', () => {
+  it('converts object-marker capabilities to booleans', () => {
+    // OpenCode v1.18 signals session capabilities with empty objects.
+    const caps = normalizeAgentCapabilities({
+      loadSession: true,
+      mcpCapabilities: { http: true, sse: true },
+      promptCapabilities: { embeddedContext: true, image: true },
+      sessionCapabilities: { close: {}, fork: {}, list: {}, resume: {} },
+    });
+    expect(caps).toEqual({
+      loadSession: true,
+      mcpCapabilities: { http: true, sse: true },
+      promptCapabilities: { embeddedContext: true, image: true },
+      sessionCapabilities: { close: true, fork: true, list: true, resume: true },
+    });
+  });
+
+  it('passes explicit booleans through unchanged', () => {
+    const caps = normalizeAgentCapabilities({ sessionCapabilities: { fork: false, list: true } });
+    expect(caps?.sessionCapabilities).toEqual({ fork: false, list: true });
+  });
+
+  it('drops non-boolean non-object values and empty groups', () => {
+    const caps = normalizeAgentCapabilities({
+      sessionCapabilities: { fork: 'yes', resume: null },
+      promptCapabilities: {},
+    });
+    expect(caps?.sessionCapabilities).toBeUndefined();
+    expect(caps?.promptCapabilities).toBeUndefined();
+  });
+
+  it('preserves authMethods and scalar fields', () => {
+    const authMethods = [{ id: 'api_key', name: 'API key' }];
+    const caps = normalizeAgentCapabilities({ authMethods, version: 'v1' });
+    expect(caps).toEqual({ authMethods, version: 'v1' });
+  });
+
+  it('returns null for non-object input', () => {
+    expect(normalizeAgentCapabilities(null)).toBeNull();
+    expect(normalizeAgentCapabilities(undefined)).toBeNull();
+    expect(normalizeAgentCapabilities('nope')).toBeNull();
+    expect(normalizeAgentCapabilities([])).toBeNull();
   });
 });

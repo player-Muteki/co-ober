@@ -1,7 +1,7 @@
 import type { App } from 'obsidian';
 import { MarkdownRenderer, setIcon, type Component } from 'obsidian';
 import { t, onLocaleChange } from '../i18n/index';
-import type { UsageInfo, ContentBlock, SerializedMessage, ToolCallContent, ImageAttachment } from '../types';
+import type { UsageInfo, ContentBlock, SerializedMessage, ToolCallContent, ImageAttachment, MessageUsage } from '../types';
 import { COPY_BUTTON_RESET_MS } from '../constants';
 import {
   renderLiveThinkingBlock,
@@ -21,6 +21,16 @@ import {
 export interface RewindHandlers {
   onRegenerate(ordinal: number): void;
   onEditResend(ordinal: number, text: string): void;
+}
+
+/** Compact one-line cost/token summary for a restored assistant message. */
+export function formatMessageUsage(usage: MessageUsage): string {
+  const parts: string[] = [];
+  if (usage.inputTokens) parts.push(`↑${usage.inputTokens}`);
+  if (usage.outputTokens) parts.push(`↓${usage.outputTokens}`);
+  if (!parts.length && usage.totalTokens) parts.push(`${usage.totalTokens} tok`);
+  if (usage.cost && usage.cost > 0) parts.push(`$${usage.cost.toFixed(4)}`);
+  return parts.join(' · ');
 }
 
 export class ChatRenderer {
@@ -203,12 +213,12 @@ export class ChatRenderer {
   // Layer 1: Text Render Pipeline
   // ============================================
 
-  appendText(text: string, messageId?: string, timestamp?: number): void {
+  appendText(text: string, messageId?: string, timestamp?: number, usage?: MessageUsage): void {
     if (messageId && this.currentAssistantId !== messageId) {
+      this.currentAssistantId = messageId;
       this.currentAssistantEl = null;
       this.currentAssistantWrap = null;
       this.currentAssistantText = '';
-      this.currentAssistantId = messageId;
       this.currentAssistantType = 'text';
     }
     if (this.currentAssistantType !== 'text') {
@@ -223,9 +233,18 @@ export class ChatRenderer {
       wrap.dataset.timestamp = this.formatTimestamp(timestamp ?? Date.now());
       this.currentAssistantWrap = wrap;
       this.currentAssistantEl = wrap.createDiv({ cls: 'co-ober-msg-body' });
+      if (usage) this.attachUsageFooter(wrap, usage);
     }
     this.scheduleTextRender();
     this.scrollToBottom();
+  }
+
+  /** Compact per-message cost/token footer, used when restoring native OpenCode transcripts. */
+  private attachUsageFooter(wrap: HTMLElement, usage: MessageUsage): void {
+    const text = formatMessageUsage(usage);
+    if (!text) return;
+    const footer = wrap.createDiv({ cls: 'co-ober-response-footer' });
+    footer.createSpan({ cls: 'co-ober-msg-usage', text });
   }
 
   /**
@@ -652,8 +671,8 @@ export class ChatRenderer {
     const wrap = parentEl ?? this.container.createDiv({ cls: 'co-ober-msg assistant' });
     if (!msg.contentBlocks || msg.contentBlocks.length === 0) return wrap;
 
-    // Duration + interrupt footer
-    if (msg.durationSeconds || msg.isInterrupt) {
+    // Duration + interrupt + native usage footer
+    if (msg.durationSeconds || msg.isInterrupt || msg.usage) {
       const footer = wrap.createDiv({ cls: 'co-ober-response-footer' });
       if (msg.durationSeconds) {
         footer.createSpan({ cls: 'co-ober-baked-duration', text: this.formatDuration(msg.durationSeconds) });
@@ -661,6 +680,13 @@ export class ChatRenderer {
       if (msg.isInterrupt) {
         if (msg.durationSeconds) footer.createSpan({ cls: 'footer-dot' });
         footer.createSpan({ cls: 'co-ober-interrupt-badge', text: 'interrupted' });
+      }
+      if (msg.usage) {
+        const usageText = formatMessageUsage(msg.usage);
+        if (usageText) {
+          if (msg.durationSeconds || msg.isInterrupt) footer.createSpan({ cls: 'footer-dot' });
+          footer.createSpan({ cls: 'co-ober-msg-usage', text: usageText });
+        }
       }
     }
 
@@ -711,8 +737,14 @@ export class ChatRenderer {
             block.toolKind ?? '',
             block.toolTitle ?? block.toolCallId,
           );
-          if (block.toolStatus) {
-            updateToolCallElement(state, block.toolStatus, block.toolKind ?? '');
+          if (block.toolStatus || block.toolError) {
+            const status = block.toolStatus ?? 'failed';
+            updateToolCallElement(
+              state,
+              status,
+              block.toolKind ?? '',
+              block.toolError ? { error: block.toolError } : undefined,
+            );
           }
         }
         break;

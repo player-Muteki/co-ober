@@ -7,6 +7,10 @@ export interface SessionMeta {
   cwd?: string;
   title?: string;
   updatedAt?: string;
+  /** Line-count summary from the OpenCode native database, when available. */
+  additions?: number;
+  deletions?: number;
+  files?: number;
 }
 
 export interface PromptPart {
@@ -54,6 +58,7 @@ export interface SessionSnapshot {
 }
 
 export interface AgentCapabilities {
+  loadSession?: boolean;
   sessionCapabilities?: {
     close?: boolean;
     fork?: boolean;
@@ -235,6 +240,8 @@ export interface ContentBlock {
   toolKind?: string;
   /** Last known status of the tool call (updated when it completes or fails) */
   toolStatus?: 'pending' | 'in_progress' | 'completed' | 'failed';
+  /** Error message captured from the OpenCode native database on restore */
+  toolError?: string;
   /** Duration in seconds (populated after completion for thinking blocks) */
   duration?: number;
   /** Sub-agent metadata for subagent blocks */
@@ -295,6 +302,17 @@ export interface SerializedMessage {
   isInterrupt?: boolean;
   /** Image attachments sent with a user message (base64 payloads). */
   images?: ImageAttachment[];
+  /** Per-message cost/token totals read from the OpenCode native database. */
+  usage?: MessageUsage;
+  /** OpenCode-native message id this replayed message was aggregated from, when known. */
+  nativeMessageId?: string;
+}
+
+export interface MessageUsage {
+  cost?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
 }
 
 export interface SerializedSession {

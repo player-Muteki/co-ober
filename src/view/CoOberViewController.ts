@@ -7,6 +7,7 @@ import type {
   ModelOption,
   AcpResponse,
   SerializedMessage,
+  SerializedSession,
   UsageInfo,
 } from '../types';
 import type { CoOberSettings } from '../types';
@@ -33,7 +34,13 @@ import { buildSystemPrompt } from '../context/injection';
 import { buildHistoryBlock } from '../context/historyRewind';
 import { buildTranscriptMarkdown, sanitizeNoteName } from '../chat/transcript';
 import { AcpTimeoutError, AcpProcessExitError, AcpAbortError, AcpSessionMissingError } from '../client/AcpErrors';
-import { readNativeSessionUsage } from '../opencode/NativeSessionReader';
+import {
+  readNativeMessageStats,
+  readNativeSessionTodos,
+  readNativeSessionUsage,
+  readNativeToolErrors,
+  type NativeMessageStat,
+} from '../opencode/NativeSessionReader';
 import { commandRegistry } from '../commands/registry';
 import { parseSlashCommand } from '../commands/executor';
 import { NOTECACHE_MAX_SIZE } from '../constants';
@@ -507,6 +514,7 @@ export class CoOberViewController {
     if (!this.state.sessionId) return;
     const session = this.deps.sessionStore.get(this.state.sessionId);
     if (!session) return;
+    await this.enrichMessagesFromNative(session);
     let idx = 0;
     for (const msg of session.messages) {
       const restoreId = `restore-${msg.timestamp}-${idx++}`;
@@ -518,10 +526,11 @@ export class CoOberViewController {
         } else if (msg.type === 'thinking') {
           this.deps.renderer.appendThinking(msg.content, restoreId, msg.timestamp);
         } else {
-          this.deps.renderer.appendText(msg.content, restoreId, msg.timestamp);
+          this.deps.renderer.appendText(msg.content, restoreId, msg.timestamp, msg.usage);
         }
       }
     }
+    await this.refreshNativePlan(session.sessionId);
   }
 
   async ensureRuntimeSession(): Promise<string | null> {
@@ -621,6 +630,9 @@ export class CoOberViewController {
     await this.adoptReplay(sessionId, collector.finish());
     await this.deps.sessionStore.save();
     await this.refreshNativeUsage(sessionId);
+    const session = this.deps.sessionStore.get(sessionId);
+    if (session) await this.enrichMessagesFromNative(session);
+    await this.refreshNativePlan(sessionId);
   }
 
   // ── Rewind (regenerate / edit-and-resend) ──
@@ -825,6 +837,8 @@ export class CoOberViewController {
         this.deps.toolbar.setSending(false);
         this.deps.input.focus();
         config.onFinally?.();
+        // The agent may have rewritten its todo list this turn; resync the plan panel.
+        void this.refreshNativePlan(sessionId).catch(() => {});
       }
     }
   }
@@ -846,6 +860,91 @@ export class CoOberViewController {
       contextTokens: usage.contextTokens,
     };
     this.deps.updateContextMeter(this.state.usage);
+  }
+
+  /**
+   * Re-read the OpenCode-native todo table so the plan panel survives session
+   * restore. Silently no-ops when the database or todos are unavailable.
+   */
+  private async refreshNativePlan(sessionId: string): Promise<void> {
+    const todos = await readNativeSessionTodos(sessionId);
+    if (todos.length === 0 || this.state.sessionId !== sessionId) return;
+    this.deps.renderer.setPlanEntries(todos);
+  }
+
+  /**
+   * Enrich a restored transcript with per-message cost/token footers and tool
+   * errors from the OpenCode database. Silently no-ops when unavailable.
+   */
+  private async enrichMessagesFromNative(session: SerializedSession): Promise<void> {
+    const [stats, toolErrors] = await Promise.all([
+      readNativeMessageStats(session.sessionId),
+      readNativeToolErrors(session.sessionId),
+    ]);
+    let changed = false;
+    if (stats.length > 0) changed = this.attachNativeUsage(session, stats);
+    if (Object.keys(toolErrors).length > 0) changed = this.attachNativeToolErrors(session, toolErrors) || changed;
+    if (!changed) return;
+    try {
+      await this.deps.sessionStore.save();
+    } catch {
+      // enrichment is cosmetic; a failed persist must not break restore
+    }
+  }
+
+  private attachNativeUsage(session: SerializedSession, stats: NativeMessageStat[]): boolean {
+    const assistants = session.messages.filter((m) => m.role === 'assistant');
+    if (assistants.length === 0) return false;
+    const toUsage = (s: NativeMessageStat) => ({
+      cost: s.cost,
+      inputTokens: s.inputTokens,
+      outputTokens: s.outputTokens,
+      totalTokens: s.totalTokens,
+    });
+    const byId = new Map(stats.map((s) => [s.messageId, s]));
+    let changed = false;
+    if (assistants.some((m) => m.nativeMessageId && byId.has(m.nativeMessageId))) {
+      const claimed = new Set<string>();
+      const claim = (msg: SerializedMessage) => {
+        const nativeId = msg.nativeMessageId;
+        if (!nativeId || msg.usage || claimed.has(nativeId)) return;
+        const stat = byId.get(nativeId);
+        if (!stat) return;
+        claimed.add(nativeId);
+        msg.usage = toUsage(stat);
+        changed = true;
+      };
+      // Thinking and text buckets can share one native message id; give the
+      // stat to the text bucket first because only it renders a usage footer.
+      for (const msg of assistants) if (msg.type !== 'thinking') claim(msg);
+      for (const msg of assistants) claim(msg);
+      return changed;
+    }
+    // Legacy transcripts carry no native message ids; match positionally only
+    // when the counts line up one-to-one, otherwise the mapping is guesswork.
+    if (stats.length !== assistants.length) return false;
+    assistants.forEach((msg, i) => {
+      if (!msg.usage) {
+        msg.usage = toUsage(stats[i]);
+        changed = true;
+      }
+    });
+    return changed;
+  }
+
+  private attachNativeToolErrors(session: SerializedSession, toolErrors: Record<string, string>): boolean {
+    let changed = false;
+    for (const msg of session.messages) {
+      for (const block of msg.contentBlocks ?? []) {
+        if (block.type !== 'tool_use' || !block.toolCallId || block.toolError) continue;
+        const error = toolErrors[block.toolCallId];
+        if (!error) continue;
+        block.toolError = error;
+        if (block.toolStatus !== 'completed') block.toolStatus = 'failed';
+        changed = true;
+      }
+    }
+    return changed;
   }
 
   /**

@@ -7,7 +7,10 @@ import type { NormalizedUpdate, SerializedMessage } from '../types';
  */
 export class SessionReplayCollector {
   private readonly order: string[] = [];
-  private readonly buckets = new Map<string, { role: 'user' | 'assistant'; type: 'text' | 'thinking'; text: string }>();
+  private readonly buckets = new Map<
+    string,
+    { role: 'user' | 'assistant'; type: 'text' | 'thinking'; text: string; messageId: string }
+  >();
 
   handle(update: NormalizedUpdate): void {
     if (update.kind !== 'message_chunk') return;
@@ -19,7 +22,7 @@ export class SessionReplayCollector {
       existing.text += update.chunkText;
       return;
     }
-    this.buckets.set(key, { role, type, text: update.chunkText });
+    this.buckets.set(key, { role, type, text: update.chunkText, messageId: update.messageId });
     this.order.push(key);
   }
 
@@ -29,7 +32,13 @@ export class SessionReplayCollector {
     for (const key of this.order) {
       const bucket = this.buckets.get(key);
       if (!bucket || !bucket.text.trim()) continue;
-      messages.push({ role: bucket.role, type: bucket.type, content: bucket.text, timestamp: now });
+      messages.push({
+        role: bucket.role,
+        type: bucket.type,
+        content: bucket.text,
+        timestamp: now,
+        nativeMessageId: bucket.messageId,
+      });
     }
     return messages;
   }
