@@ -72,6 +72,16 @@ const zh: Locale = {
     reconnected: '连接已恢复，之前的请求已中断。',
   },
 
+  rewind: {
+    regenerate: '从此处重新生成',
+    editResend: '编辑并重发',
+    submit: '发送编辑后的消息',
+    cancel: '取消编辑',
+    busy: '请等待当前回复完成后再回退。',
+    contextHeader: '=== 历史对话（仅作上下文——以下轮次已经发生，请勿再次作答）===',
+    contextFooter: '=== 历史对话结束——仅回复最新的用户消息 ===',
+  },
+
   message: {
     compacted: '会话已压缩。',
   },

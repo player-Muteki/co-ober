@@ -1,5 +1,5 @@
 import type { App } from 'obsidian';
-import { MarkdownRenderer, type Component } from 'obsidian';
+import { MarkdownRenderer, setIcon, type Component } from 'obsidian';
 import { t, onLocaleChange } from '../i18n/index';
 import type { UsageInfo, ContentBlock, SerializedMessage, ToolCallContent } from '../types';
 import { COPY_BUTTON_RESET_MS } from '../constants';
@@ -18,6 +18,11 @@ import {
   type ToolCallState,
 } from './ToolCallRenderer';
 
+export interface RewindHandlers {
+  onRegenerate(ordinal: number): void;
+  onEditResend(ordinal: number, text: string): void;
+}
+
 export class ChatRenderer {
   private container: HTMLDivElement;
   private app: App;
@@ -35,6 +40,10 @@ export class ChatRenderer {
   private placeholderEl: HTMLDivElement | null = null;
   private usageEls = new Map<HTMLDivElement, UsageInfo>();
   private unsubscribeLocale: () => void;
+
+  // ---- User-turn rewind actions ----
+  private userTurnCount = 0;
+  private rewindHandlers: RewindHandlers | null = null;
 
   // ---- Three-layer render frame scheduling ----
   // Layer 1: Text render pipeline (requestAnimationFrame + Promise)
@@ -87,6 +96,7 @@ export class ChatRenderer {
     this.planEl = null;
     this.placeholderEl = null;
     this.usageEls.clear();
+    this.userTurnCount = 0;
   }
 
   private scrollToBottom(): void {
@@ -114,7 +124,58 @@ export class ChatRenderer {
     wrap.dataset.timestamp = this.formatTimestamp(timestamp ?? Date.now());
     const body = wrap.createDiv({ cls: 'co-ober-msg-body' });
     body.textContent = text;
+    this.userTurnCount++;
+    if (this.rewindHandlers) this.addUserTurnActions(wrap, body, this.userTurnCount);
     this.scrollToBottom();
+  }
+
+  setRewindHandlers(handlers: RewindHandlers | null): void {
+    this.rewindHandlers = handlers;
+  }
+
+  private addUserTurnActions(wrap: HTMLDivElement, body: HTMLDivElement, ordinal: number): void {
+    const handlers = this.rewindHandlers;
+    if (!handlers) return;
+    const actions = wrap.createDiv({ cls: 'co-ober-user-actions' });
+
+    const regenBtn = actions.createEl('button', { cls: 'co-ober-user-action-btn' });
+    setIcon(regenBtn, 'rotate-cw');
+    regenBtn.title = t().rewind.regenerate;
+    regenBtn.onclick = () => handlers.onRegenerate(ordinal);
+
+    const editBtn = actions.createEl('button', { cls: 'co-ober-user-action-btn' });
+    setIcon(editBtn, 'pencil');
+    editBtn.title = t().rewind.editResend;
+    editBtn.onclick = () => this.beginUserTurnEdit(wrap, body, ordinal);
+  }
+
+  private beginUserTurnEdit(wrap: HTMLDivElement, body: HTMLDivElement, ordinal: number): void {
+    const handlers = this.rewindHandlers;
+    if (!handlers) return;
+    if (wrap.querySelector('.co-ober-user-edit')) return;
+
+    const editor = wrap.createDiv({ cls: 'co-ober-user-edit' });
+    const textarea = editor.createEl('textarea', { cls: 'co-ober-user-edit-input' });
+    textarea.value = body.textContent ?? '';
+    const btnRow = editor.createDiv({ cls: 'co-ober-user-edit-actions' });
+
+    const submitBtn = btnRow.createEl('button', { cls: 'co-ober-user-action-btn' });
+    setIcon(submitBtn, 'check');
+    submitBtn.title = t().rewind.submit;
+    submitBtn.onclick = () => {
+      const text = textarea.value.trim();
+      editor.remove();
+      if (!text) return;
+      body.textContent = text;
+      handlers.onEditResend(ordinal, text);
+    };
+
+    const cancelBtn = btnRow.createEl('button', { cls: 'co-ober-user-action-btn' });
+    setIcon(cancelBtn, 'x');
+    cancelBtn.title = t().rewind.cancel;
+    cancelBtn.onclick = () => editor.remove();
+
+    textarea.focus();
   }
 
   addAssistantPlaceholder(): void {

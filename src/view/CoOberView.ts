@@ -268,6 +268,10 @@ export class CoOberView extends ItemView {
 		};
 
 		this.controller = new CoOberViewController(deps, callbacks);
+		this.renderer.setRewindHandlers({
+			onRegenerate: (ordinal) => { void this.controller.rewindUserTurn(ordinal); },
+			onEditResend: (ordinal, text) => { void this.controller.rewindUserTurn(ordinal, text); },
+		});
 
 		// Store queue indicator reference on controller
 		this.controller.queueIndicatorEl = queueIndicatorEl;

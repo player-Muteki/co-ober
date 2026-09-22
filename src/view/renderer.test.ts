@@ -52,6 +52,95 @@ describe('ChatRenderer', () => {
     });
   });
 
+  describe('user-turn rewind actions', () => {
+    it('renders no actions when no rewind handlers are installed', () => {
+      renderer.addUserMessage('Hello');
+      expect(container.querySelector('.co-ober-user-actions')).toBeNull();
+    });
+
+    it('renders regenerate and edit buttons per user message with 1-based ordinals', () => {
+      const onRegenerate = vi.fn();
+      renderer.setRewindHandlers({ onRegenerate, onEditResend: vi.fn() });
+      renderer.addUserMessage('first');
+      renderer.addUserMessage('second');
+
+      const actionBars = container.querySelectorAll('.co-ober-user-actions');
+      expect(actionBars).toHaveLength(2);
+      const firstBtns = actionBars[0].querySelectorAll('button');
+      expect(firstBtns).toHaveLength(2);
+      expect(firstBtns[0].title).toBe('Regenerate from here');
+      expect(firstBtns[1].title).toBe('Edit & resend');
+
+      (firstBtns[0] as HTMLElement).click();
+      expect(onRegenerate).toHaveBeenCalledWith(1);
+      (container.querySelectorAll('.co-ober-user-actions')[1].querySelector('button') as HTMLElement).click();
+      expect(onRegenerate).toHaveBeenCalledWith(2);
+    });
+
+    it('resets turn ordinals on clear', () => {
+      const onRegenerate = vi.fn();
+      renderer.setRewindHandlers({ onRegenerate, onEditResend: vi.fn() });
+      renderer.addUserMessage('one');
+      renderer.clear();
+      renderer.addUserMessage('two');
+
+      (container.querySelector('.co-ober-user-actions button') as HTMLElement).click();
+      expect(onRegenerate).toHaveBeenCalledTimes(1);
+      expect(onRegenerate).toHaveBeenCalledWith(1);
+    });
+
+    it('edit flow swaps the bubble text and resends with the edited content', () => {
+      const onEditResend = vi.fn();
+      renderer.setRewindHandlers({ onRegenerate: vi.fn(), onEditResend });
+      renderer.addUserMessage('original');
+
+      const wrap = container.querySelector('.co-ober-msg.user')!;
+      (wrap.querySelectorAll('button')[1] as HTMLElement).click();
+      const textarea = wrap.querySelector('.co-ober-user-edit textarea') as HTMLTextAreaElement;
+      expect(textarea).not.toBeNull();
+      expect(textarea.value).toBe('original');
+
+      textarea.value = '  edited text  ';
+      const editBtns = wrap.querySelectorAll('.co-ober-user-edit-actions button');
+      expect(editBtns).toHaveLength(2);
+      (editBtns[0] as HTMLElement).click();
+
+      expect(onEditResend).toHaveBeenCalledWith(1, 'edited text');
+      expect(wrap.querySelector('.co-ober-msg-body')!.textContent).toBe('edited text');
+      expect(wrap.querySelector('.co-ober-user-edit')).toBeNull();
+    });
+
+    it('cancel discards the edit without notifying', () => {
+      const onEditResend = vi.fn();
+      renderer.setRewindHandlers({ onRegenerate: vi.fn(), onEditResend });
+      renderer.addUserMessage('keep me');
+
+      const wrap = container.querySelector('.co-ober-msg.user')!;
+      (wrap.querySelectorAll('button')[1] as HTMLElement).click();
+      const textarea = wrap.querySelector('.co-ober-user-edit textarea') as HTMLTextAreaElement;
+      textarea.value = 'discarded';
+      (wrap.querySelectorAll('.co-ober-user-edit-actions button')[1] as HTMLElement).click();
+
+      expect(onEditResend).not.toHaveBeenCalled();
+      expect(wrap.querySelector('.co-ober-user-edit')).toBeNull();
+      expect(wrap.querySelector('.co-ober-msg-body')!.textContent).toBe('keep me');
+    });
+
+    it('blank edited text resends nothing', () => {
+      const onEditResend = vi.fn();
+      renderer.setRewindHandlers({ onRegenerate: vi.fn(), onEditResend });
+      renderer.addUserMessage('text');
+
+      const wrap = container.querySelector('.co-ober-msg.user')!;
+      (wrap.querySelectorAll('button')[1] as HTMLElement).click();
+      (wrap.querySelector('.co-ober-user-edit textarea') as HTMLTextAreaElement).value = '   ';
+      (wrap.querySelectorAll('.co-ober-user-edit-actions button')[0] as HTMLElement).click();
+
+      expect(onEditResend).not.toHaveBeenCalled();
+      expect(wrap.querySelector('.co-ober-msg-body')!.textContent).toBe('text');
+    });
+  });
+
   describe('assistant placeholder', () => {
     it('adds placeholder', () => {
       renderer.addAssistantPlaceholder();

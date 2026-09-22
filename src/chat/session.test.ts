@@ -108,6 +108,34 @@ describe('SessionRepository', () => {
     expect(repository.activeId).toBe('s1');
   });
 
+  it('rekeys a session to a new id keeping messages and active state', () => {
+    const { repository } = createRepository();
+    const session = createSession('old', 5, 2);
+    repository.hydrate([session], 'old');
+
+    repository.rekey('old', 'new');
+
+    expect(repository.get('old')).toBeUndefined();
+    expect(repository.get('new')).toBe(session);
+    expect(session.sessionId).toBe('new');
+    expect(session.opencodeSessionId).toBe('new');
+    expect(session.messages).toHaveLength(2);
+    expect(repository.activeId).toBe('new');
+  });
+
+  it('rekey ignores unknown ids and no-op renames', () => {
+    const { repository } = createRepository();
+    const session = createSession('keep');
+    repository.hydrate([session], 'keep');
+
+    expect(() => repository.rekey('missing', 'other')).not.toThrow();
+    repository.rekey('keep', 'keep');
+
+    expect(repository.get('keep')).toBe(session);
+    expect(repository.activeId).toBe('keep');
+    expect(repository.list()).toHaveLength(1);
+  });
+
   it('returns persisted state through snapshots', () => {
     const { repository } = createRepository();
     const session = createSession('s1');

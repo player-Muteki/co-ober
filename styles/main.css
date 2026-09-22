@@ -80,6 +80,60 @@
   max-width: 90%;
 }
 
+.co-ober-msg.user .co-ober-user-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.co-ober-msg.user:hover .co-ober-user-actions {
+  opacity: 1;
+}
+
+.co-ober-user-action-btn {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  height: auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+.co-ober-user-action-btn:hover {
+  color: var(--text-normal);
+}
+
+.co-ober-user-action-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.co-ober-msg.user .co-ober-user-edit {
+  align-self: flex-end;
+  width: 90%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.co-ober-user-edit .co-ober-user-edit-input {
+  width: 100%;
+  min-height: 60px;
+  font-size: var(--font-ui-small);
+  user-select: text;
+}
+
+.co-ober-user-edit .co-ober-user-edit-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
 .co-ober-msg.assistant .co-ober-msg-body {
   background: var(--background-secondary);
   padding: 8px 12px;

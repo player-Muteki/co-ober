@@ -7,6 +7,7 @@ export interface SessionStore {
   get(id: string): SerializedSession | undefined;
   getOrCreate(opencodeSessionId: string): SerializedSession;
   append(id: string, msg: SerializedMessage): void;
+  rekey(oldId: string, newId: string): void;
   setActive(id: string): void;
   list(): SessionMeta[];
   save(): Promise<void>;
@@ -77,6 +78,18 @@ export class SessionRepository implements SessionStore {
     if (!session) return;
     session.messages.push(msg);
     session.updatedAt = Date.now();
+  }
+
+  /** Move a session entry to a new id, keeping messages and active status. */
+  rekey(oldId: string, newId: string): void {
+    if (oldId === newId) return;
+    const session = this.sessions.get(oldId);
+    if (!session) return;
+    this.sessions.delete(oldId);
+    session.sessionId = newId;
+    session.opencodeSessionId = newId;
+    this.sessions.set(newId, session);
+    if (this.activeSessionId === oldId) this.activeSessionId = newId;
   }
 
   setActive(id: string): void {

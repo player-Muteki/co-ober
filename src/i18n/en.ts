@@ -70,6 +70,16 @@ const en = {
     reconnected: 'Connection restored. The previous request was interrupted.',
   },
 
+  rewind: {
+    regenerate: 'Regenerate from here',
+    editResend: 'Edit & resend',
+    submit: 'Send edited message',
+    cancel: 'Cancel edit',
+    busy: 'Wait for the current response to finish before rewinding.',
+    contextHeader: '=== EARLIER CONVERSATION (context only — these turns already happened; do not answer them again) ===',
+    contextFooter: '=== END OF EARLIER CONVERSATION — respond only to the newest user message ===',
+  },
+
   message: {
     compacted: 'Session compacted.',
   },

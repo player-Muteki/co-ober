@@ -20,6 +20,7 @@ import type { WelcomeView } from './welcomeView';
 import type { PermissionBanner } from './permissionBanner';
 import type { InlineEditPanel } from './inlineEditPanel';
 import { buildSystemPrompt } from '../context/injection';
+import { buildHistoryBlock } from '../context/historyRewind';
 import { AcpTimeoutError, AcpProcessExitError, AcpAbortError, AcpSessionMissingError } from '../client/AcpErrors';
 import { commandRegistry } from '../commands/registry';
 import { parseSlashCommand } from '../commands/executor';
@@ -570,6 +571,79 @@ export class CoOberViewController {
 		await this.deps.sessionStore.save();
 	}
 
+	// ── Rewind (regenerate / edit-and-resend) ──
+
+	/**
+	 * Drop everything from the ordinal-th user turn onward, then re-send that
+	 * question — verbatim (regenerate) or edited — into a fresh agent session.
+	 * ACP has no server-side truncate, so the retained turns are replayed to
+	 * the new agent session as a context-only text block instead.
+	 */
+	async rewindUserTurn(ordinal: number, newText?: string): Promise<void> {
+		if (this.busy) {
+			this.deps.renderer.addSystemMessage(t().rewind.busy);
+			return;
+		}
+		const sessionId = this.state.sessionId;
+		if (!sessionId) return;
+		const session = this.deps.sessionStore.get(sessionId);
+		if (!session) return;
+
+		let seen = 0;
+		let idx = -1;
+		for (let i = 0; i < session.messages.length; i++) {
+			if (session.messages[i].role !== 'user') continue;
+			seen++;
+			if (seen === ordinal) {
+				idx = i;
+				break;
+			}
+		}
+		if (idx === -1) return;
+
+		const text = (newText ?? session.messages[idx].content).trim();
+		if (!text) return;
+
+		const history = session.messages.slice(0, idx);
+		session.messages.splice(idx);
+		session.updatedAt = Date.now();
+
+		try {
+			await this.renewAgentSession();
+		} catch (e) {
+			console.error('[co-ober] rewind session renew:', e);
+		}
+
+		this.resetConversationView();
+		await this.restoreSession();
+		await this.executeAgentCall(text, [], {
+			buildPartsWithRefs: [],
+			history,
+			retryFn: (t2, r) => this.send(t2, r ?? []),
+		});
+	}
+
+	/** Rotate to a fresh agent session while keeping the local transcript under the new id. */
+	private async renewAgentSession(): Promise<string | null> {
+		const client = this.deps.runtime.getClient();
+		if (!client) return null;
+		const oldId = this.state.sessionId;
+		const newId = await this.sessionMutex.runExclusive(async () => {
+			const sid = await client.createSession(this.getVaultCwd(), this.deps.runtime.settings.mcpServers);
+			await applyDefaultSessionSettings(client, sid, this.deps.runtime.settings);
+			return sid;
+		});
+		if (oldId && client.getAgentCapabilities()?.sessionCapabilities?.close) {
+			client.closeSession(oldId).catch((e) => console.error('[co-ober] close rewound session:', e));
+		}
+		if (oldId) this.deps.sessionStore.rekey(oldId, newId);
+		this.state.sessionId = newId;
+		this.deps.sessionStore.setActive(newId);
+		await this.deps.sessionStore.save();
+		this.loadToolbarOptions();
+		return newId;
+	}
+
 	// ── Sending ──
 
 	private async executeAgentCall(
@@ -579,6 +653,7 @@ export class CoOberViewController {
 			addUserMessage?: boolean;
 			saveMessage?: boolean;
 			buildPartsWithRefs?: ContextRef[];
+			history?: SerializedMessage[];
 			onAfterResponse?: (response: AcpResponse | undefined) => Promise<void>;
 			onFinally?: () => void;
 			retryFn?: (text: string, refs?: ContextRef[]) => Promise<void>;
@@ -604,7 +679,7 @@ export class CoOberViewController {
 			await this.syncRuntimeSession(sessionId);
 			if (this.state.sessionId !== sessionId || !this.busy) return;
 			const parts = config.buildPartsWithRefs
-				? await this.buildParts(text, config.buildPartsWithRefs)
+				? await this.buildParts(text, config.buildPartsWithRefs, config.history ? buildHistoryBlock(config.history) : undefined)
 				: [{ type: 'text' as const, text }];
 			if (this.state.sessionId !== sessionId || !this.busy) return;
 			parts.push(...this.callbacks.getPendingImageParts());
@@ -784,7 +859,7 @@ export class CoOberViewController {
 		this.noteContentCache.set(path, entry);
 	}
 
-	async buildParts(text: string, refs: ContextRef[]): Promise<PromptPart[]> {
+	async buildParts(text: string, refs: ContextRef[], historyBlock?: string): Promise<PromptPart[]> {
 		const parts: PromptPart[] = [];
 
 		// Clear stale cache on session change
@@ -817,6 +892,7 @@ export class CoOberViewController {
 		const notesBlock = buildNotesBlock(resolved);
 		const combined = [sysPrompt, notesBlock].filter(Boolean).join('\n\n');
 		if (combined) parts.push({ type: 'text', text: combined });
+		if (historyBlock) parts.push({ type: 'text', text: historyBlock });
 
 		parts.push({ type: 'text', text });
 

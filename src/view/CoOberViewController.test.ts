@@ -74,6 +74,7 @@ function createMockClient(overrides: Record<string, unknown> = {}) {
 		sendMessage: vi.fn().mockResolvedValue({ stopReason: 'end_turn', usage: { totalTokens: 10, inputTokens: 5, outputTokens: 5 } }),
 		cancel: vi.fn().mockResolvedValue(undefined),
 		abort: vi.fn(),
+		closeSession: vi.fn().mockResolvedValue(undefined),
 		forkSession: vi.fn().mockResolvedValue('forked-session'),
 		resumeSession: vi.fn().mockResolvedValue(undefined),
 		getSessionSnapshot: vi.fn(() => ({
@@ -611,6 +612,123 @@ describe('CoOberViewController', () => {
 
 			expect(shared.messages).toHaveLength(1);
 			expect(shared.messages[0]).toMatchObject({ role: 'assistant', content: 'resumed text' });
+		});
+	});
+
+	describe('rewindUserTurn', () => {
+		const userMsg = (content: string): SerializedMessage => ({ role: 'user', type: 'text', content, timestamp: 1 });
+		const asstMsg = (content: string): SerializedMessage => ({ role: 'assistant', type: 'text', content, timestamp: 2 });
+
+		function rewindSetup(messages: SerializedMessage[], clientOverrides: Record<string, unknown> = {}) {
+			const shared = {
+				sessionId: 'old-ses', title: 'rewind', opencodeSessionId: 'old-ses',
+				messages, createdAt: 0, updatedAt: 0,
+			};
+			const store = {
+				get: vi.fn(() => shared),
+				getOrCreate: vi.fn(() => shared),
+				setActive: vi.fn(),
+				save: vi.fn().mockResolvedValue(undefined),
+				remove: vi.fn(),
+				list: vi.fn(() => []),
+				append: vi.fn(),
+				rekey: vi.fn((_oldId: string, newId: string) => {
+					shared.sessionId = newId;
+					shared.opencodeSessionId = newId;
+				}),
+			};
+			deps.sessionStore = store as unknown as ControllerDeps['sessionStore'];
+			const addUserMessage = vi.fn();
+			deps.renderer = { ...deps.renderer, addUserMessage } as unknown as ControllerDeps['renderer'];
+			const client = createMockClient({
+				createSession: vi.fn().mockResolvedValue('fresh-ses'),
+				getCurrentSessionId: vi.fn(() => 'fresh-ses'),
+				...clientOverrides,
+			});
+			(deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+			controller = new CoOberViewController(deps, callbacks);
+			controller.state.sessionId = 'old-ses';
+			return { shared, store, client, addUserMessage };
+		}
+
+		it('truncates from the target turn and resends it into a fresh agent session with history context', async () => {
+			const { shared, store, client, addUserMessage } = rewindSetup([userMsg('q1'), asstMsg('a1'), userMsg('q2'), asstMsg('a2')]);
+
+			await controller.rewindUserTurn(2);
+
+			expect(store.rekey).toHaveBeenCalledWith('old-ses', 'fresh-ses');
+			expect(controller.state.sessionId).toBe('fresh-ses');
+			expect(store.setActive).toHaveBeenCalledWith('fresh-ses');
+			expect(shared.messages).toEqual([userMsg('q1'), asstMsg('a1')]);
+			expect(client.closeSession).not.toHaveBeenCalled();
+
+			expect(client.sendMessage).toHaveBeenCalledTimes(1);
+			const [sid, parts] = (client.sendMessage as ReturnType<typeof vi.fn>).mock.calls[0] as [string, PromptPart[]];
+			expect(sid).toBe('fresh-ses');
+			expect(parts[parts.length - 1]).toEqual({ type: 'text', text: 'q2' });
+			const historyPart = parts.find((p) => p.type === 'text' && typeof p.text === 'string' && p.text.includes(t().rewind.contextHeader));
+			expect(historyPart).toBeDefined();
+			expect((historyPart as { text: string }).text).toContain('User: q1');
+			expect((historyPart as { text: string }).text).toContain('Assistant: a1');
+			expect((historyPart as { text: string }).text).not.toContain('q2');
+
+			// history is re-rendered before the new turn is sent
+			expect(addUserMessage).toHaveBeenCalledWith('q1', 1);
+		});
+
+		it('regenerating the first turn sends no history block', async () => {
+			const { client } = rewindSetup([userMsg('q1'), asstMsg('a1')]);
+
+			await controller.rewindUserTurn(1);
+
+			const [, parts] = (client.sendMessage as ReturnType<typeof vi.fn>).mock.calls[0] as [string, PromptPart[]];
+			expect(parts[parts.length - 1]).toEqual({ type: 'text', text: 'q1' });
+			expect(parts.some((p) => p.type === 'text' && typeof p.text === 'string' && p.text.includes(t().rewind.contextHeader))).toBe(false);
+		});
+
+		it('edit-and-resend replaces the original text while keeping the same truncation', async () => {
+			const { shared, client, addUserMessage } = rewindSetup([userMsg('q1'), asstMsg('a1'), userMsg('q2')]);
+
+			await controller.rewindUserTurn(2, '  edited question  ');
+
+			expect(shared.messages).toEqual([userMsg('q1'), asstMsg('a1')]);
+			const [, parts] = (client.sendMessage as ReturnType<typeof vi.fn>).mock.calls[0] as [string, PromptPart[]];
+			expect(parts[parts.length - 1]).toEqual({ type: 'text', text: 'edited question' });
+			expect(addUserMessage).toHaveBeenCalledWith('edited question');
+		});
+
+		it('refuses to rewind while a generation is in flight', async () => {
+			const { shared, client } = rewindSetup([userMsg('q1'), asstMsg('a1')]);
+			Reflect.set(controller, 'busy', true);
+
+			await controller.rewindUserTurn(1);
+
+			expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().rewind.busy);
+			expect(client.sendMessage).not.toHaveBeenCalled();
+			expect(shared.messages).toHaveLength(2);
+		});
+
+		it('closes the old agent session when the capability exists', async () => {
+			const closeSession = vi.fn().mockResolvedValue(undefined);
+			rewindSetup([userMsg('q1')], {
+				getAgentCapabilities: vi.fn(() => ({ sessionCapabilities: { close: true } })),
+				closeSession,
+			});
+
+			await controller.rewindUserTurn(1);
+
+			expect(closeSession).toHaveBeenCalledWith('old-ses');
+		});
+
+		it('ignores unknown ordinals without touching the session', async () => {
+			const { shared, store, client } = rewindSetup([userMsg('q1')]);
+
+			await controller.rewindUserTurn(5);
+
+			expect(store.rekey).not.toHaveBeenCalled();
+			expect(client.sendMessage).not.toHaveBeenCalled();
+			expect(controller.state.sessionId).toBe('old-ses');
+			expect(shared.messages).toHaveLength(1);
 		});
 	});
 
