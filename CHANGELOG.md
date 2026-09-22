@@ -1,3 +1,13 @@
+## 0.1.27 - 2026-09-22
+
+### Added
+- **OpenCode native session history**: the session dropdown now lists OpenCode's own terminal sessions read straight from the native `opencode.db` (in-process `node:sqlite`, falling back to a spawned Node helper, then the `sqlite3` CLI). Selecting one restores it over ACP `session/load` so the conversation can continue inside Obsidian. (Claudian parity)
+- **Readonly execution tier**: a fourth permission mode that auto-allows only non-mutating tools (read/search/fetch), auto-rejects every write or execution without prompts, and downgrades client-side capabilities to file-write readonly with terminal execution disabled.
+- **Session-loss surfacing**: agent-side "session no longer exists" failures during switching, connect and reconnect are classified into a dedicated error and reported in chat instead of failing silently.
+
+### Fixed
+- **Generation-fenced reconnection**: every subprocess connection now carries a generation number; stale connect continuations, reconnect timers and `session/update` notifications from a superseded transport can no longer mutate or tear down the live connection.
+
 ## 0.1.26 - 2026-08-28
 
 ### Fixed
