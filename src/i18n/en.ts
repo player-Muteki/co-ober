@@ -105,6 +105,14 @@ const en = {
     toolCalls: 'The agent ended the turn waiting on tool call results — the answer may be incomplete.',
   },
 
+  stream: {
+    noticeInfo: 'Notice',
+    noticeWarning: 'Warning',
+    noticeError: 'Alert',
+    compacted: '— Context compacted by the agent —',
+    unsupportedContent: '[{type} content — cannot be shown here]',
+  },
+
   error: {
     compact: 'Compact failed',
     timeout: 'Request timed out',

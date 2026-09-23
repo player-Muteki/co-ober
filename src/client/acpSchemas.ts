@@ -56,10 +56,14 @@ export const zToolCall = z.object({
   sessionUpdate: z.literal('tool_call'),
   toolCallId: z.string(),
   title: z.string(),
+  // Stable since schema v1.23.0: the programmatic tool name, orthogonal to
+  // the human-readable title. null and omission both mean "no name".
+  name: z.string().nullish().transform((n) => n ?? undefined),
   kind: zToolKind.optional(),
   status: z.string().optional(),
   rawInput: z.record(z.string(), z.unknown()).optional(),
   locations: z.array(zLocation).optional(),
+  content: z.array(zToolCallContent).optional(),
 });
 export const zToolCallUpdate = z.object({
   sessionUpdate: z.literal('tool_call_update'),
@@ -67,6 +71,7 @@ export const zToolCallUpdate = z.object({
   status: z.enum(['pending', 'in_progress', 'completed', 'failed']),
   kind: zToolKind.optional(),
   title: z.string().optional(),
+  name: z.string().nullish().transform((n) => n ?? undefined),
   rawInput: z.record(z.string(), z.unknown()).optional(),
   rawOutput: z.record(z.string(), z.unknown()).optional(),
   content: z.array(zToolCallContent).optional(),
@@ -76,14 +81,15 @@ export const zPlan = z.object({
   sessionUpdate: z.literal('plan'),
   entries: z.array(zEntry),
 });
-// ACP v2-alpha replaces the flattened `plan` with an item-based `plan_update`
-// carrying a tagged content object; only the `items` variant is representable
-// today (markdown/file/removal stay behind unstable_plan_operations).
+// ACP v2 replaces the flattened `plan` with an item-based `plan_update` whose
+// content is a tagged union (`items` today; other variants are reserved for
+// future ACP and must be ignored, not fail the frame). Only `items` renders.
 export const zPlanUpdate = z.object({
   sessionUpdate: z.literal('plan_update'),
   plan: z.object({
     type: z.string(),
     id: z.string().optional(),
+    planId: z.string().optional(),
     entries: z.array(zEntry).optional(),
   }),
 });
@@ -124,6 +130,19 @@ export const zUsageUpdate = z.object({
   thoughtTokens: z.number().optional(),
   cost: zCost.optional(),
 });
+// `notice` and `compaction` updates are agent-side extensions (ACP RFDs
+// #2004/#2002) that are not in the v1 contract yet. Agents already emit
+// them; parse a permissive shape so they render instead of dropping, and
+// never let a malformed field cost us the frame.
+export const zNoticeUpdate = z.object({
+  sessionUpdate: z.literal('notice_update'),
+  level: z.string().catch('info'),
+  message: z.preprocess((v) => (typeof v === 'string' ? v : typeof (v as { text?: unknown })?.text === 'string' ? (v as { text: string }).text : ''), z.string().catch('')),
+});
+export const zCompactionUpdate = z.object({
+  sessionUpdate: z.literal('compaction_update'),
+  summary: z.string().optional(),
+});
 
 export const zSessionUpdate = z.discriminatedUnion('sessionUpdate', [
   zAgentMessageChunk,
@@ -139,4 +158,6 @@ export const zSessionUpdate = z.discriminatedUnion('sessionUpdate', [
   zCurrentModelUpdate,
   zSessionInfoUpdate,
   zUsageUpdate,
+  zNoticeUpdate,
+  zCompactionUpdate,
 ]);

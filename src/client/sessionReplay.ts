@@ -1,4 +1,5 @@
 import type { NormalizedUpdate, SerializedMessage } from '../types';
+import { t } from '../i18n/index';
 
 /**
  * Accumulates replayed message chunks delivered by the agent while a
@@ -13,6 +14,13 @@ export class SessionReplayCollector {
   >();
 
   handle(update: NormalizedUpdate): void {
+    if (update.kind === 'compaction') {
+      // Keep the compaction boundary visible in the replayed transcript.
+      const key = `compaction|${this.order.length}`;
+      this.buckets.set(key, { role: 'assistant', type: 'text', text: t().stream.compacted, messageId: key });
+      this.order.push(key);
+      return;
+    }
     if (update.kind !== 'message_chunk') return;
     const role = update.role === 'user' ? 'user' : 'assistant';
     const type = update.role === 'thought' ? 'thinking' : 'text';

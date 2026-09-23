@@ -332,3 +332,47 @@ describe('SessionUpdateNormalizer non-text chunks', () => {
     expect(norm).toEqual({ kind: 'message_chunk', role: 'user', messageId: 'm2', chunkText: '', accumulatedText: '' });
   });
 });
+
+describe('SessionUpdateNormalizer notice, compaction and tool name', () => {
+  let normalizer: SessionUpdateNormalizer;
+
+  beforeEach(() => {
+    normalizer = new SessionUpdateNormalizer();
+  });
+
+  it('normalizes notice and compaction updates', () => {
+    expect(normalizer.normalize({ sessionUpdate: 'notice_update', level: 'error', message: 'boom' })).toEqual({
+      kind: 'notice',
+      level: 'error',
+      message: 'boom',
+    });
+    expect(normalizer.normalize({ sessionUpdate: 'compaction_update' })).toEqual({ kind: 'compaction', summary: undefined });
+  });
+
+  it('carries the tool name and initial content onto the snapshot', () => {
+    const norm = normalizer.normalize({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'tc',
+      title: 'Run',
+      name: 'bash',
+      content: [{ type: 'content', content: { type: 'text', text: 'in' } }],
+    });
+    expect(norm).toEqual(
+      expect.objectContaining({
+        toolName: 'bash',
+        contents: [{ type: 'content', content: { type: 'text', text: 'in' } }],
+      }),
+    );
+  });
+
+  it('merges a later name update into the tracked snapshot', () => {
+    normalizer.normalize({ sessionUpdate: 'tool_call', toolCallId: 'tc', title: 'T' });
+    const upd = normalizer.normalize({ sessionUpdate: 'tool_call_update', toolCallId: 'tc', status: 'completed', name: 'edit' });
+    expect(upd).toEqual(expect.objectContaining({ toolName: 'edit', status: 'completed' }));
+  });
+
+  it('rebuilds a missing snapshot with the name from the update', () => {
+    const upd = normalizer.normalize({ sessionUpdate: 'tool_call_update', toolCallId: 'tc9', status: 'completed', name: 'grep' });
+    expect(upd).toEqual(expect.objectContaining({ toolName: 'grep', title: 'tc9' }));
+  });
+});

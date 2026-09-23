@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SessionReplayCollector } from './sessionReplay';
+import { setLocale } from '../i18n/index';
 import type { NormalizedUpdate } from '../types';
 
 function chunk(role: 'user' | 'agent' | 'thought', messageId: string, text: string): NormalizedUpdate {
@@ -53,5 +54,22 @@ describe('SessionReplayCollector', () => {
     const messages = collector.finish();
     expect(messages[0]?.nativeMessageId).toBe('msg_0ad397');
     expect(messages[1]?.nativeMessageId).toBe('msg_0ad397');
+  });
+});
+
+describe('SessionReplayCollector compaction boundary', () => {
+  it('inserts the localized compaction marker at its arrival position', () => {
+    setLocale('en');
+    const collector = new SessionReplayCollector();
+    collector.handle(chunk('user', 'u1', 'question'));
+    collector.handle({ kind: 'compaction' });
+    collector.handle(chunk('agent', 'a1', 'after compaction'));
+
+    const messages = collector.finish();
+    expect(messages.map((m) => `${m.role}:${m.content}`)).toEqual([
+      'user:question',
+      'assistant:— Context compacted by the agent —',
+      'assistant:after compaction',
+    ]);
   });
 });

@@ -40,6 +40,8 @@ import {
   zCurrentModelUpdate,
   zSessionInfoUpdate,
   zUsageUpdate,
+  zNoticeUpdate,
+  zCompactionUpdate,
 } from './acpSchemas';
 import { z } from 'zod';
 
@@ -88,11 +90,19 @@ export function parseSessionUpdate(u: Record<string, unknown> | undefined | null
       return r.success ? r.data : null;
     }
     case 'plan_update': {
-      // v2-alpha: coerce the item-based envelope onto the v1 plan shape;
-      // unknown content variants (markdown/file/removal) stay unrendered.
+      // v2: coerce the item-based envelope onto the v1 plan shape; reserved
+      // non-items content variants stay unrendered.
       const r = zPlanUpdate.safeParse(u);
       if (!r.success || r.data.plan.type !== 'items' || !Array.isArray(r.data.plan.entries)) return null;
       return { sessionUpdate: 'plan', entries: r.data.plan.entries };
+    }
+    case 'notice_update': {
+      const r = zNoticeUpdate.safeParse(u);
+      return r.success && r.data.message ? r.data : null;
+    }
+    case 'compaction_update': {
+      const r = zCompactionUpdate.safeParse(u);
+      return r.success ? r.data : null;
     }
     case 'user_message_chunk': {
       const r = zUserMessageChunk.safeParse(u);

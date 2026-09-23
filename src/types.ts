@@ -127,26 +127,32 @@ export type SessionUpdate =
   | { sessionUpdate: 'agent_message_chunk'; messageId: string; content: ChunkContent }
   | { sessionUpdate: 'agent_thought_chunk'; messageId: string; content: ChunkContent }
   | { sessionUpdate: 'user_message_chunk'; messageId: string; content: ChunkContent }
-  | { sessionUpdate: 'tool_call'; toolCallId: string; title: string; kind?: ToolKind; status?: string; rawInput?: Record<string, unknown>; locations?: { path: string }[] }
-  | { sessionUpdate: 'tool_call_update'; toolCallId: string; status: 'pending' | 'in_progress' | 'completed' | 'failed'; kind?: ToolKind; title?: string; locations?: { path: string }[]; rawInput?: Record<string, unknown>; rawOutput?: Record<string, unknown>; content?: ToolCallContent[] }
+  | { sessionUpdate: 'tool_call'; toolCallId: string; title: string; name?: string; kind?: ToolKind; status?: string; rawInput?: Record<string, unknown>; locations?: { path: string }[]; content?: ToolCallContent[] }
+  | { sessionUpdate: 'tool_call_update'; toolCallId: string; status: 'pending' | 'in_progress' | 'completed' | 'failed'; kind?: ToolKind; title?: string; name?: string; locations?: { path: string }[]; rawInput?: Record<string, unknown>; rawOutput?: Record<string, unknown>; content?: ToolCallContent[] }
   | { sessionUpdate: 'plan'; entries: { content: string; status: string; priority: string }[] }
   | { sessionUpdate: 'config_option_update'; configOptions: SessionConfigOption[] }
   | { sessionUpdate: 'available_commands_update'; availableCommands: AvailableCommand[] }
   | { sessionUpdate: 'current_mode_update'; currentModeId?: string; availableModes?: ModeOption[] }
   | { sessionUpdate: 'current_model_update'; currentModelId?: string; availableModels?: ModelOption[] }
   | { sessionUpdate: 'session_info_update'; sessionId?: string; title?: string; cwd?: string; configOptions?: SessionConfigOption[] }
-  | { sessionUpdate: 'usage_update'; used?: number; size?: number; totalTokens?: number; inputTokens?: number; outputTokens?: number; thoughtTokens?: number; cost?: { amount: number; currency: string } };
+  | { sessionUpdate: 'usage_update'; used?: number; size?: number; totalTokens?: number; inputTokens?: number; outputTokens?: number; thoughtTokens?: number; cost?: { amount: number; currency: string } }
+  // Extension updates not in the v1 contract yet (notice RFD #2004,
+  // compaction RFD #2002): parsed permissively so they render instead of dropping.
+  | { sessionUpdate: 'notice_update'; level: string; message: string }
+  | { sessionUpdate: 'compaction_update'; summary?: string };
 
 export type NormalizedUpdate =
   | { kind: 'message_chunk'; role: 'user' | 'agent' | 'thought'; messageId: string; chunkText: string; accumulatedText: string; content?: ChunkContent }
-  | { kind: 'tool_call_snapshot'; toolCallId: string; title: string; toolKind: ToolKind; status: 'pending' | 'in_progress' | 'completed' | 'failed'; rawInput?: Record<string, unknown>; rawOutput?: Record<string, unknown>; locations?: { path: string }[]; contents: ToolCallContent[] }
+  | { kind: 'tool_call_snapshot'; toolCallId: string; title: string; toolName?: string; toolKind: ToolKind; status: 'pending' | 'in_progress' | 'completed' | 'failed'; rawInput?: Record<string, unknown>; rawOutput?: Record<string, unknown>; locations?: { path: string }[]; contents: ToolCallContent[] }
   | { kind: 'plan'; entries: { content: string; status: string; priority: string }[] }
   | { kind: 'commands'; commands: AvailableCommand[] }
   | { kind: 'mode'; currentModeId: string | null; availableModes: ModeOption[] }
   | { kind: 'model'; currentModelId: string | null; availableModels: ModelOption[] }
   | { kind: 'config_options'; configOptions: SessionConfigOption[] }
   | { kind: 'session_info'; sessionId?: string; title?: string; cwd?: string }
-  | { kind: 'usage'; totalTokens?: number; inputTokens?: number; outputTokens?: number; thoughtTokens?: number; cost?: { amount: number; currency: string }; used?: number; size?: number };
+  | { kind: 'usage'; totalTokens?: number; inputTokens?: number; outputTokens?: number; thoughtTokens?: number; cost?: { amount: number; currency: string }; used?: number; size?: number }
+  | { kind: 'notice'; level: string; message: string }
+  | { kind: 'compaction'; summary?: string };
 
 export interface AcpResponse {
   stopReason: 'end_turn' | 'max_tokens' | 'max_turn_requests' | 'tool_calls' | 'interrupted' | 'refusal' | 'cancelled';

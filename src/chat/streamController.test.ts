@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { StreamController } from './streamController';
+import { setLocale } from '../i18n/index';
 
 describe('StreamController', () => {
   let deps: any;
@@ -28,6 +29,7 @@ describe('StreamController', () => {
         updateToolCall: vi.fn(),
         collapseToolCall: vi.fn(),
         setPlanEntries: vi.fn(),
+        addSystemMessage: vi.fn(),
         flushThinkingRender: vi.fn().mockResolvedValue(undefined),
         flushTextRender: vi.fn().mockResolvedValue(undefined),
       },
@@ -100,7 +102,16 @@ describe('StreamController', () => {
     expect(session.messages).toHaveLength(0);
   });
 
-  it('drops other non-text chunks silently instead of rendering empty text', () => {
+  it('persists a visible placeholder once per message and type for non-image, non-text chunks', () => {
+    setLocale('en');
+    controller.handleChunk({
+      kind: 'message_chunk',
+      role: 'agent',
+      messageId: 'msg-res',
+      chunkText: '',
+      accumulatedText: '',
+      content: { type: 'resource' },
+    });
     controller.handleChunk({
       kind: 'message_chunk',
       role: 'agent',
@@ -118,9 +129,37 @@ describe('StreamController', () => {
       content: { type: 'resource' },
     });
 
+    expect(deps.renderer.addSystemMessage).toHaveBeenCalledTimes(1);
+    expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith('[resource content — cannot be shown here]');
+    expect(deps.sessionStore.append).toHaveBeenCalledTimes(1);
+    expect(deps.sessionStore.append).toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({ role: 'assistant', type: 'text', content: '[resource content — cannot be shown here]' }),
+    );
     expect(deps.renderer.appendText).not.toHaveBeenCalled();
     expect(deps.renderer.appendThinking).not.toHaveBeenCalled();
     expect(deps.renderer.appendAssistantImage).not.toHaveBeenCalled();
+  });
+
+  it('renders notice updates as system messages with a level label', () => {
+    setLocale('en');
+    controller.handleChunk({ kind: 'notice', level: 'warning', message: 'Rate limited' });
+    expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith('Warning: Rate limited');
+
+    controller.handleChunk({ kind: 'notice', level: 'info', message: 'FYI' });
+    expect(deps.renderer.addSystemMessage).toHaveBeenLastCalledWith('FYI');
+    expect(deps.sessionStore.append).not.toHaveBeenCalled();
+  });
+
+  it('renders and persists a compaction boundary block', () => {
+    setLocale('en');
+    controller.handleChunk({ kind: 'compaction' });
+
+    expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith('— Context compacted by the agent —');
+    expect(deps.sessionStore.append).toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({ role: 'assistant', type: 'text', content: '— Context compacted by the agent —' }),
+    );
   });
 
   it('handles message_chunk with role thought', () => {

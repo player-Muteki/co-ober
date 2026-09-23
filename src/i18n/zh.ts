@@ -107,6 +107,14 @@ const zh: Locale = {
     toolCalls: '智能体在等待工具调用结果时结束了本回合，回复可能不完整。',
   },
 
+  stream: {
+    noticeInfo: '提示',
+    noticeWarning: '警告',
+    noticeError: '注意',
+    compacted: '— 智能体已压缩上下文 —',
+    unsupportedContent: '[{type} 内容——此处无法展示]',
+  },
+
   error: {
     compact: '压缩失败',
     timeout: '请求超时',

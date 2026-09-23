@@ -64,6 +64,8 @@ export class StreamController {
     locations?: { path: string }[];
     contents: ToolCallContent[];
   }> = [];
+  // Frames already surfaced as a persisted placeholder, keyed messageId:type.
+  private unsupportedChunks = new Set<string>();
 
   constructor(deps: StreamControllerDeps) {
     this.deps = deps;
@@ -101,6 +103,8 @@ export class StreamController {
           } else if (!ch.content) {
             renderer.appendText(ch.chunkText, ch.messageId);
             this.saveAssistantChunk(ch.messageId, ch.accumulatedText, 'text');
+          } else {
+            this.persistUnsupportedChunk(ch.messageId, ch.content.type);
           }
         } else if (ch.role === 'thought') {
           // Non-text thinking payloads carry nothing to render.
@@ -145,7 +149,7 @@ export class StreamController {
             firstContent?.type === 'content' && firstContent.content?.type === 'text' ? firstContent.content.text : '';
           const ctx: SyncContext = {
             toolCallId: ch.toolCallId,
-            toolName: ch.toolKind,
+            toolName: ch.toolName ?? ch.toolKind,
             toolStatus: ch.status,
             rawInput: ch.rawInput,
             rawOutput: ch.rawOutput,
@@ -228,6 +232,22 @@ export class StreamController {
         }
         break;
       }
+      case 'notice': {
+        const labels: Record<string, string> = {
+          warning: t().stream.noticeWarning,
+          error: t().stream.noticeError,
+        };
+        const label = labels[ch.level];
+        renderer.addSystemMessage(label ? `${label}: ${ch.message}` : ch.message);
+        break;
+      }
+      case 'compaction': {
+        // Boundary block: rendered now and persisted so a restored
+        // transcript still shows where the context was compacted.
+        renderer.addSystemMessage(t().stream.compacted);
+        this.saveMessage('assistant', t().stream.compacted, 'text');
+        break;
+      }
     }
   }
 
@@ -238,6 +258,7 @@ export class StreamController {
     this.pendingToolBuffer = [];
     this.currentContentBlocks = [];
     this.toolBlocks.clear();
+    this.unsupportedChunks.clear();
     this.deps.state.resetStreamingState();
   }
 
@@ -344,6 +365,20 @@ export class StreamController {
     }
     this.deps.sessionStore.setActive(sessionId);
     this.scheduleSave();
+  }
+
+  /**
+   * Non-text frames the transcript cannot paint (audio, resource links…)
+   * still get one visible, persisted placeholder per message and content
+   * type, so the frame survives reload instead of vanishing.
+   */
+  private persistUnsupportedChunk(messageId: string, type: string): void {
+    const key = `${messageId}:${type}`;
+    if (this.unsupportedChunks.has(key)) return;
+    this.unsupportedChunks.add(key);
+    const note = t().stream.unsupportedContent.replace('{type}', type);
+    this.deps.renderer.addSystemMessage(note);
+    this.saveMessage('assistant', note, 'text');
   }
 
   saveMessage(

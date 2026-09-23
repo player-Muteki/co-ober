@@ -198,6 +198,52 @@ describe('parseSessionUpdate', () => {
     expect(info.configOptions).toHaveLength(1);
   });
 
+  it('parses notice updates with a permissive level and message', () => {
+    expect(parseSessionUpdate({ sessionUpdate: 'notice_update', level: 'warning', message: 'Rate limited' })).toEqual({
+      sessionUpdate: 'notice_update',
+      level: 'warning',
+      message: 'Rate limited',
+    });
+    const fallback = parseSessionUpdate({ sessionUpdate: 'notice_update', message: { text: 'nested' } });
+    expect(fallback).toEqual({ sessionUpdate: 'notice_update', level: 'info', message: 'nested' });
+    expect(parseSessionUpdate({ sessionUpdate: 'notice_update', level: 'error' })).toBeNull();
+  });
+
+  it('parses compaction updates with or without a summary', () => {
+    expect(parseSessionUpdate({ sessionUpdate: 'compaction_update' })).toEqual({ sessionUpdate: 'compaction_update' });
+    expect(parseSessionUpdate({ sessionUpdate: 'compaction_update', summary: 'older turns' })).toEqual({
+      sessionUpdate: 'compaction_update',
+      summary: 'older turns',
+    });
+  });
+
+  it('keeps the stable tool_call name and initial content', () => {
+    const result = parseSessionUpdate({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'tc-1',
+      title: 'Read file',
+      name: 'read',
+      content: [{ type: 'content', content: { type: 'text', text: 'start' } }],
+    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        sessionUpdate: 'tool_call',
+        name: 'read',
+        content: [{ type: 'content', content: { type: 'text', text: 'start' } }],
+      }),
+    );
+    const nullName = parseSessionUpdate({ sessionUpdate: 'tool_call', toolCallId: 'tc-2', title: 'T', name: null });
+    expect(nullName).toEqual(expect.objectContaining({ name: undefined }));
+  });
+
+  it('coerces the v2 plan_update envelope that identifies plans by planId', () => {
+    const result = parseSessionUpdate({
+      sessionUpdate: 'plan_update',
+      plan: { type: 'items', planId: 'p-1', entries: [{ content: 'a', status: 'pending', priority: 'low' }] },
+    });
+    expect(result).toEqual({ sessionUpdate: 'plan', entries: [{ content: 'a', status: 'pending', priority: 'low' }] });
+  });
+
   it('should return null for unknown update type', () => {
     const result = parseSessionUpdate({
       sessionUpdate: 'unknown_type',

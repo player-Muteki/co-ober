@@ -71,11 +71,12 @@ export class SessionUpdateNormalizer {
           kind: 'tool_call_snapshot',
           toolCallId: raw.toolCallId,
           title: raw.title,
+          toolName: raw.name,
           toolKind: raw.kind ?? 'other',
           status: (raw.status as 'pending' | 'in_progress' | 'completed' | 'failed') ?? 'pending',
           rawInput: raw.rawInput,
           locations: raw.locations,
-          contents: [],
+          contents: raw.content ? [...raw.content] : [],
         };
         this.toolCalls.set(raw.toolCallId, snapshot);
         this.trimMap(this.toolCalls, MAX_TOOL_CALLS);
@@ -91,6 +92,7 @@ export class SessionUpdateNormalizer {
             kind: 'tool_call_snapshot',
             toolCallId: raw.toolCallId,
             title: raw.title ?? raw.toolCallId,
+            toolName: raw.name,
             toolKind: raw.kind ?? 'other',
             status: (raw.status as 'pending' | 'in_progress' | 'completed' | 'failed') ?? 'completed',
             contents: raw.content ? [...raw.content] : [],
@@ -103,6 +105,7 @@ export class SessionUpdateNormalizer {
 
         if (raw.status) existing.status = raw.status;
         if (raw.title) existing.title = raw.title;
+        if (raw.name) existing.toolName = raw.name;
         if (raw.kind) existing.toolKind = raw.kind;
         if (raw.rawInput) existing.rawInput = { ...existing.rawInput, ...raw.rawInput };
         if (raw.rawOutput) existing.rawOutput = { ...existing.rawOutput, ...raw.rawOutput };
@@ -139,6 +142,10 @@ export class SessionUpdateNormalizer {
           used: raw.used,
           size: raw.size,
         };
+      case 'notice_update':
+        return { kind: 'notice', level: raw.level, message: raw.message };
+      case 'compaction_update':
+        return { kind: 'compaction', summary: raw.summary };
       default:
         return null;
     }
