@@ -913,6 +913,32 @@ describe('CoOberViewController', () => {
       await first;
     });
 
+    it('keeps queued prompts that carry refs in the queue when stopping', async () => {
+      const gate = deferred<AcpResponse>();
+      const client = createMockClient({
+        sendMessage: vi.fn().mockImplementation(() => gate.promise),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      const first = controller.send('first', []);
+      await vi.waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(1));
+      const ref = { id: 'note.md', type: 'note', name: 'note', path: 'note.md' } as never;
+      await controller.send('plain follow-up', []);
+      await controller.send('with context', [ref]);
+
+      await controller.stopGeneration();
+
+      const queue = Reflect.get(controller, 'promptQueue') as Array<{ text: string; refs: unknown[] }>;
+      expect(queue.map((q) => q.text)).toEqual(['with context']);
+      expect(queue[0].refs).toHaveLength(1);
+      const ta = deps.input.textareaEl as unknown as { value: string };
+      expect(ta.value).toBe('plain follow-up');
+
+      gate.resolve({ stopReason: 'interrupted' });
+      await first;
+    });
+
     it('offers a restart action when the agent process exits mid-request', async () => {
       const client = createMockClient({
         sendMessage: vi.fn().mockRejectedValue(new AcpProcessExitError(1, null)),

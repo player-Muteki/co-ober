@@ -337,6 +337,8 @@ export interface SerializedSession {
 }
 
 export interface PluginData {
+  /** Persisted schema version; absent means pre-0.1.34 data (version 0). */
+  schemaVersion?: number;
   settings: CoOberSettings;
   sessions: SerializedSession[];
   activeSessionId: string | null;

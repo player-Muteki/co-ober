@@ -947,7 +947,11 @@ export class CoOberViewController {
         if (config.onAfterResponse) await config.onAfterResponse(response);
       }
     } catch (e: unknown) {
-      if (!this.state.isConnected && !(e instanceof AcpProcessExitError)) return;
+      if (!this.state.isConnected && !(e instanceof AcpProcessExitError)) {
+        // A disconnect surfaces its own banner; keep a trace of the swallowed turn error.
+        console.warn('[co-ober] turn error swallowed while disconnected:', e);
+        return;
+      }
       if (this.state.sessionId === sessionId) {
         if (e instanceof AcpAbortError) {
           // User cancelled, don't show error
@@ -1053,8 +1057,9 @@ export class CoOberViewController {
     if (!changed) return;
     try {
       await this.deps.sessionStore.save();
-    } catch {
+    } catch (e) {
       // enrichment is cosmetic; a failed persist must not break restore
+      console.warn('[co-ober] native enrichment save failed:', e);
     }
   }
 
@@ -1263,12 +1268,17 @@ export class CoOberViewController {
     this.deps.renderer.flushTextRender().catch(() => {});
     this.busy = false;
     this.state.isStreaming = false;
-    // Stop means "pause everything", not "lose the queue": put queued
-    // messages back into the input so the user keeps their text.
-    if (this.promptQueue.length > 0) {
-      const queued = this.promptQueue.splice(0).map((q) => q.text);
+    // Stop means "pause everything", not "lose the queue": plain prompts go
+    // back into the input so the user keeps their text. Entries carrying
+    // @-mention/image refs stay queued — the textarea cannot represent refs,
+    // and dropping them would silently lose context.
+    const paused = this.promptQueue.splice(0);
+    const restorable = paused.filter(isPlainPrompt);
+    this.promptQueue.push(...paused.filter((q) => !isPlainPrompt(q)));
+    if (restorable.length > 0) {
       const ta = this.deps.input.textareaEl;
       const existing = ta.value.trim();
+      const queued = restorable.map((q) => q.text);
       ta.value = existing ? `${existing}\n${queued.join('\n')}` : queued.join('\n');
       ta.dispatchEvent(new Event('input', { bubbles: true }));
       this.deps.input.focus();

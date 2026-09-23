@@ -11,6 +11,7 @@ import { getVaultPath } from './utils/vault';
 import { setLocale, t } from './i18n/index';
 import { Mutex } from './utils/mutex';
 import { SessionRepository } from './chat/session';
+import { migratePluginDataSessions, PLUGIN_DATA_SCHEMA_VERSION } from './chat/pluginDataMigration';
 
 export default class CoOberPlugin extends Plugin {
   settings: CoOberSettings = DEFAULT_SETTINGS;
@@ -69,10 +70,12 @@ export default class CoOberPlugin extends Plugin {
 
     if (hasPluginData) {
       const data = saved as Partial<PluginData>;
+      const restored = migratePluginDataSessions(data.sessions, data.activeSessionId);
       return {
+        schemaVersion: PLUGIN_DATA_SCHEMA_VERSION,
         settings: { ...DEFAULT_SETTINGS, ...(data.settings ?? {}) },
-        sessions: data.sessions ?? [],
-        activeSessionId: data.activeSessionId ?? null,
+        sessions: restored.sessions,
+        activeSessionId: restored.activeSessionId,
       };
     }
 
@@ -90,6 +93,7 @@ export default class CoOberPlugin extends Plugin {
   private buildPluginData(): PluginData {
     const sessionState = this.sessionStore.snapshot();
     return {
+      schemaVersion: PLUGIN_DATA_SCHEMA_VERSION,
       settings: this.settings,
       ...sessionState,
     };
