@@ -1,3 +1,20 @@
+## 0.1.33 - 2026-09-23
+
+### Added
+- **OpenCode v2 database reads**: a forked `opencode.db` (v2) is now read through `session_message` — session listing, native content search, per-session usage, per-message stats and tool errors all recover under v2 via the same reader, keeping v1 working through the cached schema probe.
+- **ACP v2-alpha dispatch pre-layer**: `plan_update` frames are coerced into the internal plan shape and config options carried inside `session_info_update` are picked up, so forward-compatible agents no longer lose those frames.
+- **Reload-safe turn throughput**: completed-turn `tok/s` is persisted onto each assistant message (TurnStats) and restored with the transcript, so throughput survives a reload; native turn stats are computed client-side from chronological evidence and attached by message id only — never guessed positionally.
+- **Leaner data.json**: text-only content blocks that merely duplicate the message text are elided from the persisted copy and rebuilt on load, shrinking the sidecar without the in-memory transcript ever seeing the elided form.
+- **Context percentage everywhere**: the header meter and the per-turn usage line/title now share one clamped context-occupancy helper.
+
+### Fixed
+- **Forked-schema detection**: the schema probe spots `session_message`/`data_migration`/`session_v2`; a v1-shaped database holding live v2 data classifies as forked and degrades every native read with one clear warning instead of silently serving a stale mirror, while empty v1.18 scaffold tables still classify as v1.
+- **Double-escaped literals**: the system prompt now instructs the agent to decode entities exactly once, so `&amp;`-style literals survive round-trips into notes.
+- **load vs resume sync notice**: `syncRuntimeSession` no longer silently skips when the agent advertises neither `session/load` nor `session/resume`; it says so in a system message instead.
+
+### Notes
+- fork-from-latest-reply was evaluated and deliberately deferred — no anchored fork exists on the ACP side yet; see `docs/decisions/fork-from-latest-reply.md`.
+
 ## 0.1.32 - 2026-09-23
 
 ### Added
