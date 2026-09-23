@@ -24,7 +24,8 @@ const fakeFs = {
 	readdirSync: (): string[] => ['opencode.db'],
 };
 
-const V1_PROBE_ROW = { session_table: 1, session_columns: 6 };
+const V1_PROBE_ROW = { session_table: 1, session_columns: 6, v2_tables: 0 };
+const FORK_CLEAN_ROW = { migrated: 0, v2_rows: 0 };
 
 /** Read helper that answers the schema probe with v1 shapes (or a custom row). */
 function sqliteBacked(rows: unknown[], probeRow: unknown = V1_PROBE_ROW) {
@@ -34,7 +35,14 @@ function sqliteBacked(rows: unknown[], probeRow: unknown = V1_PROBE_ROW) {
 				constructor() {}
 				close() {}
 				prepare(sql: string) {
-					return { all: () => (sql.includes('sqlite_master') ? [probeRow] : rows) };
+					return {
+						all: () =>
+							sql.includes('sqlite_master')
+								? [probeRow]
+								: sql.includes('data_migration')
+									? [FORK_CLEAN_ROW]
+									: rows,
+					};
 				}
 			},
 		}),
@@ -398,7 +406,7 @@ describe('native session content search', () => {
 });
 
 describe('native schema probe (v2 defense)', () => {
-	function recordingSqlite(probeRow: unknown) {
+	function recordingSqlite(probeRow: unknown, forkRow: unknown = FORK_CLEAN_ROW) {
 		const seen: string[] = [];
 		return {
 			seen,
@@ -410,6 +418,7 @@ describe('native schema probe (v2 defense)', () => {
 						prepare(sql: string) {
 							seen.push(sql);
 							if (sql.includes('sqlite_master')) return { all: () => [probeRow] };
+							if (sql.includes('data_migration')) return { all: () => [forkRow] };
 							return { all: () => [] };
 						}
 					},
@@ -448,5 +457,54 @@ describe('native schema probe (v2 defense)', () => {
 	it('accepts v1 databases that carry extra unknown tables', async () => {
 		const { deps } = recordingSqlite(V1_PROBE_ROW);
 		expect(await probeNativeSchema(dbPath, { sqlite: deps as never })).toBe('v1');
+	});
+
+	it('skips the fork count entirely when no v2 tables exist', async () => {
+		const { seen, deps } = recordingSqlite(V1_PROBE_ROW);
+		expect(await probeNativeSchema(dbPath, { sqlite: deps as never })).toBe('v1');
+		expect(seen.filter((sql) => !sql.includes('sqlite_master'))).toEqual([]);
+	});
+
+	it('keeps v1 readable when v2 scaffold tables exist but hold no data', async () => {
+		const { deps } = recordingSqlite({ session_table: 1, session_columns: 6, v2_tables: 1 }, { migrated: 0, v2_rows: 0 });
+		expect(await probeNativeSchema(dbPath, { sqlite: deps as never })).toBe('v1');
+	});
+
+	it('classifies a migrated database as forked and degrades reads with one clear warning', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const { deps } = recordingSqlite(
+			{ session_table: 1, session_columns: 6, v2_tables: 3 },
+			{ migrated: 12, v2_rows: 0 },
+		);
+		const base = { env: { HOME: '/home/u' }, fs: fakeFs };
+		expect(await probeNativeSchema(dbPath, { sqlite: deps as never })).toBe('forked');
+		expect(await listNativeSessions('/vault', { ...base, sqlite: deps as never })).toEqual([]);
+		expect(await readNativeSessionUsage('ses_a', { ...base, sqlite: deps as never })).toBeUndefined();
+		const forkWarnings = warn.mock.calls.filter((args) => String(args[0]).includes('v2 storage layout'));
+		expect(forkWarnings.length).toBe(1);
+		warn.mockRestore();
+	});
+
+	it('treats an unreadable v2 table count as forked rather than trusting a stale mirror', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const deps = {
+			requireSqliteModule: () => ({
+				DatabaseSync: class {
+					constructor() {}
+					close() {}
+					prepare(sql: string) {
+						if (sql.includes('sqlite_master')) {
+							return { all: () => [{ session_table: 1, session_columns: 6, v2_tables: 2 }] };
+						}
+						return { all: () => { throw new Error('table is corrupt'); } };
+					}
+				},
+			}),
+			spawn: () => { throw new Error('nope'); },
+			execPath: '',
+			env: {},
+		};
+		expect(await probeNativeSchema(dbPath, { sqlite: deps as never })).toBe('forked');
+		warn.mockRestore();
 	});
 });

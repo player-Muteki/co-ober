@@ -27,7 +27,10 @@ export const OBSIDIAN_OPERATIONS =
   '- Path attributes carry the same risk: vault paths and note titles used in XML-style ' +
   'attributes such as path="..." or name="..." frequently contain &, <, > or quote characters ' +
   '(e.g. notes/a & b<c>.md). Escape & as &amp;, < as &lt;, > as &gt; and " as &quot; inside ' +
-  'attribute values so a path never terminates the tag or breaks parsing.';
+  'attribute values so a path never terminates the tag or breaks parsing.\n' +
+  '- Escaping is applied and decoded exactly once: write &amp;amp; when you mean the literal ' +
+  'text "&amp;", and &amp;lt; for a literal "&lt;" — never re-escape text that is already ' +
+  'escaped, and never emit bare numeric or double-encoded entity tricks to compensate.';
 
 export function buildSystemPrompt(customInstructions: string): string {
   const parts = [BASE_IDENTITY, OBSIDIAN_OPERATIONS];

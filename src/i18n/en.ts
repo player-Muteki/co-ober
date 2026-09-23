@@ -44,6 +44,7 @@ const en = {
     loadNativeFailed: 'Could not load this OpenCode session (session/load not supported or session unavailable).',
     nativeSessionMissing: 'This OpenCode session no longer exists (it may have been deleted from OpenCode).',
     runtimeSessionLost: 'The agent no longer holds this session (it may have restarted). Local history is kept; your next message starts a fresh agent session.',
+    syncUnsupported: 'This agent supports neither session/load nor session/resume, so the stored session cannot be re-attached. Your next message will start in a fresh agent session.',
   },
 
   reconnect: {

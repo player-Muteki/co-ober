@@ -1997,7 +1997,8 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
       expect(client.resumeSession).toHaveBeenCalledWith('ses_a', '/vault', undefined);
     });
 
-    it('skips the sync when neither load nor resume is supported', async () => {
+    it('surfaces a clear notice when neither load nor resume is supported', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const client = createMockClient({ getAgentCapabilities: vi.fn(() => ({ loadSession: false })) });
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
 
@@ -2005,6 +2006,8 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
 
       expect(client.loadSession).not.toHaveBeenCalled();
       expect(client.resumeSession).not.toHaveBeenCalled();
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().session.syncUnsupported);
+      warn.mockRestore();
     });
   });
 

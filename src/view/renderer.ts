@@ -34,6 +34,17 @@ export function formatMessageUsage(usage: MessageUsage): string {
   return parts.join(' · ');
 }
 
+/**
+ * Context-window occupancy clamped to 0..100; null when the window size is
+ * unknown. Single source of truth for the header meter and the usage line.
+ */
+export function contextPercentage(usage: Pick<UsageInfo, 'contextTokens' | 'contextWindow'>): number | null {
+  const window = usage.contextWindow ?? 0;
+  const used = usage.contextTokens ?? 0;
+  if (window <= 0) return null;
+  return Math.min(100, Math.max(0, Math.round((used / window) * 100)));
+}
+
 export class ChatRenderer {
   private container: HTMLDivElement;
   private app: App;
@@ -751,6 +762,8 @@ export class ChatRenderer {
     const generated = (usage.outputTokens || 0) + (usage.thoughtTokens || 0);
     const rate = ChatRenderer.throughput(generated, usage.elapsedMs);
     if (rate !== null) parts.push(`${rate.toFixed(1)} tok/s`);
+    const pct = contextPercentage(usage);
+    if (pct !== null) parts.push(`${pct}%`);
     if (usage.cost?.amount) parts.push(`$${usage.cost.amount.toFixed(4)}`);
     el.textContent = parts.join(' · ');
     this.usageEls.set(el, usage);
@@ -784,7 +797,9 @@ export class ChatRenderer {
     const labels = t().usage;
     const rate = ChatRenderer.throughput((usage.outputTokens || 0) + (usage.thoughtTokens || 0), usage.elapsedMs);
     const rateSuffix = rate !== null ? ` | ${labels.rate}: ${rate.toFixed(1)} tok/s` : '';
-    return `${labels.model}: ${usage.modelId ?? '?'} | ${labels.input}: ${usage.inputTokens}, ${labels.output}: ${usage.outputTokens}${usage.thoughtTokens ? `, ${labels.thinking}: ${usage.thoughtTokens}` : ''}${rateSuffix}`;
+    const pct = contextPercentage(usage);
+    const ctxSuffix = pct !== null ? ` | ${labels.context}: ${pct}%` : '';
+    return `${labels.model}: ${usage.modelId ?? '?'} | ${labels.input}: ${usage.inputTokens}, ${labels.output}: ${usage.outputTokens}${usage.thoughtTokens ? `, ${labels.thinking}: ${usage.thoughtTokens}` : ''}${rateSuffix}${ctxSuffix}`;
   }
 
   private formatTimestamp(ts: number): string {

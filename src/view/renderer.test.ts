@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { ChatRenderer, formatMessageUsage } from './renderer';
+import { ChatRenderer, formatMessageUsage, contextPercentage } from './renderer';
 import { closeImagePreview } from './imagePreview';
 import { installObsidianDomHelpers } from '../test/domHelpers';
 import { setLocale } from '../i18n/index';
@@ -464,6 +464,32 @@ describe('ChatRenderer', () => {
       expect(container.querySelector('.co-ober-usage')?.textContent).not.toContain('tok/s');
       renderer.showUsage({ totalTokens: 40, inputTokens: 10, outputTokens: 30, elapsedMs: 800 });
       expect(container.querySelector('.co-ober-usage')?.textContent).not.toContain('tok/s');
+    });
+
+    it('shows the clamped context percentage in the usage line and title', () => {
+      renderer.showUsage({
+        totalTokens: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        contextTokens: 4500,
+        contextWindow: 10000,
+      });
+      const el = container.querySelector('.co-ober-usage') as HTMLElement;
+      expect(el.textContent).toContain('45%');
+      expect(el.title).toContain('Context: 45%');
+    });
+  });
+
+  describe('contextPercentage', () => {
+    it('clamps rounded context occupancy to 0..100', () => {
+      expect(contextPercentage({ contextTokens: 4500, contextWindow: 10000 })).toBe(45);
+      expect(contextPercentage({ contextTokens: 12000, contextWindow: 10000 })).toBe(100);
+      expect(contextPercentage({ contextTokens: -5, contextWindow: 10000 })).toBe(0);
+    });
+
+    it('returns null without a known context window', () => {
+      expect(contextPercentage({ contextTokens: 100, contextWindow: 0 })).toBeNull();
+      expect(contextPercentage({})).toBeNull();
     });
   });
 

@@ -9,7 +9,7 @@ import {
   CONTEXT_METER_CRITICAL_PCT,
   K_FORMAT_THRESHOLD,
 } from '../constants';
-import { ChatRenderer } from './renderer';
+import { ChatRenderer, contextPercentage } from './renderer';
 import { ChatInput } from '../chat/input';
 import { InputToolbar } from '../chat/toolbar';
 import type { UsageInfo } from '../types';
@@ -830,7 +830,7 @@ export class CoOberView extends ItemView {
 
     const used = usage.contextTokens;
     const contextWindow = usage.contextWindow ?? 0;
-    const pct = contextWindow > 0 ? Math.min(100, Math.round((used / contextWindow) * 100)) : 0;
+    const pct = contextPercentage(usage) ?? 0;
 
     const filled = (pct / 100) * ARC_LEN;
     this.meterArcFill.setAttribute('stroke-dasharray', `${filled} ${ARC_LEN}`);

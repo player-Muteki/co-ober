@@ -24,6 +24,12 @@ describe('OBSIDIAN_OPERATIONS', () => {
     expect(OBSIDIAN_OPERATIONS).toContain('&quot;');
     expect(OBSIDIAN_OPERATIONS).toContain('path="..."');
   });
+
+  it('declares the decode-exactly-once double-escaping rule', () => {
+    expect(OBSIDIAN_OPERATIONS).toContain('&amp;amp;');
+    expect(OBSIDIAN_OPERATIONS).toContain('decoded exactly once');
+    expect(OBSIDIAN_OPERATIONS).toContain('never re-escape');
+  });
 });
 
 describe('buildSystemPrompt', () => {

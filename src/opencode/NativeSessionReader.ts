@@ -19,22 +19,38 @@ function hasControlCharacter(value: string): boolean {
 	return false;
 }
 
-export type NativeSchemaKind = 'v1' | 'incompatible' | 'unknown';
+export type NativeSchemaKind = 'v1' | 'forked' | 'incompatible' | 'unknown';
 
 // The v1 layout co-ober reads: a `session` table carrying these exact columns.
 // A newer (v2+) database renames or drops them; instead of firing doomed v1
 // queries at every read (and crashing on nothing — queries are all caught —
 // but spamming generic failures), probe once per path, then degrade with an
 // explicit message.
+// v1.18 also keeps the legacy v1 tables while new writes land in v2
+// (`session_message` events, `data_migration` completion markers), so a v1
+// shape alone no longer proves the rows are current — a fork must be
+// detected too or we silently read a stale mirror.
 const SCHEMA_PROBE_SQL = [
 	'select',
 	"(select count(*) from sqlite_master where type = 'table' and name = 'session') as session_table,",
-	"(select count(*) from pragma_table_info('session') where name in ('id','title','directory','time_updated','time_archived','parent_id')) as session_columns",
+	"(select count(*) from pragma_table_info('session') where name in ('id','title','directory','time_updated','time_archived','parent_id')) as session_columns,",
+	"(select count(*) from sqlite_master where type = 'table' and name in ('session_v2','session_message','data_migration')) as v2_tables",
+].join(' ');
+
+const SCHEMA_FORK_SQL = [
+	'select',
+	'(select count(*) from data_migration) as migrated,',
+	'(select count(*) from session_message) as v2_rows',
 ].join(' ');
 
 const schemaProbeCache = new Map<string, NativeSchemaKind>();
-const warnedIncompatible = new Set<string>();
+const warnedDegraded = new Set<string>();
 const SCHEMA_CACHE_LIMIT = 16;
+
+/** True when native reads must be degraded for this schema classification. */
+export function isDegradedNativeSchema(kind: NativeSchemaKind): boolean {
+	return kind === 'incompatible' || kind === 'forked';
+}
 
 /** Classify an OpenCode database against the v1 schema; the result is cached per path. */
 export async function probeNativeSchema(databasePath: string, deps: NativeSessionReaderDeps = {}): Promise<NativeSchemaKind> {
@@ -52,20 +68,49 @@ export async function probeNativeSchema(databasePath: string, deps: NativeSessio
 	const row: SqliteRow | undefined = rows[0];
 	const sessionTable = typeof row?.session_table === 'number' ? row.session_table : 0;
 	const sessionColumns = typeof row?.session_columns === 'number' ? row.session_columns : 0;
-	const kind: NativeSchemaKind = sessionTable >= 1 && sessionColumns >= 6 ? 'v1' : 'incompatible';
+	const v2Tables = typeof row?.v2_tables === 'number' ? row.v2_tables : 0;
+	let kind: NativeSchemaKind;
+	if (sessionTable < 1 || sessionColumns < 6) {
+		kind = 'incompatible';
+	} else if (v2Tables > 0) {
+		kind = (await hasV2DataDiverged(databasePath, deps)) ? 'forked' : 'v1';
+	} else {
+		kind = 'v1';
+	}
 	if (schemaProbeCache.size >= SCHEMA_CACHE_LIMIT) schemaProbeCache.clear();
 	schemaProbeCache.set(databasePath, kind);
-	if (kind === 'incompatible' && !warnedIncompatible.has(databasePath)) {
-		warnedIncompatible.add(databasePath);
-		console.warn(`[co-ober] OpenCode database "${databasePath}" does not match the v1 schema co-ober reads (newer v2 layout?). Native session listing, search and usage are disabled until co-ober supports it.`);
+	if (isDegradedNativeSchema(kind) && !warnedDegraded.has(databasePath)) {
+		warnedDegraded.add(databasePath);
+		console.warn(
+			kind === 'forked'
+				? `[co-ober] OpenCode database "${databasePath}" has migrated to the v2 storage layout; the legacy v1 tables co-ober reads are a stale mirror. Native session listing, search and usage are paused until v2 reads land.`
+				: `[co-ober] OpenCode database "${databasePath}" does not match the v1 schema co-ober reads (newer v2 layout?). Native session listing, search and usage are disabled until co-ober supports it.`,
+		);
 	}
 	return kind;
+}
+
+/**
+ * True when the v2 tables actually carry data. A failed count is treated as
+ * diverged: existence plus an unreadable table can only come from a v2-era
+ * database, and silently reading a stale v1 mirror is the worse error.
+ */
+async function hasV2DataDiverged(databasePath: string, deps: NativeSessionReaderDeps): Promise<boolean> {
+	try {
+		const rows = await querySqliteJson(databasePath, SCHEMA_FORK_SQL, deps.sqlite);
+		const row: SqliteRow | undefined = rows[0];
+		const migrated = typeof row?.migrated === 'number' ? row.migrated : 0;
+		const v2Rows = typeof row?.v2_rows === 'number' ? row.v2_rows : 0;
+		return migrated > 0 || v2Rows > 0;
+	} catch {
+		return true;
+	}
 }
 
 /** Drop cached probe results — test seam, or after the database file is replaced. */
 export function resetNativeSchemaProbe(): void {
 	schemaProbeCache.clear();
-	warnedIncompatible.clear();
+	warnedDegraded.clear();
 }
 
 /** Escape a value for safe embedding as a single-quoted SQLite string literal. */
@@ -141,7 +186,7 @@ async function readNativeRows(sql: string, deps: NativeSessionReaderDeps, contex
 	const env = deps.env ?? process.env;
 	const databasePath = resolveOpencodeDatabasePath(env, deps.fs);
 	if (!databasePath) return undefined;
-	if ((await probeNativeSchema(databasePath, deps)) === 'incompatible') return undefined;
+	if (isDegradedNativeSchema(await probeNativeSchema(databasePath, deps))) return undefined;
 	try {
 		return await querySqliteJson(databasePath, sql, deps.sqlite);
 	} catch (error) {
@@ -160,7 +205,7 @@ export async function readNativeSessionUsage(sessionId: string, deps: NativeSess
 	const env = deps.env ?? process.env;
 	const databasePath = resolveOpencodeDatabasePath(env, deps.fs);
 	if (!databasePath) return undefined;
-	if ((await probeNativeSchema(databasePath, deps)) === 'incompatible') return undefined;
+	if (isDegradedNativeSchema(await probeNativeSchema(databasePath, deps))) return undefined;
 
 	let rows: SqliteRow[];
 	try {
@@ -294,7 +339,7 @@ export async function listNativeSessions(cwd: string, deps: NativeSessionReaderD
 	const env = deps.env ?? process.env;
 	const databasePath = resolveOpencodeDatabasePath(env, deps.fs);
 	if (!databasePath) return [];
-	if ((await probeNativeSchema(databasePath, deps)) === 'incompatible') return [];
+	if (isDegradedNativeSchema(await probeNativeSchema(databasePath, deps))) return [];
 
 	let rows: SqliteRow[];
 	try {
@@ -358,7 +403,7 @@ export async function searchNativeSessions(cwd: string, query: string, deps: Nat
 	const env = deps.env ?? process.env;
 	const databasePath = resolveOpencodeDatabasePath(env, deps.fs);
 	if (!databasePath) return [];
-	if ((await probeNativeSchema(databasePath, deps)) === 'incompatible') return [];
+	if (isDegradedNativeSchema(await probeNativeSchema(databasePath, deps))) return [];
 
 	let rows: SqliteRow[];
 	try {

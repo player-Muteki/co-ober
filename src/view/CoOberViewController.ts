@@ -478,10 +478,17 @@ export class CoOberViewController {
       if (client.getCurrentSessionId() === sessionId) return;
       const caps = client.getAgentCapabilities?.();
       if (caps && caps.loadSession === false) {
-        // Agents without session/load can still hand a stored session back.
+        // Agents without session/load can still hand a stored session back —
+        // but resume reconnects WITHOUT replaying history, unlike session/load.
         if (caps.sessionCapabilities?.resume) {
           await client.resumeSession(sessionId, this.getVaultCwd(), onReplayUpdate);
+          return;
         }
+        // Neither path exists: say so instead of silently keeping the client
+        // bound to a different session than state.sessionId.
+        const message = t().session.syncUnsupported;
+        console.warn(`[co-ober] cannot re-attach session ${sessionId}: ${message}`);
+        this.deps.renderer.addSystemMessage(message);
         return;
       }
       await client.loadSession(sessionId, this.getVaultCwd(), this.deps.runtime.settings.mcpServers, onReplayUpdate);
