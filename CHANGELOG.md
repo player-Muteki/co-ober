@@ -1,3 +1,20 @@
+## 0.1.31 - 2026-09-23
+
+### Added
+- **Side chat `/btw`**: fork the current session into a throwaway scratch thread with its own panel — ask a tangential question without disturbing the main conversation. Follow-ups reuse the same fork, and closing the panel disposes it.
+- **Native session content search**: the session dropdown now searches OpenCode-native message text in `opencode.db`, not just titles, and shows a snippet around the first match; results are race-guarded so a stale search response never paints over a newer query.
+- **Auto session titles**: after the first completed exchange the title is derived from the opening user prompt (slash commands are skipped), so new chats stop being stuck at `Chat 21:00:00`; later manual renames are never overwritten.
+- **Queue visualization and merging**: prompts queued while busy render as individual removable rows in the queue bar, and consecutive plain prompts drain as one merged send, while slash-like or context-carrying entries keep their own turn.
+- **`/resume` command**: re-opens the session picker straight from the composer.
+
+### Fixed
+- **Fork integrity**: switching to a forked session rebuilds the transcript and surfaces sync errors instead of leaving a blank view.
+- **Queue robustness**: early returns in the agent-call path still run the finally hook (busy flag released, queue drained), and one failing queued command no longer aborts the rest of the drain.
+- **Permission requests**: parallel `session/request_permission` calls now queue behind each other instead of being force-rejected.
+- **Note cache**: referenced-note bodies are cached in a bounded LRU that invalidates entries when the vault modifies a note.
+- **Locale hygiene**: the locale listener no longer leaks across view reloads, and slash-command titles refresh when the language changes.
+- **Capability gating**: `loadSession`, audio input and embedded-context features are gated by the negotiated agent capabilities; transcript restore keeps system messages; the image lightbox captures focus and restores it on close.
+
 ## 0.1.30 - 2026-09-22
 
 ### Added
