@@ -1,3 +1,23 @@
+## 0.1.35 - 2026-09-23
+
+### Added
+- **Notice updates**: `notice_update` frames (parsed permissively as an extension — not in the official ACP schema yet) render as level-labeled system messages in the transcript.
+- **Compaction boundary**: a `compaction_update` inserts a visible "context compacted" marker that is persisted with the transcript, and the replay collector keeps the boundary at its original position across reloads.
+- **Non-text chunk placeholder**: streamed chunks that are neither text nor image (audio, resources, …) no longer vanish — a placeholder naming the content type is shown once per message and persisted.
+- **Keyboard-accessible toolbar dropdowns**: the model and effort selectors are proper listbox widgets now — focusable trigger, Enter/Space/arrows to open, arrow-key roving focus over options, Enter to choose, Escape and outside clicks to close, with visible focus styles.
+- **Native list failure row**: the session dropdown shows an explicit failure line when the OpenCode native session listing cannot be read instead of silently omitting the section.
+
+### Changed
+- **Capability-gated attach button**: the image attach button is disabled with an explanatory tooltip when the agent declares `promptCapabilities.image: false`, mirroring the send-path rule that strips images.
+- **Stable tool identity**: `tool_call`/`tool_call_update` `name` is carried onto the snapshot as `toolName` and preferred by sync-rule matching, and `planId` on v2 plan envelopes is accepted.
+
+### Fixed
+- **Retention spares pins**: automatic history retention now exempts pinned conversations from pruning regardless of age, and the setting description says so.
+- **Unload tail persistence**: pending transcript saves are flushed during plugin unload, so the final messages of a just-closed session survive.
+- **Toolbar optimistic-update rollback**: a failed model/agent/effort change surfaces a Notice with the error and reloads the authoritative options instead of leaving the label on the rejected value.
+- **`tool_calls` stop reason**: turns ending to await tool results render their own badge instead of masquerading as a normal completion.
+- **Cost currency honesty**: the usage line reports the currency the agent actually attached to the cost (falling back to USD only when none is given), so non-USD costs are no longer mislabeled.
+
 ## 0.1.34 - 2026-09-23
 
 ### Added
