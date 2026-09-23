@@ -18,7 +18,7 @@ import { ContextResolver } from '../context/resolver';
 import { SyncEngine } from '../sync/engine';
 import type { SessionStore } from '../chat/session';
 import { SessionDropdown } from './sessionDropdown';
-import { listNativeSessions } from '../opencode/NativeSessionReader';
+import { listNativeSessions, searchNativeSessions } from '../opencode/NativeSessionReader';
 import { applyPermissionTier } from '../client/permissionTier';
 import { commandRegistry } from '../commands/registry';
 import { FileCommandStorage } from '../commands/storage/FileCommandStorage';
@@ -355,6 +355,7 @@ export class CoOberView extends ItemView {
       },
       () => this.plugin.getClient()?.getAgentCapabilities() ?? null,
       async () => listNativeSessions(this.plugin.getVaultCwd()),
+      async (query) => searchNativeSessions(this.plugin.getVaultCwd(), query),
     );
 
     // Init connection - always try to connect when view opens

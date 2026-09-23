@@ -1144,6 +1144,7 @@ export class CoOberViewController {
           }
           this.deps.inlineEditPanel.pendingState = null;
         }
+        void this.maybeAutoTitle().catch((e) => console.error('[co-ober] auto title:', e));
         void this.drainQueue();
       },
     });
@@ -1160,10 +1161,18 @@ export class CoOberViewController {
 
   private async drainQueue(): Promise<void> {
     while (this.promptQueue.length > 0 && !this.busy) {
-      const next = this.promptQueue.shift()!;
+      const head = this.promptQueue.shift()!;
+      let text = head.text;
+      // Consecutive plain prompts pile up while the agent is busy; merge them
+      // into one turn so the agent sees the follow-ups as a single message.
+      if (isPlainPrompt(head)) {
+        while (this.promptQueue.length > 0 && isPlainPrompt(this.promptQueue[0])) {
+          text += `\n\n${this.promptQueue.shift()!.text}`;
+        }
+      }
       this.updateQueueIndicator();
       try {
-        await this.send(next.text, next.refs);
+        await this.send(text, head.refs);
       } catch (e) {
         // One failing queued command must not strand the rest of the queue.
         console.error('[co-ober] queued prompt failed:', e);
@@ -1206,8 +1215,8 @@ export class CoOberViewController {
   }
 
   /**
-   * Update the queue indicator showing queued message count.
-   * Shown when messages are queued during streaming, hidden when queue is empty.
+   * Update the queue indicator: count header plus one removable row per
+   * queued prompt so the user can see and prune what will be sent next.
    */
   private updateQueueIndicator(): void {
     const indicatorEl = this.queueIndicatorEl;
@@ -1221,10 +1230,28 @@ export class CoOberViewController {
           ? t().queue.one
           : t().queue.many.replace('{count}', String(this.promptQueue.length));
       indicatorEl.createSpan({ cls: 'co-ober-queue-text', text });
+      this.promptQueue.forEach((entry, index) => {
+        const item = indicatorEl.createDiv({ cls: 'co-ober-queue-item' });
+        item.createSpan({ cls: 'co-ober-queue-item-text', text: queuePreview(entry.text) });
+        const remove = item.createEl('button', {
+          cls: 'co-ober-queue-remove',
+          text: '×',
+          attr: { 'aria-label': t().queue.remove, title: t().queue.remove },
+        });
+        remove.onclick = () => {
+          this.promptQueue.splice(index, 1);
+          this.updateQueueIndicator();
+        };
+      });
       indicatorEl.addClass('co-ober-visible');
     } else {
       indicatorEl.removeClass('co-ober-visible');
     }
+  }
+
+  /** Number of prompts waiting for the current turn to finish (tests / UI hooks). */
+  queuedCount(): number {
+    return this.promptQueue.length;
   }
 
   /** Cache note content by path (LRU) to avoid re-reading the same file. */
@@ -1325,6 +1352,26 @@ export class CoOberViewController {
     const clean = title.trim();
     if (!clean) return;
     if (this.deps.sessionStore.rename(sessionId, clean)) {
+      await this.deps.sessionStore.save();
+    }
+  }
+
+  /**
+   * After the very first exchange, replace the timestamped default title with
+   * one derived from the user's opening message. Only fires while the session
+   * has exactly one user turn, so manual renames are never revisited.
+   */
+  private async maybeAutoTitle(): Promise<void> {
+    const sid = this.state.sessionId;
+    if (!sid) return;
+    const session = this.deps.sessionStore.get(sid);
+    if (!session) return;
+    const userMsgs = session.messages.filter((m) => m.role === 'user');
+    if (userMsgs.length !== 1) return;
+    if (!session.messages.some((m) => m.role === 'assistant')) return;
+    const title = deriveSessionTitle(userMsgs[0].content);
+    if (!title || title === session.title) return;
+    if (this.deps.sessionStore.rename(sid, title)) {
       await this.deps.sessionStore.save();
     }
   }
@@ -1483,6 +1530,23 @@ export class CoOberViewController {
     this.callbacks.onClearChips();
     this.callbacks.onClearPendingImageChips();
   }
+}
+
+const QUEUE_PREVIEW_MAX = 48;
+
+function queuePreview(text: string): string {
+  const collapsed = text.replace(/\s+/g, ' ').trim();
+  return collapsed.length > QUEUE_PREVIEW_MAX ? `${collapsed.slice(0, QUEUE_PREVIEW_MAX - 1)}…` : collapsed;
+}
+
+function isPlainPrompt(entry: { text: string; refs: ContextRef[] }): boolean {
+  return entry.refs.length === 0 && parseSlashCommand(entry.text) === null;
+}
+
+/** Session-title candidate from the first user message; empty for slash commands. */
+export function deriveSessionTitle(text: string): string {
+  if (parseSlashCommand(text)) return '';
+  return queuePreview(text);
 }
 
 function buildNotesBlock(resolved: Array<{ name: string; content: string }>): string {

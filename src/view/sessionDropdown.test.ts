@@ -408,6 +408,106 @@ describe('SessionDropdown', () => {
     });
   });
 
+  describe('native content search', () => {
+    function makeContentDropdown(searcher: ((query: string) => Promise<unknown[]>) | null): SessionDropdown {
+      return new SessionDropdown(
+        container,
+        anchor,
+        sessionStore as any,
+        () => 'session-1',
+        callbacks as any,
+        () => ({ sessionCapabilities: { close: true, fork: true, list: true, resume: true } }),
+        null,
+        searcher as any,
+      );
+    }
+
+    function typeQuery(dd: SessionDropdown, value: string): void {
+      dd.open();
+      const search = container.querySelector('.co-ober-session-search') as HTMLInputElement;
+      search.value = value;
+      search.dispatchEvent(new Event('input'));
+    }
+
+    it('renders content matches with snippets after a query', async () => {
+      const searcher = vi.fn(async () => [
+        { sessionId: 'ses_deep', title: 'Deep chat', snippet: ' …talks about foobar somewhere… ' },
+      ]);
+      const dd = makeContentDropdown(searcher);
+      typeQuery(dd, 'foo');
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(searcher).toHaveBeenCalledWith('foo');
+      const section = container.querySelector('.co-ober-session-content-section');
+      expect(section).not.toBeNull();
+      expect(section?.querySelector('.co-ober-session-native-header')?.textContent).toBe('Content matches');
+      const item = section?.querySelector('.co-ober-session-content');
+      expect(item?.querySelector('.session-label')?.textContent).toBe('Deep chat');
+      expect(item?.querySelector('.session-snippet')?.textContent).toBe('…talks about foobar somewhere…');
+      dd.destroy();
+    });
+
+    it('does not search for queries shorter than two characters', async () => {
+      const searcher = vi.fn(async () => []);
+      const dd = makeContentDropdown(searcher);
+      typeQuery(dd, 'f');
+      await new Promise((r) => setTimeout(r, 10));
+      expect(searcher).not.toHaveBeenCalled();
+      dd.destroy();
+    });
+
+    it('switches to a content match with the opencode source', async () => {
+      const dd = makeContentDropdown(async () => [{ sessionId: 'ses_deep', title: 'Deep chat' }]);
+      typeQuery(dd, 'foo');
+      await new Promise((r) => setTimeout(r, 10));
+      const item = container.querySelector('.co-ober-session-content') as HTMLElement;
+      expect(item).not.toBeNull();
+      item.click();
+      await new Promise((r) => setTimeout(r, 10));
+      expect(callbacks.onSwitch).toHaveBeenCalledWith('ses_deep', 'opencode');
+      dd.destroy();
+    });
+
+    it('drops content matches already visible as local sessions', async () => {
+      const dd = makeContentDropdown(async () => [{ sessionId: 'session-2', title: 'Chat 2' }]);
+      typeQuery(dd, 'Chat');
+      await new Promise((r) => setTimeout(r, 10));
+      expect(container.querySelector('.co-ober-session-content-section')).toBeNull();
+      dd.destroy();
+    });
+
+    it('ignores a stale search response that arrives last', async () => {
+      const gates: Array<(sessions: unknown[]) => void> = [];
+      const searcher = vi.fn(
+        () => new Promise<unknown[]>((resolve) => { gates.push(resolve); }),
+      );
+      const dd = makeContentDropdown(searcher);
+      dd.open();
+      const search = container.querySelector('.co-ober-session-search') as HTMLInputElement;
+      search.value = 'aa';
+      search.dispatchEvent(new Event('input'));
+      search.value = 'bb';
+      search.dispatchEvent(new Event('input'));
+      expect(gates.length).toBe(2);
+
+      gates[1]([{ sessionId: 'ses_new', title: 'Fresh hit' }]);
+      gates[0]([{ sessionId: 'ses_old', title: 'Stale hit' }]);
+      await new Promise((r) => setTimeout(r, 10));
+
+      const labels = [...container.querySelectorAll('.co-ober-session-content .session-label')].map((n) => n.textContent);
+      expect(labels).toEqual(['Fresh hit']);
+      dd.destroy();
+    });
+
+    it('renders nothing when no searcher is wired', async () => {
+      const dd = makeContentDropdown(null);
+      typeQuery(dd, 'foo');
+      await new Promise((r) => setTimeout(r, 10));
+      expect(container.querySelector('.co-ober-session-content-section')).toBeNull();
+      dd.destroy();
+    });
+  });
+
   describe('destroy', () => {
     it('closes dropdown', () => {
       dropdown.open();

@@ -3,6 +3,7 @@ import { resolveOpencodeDatabasePath, type PathFs } from './OpencodePaths';
 import { querySqliteJson, type SqliteReaderDeps, type SqliteRow } from './SqliteReader';
 
 export const NATIVE_SESSION_LIMIT = 50;
+export const NATIVE_SESSION_SEARCH_LIMIT = 20;
 
 export interface NativeSessionReaderDeps {
 	env?: NodeJS.ProcessEnv;
@@ -267,6 +268,64 @@ export async function listNativeSessions(cwd: string, deps: NativeSessionReaderD
 		if (additions !== undefined) meta.additions = additions;
 		if (deletions !== undefined) meta.deletions = deletions;
 		if (files !== undefined) meta.files = files;
+		sessions.push(meta);
+	}
+	return sessions;
+}
+
+/**
+ * Search OpenCode-native sessions by title or message text. The snippet column
+ * extracts 100 characters around the first text-part match.
+ */
+export function buildNativeSessionSearchSql(cwd: string, query: string, limit: number = NATIVE_SESSION_SEARCH_LIMIT): string {
+	const exact = escapeSqlLiteral(cwd);
+	const prefix = escapeSqlLiteral(escapeLikePattern(cwd)) + '/%';
+	const term = escapeSqlLiteral(query);
+	const like = `'${escapeSqlLiteral(`%${escapeLikePattern(query)}%`)}'`;
+	const safeLimit = Math.max(1, Math.min(200, Math.floor(limit) || NATIVE_SESSION_SEARCH_LIMIT));
+	const textMatch = `json_extract(p.data, '$.text') like ${like} escape '\\'`;
+	return [
+		'select s.id, s.title, s.directory, s.time_updated,',
+		"(select substr(replace(json_extract(p.data, '$.text'), char(10), ' '),",
+		`max(1, instr(lower(replace(json_extract(p.data, '$.text'), char(10), ' ')), lower('${term}')) - 20), 100) as snippet`,
+		'from part p join message m on m.id = p.message_id',
+		`where m.session_id = s.id and json_extract(p.data, '$.type') = 'text' and ${textMatch})`,
+		'from session s',
+		'where s.parent_id is null and s.time_archived is null',
+		`and (s.directory = '${exact}' or s.directory like '${prefix}' escape '\\')`,
+		`and (s.title like ${like} escape '\\' or exists (select 1 from part p join message m on m.id = p.message_id where m.session_id = s.id and json_extract(p.data, '$.type') = 'text' and ${textMatch}))`,
+		'order by s.time_updated desc',
+		`limit ${safeLimit}`,
+	].join(' ');
+}
+
+/** Content-search OpenCode-native sessions for the vault; empty list on any failure. */
+export async function searchNativeSessions(cwd: string, query: string, deps: NativeSessionReaderDeps = {}): Promise<SessionMeta[]> {
+	const trimmed = query.trim();
+	if (!trimmed) return [];
+	const env = deps.env ?? process.env;
+	const databasePath = resolveOpencodeDatabasePath(env, deps.fs);
+	if (!databasePath) return [];
+
+	let rows: SqliteRow[];
+	try {
+		rows = await querySqliteJson(databasePath, buildNativeSessionSearchSql(cwd, trimmed), deps.sqlite);
+	} catch (error) {
+		console.warn('[co-ober] native session search unavailable:', error);
+		return [];
+	}
+
+	const sessions: SessionMeta[] = [];
+	for (const row of rows) {
+		const sessionId = typeof row.id === 'string' ? row.id : '';
+		if (!sessionId) continue;
+		const meta: SessionMeta = {
+			sessionId,
+			title: typeof row.title === 'string' && row.title.trim() ? row.title : sessionId,
+			cwd: typeof row.directory === 'string' ? row.directory : undefined,
+			updatedAt: toIsoString(row.time_updated),
+		};
+		if (typeof row.snippet === 'string' && row.snippet.trim()) meta.snippet = row.snippet.trim();
 		sessions.push(meta);
 	}
 	return sessions;

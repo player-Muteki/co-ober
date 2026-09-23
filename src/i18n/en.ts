@@ -21,6 +21,7 @@ const en = {
     closeDisabled: 'Close is not supported by this OpenCode agent',
     nativeSection: 'OpenCode sessions',
     loadingNative: 'Loading OpenCode sessions…',
+    contentSection: 'Content matches',
     actionFailed: 'Session action failed: {error}',
     rename: 'Rename session',
     confirmDelete: 'Click again to confirm deletion',
@@ -132,6 +133,7 @@ const en = {
   queue: {
     one: '⌙ 1 message queued',
     many: '⌙ {count} messages queued',
+    remove: 'Remove from queue',
   },
 
   export: {

@@ -23,6 +23,7 @@ const zh: Locale = {
     closeDisabled: '当前 OpenCode Agent 不支持关闭会话',
     nativeSection: 'OpenCode 会话',
     loadingNative: '正在加载 OpenCode 会话…',
+    contentSection: '内容匹配',
     actionFailed: '会话操作失败：{error}',
     rename: '重命名会话',
     confirmDelete: '再次点击以确认删除',
@@ -134,6 +135,7 @@ const zh: Locale = {
   queue: {
     one: '⌙ 已排队 1 条消息',
     many: '⌙ 已排队 {count} 条消息',
+    remove: '从队列移除',
   },
 
   export: {

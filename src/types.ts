@@ -11,6 +11,8 @@ export interface SessionMeta {
   additions?: number;
   deletions?: number;
   files?: number;
+  /** Short excerpt around a text-part match from the native session search. */
+  snippet?: string;
 }
 
 export interface PromptPart {

@@ -33,6 +33,8 @@ export class SessionDropdown {
 	private nativeSessions: SessionMeta[] = [];
 	private nativeLoading = false;
 	private nativeLoadedOnce = false;
+	private contentResults: SessionMeta[] = [];
+	private searchToken = 0;
 
 	constructor(
 		private container: HTMLElement,
@@ -42,6 +44,7 @@ export class SessionDropdown {
 		private callbacks: SessionDropdownCallbacks,
 		private getAgentCapabilities: () => AgentCapabilities | null = () => null,
 		private loadNativeSessions: (() => Promise<SessionMeta[]>) | null = null,
+		private searchNativeSessions: ((query: string) => Promise<SessionMeta[]>) | null = null,
 	) {
 		this.doc = container.ownerDocument ?? activeDocument;
 	}
@@ -51,6 +54,8 @@ export class SessionDropdown {
 			this.close();
 			return;
 		}
+		this.contentResults = [];
+		++this.searchToken;
 
 		const capabilities = this.getAgentCapabilities()?.sessionCapabilities;
 		const canList = capabilities?.list !== false;
@@ -107,10 +112,13 @@ export class SessionDropdown {
 			}
 
 			this.renderNativeSection(itemsContainer, currentId, filter);
+			this.renderContentSection(itemsContainer, currentId, filter);
 		};
 
 		searchInput?.addEventListener('input', () => {
-			renderItems(searchInput.value);
+			const value = searchInput.value;
+			renderItems(value);
+			void this.runContentSearch(value, () => renderItems(searchInput.value));
 		});
 
 		if (this.loadNativeSessions && !this.nativeLoadedOnce) {
@@ -180,6 +188,52 @@ export class SessionDropdown {
 		// rebuild the items container content via a fresh open cycle on next toggle.
 		this.close();
 		this.open();
+	}
+
+	private async runContentSearch(query: string, onSettled: () => void): Promise<void> {
+		const trimmed = query.trim();
+		if (!this.searchNativeSessions || trimmed.length < 2) {
+			this.contentResults = [];
+			return;
+		}
+		const token = ++this.searchToken;
+		try {
+			const results = await this.searchNativeSessions(trimmed);
+			if (token !== this.searchToken) return;
+			this.contentResults = results;
+			onSettled();
+		} catch (e) {
+			if (token === this.searchToken) this.contentResults = [];
+			console.warn('[co-ober] native session search failed:', e);
+		}
+	}
+
+	private renderContentSection(itemsContainer: HTMLElement, currentId: string | null, filter: string): void {
+		if (!this.searchNativeSessions || filter.trim().length < 2 || this.contentResults.length === 0) return;
+		const dd = itemsContainer.parentElement;
+		if (!dd) return;
+
+		const listed = new Set([
+			...this.sessionStore.list().map((s) => s.sessionId),
+			...this.nativeSessions.map((s) => s.sessionId),
+		]);
+		const extra = this.contentResults.filter((s) => !listed.has(s.sessionId));
+		if (extra.length === 0) return;
+
+		const section = dd.createDiv({ cls: 'co-ober-session-content-section' });
+		section.createDiv({ cls: 'co-ober-session-native-header', text: t().sessionDropdown.contentSection });
+		const list = section.createDiv({ cls: 'co-ober-session-native-items' });
+		for (const s of extra) {
+			const it = list.createDiv({
+				cls: `co-ober-session-item co-ober-session-content${s.sessionId === currentId ? ' active' : ''}`,
+			});
+			it.createSpan({ text: s.title || s.sessionId, cls: 'session-label' });
+			if (s.updatedAt) it.createSpan({ cls: 'session-time', text: s.updatedAt.slice(0, 10) });
+			if (s.snippet) it.createDiv({ cls: 'session-snippet', text: s.snippet.trim() });
+			it.onclick = () => {
+				void this.callbacks.onSwitch(s.sessionId, 'opencode').catch((e) => this.reportActionError(e));
+			};
+		}
 	}
 
 	close(): void {

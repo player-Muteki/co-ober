@@ -2126,10 +2126,58 @@ body.theme-light .co-ober-msg.user .co-ober-msg-body {
 }
 .co-ober-queue-indicator.co-ober-visible {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
 }
 .co-ober-queue-text {
   font-family: var(--font-monospace);
   font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.co-ober-queue-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.co-ober-queue-item-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.co-ober-queue-remove {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.co-ober-queue-remove:hover {
+  color: var(--text-error);
+}
+
+.co-ober-session-content-section {
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+.session-snippet {
+  flex: 1 1 100%;
+  font-size: var(--font-smallest);
+  color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

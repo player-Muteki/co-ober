@@ -12,6 +12,8 @@ import {
 	readNativeMessageStats,
 	buildToolErrorsSql,
 	readNativeToolErrors,
+	buildNativeSessionSearchSql,
+	searchNativeSessions,
 } from './NativeSessionReader';
 
 const dbPath = '/home/u/.local/share/opencode/opencode.db';
@@ -313,6 +315,75 @@ describe('readNativeToolErrors', () => {
 			sqlite: { requireSqliteModule: () => null, spawn: () => { throw new Error('nope'); }, execPath: '', env: {} } as never,
 		});
 		expect(errors).toEqual({});
+		warn.mockRestore();
+	});
+});
+
+describe('native session content search', () => {
+	it('builds a scoped query with escaped title and text filters', () => {
+		const sql = buildNativeSessionSearchSql('/vault', "O'br%x");
+		expect(sql).toContain("directory = '/vault'");
+		expect(sql).toContain("s.title like '%O''br\\%x%' escape");
+		expect(sql).toContain("json_extract(p.data, '$.type') = 'text'");
+		expect(sql).toContain("json_extract(p.data, '$.text') like");
+		expect(sql).toContain('parent_id is null');
+		expect(sql).toContain('time_archived is null');
+		expect(sql).toContain('as snippet');
+		expect(sql).toContain('order by s.time_updated desc');
+		expect(sql).toContain('limit 20');
+	});
+
+	it('clamps the search limit', () => {
+		expect(buildNativeSessionSearchSql('/v', 'q', 9999)).toContain('limit 200');
+		expect(buildNativeSessionSearchSql('/v', 'q', 0)).toContain('limit 20');
+		expect(buildNativeSessionSearchSql('/v', 'q', -3)).toContain('limit 1');
+	});
+
+	it('maps rows to session metadata with trimmed snippets', async () => {
+		const rows = [
+			{ id: 'ses_a', title: 'Alpha', directory: '/vault', time_updated: 1787369997497, snippet: '  around the term  ' },
+			{ id: 'ses_b', title: '  ', directory: '/vault', time_updated: 0, snippet: '' },
+			{ id: '', title: 'ignored', directory: '/vault', time_updated: 0 },
+		];
+		const sessions = await searchNativeSessions('/vault', 'the term', {
+			env: { HOME: '/home/u' },
+			fs: fakeFs,
+			sqlite: sqliteBacked(rows) as never,
+		});
+		expect(sessions.length).toBe(2);
+		expect(sessions[0]).toEqual({
+			sessionId: 'ses_a',
+			title: 'Alpha',
+			cwd: '/vault',
+			updatedAt: new Date(1787369997497).toISOString(),
+			snippet: 'around the term',
+		});
+		expect(sessions[1].title).toBe('ses_b');
+		expect(sessions[1].snippet).toBeUndefined();
+	});
+
+	it('returns an empty list for a blank query without touching SQLite', async () => {
+		const sessions = await searchNativeSessions('/vault', '   ', {
+			env: { HOME: '/home/u' },
+			fs: fakeFs,
+			sqlite: {
+				requireSqliteModule: () => {
+					throw new Error('must not read');
+				},
+			} as never,
+		});
+		expect(sessions).toEqual([]);
+	});
+
+	it('degrades to an empty list when the query fails', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const sessions = await searchNativeSessions('/vault', 'term', {
+			env: { HOME: '/home/u' },
+			fs: fakeFs,
+			sqlite: { requireSqliteModule: () => null, spawn: () => { throw new Error('nope'); }, execPath: '', env: {} } as never,
+		});
+		expect(sessions).toEqual([]);
+		expect(warn).toHaveBeenCalled();
 		warn.mockRestore();
 	});
 });

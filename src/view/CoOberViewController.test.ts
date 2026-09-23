@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { CoOberViewController } from './CoOberViewController';
+import { CoOberViewController, deriveSessionTitle } from './CoOberViewController';
 import type { ControllerCallbacks, ControllerDeps } from './CoOberViewController';
+import { installObsidianDomHelpers } from '../test/domHelpers';
 import type {
   AcpResponse,
   ContentBlock,
@@ -33,6 +34,7 @@ vi.mock('../opencode/NativeSessionReader', async (importOriginal) => {
 });
 
 setLocale('en');
+installObsidianDomHelpers();
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void;
@@ -98,7 +100,7 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): ControllerDeps
       get: vi.fn().mockReturnValue({ messages: [], updatedAt: 0 }),
       getOrCreate: vi.fn().mockReturnValue({ messages: [], updatedAt: 0 }),
       setActive: vi.fn(),
-      save: vi.fn(),
+      save: vi.fn().mockResolvedValue(undefined),
       load: vi.fn(),
       remove: vi.fn(),
       list: vi.fn(() => []),
@@ -2038,5 +2040,171 @@ describe('CoOberViewController — side chat (/btw)', () => {
 
     expect(addError).toHaveBeenCalledWith(expect.stringContaining('fork boom'));
     expect(callbacks.onOpenSideChat).not.toHaveBeenCalled();
+  });
+});
+
+describe('CoOberViewController — queue visualization and auto titles', () => {
+  let deps: ControllerDeps;
+  let callbacks: ReturnType<typeof createMockCallbacks>;
+  let controller: CoOberViewController;
+
+  beforeEach(() => {
+    setLocale('en');
+    deps = createMockDeps();
+    callbacks = createMockCallbacks();
+    controller = new CoOberViewController(deps, callbacks);
+  });
+
+  function connectedClient() {
+    const gate = deferred<AcpResponse>();
+    const client = createMockClient({
+      sendMessage: vi.fn().mockImplementationOnce(() => gate.promise).mockResolvedValue({ stopReason: 'end_turn' }),
+    });
+    (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+    (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+    return { gate, client };
+  }
+
+  function lastSentText(client: ReturnType<typeof createMockClient>): string {
+    return sentText(client, client.sendMessage.mock.calls.length - 1);
+  }
+
+  function sentText(client: ReturnType<typeof createMockClient>, index: number): string {
+    const calls = client.sendMessage.mock.calls as unknown as Array<[string, Array<{ text?: string }>, unknown]>;
+    const parts = calls[index]?.[1] ?? [];
+    return String(parts[parts.length - 1]?.text ?? '');
+  }
+
+  function resolvedClient() {
+    const client = createMockClient();
+    (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+    (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+    return client;
+  }
+
+  it('merges consecutive plain prompts queued during a busy turn into one send', async () => {
+    const { gate, client } = connectedClient();
+    const first = controller.send('working', []);
+    await vi.waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(1));
+
+    await controller.send('more a', []);
+    await controller.send('more b', []);
+    expect(controller.queuedCount()).toBe(2);
+
+    gate.resolve({ stopReason: 'end_turn' });
+    await first;
+    await vi.waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(2));
+    expect(lastSentText(client)).toBe('more a\n\nmore b');
+    expect(controller.queuedCount()).toBe(0);
+  });
+
+  it('does not merge slash-like prompts with their neighbours', async () => {
+    const { gate, client } = connectedClient();
+    const first = controller.send('working', []);
+    await vi.waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(1));
+
+    await controller.send('/notacommand half', []);
+    await controller.send('second half', []);
+
+    gate.resolve({ stopReason: 'end_turn' });
+    await first;
+    await vi.waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(3));
+    expect(sentText(client, 1)).toBe('/notacommand half');
+    expect(sentText(client, 2)).toBe('second half');
+  });
+
+  it('renders queue items with a remove button that drops one entry', async () => {
+    const el = document.createElement('div');
+    controller.queueIndicatorEl = el;
+    (controller as unknown as { busy: boolean }).busy = true;
+
+    await controller.send('alpha', []);
+    await controller.send('beta', []);
+
+    expect(controller.queuedCount()).toBe(2);
+    expect(el.querySelector('.co-ober-queue-text')?.textContent).toBe(t().queue.many.replace('{count}', '2'));
+    let items = el.querySelectorAll('.co-ober-queue-item');
+    expect(items.length).toBe(2);
+    expect(items[0].querySelector('.co-ober-queue-item-text')?.textContent).toBe('alpha');
+    expect(items[0].querySelector('.co-ober-queue-remove')?.getAttribute('aria-label')).toBe(t().queue.remove);
+
+    (items[0].querySelector('.co-ober-queue-remove') as HTMLElement).click();
+    expect(controller.queuedCount()).toBe(1);
+    items = el.querySelectorAll('.co-ober-queue-item');
+    expect(items[0].querySelector('.co-ober-queue-item-text')?.textContent).toBe('beta');
+
+    (controller as unknown as { busy: boolean }).busy = false;
+    controller.queueIndicatorEl = null;
+  });
+
+  it('hides the indicator once the queue drains empty', async () => {
+    const el = document.createElement('div');
+    controller.queueIndicatorEl = el;
+    (controller as unknown as { busy: boolean }).busy = true;
+    await controller.send('alpha', []);
+    expect(el.classList.contains('co-ober-visible')).toBe(true);
+
+    (controller as unknown as { busy: boolean }).busy = false;
+    await (controller as unknown as { drainQueue: () => Promise<void> }).drainQueue();
+    expect(el.classList.contains('co-ober-visible')).toBe(false);
+    controller.queueIndicatorEl = null;
+  });
+
+  it('derives compact titles from message text', () => {
+    expect(deriveSessionTitle('hello   world')).toBe('hello world');
+    expect(deriveSessionTitle('x'.repeat(60))).toBe(`${'x'.repeat(47)}…`);
+    expect(deriveSessionTitle('/help me')).toBe('');
+    expect(deriveSessionTitle('   ')).toBe('');
+  });
+
+  function storeWithMessages(messages: Array<{ role: string; content: string }>, title = 'Chat 21:00:00') {
+    const rename = vi.fn(() => true);
+    const save = vi.fn().mockResolvedValue(undefined);
+    deps.sessionStore = {
+      ...deps.sessionStore,
+      get: vi.fn(() => ({ sessionId: 'auto-1', title, messages })) as unknown as ControllerDeps['sessionStore']['get'],
+      rename: rename as unknown as ControllerDeps['sessionStore']['rename'],
+      save: save as unknown as ControllerDeps['sessionStore']['save'],
+    };
+    controller = new CoOberViewController(deps, callbacks);
+    controller.state.sessionId = 'auto-1';
+    return { rename, save };
+  }
+
+  it('auto-titles the session after the first completed exchange', async () => {
+    resolvedClient();
+    const { rename, save } = storeWithMessages([
+      { role: 'user', content: 'Explain the vault setup?', type: 'text', timestamp: 0 },
+      { role: 'assistant', content: 'Sure.', type: 'text', timestamp: 1 },
+    ] as never);
+
+    await controller.send('Explain the vault setup?', []);
+
+    expect(rename).toHaveBeenCalledWith('auto-1', 'Explain the vault setup?');
+    expect(save).toHaveBeenCalled();
+  });
+
+  it('leaves the title alone once the conversation has more than one user turn', async () => {
+    resolvedClient();
+    const { rename } = storeWithMessages([
+      { role: 'user', content: 'first', type: 'text', timestamp: 0 },
+      { role: 'assistant', content: 'ok', type: 'text', timestamp: 1 },
+      { role: 'user', content: 'first', type: 'text', timestamp: 2 },
+    ] as never);
+
+    await controller.send('second', []);
+
+    expect(rename).not.toHaveBeenCalled();
+  });
+
+  it('waits for the assistant reply before titling', async () => {
+    resolvedClient();
+    const { rename } = storeWithMessages([
+      { role: 'user', content: 'only question so far', type: 'text', timestamp: 0 },
+    ] as never);
+
+    await controller.send('only question so far', []);
+
+    expect(rename).not.toHaveBeenCalled();
   });
 });
