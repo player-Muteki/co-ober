@@ -33,6 +33,7 @@ import {
   zToolCall,
   zToolCallUpdate,
   zPlan,
+  zPlanUpdate,
   zConfigOptionUpdate,
   zAvailableCommandsUpdate,
   zCurrentModeUpdate,
@@ -82,6 +83,13 @@ export function parseSessionUpdate(u: Record<string, unknown> | undefined | null
     case 'plan': {
       const r = zPlan.safeParse(u);
       return r.success ? r.data : null;
+    }
+    case 'plan_update': {
+      // v2-alpha: coerce the item-based envelope onto the v1 plan shape;
+      // unknown content variants (markdown/file/removal) stay unrendered.
+      const r = zPlanUpdate.safeParse(u);
+      if (!r.success || r.data.plan.type !== 'items' || !Array.isArray(r.data.plan.entries)) return null;
+      return { sessionUpdate: 'plan', entries: r.data.plan.entries };
     }
     case 'user_message_chunk': {
       const r = zUserMessageChunk.safeParse(u);
@@ -600,17 +608,17 @@ export class AcpClient implements OpencodeClient {
     if (!sid || sid === this.sessionId_ || sid === this.replaySessionId) {
       this.applySessionUpdate(update);
     }
-    const norm = this.normalizer.normalize(update);
-    if (!norm) return;
+    const norms = this.normalizer.normalizeList(update);
+    if (norms.length === 0) return;
     let entry = sid ? this.activeStreams.get(sid) : undefined;
     if (!entry && !sid && this.activeStreams.size === 1) {
       // Legacy wire frames without a session id: safe only when unambiguous.
       entry = this.activeStreams.values().next().value;
     }
     if (entry) {
-      entry.handler(norm);
+      for (const norm of norms) entry.handler(norm);
     } else if (this.replayHandler && (!sid || sid === this.replaySessionId)) {
-      this.replayHandler(norm);
+      for (const norm of norms) this.replayHandler(norm);
     }
   }
 
@@ -801,6 +809,8 @@ export class AcpClient implements OpencodeClient {
           ...(typeof update.title === 'string' ? { title: update.title } : {}),
           ...(typeof update.cwd === 'string' ? { cwd: update.cwd } : {}),
         };
+        // v2-alpha may carry config options inside the session info frame.
+        if (update.configOptions) this.applyConfigOptions(update.configOptions);
         break;
     }
   }

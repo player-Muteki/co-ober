@@ -3,16 +3,21 @@ import {
 	escapeSqlLiteral,
 	escapeLikePattern,
 	buildNativeSessionsSql,
+	buildNativeSessionsSqlV2,
 	listNativeSessions,
 	buildSessionUsageSql,
+	buildSessionUsageSqlV2,
 	readNativeSessionUsage,
 	buildSessionTodosSql,
 	readNativeSessionTodos,
 	buildMessageStatsSql,
+	buildMessageStatsSqlV2,
 	readNativeMessageStats,
 	buildToolErrorsSql,
+	buildToolErrorsSqlV2,
 	readNativeToolErrors,
 	buildNativeSessionSearchSql,
+	buildNativeSessionSearchSqlV2,
 	searchNativeSessions,
 	probeNativeSchema,
 	resetNativeSchemaProbe,
@@ -405,8 +410,132 @@ describe('native session content search', () => {
 	});
 });
 
+describe('v2 (forked database) SQL builders', () => {
+	it('lists sessions with event-fresh timestamps', () => {
+		const sql = buildNativeSessionsSqlV2("/vault/it's");
+		expect(sql).toContain("s.directory = '/vault/it''s'");
+		expect(sql).toContain('session_message sm0');
+		expect(sql).toContain('s.parent_id is null');
+		expect(sql).toContain('s.time_archived is null');
+		expect(sql).toContain('order by time_updated desc');
+		expect(sql).toContain('limit 50');
+	});
+
+	it('clamps the v2 listing limit', () => {
+		expect(buildNativeSessionsSqlV2('/v', 9999)).toContain('limit 500');
+		expect(buildNativeSessionsSqlV2('/v', -5)).toContain('limit 1');
+	});
+
+	it('searches user text and assistant content parts with a snippet', () => {
+		const sql = buildNativeSessionSearchSqlV2('/vault', "O'br%x");
+		expect(sql).toContain("sm.type = 'user'");
+		expect(sql).toContain("json_extract(sm.data, '$.text') like '%O''br\\%x%' escape");
+		expect(sql).toContain("json_each(sm.data, '$.content')");
+		expect(sql).toContain("json_extract(j.value, '$.type') = 'text'");
+		expect(sql).toContain('as snippet');
+		expect(sql).toContain('json_valid');
+		expect(sql).toContain('union all');
+		expect(sql).toContain('limit 20');
+	});
+
+	it('aggregates usage from event rows without touching stale message tables', () => {
+		const sql = buildSessionUsageSqlV2("ses_it's");
+		expect(sql).toContain("sm.session_id = 'ses_it''s'");
+		expect(sql).toContain("json_extract(j.value, '$.cost')");
+		expect(sql).toContain("json_extract(sm.data, '$.tokens.input')");
+		expect(sql).toContain("json_extract(sm.data, '$.tokens.cache.read')");
+		expect(sql).toContain('order by sm.seq desc limit 1');
+		expect(sql).not.toContain('from message m');
+		expect(sql).not.toContain('from session s');
+	});
+
+	it('orders message stats by seq', () => {
+		const sql = buildMessageStatsSqlV2('ses_a');
+		expect(sql).toContain("sm.type = 'assistant'");
+		expect(sql).toContain("json_extract(j.value, '$.type') = 'step-finish'");
+		expect(sql).toContain('order by sm.seq asc');
+	});
+
+	it('reads tool errors from inlined content parts', () => {
+		const sql = buildToolErrorsSqlV2('ses_a');
+		expect(sql).toContain('json_each(sm.data');
+		expect(sql).toContain("json_extract(j.value, '$.type') = 'tool'");
+		expect(sql).toContain("json_extract(j.value, '$.state.error') is not null");
+	});
+});
+
+describe('v2 SQL against a real SQLite engine', () => {
+	let db: { prepare(sql: string): { all(...params: unknown[]): Record<string, unknown>[]; run(...params: unknown[]): void } } | null = null;
+	try {
+		// eslint-disable-next-line @typescript-eslint/no-require-imports
+		const sqlite = require('node:sqlite') as {
+			DatabaseSync: new (path: string) => {
+				prepare(sql: string): { all(...params: unknown[]): Record<string, unknown>[]; run(...params: unknown[]): void };
+			};
+		};
+		const real = new sqlite.DatabaseSync(':memory:');
+		const exec = (sql: string) => real.prepare(sql).run();
+		exec(
+			'create table session (id text primary key, parent_id text, directory text, title text, time_archived integer, time_updated integer, summary_additions integer, summary_deletions integer, summary_files integer)',
+		);
+		exec(
+			'create table session_message (id text primary key, session_id text, type text, seq integer, time_created integer, time_updated integer, data text)',
+		);
+		exec("insert into session values ('ses_a', null, '/vault', 'Alpha', null, 100, 1, 0, 1)");
+		exec(
+			'insert into session_message values ' +
+				"('m_user', 'ses_a', 'user', 1, 200, 200, '{\"text\":\"hello needle here\"}'), " +
+				"('m_ctrl', 'ses_a', 'session.updated', 2, 300, 300, '{}'), " +
+				"('m_asst', 'ses_a', 'assistant', 3, 400, 400, " +
+					"'{\"tokens\":{\"input\":10,\"output\":5,\"reasoning\":2,\"total\":17,\"cache\":{\"read\":90,\"write\":3}}," +
+					"\"content\":[{\"type\":\"step-finish\",\"cost\":0.5,\"tokens\":{\"input\":10,\"output\":5,\"total\":15}}," +
+					"{\"type\":\"text\",\"text\":\"reply about needle here\"}," +
+					"{\"type\":\"tool\",\"callID\":\"call_1\",\"state\":{\"error\":\"boom\"}}]}')",
+		);
+		db = real;
+	} catch {
+		db = null; // runtime without node:sqlite: skip this suite
+	}
+	const maybe = db ? describe : describe.skip;
+
+	maybe('executes every v2 builder without error', () => {
+		const queries: Array<[string, () => string]> = [
+			['listing', () => buildNativeSessionsSqlV2('/vault')],
+			['search', () => buildNativeSessionSearchSqlV2('/vault', 'needle')],
+			['usage', () => buildSessionUsageSqlV2('ses_a')],
+			['stats', () => buildMessageStatsSqlV2('ses_a')],
+			['errors', () => buildToolErrorsSqlV2('ses_a')],
+		];
+		it.each(queries)('%s', (_name, build) => {
+			expect(() => db!.prepare(build()).all()).not.toThrow();
+		});
+
+		it('returns fork-correct results', () => {
+			const listed = db!.prepare(buildNativeSessionsSqlV2('/vault')).all();
+			expect(listed[0]).toMatchObject({ id: 'ses_a', title: 'Alpha', time_updated: 400, summary_additions: 1 });
+
+			const found = db!.prepare(buildNativeSessionSearchSqlV2('/vault', 'needle')).all();
+			expect(found).toHaveLength(1);
+			expect(String(found[0].snippet)).toContain('needle');
+			expect(db!.prepare(buildNativeSessionSearchSqlV2('/vault', 'zzz-absent')).all()).toHaveLength(0);
+
+			const usage = db!.prepare(buildSessionUsageSqlV2('ses_a')).all()[0];
+			expect(usage).toMatchObject({
+				cost: 0.5, tokens_input: 10, tokens_output: 5, tokens_reasoning: 2,
+				tokens_cache_read: 90, tokens_cache_write: 3, context_tokens: 17,
+			});
+
+			const stats = db!.prepare(buildMessageStatsSqlV2('ses_a')).all();
+			expect(stats).toEqual([{ message_id: 'm_asst', cost: 0.5, input_tokens: 10, output_tokens: 5, total_tokens: 17 }]);
+
+			const errors = db!.prepare(buildToolErrorsSqlV2('ses_a')).all();
+			expect(errors).toEqual([{ call_id: 'call_1', error: 'boom' }]);
+		});
+	});
+});
+
 describe('native schema probe (v2 defense)', () => {
-	function recordingSqlite(probeRow: unknown, forkRow: unknown = FORK_CLEAN_ROW) {
+	function recordingSqlite(probeRow: unknown, forkRow: unknown = FORK_CLEAN_ROW, contentRows: unknown[] = []) {
 		const seen: string[] = [];
 		return {
 			seen,
@@ -419,7 +548,7 @@ describe('native schema probe (v2 defense)', () => {
 							seen.push(sql);
 							if (sql.includes('sqlite_master')) return { all: () => [probeRow] };
 							if (sql.includes('data_migration')) return { all: () => [forkRow] };
-							return { all: () => [] };
+							return { all: () => contentRows };
 						}
 					},
 				}),
@@ -470,16 +599,25 @@ describe('native schema probe (v2 defense)', () => {
 		expect(await probeNativeSchema(dbPath, { sqlite: deps as never })).toBe('v1');
 	});
 
-	it('classifies a migrated database as forked and degrades reads with one clear warning', async () => {
+	it('classifies a migrated database as forked, warns once, and reads content via v2 tables', async () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-		const { deps } = recordingSqlite(
+		const { seen, deps } = recordingSqlite(
 			{ session_table: 1, session_columns: 6, v2_tables: 3 },
 			{ migrated: 12, v2_rows: 0 },
+			[{ id: 'ses_a', title: 'Alpha', directory: '/vault', time_updated: 123 }],
 		);
 		const base = { env: { HOME: '/home/u' }, fs: fakeFs };
 		expect(await probeNativeSchema(dbPath, { sqlite: deps as never })).toBe('forked');
-		expect(await listNativeSessions('/vault', { ...base, sqlite: deps as never })).toEqual([]);
-		expect(await readNativeSessionUsage('ses_a', { ...base, sqlite: deps as never })).toBeUndefined();
+		const sessions = await listNativeSessions('/vault', { ...base, sqlite: deps as never });
+		expect(sessions).toEqual([
+			{ sessionId: 'ses_a', title: 'Alpha', cwd: '/vault', updatedAt: new Date(123).toISOString() },
+		]);
+		await readNativeSessionUsage('ses_a', { ...base, sqlite: deps as never });
+		await readNativeMessageStats('ses_a', { ...base, sqlite: deps as never });
+		await readNativeToolErrors('ses_a', { ...base, sqlite: deps as never });
+		const contentQueries = seen.filter((sql) => !sql.includes('sqlite_master') && !sql.includes('data_migration'));
+		expect(contentQueries.length).toBeGreaterThanOrEqual(4);
+		expect(contentQueries.every((sql) => sql.includes('session_message'))).toBe(true);
 		const forkWarnings = warn.mock.calls.filter((args) => String(args[0]).includes('v2 storage layout'));
 		expect(forkWarnings.length).toBe(1);
 		warn.mockRestore();

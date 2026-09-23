@@ -261,6 +261,37 @@ describe('SessionUpdateNormalizer', () => {
     });
   });
 
+  it('normalizeList fans a session_info configOptions carrier into two norms', () => {
+    const info: SessionUpdate = {
+      sessionUpdate: 'session_info_update',
+      title: 'Hello',
+      configOptions: [
+        { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: 'gpt-4', options: [] },
+      ],
+    };
+    expect(normalizer.normalizeList(info)).toEqual([
+      { kind: 'session_info', title: 'Hello' },
+      { kind: 'config_options', configOptions: info.configOptions },
+    ]);
+  });
+
+  it('normalizeList keeps plain updates one-for-one', () => {
+    expect(normalizer.normalizeList({ sessionUpdate: 'session_info_update', title: 'A' })).toEqual([
+      { kind: 'session_info', title: 'A' },
+    ]);
+    const chunkList = normalizer.normalizeList({
+      sessionUpdate: 'agent_message_chunk',
+      messageId: 'm-1',
+      content: { type: 'text', text: 'x' },
+    });
+    expect(chunkList).toHaveLength(1);
+    expect(chunkList[0]?.kind).toBe('message_chunk');
+  });
+
+  it('normalizeList drops unknown updates', () => {
+    expect(normalizer.normalizeList({ sessionUpdate: 'unknown' } as any)).toEqual([]);
+  });
+
   it('returns null for unknown update', () => {
     expect(normalizer.normalize({ sessionUpdate: 'unknown' } as any)).toBeNull();
   });

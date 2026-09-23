@@ -61,6 +61,17 @@ export const zPlan = z.object({
   sessionUpdate: z.literal('plan'),
   entries: z.array(zEntry),
 });
+// ACP v2-alpha replaces the flattened `plan` with an item-based `plan_update`
+// carrying a tagged content object; only the `items` variant is representable
+// today (markdown/file/removal stay behind unstable_plan_operations).
+export const zPlanUpdate = z.object({
+  sessionUpdate: z.literal('plan_update'),
+  plan: z.object({
+    type: z.string(),
+    id: z.string().optional(),
+    entries: z.array(zEntry).optional(),
+  }),
+});
 export const zConfigOptionUpdate = z.object({
   sessionUpdate: z.literal('config_option_update'),
   configOptions: z.array(zConfigOption),
@@ -84,6 +95,9 @@ export const zSessionInfoUpdate = z.object({
   sessionId: z.string().optional(),
   title: z.string().optional(),
   cwd: z.string().optional(),
+  // v2-alpha folds config option delivery into session info. A shape we do
+  // not understand must not cost us the title update, so drop it silently.
+  configOptions: z.array(zConfigOption).optional().catch(undefined),
 });
 export const zUsageUpdate = z.object({
   sessionUpdate: z.literal('usage_update'),
@@ -103,6 +117,7 @@ export const zSessionUpdate = z.discriminatedUnion('sessionUpdate', [
   zToolCall,
   zToolCallUpdate,
   zPlan,
+  zPlanUpdate,
   zConfigOptionUpdate,
   zAvailableCommandsUpdate,
   zCurrentModeUpdate,

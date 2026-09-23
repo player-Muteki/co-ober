@@ -14,7 +14,7 @@ import {
 } from './acp';
 import { AcpRequestHandler } from './AcpRequestHandler';
 import { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
-import type { SessionUpdate } from '../types';
+import type { NormalizedUpdate, SessionUpdate } from '../types';
 
 describe('parseSessionUpdate', () => {
   it('should return null for empty input', () => {
@@ -162,12 +162,97 @@ describe('parseSessionUpdate', () => {
     expect(info.title).toBe('My Session');
   });
 
+  it('should coerce v2-alpha plan_update items into a plan update', () => {
+    const result = parseSessionUpdate({
+      sessionUpdate: 'plan_update',
+      plan: {
+        type: 'items',
+        id: 'plan-1',
+        entries: [{ content: 'Step 1', status: 'pending', priority: 'high' }],
+      },
+    });
+    expect(result).toEqual({
+      sessionUpdate: 'plan',
+      entries: [{ content: 'Step 1', status: 'pending', priority: 'high' }],
+    });
+  });
+
+  it('should ignore plan_update variants we cannot render yet', () => {
+    expect(parseSessionUpdate({ sessionUpdate: 'plan_update', plan: { type: 'markdown', text: '# hi' } })).toBeNull();
+    expect(parseSessionUpdate({ sessionUpdate: 'plan_update', plan: { type: 'items' } })).toBeNull();
+    expect(parseSessionUpdate({ sessionUpdate: 'plan_update', plan: { type: 'removal' } })).toBeNull();
+  });
+
+  it('should parse session_info_update carrying configOptions', () => {
+    const result = parseSessionUpdate({
+      sessionUpdate: 'session_info_update',
+      title: 'Renamed',
+      configOptions: [
+        { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: 'gpt-4', options: [] },
+      ],
+    });
+    expect(result).not.toBeNull();
+    if (!result) return;
+    const info = result as Extract<SessionUpdate, { sessionUpdate: 'session_info_update' }>;
+    expect(info.title).toBe('Renamed');
+    expect(info.configOptions).toHaveLength(1);
+  });
+
   it('should return null for unknown update type', () => {
     const result = parseSessionUpdate({
       sessionUpdate: 'unknown_type',
       foo: 'bar',
     });
     expect(result).toBeNull();
+  });
+});
+
+describe('dispatchSessionUpdate v2-alpha pre-layer', () => {
+  function clientWithStream(sid: string): { client: AcpClient; norms: NormalizedUpdate[] } {
+    const client = new AcpClient('opencode');
+    const norms: NormalizedUpdate[] = [];
+    const streams = Reflect.get(client, 'activeStreams') as Map<string, { handler: (u: NormalizedUpdate) => void; abort: AbortController }>;
+    streams.set(sid, { handler: (u) => norms.push(u), abort: new AbortController() });
+    Reflect.set(client, 'sessionId_', sid);
+    return { client, norms };
+  }
+
+  const dispatch = (client: AcpClient, params: unknown) =>
+    Reflect.get(client, 'dispatchSessionUpdate').call(client, params);
+
+  it('fans a session_info frame with configOptions out to two norms', () => {
+    const { client, norms } = clientWithStream('s1');
+    dispatch(client, {
+      sessionId: 's1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        title: 'Renamed',
+        configOptions: [
+          { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: 'gpt-4', options: [{ value: 'gpt-4', name: 'GPT-4' }] },
+        ],
+      },
+    });
+    expect(norms.map((n) => n.kind)).toEqual(['session_info', 'config_options']);
+    expect(Reflect.get(client, 'currentModelId')).toBe('gpt-4');
+    expect(Reflect.get(client, 'sessionInfo')).toMatchObject({ title: 'Renamed' });
+  });
+
+  it('keeps a plain session_info frame single-norm', () => {
+    const { client, norms } = clientWithStream('s1');
+    dispatch(client, { sessionId: 's1', update: { sessionUpdate: 'session_info_update', title: 'Renamed' } });
+    expect(norms).toEqual([{ kind: 'session_info', sessionId: undefined, title: 'Renamed', cwd: undefined }]);
+  });
+
+  it('delivers a v2 plan_update to the stream as a plan norm', () => {
+    const { client, norms } = clientWithStream('s1');
+    dispatch(client, {
+      sessionId: 's1',
+      update: {
+        sessionUpdate: 'plan_update',
+        plan: { type: 'items', id: 'plan-1', entries: [{ content: 'Step 1', status: 'pending', priority: 'high' }] },
+      },
+    });
+    expect(norms).toEqual([{ kind: 'plan', entries: [{ content: 'Step 1', status: 'pending', priority: 'high' }] }]);
   });
 });
 

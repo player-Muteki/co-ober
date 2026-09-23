@@ -12,6 +12,7 @@ import {
   zCurrentModelUpdate,
   zSessionInfoUpdate,
   zUsageUpdate,
+  zPlanUpdate,
   zSessionUpdate,
 } from './acpSchemas';
 
@@ -232,6 +233,49 @@ describe('acpSchemas', () => {
       const r = zSessionInfoUpdate.safeParse({ sessionUpdate: 'session_info_update' });
       expect(r.success).toBe(true);
     });
+
+    it('keeps valid configOptions carried inside the info frame', () => {
+      const r = zSessionInfoUpdate.safeParse({
+        sessionUpdate: 'session_info_update',
+        title: 'My Session',
+        configOptions: [{ id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: 'gpt-4', options: [] }],
+      });
+      expect(r.success).toBe(true);
+      if (r.success) expect(r.data.configOptions).toHaveLength(1);
+    });
+
+    it('drops invalid configOptions without losing the title update', () => {
+      const r = zSessionInfoUpdate.safeParse({
+        sessionUpdate: 'session_info_update',
+        title: 'My Session',
+        configOptions: [{ id: 'x', name: 1, category: 'bogus', type: 'checkbox', currentValue: null, options: 'no' }],
+      });
+      expect(r.success).toBe(true);
+      if (r.success) {
+        expect(r.data.configOptions).toBeUndefined();
+        expect(r.data.title).toBe('My Session');
+      }
+    });
+  });
+
+  describe('zPlanUpdate (ACP v2-alpha)', () => {
+    it('accepts the items variant with a plan id', () => {
+      const r = zPlanUpdate.safeParse({
+        sessionUpdate: 'plan_update',
+        plan: { type: 'items', id: 'plan-1', entries: [{ content: 'Step 1', status: 'pending', priority: 'high' }] },
+      });
+      expect(r.success).toBe(true);
+    });
+
+    it('parses other variants structurally; narrowing happens in parseSessionUpdate', () => {
+      const r = zPlanUpdate.safeParse({ sessionUpdate: 'plan_update', plan: { type: 'markdown' } });
+      expect(r.success).toBe(true);
+    });
+
+    it('rejects a missing plan body', () => {
+      const r = zPlanUpdate.safeParse({ sessionUpdate: 'plan_update' });
+      expect(r.success).toBe(false);
+    });
   });
 
   describe('zUsageUpdate', () => {
@@ -268,6 +312,11 @@ describe('acpSchemas', () => {
 
     it('validates usage_update variant', () => {
       const r = zSessionUpdate.safeParse({ sessionUpdate: 'usage_update', totalTokens: 100 });
+      expect(r.success).toBe(true);
+    });
+
+    it('validates plan_update variant', () => {
+      const r = zSessionUpdate.safeParse({ sessionUpdate: 'plan_update', plan: { type: 'items', entries: [] } });
       expect(r.success).toBe(true);
     });
 

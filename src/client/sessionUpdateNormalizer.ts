@@ -22,6 +22,20 @@ export class SessionUpdateNormalizer {
     }
   }
 
+  /**
+   * All normalized updates to deliver for one raw frame. v2-alpha agents can
+   * fold config options into `session_info_update`; the view tracks config
+   * and session info as separate concerns, so such a frame fans out to both.
+   */
+  normalizeList(raw: SessionUpdate): NormalizedUpdate[] {
+    const primary = this.normalize(raw);
+    const list = primary ? [primary] : [];
+    if (raw.sessionUpdate === 'session_info_update' && raw.configOptions) {
+      list.push({ kind: 'config_options', configOptions: raw.configOptions });
+    }
+    return list;
+  }
+
   normalize(raw: SessionUpdate): NormalizedUpdate | null {
     switch (raw.sessionUpdate) {
       case 'user_message_chunk': {
