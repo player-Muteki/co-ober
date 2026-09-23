@@ -1,3 +1,20 @@
+## 0.1.32 - 2026-09-23
+
+### Added
+- **Elicitation support**: `elicitation/create` requests from the agent are routed through the permission banner queue — allow/decline map to the spec's accept/decline/cancel outcomes — instead of being auto-rejected with `-32601`; the capability is advertised at initialize.
+- **Authentication handshakes**: `authMethods` from initialize are parsed and normalized, and a session creation that fails with an auth-required error authenticates with the preferred method and retries once per connection.
+- **`opencode.db` v2 defense**: a cached schema probe classifies the native database as v1, incompatible or unknown; unknown or unreadable never blocks reads, while an incompatible (v2+) database degrades every native read path with a single clear warning instead of throwing on unexpected tables.
+- **Turn throughput**: completed turns show a `tok/s` figure derived strictly from native output+thinking evidence over the measured wall clock, with the same number in the usage tooltip.
+- **Full config-option surfacing**: the effort dropdown now presents the agent's own option list when it provides one; known tiers get localized labels and custom tiers keep the agent's names, falling back to the built-in list only when the agent sends none.
+- **Selection-aware streaming**: markdown re-renders are deferred while the user is selecting text inside the chat, so a live selection survives mid-stream refreshes.
+
+### Fixed
+- **Stream routing and stale turns**: `session/update` frames are filtered by sessionId so side-chat traffic can no longer bleed into the main transcript; main and side chat hold independent stream slots, and the agent-call finally hook no longer pollutes a fresh turn past its generation guard.
+- **Vault writes**: the filesystem delegate writes through the Obsidian vault API with corrected `normalizePath` handling instead of raw host writes.
+- **Stop reasons**: refusal, max-tokens and cancelled turns render with their own badges instead of masquerading as a normal completion.
+- **Leak and race hygiene**: `scheduleSave` is disposed-guarded, renderer and session-dropdown timers are cleaned up on teardown, permission requests with unparseable payloads surface a visible warning, and native plan refresh no longer races the streaming plan.
+- **Render parity**: mermaid fences are left to Obsidian's post-processor (no copy button injected), rendered markdown placeholders carry `.markdown-rendered` so ordered-list markers survive theming, and the injected system prompt now declares XML escaping for path attributes as well as note bodies.
+
 ## 0.1.31 - 2026-09-23
 
 ### Added
