@@ -73,6 +73,11 @@ describe('AcpMethodNames', () => {
       expect(ACP_SERVER_REQUEST_ALIASES.requestPermission).toContain('requestPermission');
     });
 
+    it('has elicitationCreate aliases', () => {
+      expect(ACP_SERVER_REQUEST_ALIASES.elicitationCreate).toContain('elicitation/create');
+      expect(ACP_SERVER_REQUEST_ALIASES.elicitationCreate).toContain('elicitationCreate');
+    });
+
     it('has readTextFile aliases', () => {
       expect(ACP_SERVER_REQUEST_ALIASES.readTextFile).toContain('fs/read_text_file');
       expect(ACP_SERVER_REQUEST_ALIASES.readTextFile).toContain('fs/readTextFile');

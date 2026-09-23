@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import {
 	escapeSqlLiteral,
 	escapeLikePattern,
@@ -14,6 +14,8 @@ import {
 	readNativeToolErrors,
 	buildNativeSessionSearchSql,
 	searchNativeSessions,
+	probeNativeSchema,
+	resetNativeSchemaProbe,
 } from './NativeSessionReader';
 
 const dbPath = '/home/u/.local/share/opencode/opencode.db';
@@ -22,19 +24,26 @@ const fakeFs = {
 	readdirSync: (): string[] => ['opencode.db'],
 };
 
-function sqliteBacked(rows: unknown[]) {
+const V1_PROBE_ROW = { session_table: 1, session_columns: 6 };
+
+/** Read helper that answers the schema probe with v1 shapes (or a custom row). */
+function sqliteBacked(rows: unknown[], probeRow: unknown = V1_PROBE_ROW) {
 	return {
 		requireSqliteModule: () => ({
 			DatabaseSync: class {
 				constructor() {}
 				close() {}
-				prepare() {
-					return { all: () => rows };
+				prepare(sql: string) {
+					return { all: () => (sql.includes('sqlite_master') ? [probeRow] : rows) };
 				}
 			},
 		}),
 	};
 }
+
+beforeEach(() => {
+	resetNativeSchemaProbe();
+});
 
 describe('NativeSessionReader SQL building', () => {
 	it('doubles embedded quotes', () => {
@@ -385,5 +394,59 @@ describe('native session content search', () => {
 		expect(sessions).toEqual([]);
 		expect(warn).toHaveBeenCalled();
 		warn.mockRestore();
+	});
+});
+
+describe('native schema probe (v2 defense)', () => {
+	function recordingSqlite(probeRow: unknown) {
+		const seen: string[] = [];
+		return {
+			seen,
+			deps: {
+				requireSqliteModule: () => ({
+					DatabaseSync: class {
+						constructor() {}
+						close() {}
+						prepare(sql: string) {
+							seen.push(sql);
+							if (sql.includes('sqlite_master')) return { all: () => [probeRow] };
+							return { all: () => [] };
+						}
+					},
+				}),
+			},
+		} as const;
+	}
+
+	it('degrades every native read on an incompatible schema without running v1 queries', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const { seen, deps } = recordingSqlite({ session_table: 1, session_columns: 2 });
+		const base = { env: { HOME: '/home/u' }, fs: fakeFs };
+		expect(await listNativeSessions('/vault', { ...base, sqlite: deps as never })).toEqual([]);
+		expect(await searchNativeSessions('/vault', 'term', { ...base, sqlite: deps as never })).toEqual([]);
+		expect(await readNativeSessionUsage('ses_a', { ...base, sqlite: deps as never })).toBeUndefined();
+		expect(await readNativeSessionTodos('ses_a', { ...base, sqlite: deps as never })).toEqual([]);
+		expect(seen.every((sql) => sql.includes('sqlite_master'))).toBe(true);
+		const v2Warnings = warn.mock.calls.filter((args) => String(args[0]).includes('does not match the v1 schema'));
+		expect(v2Warnings.length).toBe(1);
+		warn.mockRestore();
+	});
+
+	it('classifies an unreadable probe as unknown and still degrades gracefully', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const sessions = await listNativeSessions('/vault', {
+			env: { HOME: '/home/u' },
+			fs: fakeFs,
+			sqlite: { requireSqliteModule: () => null, spawn: () => { throw new Error('nope'); }, execPath: '', env: {} } as never,
+		});
+		expect(sessions).toEqual([]);
+		expect(warn).toHaveBeenCalled();
+		expect(await probeNativeSchema(dbPath, { sqlite: { requireSqliteModule: () => null, spawn: () => { throw new Error('nope'); }, execPath: '', env: {} } as never })).toBe('unknown');
+		warn.mockRestore();
+	});
+
+	it('accepts v1 databases that carry extra unknown tables', async () => {
+		const { deps } = recordingSqlite(V1_PROBE_ROW);
+		expect(await probeNativeSchema(dbPath, { sqlite: deps as never })).toBe('v1');
 	});
 });

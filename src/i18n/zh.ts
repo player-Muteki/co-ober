@@ -90,6 +90,12 @@ const zh: Locale = {
     unreadable: '权限请求无法解析，已取消。',
   },
 
+  elicitation: {
+    title: 'Agent 正在请求输入',
+    accept: '允许',
+    decline: '拒绝',
+  },
+
   stopReason: {
     refusal: '模型拒绝回答本次请求。',
     maxTokens: '回复被截断：模型达到了单条消息的 token 上限。可要求更简短的回答，或让它从中断处继续。',

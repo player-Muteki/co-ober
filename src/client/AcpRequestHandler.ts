@@ -5,6 +5,7 @@ import { TerminalManager, TerminalError } from './terminalManager';
 import { z } from 'zod';
 import { REQUEST_DEFAULT_TIMEOUT_MS, REQUEST_DEFAULT_MAX_OUTPUT_BYTES } from '../constants';
 import { ACP_SERVER_REQUEST_ALIASES } from './AcpMethodNames';
+import { t } from '../i18n/index';
 
 const zPermissionParams = z
   .object({
@@ -32,6 +33,17 @@ const zPermissionParams = z
   .passthrough();
 
 const zFsPathParam = z.object({ path: z.string() });
+
+const zElicitationParams = z
+  .object({
+    sessionId: z.string().optional(),
+    mode: z.string().optional(),
+    elicitationId: z.string().optional(),
+    message: z.unknown().optional(),
+    requestedSchema: z.unknown().optional(),
+    schema: z.unknown().optional(),
+  })
+  .passthrough();
 const zFsWriteParam = z.object({ path: z.string(), content: z.string() });
 const zTerminalIdParam = z.object({ terminalId: z.string() });
 const zTerminalCreateParam = z.object({
@@ -87,6 +99,10 @@ export class AcpRequestHandler {
       return this.handleServerRequestPermission(this.toRecord(params));
     });
 
+    this.registerServerRequest('elicitationCreate', (params) => {
+      return this.handleElicitationCreate(this.toRecord(params));
+    });
+
     this.registerServerRequest('readTextFile', (params) => {
       return this.handleReadTextFile(this.toRecord(params));
     });
@@ -137,6 +153,9 @@ export class AcpRequestHandler {
     if (this.terminalCapabilityMode === 'enabled') {
       caps.terminal = true;
     }
+    // We answer elicitation/create with an allow/decline banner (empty content),
+    // i.e. form mode only; url-mode elicitations are not advertised.
+    caps.elicitation = { form: {} };
     return caps;
   }
 
@@ -197,6 +216,62 @@ export class AcpRequestHandler {
   private async requestPermission(req: PermissionRequest): Promise<string> {
     const reject = req.options.find((o) => o.kind === 'reject_once');
     return reject?.optionId ?? 'reject_once';
+  }
+
+  private handleElicitationCreate = (params: Record<string, unknown>): Promise<unknown> => {
+    const parsed = zElicitationParams.safeParse(params);
+    if (!parsed.success) {
+      const summary = parsed.error.issues
+        .map((issue) => `${issue.path.join('.') || '<root>'}: ${issue.message}`)
+        .join('; ')
+        .slice(0, 240);
+      console.error('[co-ober] unreadable elicitation request, cancelling it:', summary);
+      this.onPermissionUnreadable?.(summary);
+      return Promise.resolve({ action: 'cancel' });
+    }
+
+    const i18n = t();
+    const message = typeof parsed.data.message === 'string' ? parsed.data.message : '';
+    const schemaText = this.stringifyElicitationSchema(parsed.data.requestedSchema ?? parsed.data.schema);
+    const req: PermissionRequest = {
+      sessionId: parsed.data.sessionId ?? '',
+      toolCall: {
+        toolCallId: parsed.data.elicitationId ?? `elicitation-${Date.now()}`,
+        status: 'pending',
+        title: message || schemaText || i18n.elicitation.title,
+        rawInput: { elicitation: true, ...(parsed.data.mode ? { mode: parsed.data.mode } : {}) },
+        kind: 'other',
+        locations: [],
+      },
+      options: [
+        { optionId: 'accept', kind: 'allow_once', name: i18n.elicitation.accept },
+        { optionId: 'decline', kind: 'reject_once', name: i18n.elicitation.decline },
+      ],
+    };
+
+    // Route through the same permission callback chain as session/request_permission
+    // so elicitations reuse the banner queue and permission-tier handling
+    // instead of bouncing back as a -32601 auto-reject.
+    const handler = this.onPermissionRequest ?? ((r: PermissionRequest) => this.requestPermission(r));
+    return Promise.resolve(handler(req))
+      .then((decision: string) => {
+        if (decision === 'accept') return { action: 'accept', content: {} };
+        if (decision === 'decline') return { action: 'decline' };
+        return { action: 'cancel' };
+      })
+      .catch((error: unknown) => {
+        console.error('[co-ober] elicitation handler failed, cancelling:', error);
+        return { action: 'cancel' };
+      });
+  };
+
+  private stringifyElicitationSchema(raw: unknown): string {
+    if (raw === undefined) return '';
+    try {
+      return JSON.stringify(raw).slice(0, 500);
+    } catch {
+      return '';
+    }
   }
 
   private handleReadTextFile(params: Record<string, unknown>): Promise<unknown> {

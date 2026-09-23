@@ -6,6 +6,7 @@ import {
   CLIENT_VERSION,
   buildMcpServers,
   normalizeAgentCapabilities,
+  normalizeAuthMethods,
   parseSessionUpdate,
   extractSessionSnapshot,
   extractConfigMeta,
@@ -494,6 +495,166 @@ describe('AcpRequestHandler permission handling', () => {
 
   it('uses the current release version for ACP clientInfo', () => {
     expect(CLIENT_VERSION).toBe(pkg.version);
+  });
+});
+
+describe('AcpRequestHandler elicitation handling', () => {
+  function handlerWithTransport(uiHandler?: (req: unknown) => Promise<string>, unreadable?: (s: string) => void) {
+    const registrations = new Map<string, (params: unknown) => Promise<unknown>>();
+    const mockTransport = {
+      onRequest: vi.fn((name: string, h: (params: unknown) => Promise<unknown>) => {
+        registrations.set(name, h);
+      }),
+      request: vi.fn(),
+      notify: vi.fn(),
+      start: vi.fn(),
+      dispose: vi.fn(),
+      rejectPending: vi.fn(),
+      isClosed: false,
+      onNotification: vi.fn(),
+    } as unknown as AcpJsonRpcTransport;
+    const handler = new AcpRequestHandler({
+      transport: mockTransport,
+      vaultPath: '/test',
+      onPermissionRequest: uiHandler as never,
+      onPermissionUnreadable: unreadable,
+    });
+    return { handler, registrations };
+  }
+
+  it('registers elicitation/create and routes it through the permission banner callback', async () => {
+    const uiHandler = vi.fn().mockResolvedValue('accept');
+    const { handler, registrations } = handlerWithTransport(uiHandler);
+
+    const dispatch = registrations.get('elicitation/create');
+    expect(dispatch).toBeTypeOf('function');
+
+    const result = await dispatch!({
+      sessionId: 's1',
+      mode: 'form',
+      message: 'Run the migration now?',
+      requestedSchema: { type: 'object' },
+    });
+
+    expect(result).toEqual({ action: 'accept', content: {} });
+    expect(uiHandler).toHaveBeenCalledTimes(1);
+    const req = uiHandler.mock.calls[0][0] as {
+      sessionId: string;
+      toolCall: { title: string; rawInput: Record<string, unknown>; kind: string };
+      options: { optionId: string; kind: string }[];
+    };
+    expect(req.sessionId).toBe('s1');
+    expect(req.toolCall.title).toBe('Run the migration now?');
+    expect(req.toolCall.rawInput.elicitation).toBe(true);
+    expect(req.toolCall.kind).toBe('other');
+    expect(req.options.map((o) => o.optionId)).toEqual(['accept', 'decline']);
+    handler.dispose();
+  });
+
+  it('maps decline and unknown decisions to decline/cancel', async () => {
+    const declineHandler = vi.fn().mockResolvedValue('decline');
+    const { handler: h1, registrations: r1 } = handlerWithTransport(declineHandler);
+    expect(await r1.get('elicitation/create')!({ sessionId: 's1', message: 'ok?' })).toEqual({ action: 'decline' });
+    h1.dispose();
+
+    const otherHandler = vi.fn().mockResolvedValue('whatever');
+    const { handler: h2, registrations: r2 } = handlerWithTransport(otherHandler);
+    expect(await r2.get('elicitation/create')!({ sessionId: 's1', message: 'ok?' })).toEqual({ action: 'cancel' });
+    h2.dispose();
+  });
+
+  it('cancels and surfaces an unreadable elicitation without touching the banner', async () => {
+    const uiHandler = vi.fn();
+    const unreadable = vi.fn();
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { handler, registrations } = handlerWithTransport(uiHandler, unreadable);
+
+    // sessionId must be a string when present; a number fails the schema.
+    const result = await registrations.get('elicitation/create')!({ sessionId: 42 });
+    expect(result).toEqual({ action: 'cancel' });
+    expect(unreadable).toHaveBeenCalledTimes(1);
+    expect(uiHandler).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
+    handler.dispose();
+  });
+
+  it('cancels safely when the permission handler throws', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { handler, registrations } = handlerWithTransport(vi.fn().mockRejectedValue(new Error('ui dead')));
+    expect(await registrations.get('elicitation/create')!({ sessionId: 's1', message: 'hi' })).toEqual({ action: 'cancel' });
+    consoleSpy.mockRestore();
+    handler.dispose();
+  });
+
+  it('advertises the elicitation form capability at initialize', () => {
+    const { handler } = handlerWithTransport();
+    const caps = handler.buildClientCapabilities() as { elicitation?: { form?: unknown } };
+    expect(caps.elicitation).toEqual({ form: {} });
+    handler.dispose();
+  });
+});
+
+describe('AcpClient authentication support', () => {
+  it('normalizeAuthMethods keeps only entries with a usable id', () => {
+    expect(normalizeAuthMethods([
+      { id: 'a', name: 'A', description: ' desc ' },
+      { id: 'b' },
+      { name: 'no id' },
+      { id: '' },
+      null,
+      'x',
+      { id: 42 },
+    ])).toEqual([
+      { id: 'a', name: 'A', description: ' desc ' },
+      { id: 'b', name: 'b' },
+    ]);
+    expect(normalizeAuthMethods(undefined)).toEqual([]);
+    expect(normalizeAuthMethods('nope')).toEqual([]);
+  });
+
+  it('authenticate sends the request and never throws', async () => {
+    const client = new AcpClient('opencode');
+    const request = vi.fn().mockResolvedValue({});
+    Reflect.set(client, 'transport', { request });
+    Reflect.set(client, 'connected', true);
+    await expect(client.authenticate('m1')).resolves.toBe(true);
+    expect(request).toHaveBeenCalledWith('authenticate', { methodId: 'm1' }, undefined, undefined);
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    Reflect.set(client, 'transport', { request: vi.fn().mockRejectedValue(new Error('boom')) });
+    await expect(client.authenticate('m1')).resolves.toBe(false);
+    warnSpy.mockRestore();
+    expect(await client.authenticate('')).toBe(false);
+
+  });
+
+  it('createSession authenticates with the preferred method and retries once on auth_required', async () => {
+    const client = new AcpClient('opencode');
+    const request = vi.fn(async (method: string) => {
+      if (method === 'authenticate') return {};
+      const newSessionCalls = request.mock.calls.filter((c: unknown[]) => c[0] === 'session/new').length;
+      if (newSessionCalls === 1) throw new AcpProtocolError('Please authenticate first', 'session/new', -32001);
+      return { sessionId: 's9' };
+    });
+    Reflect.set(client, 'transport', { request });
+    Reflect.set(client, 'connected', true);
+    Reflect.set(client, 'authMethods', [{ id: 'oauth', name: 'OAuth' }]);
+
+    await expect(client.createSession('/vault')).resolves.toBe('s9');
+    expect(request).toHaveBeenCalledWith('authenticate', { methodId: 'oauth' }, undefined, undefined);
+    expect(request.mock.calls.filter((c: unknown[]) => c[0] === 'session/new')).toHaveLength(2);
+
+  });
+
+  it('createSession rethrows the original error when no auth method exists', async () => {
+    const client = new AcpClient('opencode');
+    const request = vi.fn().mockRejectedValue(new AcpProtocolError('auth required', 'session/new', -32001));
+    Reflect.set(client, 'transport', { request });
+    Reflect.set(client, 'connected', true);
+    Reflect.set(client, 'authMethods', []);
+    await expect(client.createSession('/vault')).rejects.toBeInstanceOf(AcpProtocolError);
+    expect(request).toHaveBeenCalledTimes(1);
+
   });
 });
 

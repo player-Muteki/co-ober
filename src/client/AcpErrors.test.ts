@@ -6,6 +6,7 @@ import {
   AcpProcessExitError,
   AcpSessionMissingError,
   isSessionMissingError,
+  isAuthRequiredError,
 } from './AcpErrors';
 
 describe('AcpErrors', () => {
@@ -118,5 +119,28 @@ describe('isSessionMissingError', () => {
     expect(isSessionMissingError(new AcpTransportError('Session transport closed'))).toBe(false);
     expect(isSessionMissingError(undefined)).toBe(false);
     expect(isSessionMissingError('Session not found')).toBe(false);
+  });
+});
+
+describe('isAuthRequiredError', () => {
+  it('matches the auth_required protocol code and phrasings', () => {
+    expect(isAuthRequiredError(new AcpProtocolError('nope', 'session/new', -32001))).toBe(true);
+    expect(isAuthRequiredError(new AcpProtocolError('auth_required', 'session/new', -32602))).toBe(true);
+    expect(isAuthRequiredError(new AcpProtocolError('Authentication needed', 'session/new'))).toBe(true);
+    expect(isAuthRequiredError(new AcpProtocolError('please log in first', 'session/new'))).toBe(true);
+    expect(isAuthRequiredError(new AcpProtocolError('not authenticated', 'session/new'))).toBe(true);
+  });
+
+  it('matches auth hints inside protocol error data', () => {
+    const error = new AcpProtocolError('Internal error', 'session/new', -32603, {
+      code: 'auth_required',
+    });
+    expect(isAuthRequiredError(error)).toBe(true);
+  });
+
+  it('does not match unrelated or transport errors', () => {
+    expect(isAuthRequiredError(new AcpProtocolError('Session not found', 'session/load', -32000))).toBe(false);
+    expect(isAuthRequiredError(new Error('auth_required'))).toBe(false);
+    expect(isAuthRequiredError(undefined)).toBe(false);
   });
 });

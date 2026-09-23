@@ -33,8 +33,14 @@ export const ACP_SERVER_NOTIFICATION_ALIASES = {
   sessionUpdate: ['session/update', 'sessionUpdate'],
 } as const;
 
+// SDK upgrade assessment (0.21 -> 1.x), 0.1.32: this client speaks raw JSON-RPC
+// through AcpJsonRpcTransport and dispatches by the wire-name maps below, so it
+// is not coupled to the pinned @agentclientprotocol/sdk typings. A 1.x bump would
+// only refresh types; protocol drift is absorbed here as alias candidates instead.
+// Migration is deliberately deferred until agent-facing regression coverage exists.
 export const ACP_SERVER_REQUEST_ALIASES = {
   requestPermission: ['session/request_permission', 'requestPermission', 'request_permission'],
+  elicitationCreate: ['elicitation/create', 'elicitationCreate', 'elicitation_create'],
   readTextFile: ['fs/read_text_file', 'fs/readTextFile'],
   writeTextFile: ['fs/write_text_file', 'fs/writeTextFile'],
   createTerminal: ['terminal/create', 'terminalCreate'],

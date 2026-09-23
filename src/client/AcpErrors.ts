@@ -67,3 +67,21 @@ export function isSessionMissingError(err: unknown): boolean {
   }
   return false;
 }
+
+const AUTH_REQUIRED_PATTERN =
+  /\bauth(?:entication)?[\s_]+(?:required|needed)\b|\bnot authenticated\b|please (?:log ?in|sign ?in|authenticate)/i;
+
+/** Classify a protocol error as "the agent wants authenticate() first" (ACP auth_required). */
+export function isAuthRequiredError(err: unknown): boolean {
+  if (!(err instanceof AcpProtocolError)) return false;
+  if (err.code === -32001) return true;
+  if (AUTH_REQUIRED_PATTERN.test(err.message)) return true;
+  if (err.data !== undefined) {
+    try {
+      return AUTH_REQUIRED_PATTERN.test(JSON.stringify(err.data));
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}

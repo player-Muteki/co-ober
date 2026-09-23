@@ -3,7 +3,7 @@ import { getSpawnInfo } from '../utils/commandResolution';
 import { AcpSubprocess, type AcpSubprocessLaunchSpec } from './AcpSubprocess';
 
 import { type AcpLogicalMethod, getAcpMethodCandidates } from './AcpMethodNames';
-import { AcpProtocolError, AcpSessionMissingError, isSessionMissingError } from './AcpErrors';
+import { AcpProtocolError, AcpSessionMissingError, isSessionMissingError, isAuthRequiredError } from './AcpErrors';
 import type {
   SessionUpdate,
   PromptPart,
@@ -269,12 +269,31 @@ export function normalizeAgentCapabilities(raw: unknown): AgentCapabilities | nu
   return out as AgentCapabilities;
 }
 
+export type AuthMethod = NonNullable<AgentCapabilities['authMethods']>[number];
+
+/** Coerce a raw authMethods list from the agent into safe {id, name, description} entries. */
+export function normalizeAuthMethods(raw: unknown): AuthMethod[] {
+  if (!Array.isArray(raw)) return [];
+  const out: AuthMethod[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const src = item as Record<string, unknown>;
+    if (typeof src.id !== 'string' || !src.id) continue;
+    const name = typeof src.name === 'string' && src.name ? src.name : src.id;
+    const description = typeof src.description === 'string' && src.description ? src.description : undefined;
+    out.push({ id: src.id, name, ...(description ? { description } : {}) });
+  }
+  return out;
+}
+
 export class AcpClient implements OpencodeClient {
   private subprocess: AcpSubprocess | null = null;
   private connected = false;
   private transport: AcpJsonRpcTransport | null = null;
   private requestHandler: AcpRequestHandler | null = null;
   private agentCapabilities: AgentCapabilities | null = null;
+  private authMethods: AuthMethod[] = [];
+  private authAttempted = false;
   private activeStreams = new Map<string, { handler: (update: NormalizedUpdate) => void; abort: AbortController }>();
   private replayHandler: ((update: NormalizedUpdate) => void) | null = null;
   private replaySessionId: string | null = null;
@@ -389,8 +408,22 @@ export class AcpClient implements OpencodeClient {
       if (this.kernelGeneration !== generation) {
         throw new Error(t().acp.superseded);
       }
-      const initResult = z.object({ agentCapabilities: z.unknown().optional() }).safeParse(response);
-      this.agentCapabilities = initResult.success ? normalizeAgentCapabilities(initResult.data.agentCapabilities) : null;
+      const initResult = z
+        .object({ agentCapabilities: z.unknown().optional(), authMethods: z.unknown().optional() })
+        .safeParse(response);
+      if (initResult.success) {
+        this.agentCapabilities = normalizeAgentCapabilities(initResult.data.agentCapabilities);
+        // Some agents advertise authMethods at the top level of the initialize
+        // result rather than nested under agentCapabilities.
+        const topAuth = normalizeAuthMethods(initResult.data.authMethods);
+        if (topAuth.length > 0 && normalizeAuthMethods(this.agentCapabilities?.authMethods).length === 0) {
+          this.agentCapabilities = { ...(this.agentCapabilities ?? {}), authMethods: topAuth };
+        }
+      } else {
+        this.agentCapabilities = null;
+      }
+      this.authMethods = normalizeAuthMethods(this.agentCapabilities?.authMethods);
+      this.authAttempted = false;
       this.methodCache.clear();
       this.connected = true;
     } catch (error) {
@@ -411,6 +444,23 @@ export class AcpClient implements OpencodeClient {
     return this.agentCapabilities;
   }
 
+  /** Auth methods advertised by the agent in its initialize result. */
+  getAuthMethods(): AuthMethod[] {
+    return this.authMethods;
+  }
+
+  /** Run one `authenticate` request; resolves false on any failure (never throws). */
+  async authenticate(methodId: string): Promise<boolean> {
+    if (!methodId || !this.connected) return false;
+    try {
+      await this.requestWithFallback('authenticate', { methodId });
+      return true;
+    } catch (error) {
+      console.warn('[co-ober] authenticate failed:', error);
+      return false;
+    }
+  }
+
   async disconnect(): Promise<void> {
     this.isIntentionalDisconnect = true;
     this.reconnectAttempts = 0;
@@ -420,10 +470,23 @@ export class AcpClient implements OpencodeClient {
   }
 
   async createSession(cwd?: string, mcpServers: McpServerConfig[] = []): Promise<string> {
-    const r = await this.requestWithFallback('newSession', {
-      cwd: this.resolveCwd(cwd),
-      mcpServers: buildMcpServers(mcpServers),
-    });
+    const request = () =>
+      this.requestWithFallback('newSession', {
+        cwd: this.resolveCwd(cwd),
+        mcpServers: buildMcpServers(mcpServers),
+      });
+    let r: unknown;
+    try {
+      r = await request();
+    } catch (err) {
+      // An agent that requires login answers session/new with auth_required;
+      // try its preferred auth method once per connection, then retry.
+      if (!isAuthRequiredError(err) || this.authAttempted) throw err;
+      this.authAttempted = true;
+      const [preferred] = this.authMethods;
+      if (!preferred || !(await this.authenticate(preferred.id))) throw err;
+      r = await request();
+    }
     const parsed = z.object({ sessionId: z.string() }).safeParse(r);
     if (!parsed.success) throw new Error(t().acp.invalidSessionId);
     this.applySessionSnapshot(r as Record<string, unknown>);

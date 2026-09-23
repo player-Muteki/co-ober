@@ -88,6 +88,12 @@ const en = {
     unreadable: 'Permission request was unreadable and was cancelled.',
   },
 
+  elicitation: {
+    title: 'The agent is asking for input',
+    accept: 'Allow',
+    decline: 'Decline',
+  },
+
   stopReason: {
     refusal: 'The model declined to answer this request.',
     maxTokens: 'Response truncated: the model hit its per-message token limit. Try asking for a shorter answer or continue where it stopped.',
