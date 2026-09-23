@@ -1549,6 +1549,10 @@ export class CoOberViewController {
     this.state.currentModelId = snapshot.currentModelId ?? modelConfig?.currentValue ?? null;
     this.deps.toolbar.updateEffort(efforts, effortConfig?.currentValue ?? this.deps.runtime.settings.defaultEffort);
     this.deps.toolbar.updatePermission(this.deps.runtime.settings.permissionMode);
+    // Mirror the send-path rule (images are stripped unless supported) so the
+    // attach button is only offered when an image could actually be sent.
+    const caps = c.getAgentCapabilities?.();
+    this.deps.toolbar.setImageAttachEnabled(caps?.promptCapabilities?.image !== false);
   }
 
   applyConfigOptions(opts: SessionConfigOption[]): void {

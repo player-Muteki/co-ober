@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
 import { setLocale } from '../i18n/index';
 import { InputToolbar } from './toolbar';
 import { installObsidianDomHelpers } from '../test/domHelpers';
@@ -143,5 +143,170 @@ describe('InputToolbar permission cycle', () => {
     expect(onPermissionChange).not.toHaveBeenCalled();
     expect(container.querySelector('.co-ober-perm-label')?.textContent).toBe('🛡️ Readonly');
     expect(container.querySelector('.co-ober-perm-toggle')?.classList.contains('mod-readonly')).toBe(true);
+  });
+});
+
+function pressKey(target: Element, key: string): void {
+  target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+}
+
+describe('InputToolbar attach capability gating', () => {
+  it('disables the attach button with an explanatory tooltip when the agent lacks image support', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const onAttachImage = vi.fn();
+    const toolbar = new InputToolbar(container, { onAttachImage });
+
+    toolbar.setImageAttachEnabled(false);
+    const btn = container.querySelector('.co-ober-attach-btn') as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(btn.classList.contains('is-disabled')).toBe(true);
+    expect(btn.title).toBe('This agent does not support image prompts');
+    btn.click();
+    expect(onAttachImage).not.toHaveBeenCalled();
+
+    toolbar.setImageAttachEnabled(true);
+    expect(btn.disabled).toBe(false);
+    expect(btn.classList.contains('is-disabled')).toBe(false);
+    expect(btn.title).toBe('Attach image');
+    btn.click();
+    expect(onAttachImage).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the unsupported tooltip localized across locale refreshes', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const toolbar = new InputToolbar(container, {});
+    toolbar.setImageAttachEnabled(false);
+
+    setLocale('zh');
+    toolbar.refreshLocale();
+    const btn = container.querySelector('.co-ober-attach-btn') as HTMLButtonElement;
+    expect(btn.title).toBe('当前 Agent 不支持图片提示词');
+    expect(btn.disabled).toBe(true);
+    setLocale('en');
+  });
+});
+
+describe('InputToolbar keyboard-accessible dropdowns', () => {
+  // happy-dom only tracks document.activeElement for attached elements.
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  function modelToolbar(onModelChange = vi.fn()): { toolbar: InputToolbar; container: HTMLDivElement } {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    document.body.appendChild(container);
+    const toolbar = new InputToolbar(container, { onModelChange });
+    toolbar.updateModels(
+      [
+        { value: 'openai/gpt-4', label: 'GPT-4' },
+        { value: 'anthropic/claude', label: 'Claude' },
+      ],
+      'openai/gpt-4',
+    );
+    return { toolbar, container };
+  }
+
+  it('exposes the model dropdown with listbox semantics', () => {
+    const { container } = modelToolbar();
+    const btn = container.querySelector('.co-ober-model-btn')!;
+    const dropdown = container.querySelector('.co-ober-model-dropdown')!;
+    expect(btn.getAttribute('tabindex')).toBe('0');
+    expect(btn.getAttribute('aria-haspopup')).toBe('listbox');
+    expect(dropdown.getAttribute('role')).toBe('listbox');
+
+    const options = container.querySelectorAll('.co-ober-model-option');
+    expect(options).toHaveLength(2);
+    expect(options[0].getAttribute('role')).toBe('option');
+    expect(options[0].getAttribute('aria-selected')).toBe('true');
+    expect(options[1].getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('opens with Enter, moves focus to the first option, and fires the callback on Enter activation', () => {
+    const onModelChange = vi.fn();
+    const { container } = modelToolbar(onModelChange);
+    const btn = container.querySelector('.co-ober-model-btn')!;
+    const selector = container.querySelector('.co-ober-model-selector')!;
+
+    pressKey(btn, 'Enter');
+    expect(selector.classList.contains('open')).toBe(true);
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+    const options = container.querySelectorAll('.co-ober-model-option');
+    expect(document.activeElement).toBe(options[0]);
+
+    pressKey(options[1], 'Enter');
+    expect(onModelChange).toHaveBeenCalledWith('anthropic/claude');
+    expect(container.querySelector('.co-ober-model-label')?.textContent).toBe('Claude');
+    expect(selector.classList.contains('open')).toBe(false);
+    expect(btn.getAttribute('aria-expanded')).toBe('false');
+    const rereadOptions = container.querySelectorAll('.co-ober-model-option');
+    expect(rereadOptions[1].getAttribute('aria-selected')).toBe('true');
+    expect(rereadOptions[1].classList.contains('selected')).toBe(true);
+  });
+
+  it('wraps arrow navigation across options and closes on Escape', () => {
+    const { container } = modelToolbar();
+    const btn = container.querySelector('.co-ober-model-btn')!;
+    const selector = container.querySelector('.co-ober-model-selector')!;
+    const options = container.querySelectorAll('.co-ober-model-option');
+
+    pressKey(btn, 'ArrowDown');
+    expect(selector.classList.contains('open')).toBe(true);
+    expect(document.activeElement).toBe(options[0]);
+
+    pressKey(options[0], 'ArrowDown');
+    expect(document.activeElement).toBe(options[1]);
+    pressKey(options[1], 'ArrowDown');
+    expect(document.activeElement).toBe(options[0]);
+    pressKey(options[0], 'ArrowUp');
+    expect(document.activeElement).toBe(options[1]);
+
+    pressKey(options[1], 'Escape');
+    expect(selector.classList.contains('open')).toBe(false);
+    expect(document.activeElement).toBe(btn);
+  });
+
+  it('toggles from the pointer and closes on outside clicks', () => {
+    const { container } = modelToolbar();
+    const btn = container.querySelector('.co-ober-model-btn') as HTMLElement;
+    const selector = container.querySelector('.co-ober-model-selector')!;
+
+    btn.click();
+    expect(selector.classList.contains('open')).toBe(true);
+    btn.click();
+    expect(selector.classList.contains('open')).toBe(false);
+
+    btn.click();
+    (document.querySelector('body') as HTMLElement).click();
+    expect(selector.classList.contains('open')).toBe(false);
+  });
+
+  it('makes the effort dropdown keyboard-operable too', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    document.body.appendChild(container);
+    const onEffortChange = vi.fn();
+    const toolbar = new InputToolbar(container, { onEffortChange });
+    toolbar.updateEffort(
+      [
+        { value: 'default', label: 'Default' },
+        { value: 'high', label: 'High' },
+      ],
+      'default',
+    );
+
+    const btn = container.querySelector('.co-ober-effort-btn')!;
+    const selector = container.querySelector('.co-ober-effort-selector')!;
+    pressKey(btn, ' ');
+    expect(selector.classList.contains('open')).toBe(true);
+    const options = container.querySelectorAll('.co-ober-effort-option');
+    expect(document.activeElement).toBe(options[0]);
+
+    pressKey(options[1], 'Enter');
+    expect(onEffortChange).toHaveBeenCalledWith('high');
+    expect(container.querySelector('.co-ober-effort-label')?.textContent).toBe('High');
+    expect(selector.classList.contains('open')).toBe(false);
   });
 });

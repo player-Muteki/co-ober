@@ -46,6 +46,9 @@ export class InputToolbar {
   private attachBtnEl: HTMLButtonElement;
 
   private readonly unsubscribeLocale: () => void;
+  // Close fns registered by wireDropdown, keyed by the selector container.
+  private readonly dropdownClosers = new Map<HTMLElement, () => void>();
+  private readonly domDisposers: Array<() => void> = [];
 
   constructor(container: HTMLDivElement, private callbacks: ToolbarCallbacks) {
     container.addClass('co-ober-toolbar');
@@ -54,12 +57,18 @@ export class InputToolbar {
     // ── Single row ──
     const row = container.createDiv({ cls: 'co-ober-toolbar-row' });
 
-    // Custom model selector (hover dropdown)
+    // Custom model selector (hover + keyboard dropdown)
     this.modelSelectorEl = row.createDiv({ cls: 'co-ober-model-selector' });
     this.modelBtnEl = this.modelSelectorEl.createDiv({ cls: 'co-ober-model-btn' });
+    this.modelBtnEl.setAttribute('role', 'button');
+    this.modelBtnEl.setAttribute('tabindex', '0');
+    this.modelBtnEl.setAttribute('aria-haspopup', 'listbox');
+    this.modelBtnEl.setAttribute('aria-expanded', 'false');
     this.modelLabelEl = this.modelBtnEl.createSpan({ cls: 'co-ober-model-label' });
     this.modelLabelEl.setText(t().toolbar.noModels);
     this.modelDropdownEl = this.modelSelectorEl.createDiv({ cls: 'co-ober-model-dropdown' });
+    this.modelDropdownEl.setAttribute('role', 'listbox');
+    this.wireDropdown(this.modelSelectorEl, this.modelBtnEl, this.modelDropdownEl, '.co-ober-model-option:not(.empty)');
 
     // Mode cycle button (click to cycle)
     this.modeCycleEl = row.createDiv({ cls: 'co-ober-mode-cycle' });
@@ -67,12 +76,18 @@ export class InputToolbar {
     this.modeCycleLabelEl.setText('—');
     this.modeCycleEl.addEventListener('click', () => this.cycleMode());
 
-    // Custom effort selector (hover dropdown)
+    // Custom effort selector (hover + keyboard dropdown)
     this.effortSelectorEl = row.createDiv({ cls: 'co-ober-effort-selector' });
     this.effortBtnEl = this.effortSelectorEl.createDiv({ cls: 'co-ober-effort-btn' });
+    this.effortBtnEl.setAttribute('role', 'button');
+    this.effortBtnEl.setAttribute('tabindex', '0');
+    this.effortBtnEl.setAttribute('aria-haspopup', 'listbox');
+    this.effortBtnEl.setAttribute('aria-expanded', 'false');
     this.effortLabelEl = this.effortBtnEl.createSpan({ cls: 'co-ober-effort-label' });
     this.effortLabelEl.setText('—');
     this.effortDropdownEl = this.effortSelectorEl.createDiv({ cls: 'co-ober-effort-dropdown' });
+    this.effortDropdownEl.setAttribute('role', 'listbox');
+    this.wireDropdown(this.effortSelectorEl, this.effortBtnEl, this.effortDropdownEl, '.co-ober-effort-option:not(.empty)');
 
     // Permission toggle (click to cycle)
     this.permToggleEl = row.createDiv({ cls: 'co-ober-perm-toggle' });
@@ -84,7 +99,12 @@ export class InputToolbar {
     this.attachBtnEl = row.createEl('button', { cls: 'co-ober-attach-btn' });
     setIcon(this.attachBtnEl, 'paperclip');
     this.attachBtnEl.title = t().toolbar.attachImage;
-    this.attachBtnEl.onclick = () => this.callbacks.onAttachImage?.();
+    this.attachBtnEl.onclick = () => {
+      // Disabled state only comes from agent capabilities, but a synthetic
+      // click can bypass it; the send path strips images regardless.
+      if (this.attachBtnEl.disabled) return;
+      this.callbacks.onAttachImage?.();
+    };
 
     // Send/Stop button
     this.sendBtn = row.createEl('button', { cls: 'co-ober-send-btn' });
@@ -94,6 +114,9 @@ export class InputToolbar {
 
   dispose(): void {
     this.unsubscribeLocale();
+    for (const disposeDom of this.domDisposers) disposeDom();
+    this.domDisposers.length = 0;
+    this.dropdownClosers.clear();
   }
 
   private handleSendClick(): void {
@@ -173,16 +196,27 @@ export class InputToolbar {
       }
       for (const opt of groupOptions) {
         const optionEl = this.modelDropdownEl.createDiv({ cls: 'co-ober-model-option' });
-        if (opt.value === this.currentModel) {
+        const isSelected = opt.value === this.currentModel;
+        if (isSelected) {
           optionEl.addClass('selected');
         }
+        optionEl.setAttribute('role', 'option');
+        optionEl.setAttribute('tabindex', '-1');
+        optionEl.setAttribute('aria-selected', String(isSelected));
         optionEl.setText(opt.label);
-        optionEl.addEventListener('click', (e) => {
-          e.stopPropagation();
+        const activate = (): void => {
+          this.currentModel = opt.value;
           this.callbacks.onModelChange?.(opt.value);
           this.modelLabelEl.setText(opt.label);
+          this.dropdownClosers.get(this.modelSelectorEl)?.();
           this.renderModelDropdown();
+          this.modelBtnEl.focus();
+        };
+        optionEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          activate();
         });
+        this.wireOptionKeys(optionEl, activate);
       }
     }
   }
@@ -214,17 +248,27 @@ export class InputToolbar {
 
     for (const opt of options) {
       const optionEl = this.effortDropdownEl.createDiv({ cls: 'co-ober-effort-option' });
-      if (opt.value === this.currentEffort) {
+      const isSelected = opt.value === this.currentEffort;
+      if (isSelected) {
         optionEl.addClass('selected');
       }
+      optionEl.setAttribute('role', 'option');
+      optionEl.setAttribute('tabindex', '-1');
+      optionEl.setAttribute('aria-selected', String(isSelected));
       optionEl.setText(opt.label);
+      const activate = (): void => {
+        this.currentEffort = opt.value;
+        this.callbacks.onEffortChange?.(opt.value);
+        this.effortLabelEl.setText(opt.label);
+        this.dropdownClosers.get(this.effortSelectorEl)?.();
+        this.renderEffortDropdown();
+        this.effortBtnEl.focus();
+      };
       optionEl.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.callbacks.onEffortChange?.(opt.value);
-        this.currentEffort = opt.value;
-        this.effortLabelEl.setText(opt.label);
-        this.renderEffortDropdown();
+        activate();
       });
+      this.wireOptionKeys(optionEl, activate);
     }
   }
 
@@ -260,6 +304,85 @@ export class InputToolbar {
     this.permToggleEl.addClass(`mod-${this.currentPermission}`);
   }
 
+  // ── Keyboard-accessible dropdown helpers ──
+
+  private wireDropdown(
+    selectorEl: HTMLElement,
+    btnEl: HTMLElement,
+    dropdownEl: HTMLElement,
+    optionSelector: string,
+  ): void {
+    const isOpen = (): boolean => selectorEl.classList.contains('open');
+    const open = (): void => {
+      selectorEl.classList.add('open');
+      btnEl.setAttribute('aria-expanded', 'true');
+      const first = dropdownEl.querySelector<HTMLElement>(optionSelector);
+      first?.focus();
+    };
+    const close = (): void => {
+      selectorEl.classList.remove('open');
+      btnEl.setAttribute('aria-expanded', 'false');
+    };
+    this.dropdownClosers.set(selectorEl, close);
+    btnEl.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (isOpen()) close();
+      else open();
+    });
+    btnEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        open();
+      }
+    });
+    // Escape anywhere in the selector closes it and returns focus to the button.
+    selectorEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        close();
+        btnEl.focus();
+      }
+    });
+    // Arrow navigation between options.
+    dropdownEl.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const items = Array.from(dropdownEl.querySelectorAll<HTMLElement>(optionSelector));
+      if (items.length === 0) return;
+      e.preventDefault();
+      const idx = items.indexOf(document.activeElement as HTMLElement);
+      const next = e.key === 'ArrowDown'
+        ? items[(idx + 1) % items.length]
+        : items[(idx - 1 + items.length) % items.length];
+      next.focus();
+    });
+    // Clicking or focusing outside closes the dropdown.
+    const outside = (ev: Event): void => {
+      if (!selectorEl.contains(ev.target as Node)) close();
+    };
+    document.addEventListener('click', outside);
+    this.domDisposers.push(() => document.removeEventListener('click', outside));
+    selectorEl.addEventListener('focusout', (ev) => {
+      const next = ev.relatedTarget as Node | null;
+      if (next && !selectorEl.contains(next)) close();
+    });
+  }
+
+  private wireOptionKeys(optionEl: HTMLElement, activate: () => void): void {
+    optionEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        activate();
+      }
+    });
+  }
+
+  setImageAttachEnabled(enabled: boolean): void {
+    this.attachBtnEl.disabled = !enabled;
+    this.attachBtnEl.classList.toggle('is-disabled', !enabled);
+    this.attachBtnEl.title = enabled ? t().toolbar.attachImage : t().toolbar.attachImageUnsupported;
+  }
+
   // ── Sending state ──
 
   setSending(on: boolean): void {
@@ -282,7 +405,9 @@ export class InputToolbar {
     const selected = this.modeOptions.find(o => o.value === this.currentMode);
     this.modeCycleLabelEl.setText(selected?.label ?? this.modeOptions[0]?.label ?? '—');
     this.updatePermissionDisplay();
-    this.attachBtnEl.title = t().toolbar.attachImage;
+    this.attachBtnEl.title = this.attachBtnEl.disabled
+      ? t().toolbar.attachImageUnsupported
+      : t().toolbar.attachImage;
     this.updateEffort([
       { value: 'default', label: t().toolbar.effort.default },
       { value: 'low', label: t().toolbar.effort.low },

@@ -82,6 +82,7 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): ControllerDeps
       updateModels: noop,
       updateEffort: noop,
       updatePermission: noop,
+      setImageAttachEnabled: noop,
     } as unknown as ControllerDeps['toolbar'],
     inlineEditPanel: {
       clearState: noop,
@@ -1643,6 +1644,33 @@ describe('CoOberViewController', () => {
         ],
         'default',
       );
+    });
+
+    it('gates the attach button on the agent image prompt capability', () => {
+      const setEnabled = vi.fn();
+      deps.toolbar.setImageAttachEnabled = setEnabled;
+      const snapshot = {
+        configOptions: [],
+        availableCommands: [],
+        availableModels: [],
+        availableModes: [],
+        currentModelId: null,
+        currentModeId: null,
+      };
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(
+        createMockClient({
+          getSessionSnapshot: vi.fn(() => snapshot),
+          getAgentCapabilities: vi.fn(() => ({ promptCapabilities: { image: false } })),
+        }),
+      );
+      controller.loadToolbarOptions();
+      expect(setEnabled).toHaveBeenCalledWith(false);
+
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(
+        createMockClient({ getSessionSnapshot: vi.fn(() => snapshot) }),
+      );
+      controller.loadToolbarOptions();
+      expect(setEnabled).toHaveBeenCalledWith(true);
     });
   });
 

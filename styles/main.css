@@ -452,6 +452,26 @@
   visibility: visible;
 }
 
+/* Keyboard-opened dropdowns (mirrors the hover reveal) */
+.co-ober-effort-selector.open .co-ober-effort-dropdown,
+.co-ober-model-selector.open .co-ober-model-dropdown {
+  opacity: 1;
+  visibility: visible;
+}
+
+.co-ober-model-btn:focus-visible,
+.co-ober-effort-btn:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+.co-ober-model-option:focus,
+.co-ober-effort-option:focus {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  outline: none;
+}
+
 .co-ober-effort-option {
   padding: 3px 8px;
   cursor: pointer;
@@ -783,6 +803,15 @@
   height: 16px;
 }
 .co-ober-toolbar .co-ober-attach-btn:hover { color: var(--text-normal); }
+
+.co-ober-toolbar .co-ober-attach-btn:disabled,
+.co-ober-toolbar .co-ober-attach-btn.is-disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.co-ober-toolbar .co-ober-attach-btn:disabled:hover,
+.co-ober-toolbar .co-ober-attach-btn.is-disabled:hover { color: var(--text-faint); }
 
 /* Input */
 .co-ober-input-area {

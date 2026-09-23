@@ -264,6 +264,7 @@ const zh: Locale = {
     send: '发送',
     stop: '停止',
     attachImage: '添加图片',
+    attachImageUnsupported: '当前 Agent 不支持图片提示词',
     applyFailed: '设置失败，已回退为智能体侧当前值',
     modelTitle: '模型',
     agentTitle: 'Agent 模式',

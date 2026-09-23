@@ -262,6 +262,7 @@ const en = {
     send: 'Send',
     stop: 'Stop',
     attachImage: 'Attach image',
+    attachImageUnsupported: 'This agent does not support image prompts',
     applyFailed: 'Setting failed; reverted to the agent-side value',
     modelTitle: 'Model',
     agentTitle: 'Agent mode',
