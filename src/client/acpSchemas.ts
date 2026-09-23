@@ -20,22 +20,37 @@ const zModeOption = z.object({ id: z.string(), name: z.string(), description: z.
 const zModelOption = z.object({ modelId: z.string(), name: z.string() });
 const zAvailableCommand = z.object({ name: z.string(), description: z.string() });
 const zCost = z.object({ amount: z.number(), currency: z.string() });
-const zEntry = z.object({ content: z.string(), status: z.string(), priority: z.string() });
+// Chunk content is deliberately permissive: text is the only shape the
+// transcript accumulates, but image/audio/resource payloads must parse so a
+// non-text frame is visible downstream instead of being dropped at the gate.
+const zChunkContent = z.object({
+  type: z.string(),
+  text: z.string().optional(),
+  mimeType: z.string().optional(),
+  data: z.string().optional(),
+});
+// A plan entry with an unexpected status/priority value must not cost us the
+// whole plan; fall back to neutral defaults.
+const zEntry = z.object({
+  content: z.string().catch(''),
+  status: z.string().catch('pending'),
+  priority: z.string().catch('medium'),
+});
 
 export const zAgentMessageChunk = z.object({
   sessionUpdate: z.literal('agent_message_chunk'),
   messageId: z.string(),
-  content: z.object({ type: z.string(), text: z.string() }),
+  content: zChunkContent,
 });
 export const zAgentThoughtChunk = z.object({
   sessionUpdate: z.literal('agent_thought_chunk'),
   messageId: z.string(),
-  content: z.object({ type: z.string(), text: z.string() }),
+  content: zChunkContent,
 });
 export const zUserMessageChunk = z.object({
   sessionUpdate: z.literal('user_message_chunk'),
   messageId: z.string(),
-  content: z.object({ type: z.string(), text: z.string() }),
+  content: zChunkContent,
 });
 export const zToolCall = z.object({
   sessionUpdate: z.literal('tool_call'),

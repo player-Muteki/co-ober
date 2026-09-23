@@ -13,6 +13,10 @@ export interface SessionMeta {
   files?: number;
   /** Short excerpt around a text-part match from the native session search. */
   snippet?: string;
+  /** OpenCode agent that ran the session (native v1 database only). */
+  agent?: string;
+  /** Model id the session last ran on (native v1 database only). */
+  model?: string;
 }
 
 export interface PromptPart {
@@ -110,10 +114,17 @@ export type ToolCallContent =
   | { type: 'diff'; path: string; oldText?: string; newText?: string }
   | { type: 'terminal'; terminalId: string };
 
+/**
+ * Content payload of a streamed message chunk. Only `text` chunks are
+ * accumulated into the transcript; image/audio/resource payloads keep their
+ * fields optional so unknown content shapes parse instead of dropping the frame.
+ */
+export type ChunkContent = { type: string; text?: string; mimeType?: string; data?: string };
+
 export type SessionUpdate =
-  | { sessionUpdate: 'agent_message_chunk'; messageId: string; content: { type: string; text: string } }
-  | { sessionUpdate: 'agent_thought_chunk'; messageId: string; content: { type: string; text: string } }
-  | { sessionUpdate: 'user_message_chunk'; messageId: string; content: { type: string; text: string } }
+  | { sessionUpdate: 'agent_message_chunk'; messageId: string; content: ChunkContent }
+  | { sessionUpdate: 'agent_thought_chunk'; messageId: string; content: ChunkContent }
+  | { sessionUpdate: 'user_message_chunk'; messageId: string; content: ChunkContent }
   | { sessionUpdate: 'tool_call'; toolCallId: string; title: string; kind?: ToolKind; status?: string; rawInput?: Record<string, unknown>; locations?: { path: string }[] }
   | { sessionUpdate: 'tool_call_update'; toolCallId: string; status: 'pending' | 'in_progress' | 'completed' | 'failed'; kind?: ToolKind; title?: string; locations?: { path: string }[]; rawInput?: Record<string, unknown>; rawOutput?: Record<string, unknown>; content?: ToolCallContent[] }
   | { sessionUpdate: 'plan'; entries: { content: string; status: string; priority: string }[] }
@@ -125,7 +136,7 @@ export type SessionUpdate =
   | { sessionUpdate: 'usage_update'; used?: number; size?: number; totalTokens?: number; inputTokens?: number; outputTokens?: number; thoughtTokens?: number; cost?: { amount: number; currency: string } };
 
 export type NormalizedUpdate =
-  | { kind: 'message_chunk'; role: 'user' | 'agent' | 'thought'; messageId: string; chunkText: string; accumulatedText: string }
+  | { kind: 'message_chunk'; role: 'user' | 'agent' | 'thought'; messageId: string; chunkText: string; accumulatedText: string; content?: ChunkContent }
   | { kind: 'tool_call_snapshot'; toolCallId: string; title: string; toolKind: ToolKind; status: 'pending' | 'in_progress' | 'completed' | 'failed'; rawInput?: Record<string, unknown>; rawOutput?: Record<string, unknown>; locations?: { path: string }[]; contents: ToolCallContent[] }
   | { kind: 'plan'; entries: { content: string; status: string; priority: string }[] }
   | { kind: 'commands'; commands: AvailableCommand[] }

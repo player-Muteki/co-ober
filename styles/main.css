@@ -150,6 +150,14 @@
   object-fit: contain;
 }
 
+.co-ober-assistant-image {
+  max-width: 100%;
+  max-height: 320px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  object-fit: contain;
+}
+
 .co-ober-msg.assistant .co-ober-msg-body {
   background: var(--background-secondary);
   padding: 8px 12px;

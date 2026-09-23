@@ -59,6 +59,9 @@ export interface AcpSessionMeta {
   };
 }
 
+/** Kinds already reported as unknown; each logs once per client lifetime. */
+const warnedUnknownUpdateKinds = new Set<string>();
+
 /** Parse a JSON-RPC update into a strongly typed SessionUpdate */
 export function parseSessionUpdate(u: Record<string, unknown> | undefined | null): SessionUpdate | null {
   if (!u || !u.sessionUpdate) return null;
@@ -120,6 +123,12 @@ export function parseSessionUpdate(u: Record<string, unknown> | undefined | null
       return r.success ? r.data : null;
     }
     default:
+      // Agents emit kinds outside the ACP contract (e.g. opencode's
+      // module_chunk); dropping them silently hides protocol drift.
+      if (!warnedUnknownUpdateKinds.has(su)) {
+        warnedUnknownUpdateKinds.add(su);
+        console.warn(`[co-ober] dropping unknown session update kind: ${su}`);
+      }
       return null;
   }
 }

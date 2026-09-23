@@ -973,3 +973,25 @@ describe('AcpClient.permissionMode', () => {
     expect(client.permissionMode).toBe('plan');
   });
 });
+
+describe('parseSessionUpdate non-text content and observability', () => {
+  it('parses an image message chunk instead of dropping the frame', () => {
+    const parsed = parseSessionUpdate({
+      sessionUpdate: 'agent_message_chunk',
+      messageId: 'm1',
+      content: { type: 'image', mimeType: 'image/png', data: 'AAA' },
+    });
+    expect(parsed).not.toBeNull();
+    expect(parsed?.sessionUpdate).toBe('agent_message_chunk');
+  });
+
+  it('warns once per unknown session update kind', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(parseSessionUpdate({ sessionUpdate: 'module_chunk_probe_kind' })).toBeNull();
+    expect(parseSessionUpdate({ sessionUpdate: 'module_chunk_probe_kind' })).toBeNull();
+    expect(parseSessionUpdate({ sessionUpdate: 'unknown_chunk_probe_kind' })).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(String(warn.mock.calls[0][0])).toContain('module_chunk_probe_kind');
+    warn.mockRestore();
+  });
+});

@@ -150,7 +150,9 @@ export function buildNativeSessionsSql(cwd: string, limit: number = NATIVE_SESSI
 	const prefix = escapeSqlLiteral(escapeLikePattern(cwd)) + '/%';
 	const safeLimit = Math.max(1, Math.min(500, Math.floor(limit) || NATIVE_SESSION_LIMIT));
 	return [
-		'select id, title, directory, time_updated, summary_additions, summary_deletions, summary_files from session',
+		// `agent`/`model` exist on the v1 session table; the v2 variant omits
+		// them because forked databases do not guarantee the columns.
+		'select id, title, directory, time_updated, summary_additions, summary_deletions, summary_files, agent, model from session',
 		`where parent_id is null and time_archived is null`,
 		`and (directory = '${exact}' or directory like '${prefix}' escape '\\')`,
 		'order by time_updated desc',
@@ -641,6 +643,8 @@ export async function listNativeSessions(cwd: string, deps: NativeSessionReaderD
 		if (additions !== undefined) meta.additions = additions;
 		if (deletions !== undefined) meta.deletions = deletions;
 		if (files !== undefined) meta.files = files;
+		if (typeof row.agent === 'string' && row.agent) meta.agent = row.agent;
+		if (typeof row.model === 'string' && row.model) meta.model = row.model;
 		sessions.push(meta);
 	}
 	return sessions;

@@ -1,4 +1,4 @@
-import type { SessionUpdate, NormalizedUpdate } from '../types';
+import type { SessionUpdate, NormalizedUpdate, ChunkContent } from '../types';
 import { safeClone } from '../utils/clone';
 
 const MAX_ACCUMULATED_MESSAGES = 200;
@@ -36,32 +36,36 @@ export class SessionUpdateNormalizer {
     return list;
   }
 
+  /**
+   * Accumulate one streamed chunk. Only `text` content feeds the transcript;
+   * non-text payloads ride along on the update so consumers can surface them
+   * instead of the frame vanishing.
+   */
+  private chunkUpdate(role: 'user' | 'agent' | 'thought', messageId: string, content: ChunkContent): NormalizedUpdate {
+    const text = content.type === 'text' ? content.text ?? '' : '';
+    const existing = this.accumulatedMessages.get(messageId);
+    const accumulatedText = existing ? existing.text + text : text;
+    this.accumulatedMessages.set(messageId, { role, text: accumulatedText });
+    this.trimMap(this.accumulatedMessages, MAX_ACCUMULATED_MESSAGES);
+    const update: Extract<NormalizedUpdate, { kind: 'message_chunk' }> = {
+      kind: 'message_chunk',
+      role,
+      messageId,
+      chunkText: text,
+      accumulatedText,
+    };
+    if (!text && content.type !== 'text') update.content = content;
+    return update;
+  }
+
   normalize(raw: SessionUpdate): NormalizedUpdate | null {
     switch (raw.sessionUpdate) {
-      case 'user_message_chunk': {
-        const text = raw.content.text;
-        const existing = this.accumulatedMessages.get(raw.messageId);
-        const accumulatedText = existing ? existing.text + text : text;
-        this.accumulatedMessages.set(raw.messageId, { role: 'user', text: accumulatedText });
-        this.trimMap(this.accumulatedMessages, MAX_ACCUMULATED_MESSAGES);
-        return { kind: 'message_chunk', role: 'user', messageId: raw.messageId, chunkText: text, accumulatedText };
-      }
-      case 'agent_message_chunk': {
-        const text = raw.content.text;
-        const existing = this.accumulatedMessages.get(raw.messageId);
-        const accumulatedText = existing ? existing.text + text : text;
-        this.accumulatedMessages.set(raw.messageId, { role: 'agent', text: accumulatedText });
-        this.trimMap(this.accumulatedMessages, MAX_ACCUMULATED_MESSAGES);
-        return { kind: 'message_chunk', role: 'agent', messageId: raw.messageId, chunkText: text, accumulatedText };
-      }
-      case 'agent_thought_chunk': {
-        const text = raw.content.text;
-        const existing = this.accumulatedMessages.get(raw.messageId);
-        const accumulatedText = existing ? existing.text + text : text;
-        this.accumulatedMessages.set(raw.messageId, { role: 'thought', text: accumulatedText });
-        this.trimMap(this.accumulatedMessages, MAX_ACCUMULATED_MESSAGES);
-        return { kind: 'message_chunk', role: 'thought', messageId: raw.messageId, chunkText: text, accumulatedText };
-      }
+      case 'user_message_chunk':
+        return this.chunkUpdate('user', raw.messageId, raw.content);
+      case 'agent_message_chunk':
+        return this.chunkUpdate('agent', raw.messageId, raw.content);
+      case 'agent_thought_chunk':
+        return this.chunkUpdate('thought', raw.messageId, raw.content);
       case 'tool_call': {
         const snapshot: Extract<NormalizedUpdate, { kind: 'tool_call_snapshot' }> = {
           kind: 'tool_call_snapshot',

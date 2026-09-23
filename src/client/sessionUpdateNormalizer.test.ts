@@ -296,3 +296,39 @@ describe('SessionUpdateNormalizer', () => {
     expect(normalizer.normalize({ sessionUpdate: 'unknown' } as any)).toBeNull();
   });
 });
+
+describe('SessionUpdateNormalizer non-text chunks', () => {
+  let normalizer: SessionUpdateNormalizer;
+
+  beforeEach(() => {
+    normalizer = new SessionUpdateNormalizer();
+  });
+
+  it('passes image chunk content through without fabricating text', () => {
+    const norm = normalizer.normalize({
+      sessionUpdate: 'agent_message_chunk',
+      messageId: 'msg-img',
+      content: { type: 'image', mimeType: 'image/png', data: 'AAA' },
+    });
+    expect(norm).toEqual({
+      kind: 'message_chunk',
+      role: 'agent',
+      messageId: 'msg-img',
+      chunkText: '',
+      accumulatedText: '',
+      content: { type: 'image', mimeType: 'image/png', data: 'AAA' },
+    });
+  });
+
+  it('keeps text accumulation intact around a non-text chunk', () => {
+    normalizer.normalize({ sessionUpdate: 'agent_message_chunk', messageId: 'm', content: { type: 'text', text: 'a' } });
+    normalizer.normalize({ sessionUpdate: 'agent_message_chunk', messageId: 'm', content: { type: 'audio', mimeType: 'audio/wav', data: 'x' } });
+    const norm = normalizer.normalize({ sessionUpdate: 'agent_message_chunk', messageId: 'm', content: { type: 'text', text: 'b' } });
+    expect(norm).toEqual({ kind: 'message_chunk', role: 'agent', messageId: 'm', chunkText: 'b', accumulatedText: 'ab' });
+  });
+
+  it('treats a text-typed chunk with missing text as empty', () => {
+    const norm = normalizer.normalize({ sessionUpdate: 'user_message_chunk', messageId: 'm2', content: { type: 'text' } });
+    expect(norm).toEqual({ kind: 'message_chunk', role: 'user', messageId: 'm2', chunkText: '', accumulatedText: '' });
+  });
+});

@@ -337,6 +337,23 @@ export class ChatRenderer {
     this.scrollToBottom();
   }
 
+  /** Render an image payload streamed as a non-text agent message chunk. */
+  appendAssistantImage(mimeType: string, data: string): void {
+    // Close the current text bubble so later chunks of the same message start
+    // a fresh one after the image instead of appending to the pre-image text.
+    this.currentAssistantEl = null;
+    this.currentAssistantWrap = null;
+    this.currentAssistantText = '';
+    const wrap = this.container.createDiv({ cls: 'co-ober-msg assistant' });
+    wrap.dataset.timestamp = this.formatTimestamp(Date.now());
+    const body = wrap.createDiv({ cls: 'co-ober-msg-body' });
+    body.createEl('img', {
+      cls: 'co-ober-assistant-image',
+      attr: { src: `data:${mimeType};base64,${data}`, alt: mimeType },
+    });
+    this.scrollToBottom();
+  }
+
   /** Compact per-message cost/token footer, used when restoring native OpenCode transcripts. */
   private attachUsageFooter(wrap: HTMLElement, usage?: MessageUsage, turnStats?: TurnStats): void {
     const parts: string[] = [];

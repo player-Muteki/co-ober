@@ -242,6 +242,29 @@ describe('session summary columns', () => {
 	});
 });
 
+describe('native agent and model columns', () => {
+	it('selects agent and model only in the v1 listing query', () => {
+		const sql = buildNativeSessionsSql('/vault');
+		expect(sql).toMatch(/,\s*agent,\s*model\s+from session/);
+		expect(buildNativeSessionsSqlV2('/vault')).not.toMatch(/\bagent\b/);
+		expect(buildNativeSessionsSqlV2('/vault')).not.toMatch(/\bmodel\b/);
+	});
+
+	it('maps agent and model onto session metadata when present', async () => {
+		const sessions = await listNativeSessions('/vault', {
+			env: { HOME: '/home/u' },
+			fs: fakeFs,
+			sqlite: sqliteBacked([
+				{ id: 'ses_a', title: 'Alpha', directory: '/vault', time_updated: 1, agent: 'build', model: 'claude-sonnet' },
+				{ id: 'ses_b', title: 'Beta', directory: '/vault', time_updated: 2, agent: '', model: null },
+			]) as never,
+		});
+		expect(sessions[0]).toMatchObject({ agent: 'build', model: 'claude-sonnet' });
+		expect(sessions[1]).not.toHaveProperty('agent');
+		expect(sessions[1]).not.toHaveProperty('model');
+	});
+});
+
 describe('readNativeSessionTodos', () => {
 	it('builds a position-ordered todo query', () => {
 		const sql = buildSessionTodosSql("ses_it's");

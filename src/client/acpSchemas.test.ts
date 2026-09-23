@@ -336,3 +336,42 @@ describe('acpSchemas', () => {
     });
   });
 });
+
+describe('permissive chunk content and plan entries', () => {
+  it('accepts image content on message chunks', () => {
+    const r = zAgentMessageChunk.safeParse({
+      sessionUpdate: 'agent_message_chunk',
+      messageId: 'm1',
+      content: { type: 'image', mimeType: 'image/png', data: 'AAA' },
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.content).toEqual({ type: 'image', mimeType: 'image/png', data: 'AAA' });
+  });
+
+  it('accepts chunks whose content lacks a text field', () => {
+    const r = zUserMessageChunk.safeParse({ sessionUpdate: 'user_message_chunk', messageId: 'm1', content: { type: 'text' } });
+    expect(r.success).toBe(true);
+  });
+
+  it('accepts unknown content types without dropping the frame', () => {
+    const r = zAgentMessageChunk.safeParse({
+      sessionUpdate: 'agent_message_chunk',
+      messageId: 'm1',
+      content: { type: 'resource', resource: { uri: 'file:///x' } },
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.content.type).toBe('resource');
+  });
+
+  it('falls back to neutral plan entry fields instead of failing the plan', () => {
+    const r = zPlan.safeParse({
+      sessionUpdate: 'plan',
+      entries: [{ content: 'step', status: 7 }, { content: 'two', priority: ['x'] }],
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.entries[0]).toEqual({ content: 'step', status: 'pending', priority: 'medium' });
+      expect(r.data.entries[1]).toEqual({ content: 'two', status: 'pending', priority: 'medium' });
+    }
+  });
+});

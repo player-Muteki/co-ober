@@ -22,6 +22,7 @@ describe('StreamController', () => {
         removeAssistantPlaceholder: vi.fn(),
         appendText: vi.fn(),
         appendThinking: vi.fn(),
+        appendAssistantImage: vi.fn(),
         finalizeCurrentThinking: vi.fn().mockReturnValue(0),
         addToolCall: vi.fn(),
         updateToolCall: vi.fn(),
@@ -79,6 +80,47 @@ describe('StreamController', () => {
       accumulatedText: 'Hello world',
     });
     expect(session.messages[0].content).toBe('Hello world');
+  });
+
+  it('renders an image chunk through appendAssistantImage without touching the transcript', () => {
+    const session = { messages: [], updatedAt: 0 };
+    deps.sessionStore.get.mockReturnValue(session);
+
+    controller.handleChunk({
+      kind: 'message_chunk',
+      role: 'agent',
+      messageId: 'msg-img',
+      chunkText: '',
+      accumulatedText: '',
+      content: { type: 'image', mimeType: 'image/png', data: 'AAA' },
+    });
+
+    expect(deps.renderer.appendAssistantImage).toHaveBeenCalledWith('image/png', 'AAA');
+    expect(deps.renderer.appendText).not.toHaveBeenCalled();
+    expect(session.messages).toHaveLength(0);
+  });
+
+  it('drops other non-text chunks silently instead of rendering empty text', () => {
+    controller.handleChunk({
+      kind: 'message_chunk',
+      role: 'agent',
+      messageId: 'msg-res',
+      chunkText: '',
+      accumulatedText: '',
+      content: { type: 'resource' },
+    });
+    controller.handleChunk({
+      kind: 'message_chunk',
+      role: 'thought',
+      messageId: 'msg-res',
+      chunkText: '',
+      accumulatedText: '',
+      content: { type: 'resource' },
+    });
+
+    expect(deps.renderer.appendText).not.toHaveBeenCalled();
+    expect(deps.renderer.appendThinking).not.toHaveBeenCalled();
+    expect(deps.renderer.appendAssistantImage).not.toHaveBeenCalled();
   });
 
   it('handles message_chunk with role thought', () => {

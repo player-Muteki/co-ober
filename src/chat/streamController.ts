@@ -96,9 +96,15 @@ export class StreamController {
         if (ch.role === 'agent') {
           // Finalize thinking block before switching to agent text
           renderer.finalizeCurrentThinking();
-          renderer.appendText(ch.chunkText, ch.messageId);
-          this.saveAssistantChunk(ch.messageId, ch.accumulatedText, 'text');
+          if (ch.content?.type === 'image' && ch.content.mimeType && ch.content.data) {
+            renderer.appendAssistantImage(ch.content.mimeType, ch.content.data);
+          } else if (!ch.content) {
+            renderer.appendText(ch.chunkText, ch.messageId);
+            this.saveAssistantChunk(ch.messageId, ch.accumulatedText, 'text');
+          }
         } else if (ch.role === 'thought') {
+          // Non-text thinking payloads carry nothing to render.
+          if (ch.content) break;
           // Flush any pending text render before switching to thinking content
           renderer.flushTextRender().catch(() => {});
           renderer.appendThinking(ch.chunkText, ch.messageId);
