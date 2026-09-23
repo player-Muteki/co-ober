@@ -181,7 +181,8 @@ export class SessionRepository implements SessionStore {
     const messageLimit = Math.max(1, maxMessages);
 
     for (const [id, session] of this.sessions) {
-      if (id !== this.activeSessionId && session.updatedAt < cutoffTime) {
+      // Pinned conversations are exempt from retention — the star means "keep".
+      if (id !== this.activeSessionId && !session.pinned && session.updatedAt < cutoffTime) {
         this.sessions.delete(id);
         continue;
       }

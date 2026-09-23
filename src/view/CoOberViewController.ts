@@ -1015,6 +1015,10 @@ export class CoOberViewController {
       this.deps.renderer.addSystemMessage(t().stopReason.maxTokens);
     } else if (reason === 'max_turn_requests') {
       this.deps.renderer.addSystemMessage(t().stopReason.maxTurnRequests);
+    } else if (reason === 'tool_calls') {
+      // The turn ended awaiting tool results the client was to supply — the
+      // answer is truncated even though nothing errored.
+      this.deps.renderer.addSystemMessage(t().stopReason.toolCalls);
     }
     // 'cancelled' / 'interrupted' are user-initiated; no banner needed.
   }
@@ -1031,7 +1035,9 @@ export class CoOberViewController {
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
       thoughtTokens: usage.reasoningTokens || undefined,
-      cost: { amount: usage.cost, currency: 'USD' },
+      // The native DB has no currency column; keep whatever currency the
+      // agent's own usage frames reported before falling back to USD.
+      cost: { amount: usage.cost, currency: this.state.usage?.cost?.currency ?? 'USD' },
       contextWindow: this.state.usage?.contextWindow,
       contextTokens: usage.contextTokens,
     };

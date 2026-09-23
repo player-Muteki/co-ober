@@ -997,6 +997,10 @@ describe('CoOberViewController', () => {
       await controller.send('more', []);
       expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().stopReason.maxTurnRequests);
 
+      (client.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({ stopReason: 'tool_calls' });
+      await controller.send('wait', []);
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().stopReason.toolCalls);
+
       // User-initiated cancellations stay silent.
       const sysCalls = (deps.renderer.addSystemMessage as ReturnType<typeof vi.fn>).mock.calls.length;
       (client.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({ stopReason: 'cancelled' });
@@ -1192,6 +1196,25 @@ describe('CoOberViewController', () => {
       expect(controller.state.usage?.cost).toEqual({ amount: 1.5, currency: 'USD' });
       expect(controller.state.usage?.thoughtTokens).toBeUndefined();
       expect(controller.state.usage?.contextTokens).toBeUndefined();
+    });
+
+    it('keeps the agent-reported currency when native usage refreshes', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (controller.state as unknown as { usage: unknown }).usage = {
+        totalTokens: 3,
+        cost: { amount: 0.2, currency: 'EUR' },
+      };
+      (readNativeSessionUsage as ReturnType<typeof vi.fn>).mockResolvedValue({
+        cost: 1.5,
+        inputTokens: 10,
+        outputTokens: 5,
+        reasoningTokens: 0,
+      });
+
+      await controller.resumeSession('paused-session');
+
+      expect(controller.state.usage?.cost).toEqual({ amount: 1.5, currency: 'EUR' });
     });
 
     it('resyncs the native plan after resuming', async () => {

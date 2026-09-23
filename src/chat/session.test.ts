@@ -217,6 +217,19 @@ describe('SessionRepository', () => {
       expect.objectContaining({ content: 'message 5' }),
     ]);
   });
+
+  it('spares pinned sessions from retention while still truncating their history', () => {
+    const { repository } = createRepository();
+    const now = 100 * 24 * 60 * 60 * 1000;
+    const pinned = createSession('pinned', now - 31 * 24 * 60 * 60 * 1000, 6);
+    repository.hydrate([pinned, createSession('active', now)], 'active');
+    repository.setPinned('pinned', true);
+
+    repository.prune({ maxMessages: 4, retentionDays: 30, now });
+
+    expect(repository.get('pinned')).toBe(pinned);
+    expect(pinned.messages).toHaveLength(4);
+  });
 });
 
 describe('sidecar text-block elision', () => {

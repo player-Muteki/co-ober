@@ -36,6 +36,7 @@ export class SessionDropdown {
 	private nativeSessions: SessionMeta[] = [];
 	private nativeLoading = false;
 	private nativeLoadedOnce = false;
+	private nativeLoadError: string | null = null;
 	private contentResults: SessionMeta[] = [];
 	private searchToken = 0;
 
@@ -161,13 +162,19 @@ export class SessionDropdown {
 			void this.loadNativeSessions().then((sessions) => {
 				this.nativeSessions = sessions;
 				this.nativeLoadedOnce = true;
+				this.nativeLoadError = null;
 				if (!this.dropdownEl) return;
 				this.rerender();
-			}).catch(() => {
+			}).catch((e: unknown) => {
 				this.nativeLoadedOnce = true;
+				this.nativeLoadError = e instanceof Error ? e.message : String(e);
+				console.error('[co-ober] native session list failed:', e);
 				if (this.dropdownEl) this.rerender();
 			});
 			return;
+		}
+		if (this.nativeLoadError) {
+			itemsContainer.createDiv({ cls: 'co-ober-session-native-error', text: t().sessionDropdown.nativeError });
 		}
 		if (filteredNative.length === 0) return;
 

@@ -5,6 +5,7 @@ import { CoOberViewController } from './CoOberViewController';
 import type { ControllerCallbacks, ControllerDeps } from './CoOberViewController';
 import { setLocale } from '../i18n/index';
 import { installObsidianDomHelpers } from '../test/domHelpers';
+import { Notice } from '../test/obsidianMock';
 import type CoOberPlugin from '../main';
 import { SessionRepository } from '../chat/session';
 
@@ -87,6 +88,31 @@ describe('CoOberView runtime session sync', () => {
 
     expect(plugin.initClient).not.toHaveBeenCalled();
     expect(view.contentEl.querySelector('.co-ober-reconnect-btn')).not.toBeNull();
+  });
+
+  it('notifies and reloads authoritative toolbar state when a model change fails', async () => {
+    setLocale('en');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    Notice.messages.length = 0;
+    const client = createClient();
+    client.setModel = vi.fn().mockRejectedValue(new Error('set boom'));
+    const plugin = createPlugin({ client });
+    const view = createView(plugin);
+    await view.onOpen();
+
+    const controller = Reflect.get(view, 'controller') as CoOberViewController;
+    controller.state.sessionId = 'runtime-session';
+    const reloadSpy = vi.spyOn(controller, 'loadToolbarOptions');
+
+    const toolbar = Reflect.get(view, 'toolbar') as unknown as {
+      callbacks: { onModelChange: (model: string) => void };
+    };
+    toolbar.callbacks.onModelChange('openai/gpt');
+    await vi.waitFor(() => expect(reloadSpy).toHaveBeenCalled());
+
+    expect(client.setModel).toHaveBeenCalledWith('runtime-session', 'openai/gpt');
+    expect(Notice.messages.some((m) => m.includes('set boom'))).toBe(true);
+    errSpy.mockRestore();
   });
 
   it('connects and creates a runtime session when sending the first message', async () => {

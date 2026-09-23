@@ -23,6 +23,7 @@ const zh: Locale = {
     closeDisabled: '当前 OpenCode Agent 不支持关闭会话',
     nativeSection: 'OpenCode 会话',
     loadingNative: '正在加载 OpenCode 会话…',
+    nativeError: '原生会话读取失败（详见控制台）',
     contentSection: '内容匹配',
     actionFailed: '会话操作失败：{error}',
     rename: '重命名会话',
@@ -103,6 +104,7 @@ const zh: Locale = {
     refusal: '模型拒绝回答本次请求。',
     maxTokens: '回复被截断：模型达到了单条消息的 token 上限。可要求更简短的回答，或让它从中断处继续。',
     maxTurnRequests: '智能体达到了单条消息的回合上限并停止。发送“继续”可让它接着执行。',
+    toolCalls: '智能体在等待工具调用结果时结束了本回合，回复可能不完整。',
   },
 
   error: {
@@ -254,6 +256,7 @@ const zh: Locale = {
     send: '发送',
     stop: '停止',
     attachImage: '添加图片',
+    applyFailed: '设置失败，已回退为智能体侧当前值',
     modelTitle: '模型',
     agentTitle: 'Agent 模式',
     effortTitle: '思考强度',
@@ -465,7 +468,7 @@ const zh: Locale = {
       maxMessages: '每个会话最大消息数',
       maxMessagesDesc: '会话超过此限制时自动截断（默认 200）',
       retentionDays: '会话保留天数',
-      retentionDaysDesc: '移除超过此天数的空会话（默认 30）',
+      retentionDaysDesc: '删除超过此天数的不活跃会话；置顶与当前会话不会被删除（默认 30）',
     },
     fsCapability: {
       heading: '文件系统访问',

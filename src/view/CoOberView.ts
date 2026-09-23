@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf, TFile, setIcon } from 'obsidian';
+import { ItemView, Notice, WorkspaceLeaf, TFile, setIcon } from 'obsidian';
 import type CoOberPlugin from '../main';
 import { VIEW_TYPE } from '../types';
 import type { ContextRef, PromptPart } from '../types';
@@ -223,7 +223,7 @@ export class CoOberView extends ItemView {
         void client
           .setMode(this.controller.getSessionId()!, agent)
           .then(() => this.controller.loadToolbarOptions())
-          .catch(() => {});
+          .catch((e: unknown) => this.reportSettingFailure(e));
       },
       onModelChange: (model: string) => {
         const client = this.plugin.getClient();
@@ -231,7 +231,7 @@ export class CoOberView extends ItemView {
         void client
           .setModel(this.controller.getSessionId()!, model)
           .then(() => this.controller.loadToolbarOptions())
-          .catch(() => {});
+          .catch((e: unknown) => this.reportSettingFailure(e));
       },
       onEffortChange: (effort: string) => {
         const client = this.plugin.getClient();
@@ -239,7 +239,7 @@ export class CoOberView extends ItemView {
         void client
           .setConfigOption(this.controller.getSessionId()!, 'effort', effort)
           .then(() => this.controller.loadToolbarOptions())
-          .catch(() => {});
+          .catch((e: unknown) => this.reportSettingFailure(e));
       },
       onPermissionChange: (mode: string) => {
         this.plugin.settings.permissionMode = mode as import('../types').PermissionLevel;
@@ -560,6 +560,14 @@ export class CoOberView extends ItemView {
       });
     }
     this.sideChatPanel.open(question);
+  }
+
+  /** A rejected mode/model/effort change must not leave the toolbar showing a lie. */
+  private reportSettingFailure(error: unknown): void {
+    console.error('[co-ober] toolbar setting failed:', error);
+    const detail = error instanceof Error ? error.message : String(error);
+    new Notice(`${t().toolbar.applyFailed}: ${detail}`);
+    this.controller?.loadToolbarOptions();
   }
 
   private showReconnectBtn(): void {

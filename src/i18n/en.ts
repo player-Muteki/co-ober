@@ -21,6 +21,7 @@ const en = {
     closeDisabled: 'Close is not supported by this OpenCode agent',
     nativeSection: 'OpenCode sessions',
     loadingNative: 'Loading OpenCode sessions…',
+    nativeError: 'Native sessions unavailable (see console)',
     contentSection: 'Content matches',
     actionFailed: 'Session action failed: {error}',
     rename: 'Rename session',
@@ -101,6 +102,7 @@ const en = {
     refusal: 'The model declined to answer this request.',
     maxTokens: 'Response truncated: the model hit its per-message token limit. Try asking for a shorter answer or continue where it stopped.',
     maxTurnRequests: 'The agent stopped after reaching its per-message turn limit. Send "continue" to keep going.',
+    toolCalls: 'The agent ended the turn waiting on tool call results — the answer may be incomplete.',
   },
 
   error: {
@@ -252,6 +254,7 @@ const en = {
     send: 'Send',
     stop: 'Stop',
     attachImage: 'Attach image',
+    applyFailed: 'Setting failed; reverted to the agent-side value',
     modelTitle: 'Model',
     agentTitle: 'Agent mode',
     effortTitle: 'Thinking effort',
@@ -463,7 +466,7 @@ const en = {
       maxMessages: 'Max Messages per Session',
       maxMessagesDesc: 'Truncate sessions when they exceed this limit (default 200)',
       retentionDays: 'Session Retention Days',
-      retentionDaysDesc: 'Remove empty sessions older than this (default 30)',
+      retentionDaysDesc: 'Delete inactive sessions older than this; pinned and the current session are never deleted (default 30)',
     },
     fsCapability: {
       heading: 'File System Access',

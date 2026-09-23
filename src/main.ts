@@ -54,6 +54,9 @@ export default class CoOberPlugin extends Plugin {
   }
 
   override onunload(): void {
+    // Views flush their debounced saves on close, but app exit does not await
+    // that teardown — write the store once more so a stream tail survives.
+    void this.savePluginData().catch((e) => console.warn('[co-ober] unload save failed:', e));
     void this.client?.disconnect().catch(() => {});
   }
 

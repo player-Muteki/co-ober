@@ -460,6 +460,29 @@ describe('SessionDropdown', () => {
       dd.destroy();
     });
 
+    it('shows a visible error row when the native loader rejects', async () => {
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const dd = makeDropdown(() => Promise.reject(new Error('no sqlite')));
+      dd.open();
+      await new Promise((r) => setTimeout(r, 10));
+      expect(container.querySelector('.co-ober-session-native-error')?.textContent)
+        .toBe('Native sessions unavailable (see console)');
+      errSpy.mockRestore();
+      dd.destroy();
+    });
+
+    it('re-shows the error row on the next open, since the failure persists', async () => {
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const dd = makeDropdown(() => Promise.reject(new Error('no sqlite')));
+      dd.open();
+      await new Promise((r) => setTimeout(r, 10));
+      dd.close();
+      dd.open();
+      expect(container.querySelector('.co-ober-session-native-error')).not.toBeNull();
+      errSpy.mockRestore();
+      dd.destroy();
+    });
+
     it('renders a diff-summary badge on native rows with changes', async () => {
       const dd = makeDropdown(async () => [
         { sessionId: 'ses_a', title: 'Edited stuff', additions: 12, deletions: 3, files: 4 },

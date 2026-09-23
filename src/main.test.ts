@@ -79,6 +79,7 @@ describe('CoOberPlugin persistence', () => {
     resolveFirstSave();
     await Promise.all([pendingFirst, pendingSecond]);
     expect(saveData).toHaveBeenCalledTimes(2);
+    saveData.mockRestore();
   });
 
   it('persists the session state after pruning it', async () => {
@@ -105,6 +106,18 @@ describe('CoOberPlugin persistence', () => {
         expect.objectContaining({ content: '[3 earlier messages truncated]' }),
       ]) })],
     }));
+    saveData.mockRestore();
+  });
+
+  it('writes a final save on unload so a debounced stream tail survives shutdown', async () => {
+    const saveData = vi.spyOn(Plugin.prototype, 'saveData').mockResolvedValue(undefined);
+    const plugin = new CoOberPlugin({} as never, {} as never);
+    plugin.settings = { ...DEFAULT_SETTINGS };
+
+    plugin.onunload();
+
+    await vi.waitFor(() => expect(saveData).toHaveBeenCalledTimes(1));
+    saveData.mockRestore();
   });
 });
 
