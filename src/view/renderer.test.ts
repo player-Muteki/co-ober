@@ -371,6 +371,30 @@ describe('ChatRenderer', () => {
       // The footer never replaces the message body.
       expect(msg?.querySelector('.co-ober-msg-body')).not.toBeNull();
     });
+
+    it('renders reload-safe throughput from turn stats after usage', () => {
+      renderer.appendText(
+        'Hello',
+        'msg-1',
+        1,
+        { inputTokens: 100, outputTokens: 20, cost: 0.001 },
+        { outputTokens: 40, durationMs: 4000 },
+      );
+      const msg = container.querySelector('.co-ober-msg.assistant');
+      expect(msg?.querySelector('.co-ober-msg-usage')?.textContent).toBe('↑100 · ↓20 · $0.0010 · 10.0 tok/s');
+    });
+
+    it('renders throughput alone when no native usage exists', () => {
+      renderer.appendText('Hello', 'msg-1', 1, undefined, { outputTokens: 40, durationMs: 4000 });
+      const msg = container.querySelector('.co-ober-msg.assistant');
+      expect(msg?.querySelector('.co-ober-msg-usage')?.textContent).toBe('10.0 tok/s');
+    });
+
+    it('omits the footer when the turn was too short to measure', () => {
+      renderer.appendText('Hello', 'msg-1', 1, undefined, { outputTokens: 40, durationMs: 500 });
+      const msg = container.querySelector('.co-ober-msg.assistant');
+      expect(msg?.querySelector('.co-ober-msg-usage')).toBeNull();
+    });
   });
 
   describe('markdown render pipeline', () => {

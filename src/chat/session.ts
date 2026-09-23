@@ -26,6 +26,44 @@ export interface SessionPruneOptions {
   now?: number;
 }
 
+/**
+ * Sidecar slimming step 1: an assistant message whose blocks are all plain
+ * text duplicates `content` inside `contentBlocks[].text`. Persisted copies
+ * drop the blocks and mark the message instead; `restoreElidedTextBlocks`
+ * rebuilds them, so in-memory consumers keep seeing real blocks.
+ */
+export function elideRedundantTextBlocks(sessions: SerializedSession[]): SerializedSession[] {
+  return sessions.map((session) => ({
+    ...session,
+    messages: session.messages.map(elideMessageBlocks),
+  }));
+}
+
+function elideMessageBlocks(msg: SerializedMessage): SerializedMessage {
+  const blocks = msg.contentBlocks;
+  if (msg.role !== 'assistant' || msg.blocksElided || !blocks || blocks.length === 0) return msg;
+  if (!blocks.every((block) => block.type === 'text')) return msg;
+  if (blocks.map((block) => block.text ?? '').join('') !== msg.content) return msg;
+  const copy: SerializedMessage = { ...msg };
+  delete copy.contentBlocks;
+  copy.blocksElided = true;
+  return copy;
+}
+
+export function restoreElidedTextBlocks(sessions: SerializedSession[]): SerializedSession[] {
+  return sessions.map((session) => {
+    if (!session.messages.some((msg) => msg.blocksElided)) return session;
+    return { ...session, messages: session.messages.map(restoreMessageBlocks) };
+  });
+}
+
+function restoreMessageBlocks(msg: SerializedMessage): SerializedMessage {
+  if (!msg.blocksElided) return msg;
+  const copy: SerializedMessage = { ...msg, contentBlocks: [{ type: 'text', text: msg.content }] };
+  delete copy.blocksElided;
+  return copy;
+}
+
 /** Owns persisted chat state independently from the Obsidian plugin lifecycle. */
 export class SessionRepository implements SessionStore {
   private readonly sessions = new Map<string, SerializedSession>();
@@ -39,7 +77,7 @@ export class SessionRepository implements SessionStore {
 
   hydrate(sessions: SerializedSession[], activeSessionId: string | null): void {
     this.sessions.clear();
-    for (const session of sessions) {
+    for (const session of restoreElidedTextBlocks(sessions)) {
       this.sessions.set(session.sessionId, session);
     }
     this.activeSessionId = activeSessionId;
@@ -47,7 +85,7 @@ export class SessionRepository implements SessionStore {
 
   snapshot(): SerializedSessionState {
     return {
-      sessions: [...this.sessions.values()],
+      sessions: elideRedundantTextBlocks([...this.sessions.values()]),
       activeSessionId: this.activeSessionId,
     };
   }

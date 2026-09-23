@@ -20,6 +20,7 @@ import {
   readNativeSessionTodos,
   readNativeSessionUsage,
   readNativeToolErrors,
+  readNativeTurnStats,
 } from '../opencode/NativeSessionReader';
 
 vi.mock('../opencode/NativeSessionReader', async (importOriginal) => {
@@ -30,6 +31,7 @@ vi.mock('../opencode/NativeSessionReader', async (importOriginal) => {
     readNativeSessionTodos: vi.fn().mockResolvedValue([]),
     readNativeMessageStats: vi.fn().mockResolvedValue([]),
     readNativeToolErrors: vi.fn().mockResolvedValue({}),
+    readNativeTurnStats: vi.fn().mockResolvedValue([]),
   };
 });
 
@@ -200,6 +202,7 @@ describe('CoOberViewController', () => {
     (readNativeSessionTodos as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (readNativeMessageStats as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (readNativeToolErrors as ReturnType<typeof vi.fn>).mockResolvedValue({});
+    (readNativeTurnStats as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     controller = new CoOberViewController(deps, callbacks);
   });
 
@@ -390,6 +393,7 @@ describe('CoOberViewController', () => {
         expect.stringContaining('restore-'),
         2000,
         undefined,
+        undefined,
       );
       expect(deps.renderer.appendThinking).toHaveBeenCalledWith(
         'thinking...',
@@ -453,9 +457,51 @@ describe('CoOberViewController', () => {
         expect.stringContaining('restore-'),
         3000,
         { cost: 0.05, inputTokens: 100, outputTokens: 20, totalTokens: 120 },
+        undefined,
       );
-      expect(deps.renderer.appendText).toHaveBeenCalledWith('a1', expect.any(String), 2000, undefined);
+      expect(deps.renderer.appendText).toHaveBeenCalledWith('a1', expect.any(String), 2000, undefined, undefined);
       expect(deps.sessionStore.save).toHaveBeenCalled();
+    });
+
+    it('attaches native turn stats by message id and forwards them to appendText', async () => {
+      controller.state.sessionId = 'test';
+      const messages: SerializedMessage[] = [
+        { role: 'user', content: 'q', type: 'text', timestamp: 1000 },
+        { role: 'assistant', content: 'reasoning', type: 'thinking', timestamp: 1500, nativeMessageId: 'msg_1' },
+        { role: 'assistant', content: 'answer', type: 'text', timestamp: 2000, nativeMessageId: 'msg_1' },
+      ];
+      const session = { sessionId: 'test', messages };
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue(session);
+      (readNativeTurnStats as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { messageId: 'msg_1', outputTokens: 40, durationMs: 4000 },
+      ]);
+
+      await controller.restoreSession();
+
+      expect(messages[1].turnStats).toBeUndefined();
+      expect(messages[2].turnStats).toEqual({ outputTokens: 40, durationMs: 4000 });
+      expect(deps.renderer.appendText).toHaveBeenCalledWith(
+        'answer',
+        expect.stringContaining('restore-'),
+        2000,
+        undefined,
+        { outputTokens: 40, durationMs: 4000 },
+      );
+    });
+
+    it('never guesses turn stats for messages without a native id', async () => {
+      controller.state.sessionId = 'test';
+      const messages: SerializedMessage[] = [
+        { role: 'assistant', content: 'a1', type: 'text', timestamp: 2000 },
+      ];
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue({ sessionId: 'test', messages });
+      (readNativeTurnStats as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { messageId: 'msg_1', outputTokens: 40, durationMs: 4000 },
+      ]);
+
+      await controller.restoreSession();
+
+      expect(messages[0].turnStats).toBeUndefined();
     });
 
     it('claims each native stat once when thinking and text share a message id', async () => {
@@ -493,8 +539,8 @@ describe('CoOberViewController', () => {
 
       await controller.restoreSession();
 
-      expect(deps.renderer.appendText).toHaveBeenNthCalledWith(1, 'one', expect.any(String), 1000, undefined);
-      expect(deps.renderer.appendText).toHaveBeenNthCalledWith(2, 'two', expect.any(String), 2000, undefined);
+      expect(deps.renderer.appendText).toHaveBeenNthCalledWith(1, 'one', expect.any(String), 1000, undefined, undefined);
+      expect(deps.renderer.appendText).toHaveBeenNthCalledWith(2, 'two', expect.any(String), 2000, undefined, undefined);
     });
 
     it('marks restored tool blocks failed from native tool errors', async () => {
@@ -1207,7 +1253,7 @@ describe('CoOberViewController', () => {
       expect(override.save).toHaveBeenCalled();
       expect(deps.renderer.addUserMessage).toHaveBeenCalledWith('question', expect.anything(), undefined);
       expect(deps.renderer.appendThinking).toHaveBeenCalledWith('pondering', expect.anything(), expect.anything());
-      expect(deps.renderer.appendText).toHaveBeenCalledWith('hi', expect.anything(), expect.anything(), undefined);
+      expect(deps.renderer.appendText).toHaveBeenCalledWith('hi', expect.anything(), expect.anything(), undefined, undefined);
     });
 
     it('refreshes cost and context from the native database when adopting', async () => {
@@ -1843,6 +1889,7 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
     (readNativeSessionTodos as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (readNativeMessageStats as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (readNativeToolErrors as ReturnType<typeof vi.fn>).mockResolvedValue({});
+    (readNativeTurnStats as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     controller = new CoOberViewController(deps, callbacks);
   });
 

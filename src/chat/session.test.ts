@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { SessionRepository } from './session';
-import type { SerializedMessage, SerializedSession } from '../types';
+import type { ContentBlock, SerializedMessage, SerializedSession } from '../types';
 import { setLocale } from '../i18n/index';
 
 function createSession(id: string, updatedAt = 1, messageCount = 0): SerializedSession {
@@ -187,5 +187,89 @@ describe('SessionRepository', () => {
       expect.objectContaining({ content: 'message 4' }),
       expect.objectContaining({ content: 'message 5' }),
     ]);
+  });
+});
+
+describe('sidecar text-block elision', () => {
+  function sessionWith(messages: SerializedMessage[]): SerializedSession {
+    return {
+      sessionId: 's1',
+      title: 'S1',
+      messages,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+  }
+
+  function assistantText(blocks: ContentBlock[], content: string): SerializedMessage {
+    return { role: 'assistant', content, type: 'text', timestamp: 10, contentBlocks: blocks };
+  }
+
+  it('drops redundant text blocks on snapshot and rebuilds them on hydrate', () => {
+    const { repository } = createRepository();
+    repository.hydrate(
+      [sessionWith([assistantText([{ type: 'text', text: 'hello ' }, { type: 'text', text: 'world' }], 'hello world')])],
+      's1',
+    );
+
+    const snapshot = repository.snapshot();
+    const persisted = snapshot.sessions[0].messages[0];
+    expect(persisted.contentBlocks).toBeUndefined();
+    expect(persisted.blocksElided).toBe(true);
+    expect(JSON.stringify(snapshot)).not.toContain('contentBlocks');
+
+    const revived = createRepository();
+    revived.repository.hydrate(snapshot.sessions, snapshot.activeSessionId);
+    const restored = revived.repository.get('s1')!.messages[0];
+    expect(restored.contentBlocks).toEqual([{ type: 'text', text: 'hello world' }]);
+    expect(restored.blocksElided).toBeUndefined();
+    expect(restored.content).toBe('hello world');
+  });
+
+  it('preserves mixed block sets and in-memory state is never elided', () => {
+    const { repository } = createRepository();
+    const mixed: SerializedMessage = {
+      role: 'assistant',
+      content: 'answer',
+      type: 'text',
+      timestamp: 10,
+      contentBlocks: [{ type: 'text', text: 'answer' }, { type: 'tool_use', toolCallId: 'tc1' }],
+    };
+    repository.hydrate([sessionWith([mixed])], 's1');
+
+    const persisted = repository.snapshot().sessions[0].messages[0];
+    expect(persisted.contentBlocks).toEqual(mixed.contentBlocks);
+    expect(persisted.blocksElided).toBeUndefined();
+    expect(repository.get('s1')!.messages[0].contentBlocks).toBeDefined();
+  });
+
+  it('keeps text blocks whose join does not equal content', () => {
+    const { repository } = createRepository();
+    const mismatch = assistantText([{ type: 'text', text: 'partial' }], 'full answer');
+    repository.hydrate([sessionWith([mismatch])], 's1');
+
+    const persisted = repository.snapshot().sessions[0].messages[0];
+    expect(persisted.contentBlocks).toEqual([{ type: 'text', text: 'partial' }]);
+    expect(persisted.blocksElided).toBeUndefined();
+  });
+
+  it('leaves user and blockless messages untouched', () => {
+    const { repository } = createRepository();
+    const user: SerializedMessage = { role: 'user', content: 'q', type: 'text', timestamp: 5 };
+    const bare: SerializedMessage = { role: 'assistant', content: 'a', type: 'text', timestamp: 6 };
+    repository.hydrate([sessionWith([user, bare])], 's1');
+
+    const snapshot = repository.snapshot();
+    expect(snapshot.sessions[0].messages[0]).toBe(user);
+    expect(snapshot.sessions[0].messages[1]).toBe(bare);
+  });
+
+  it('hydrate keeps identity when nothing was elided', () => {
+    const { repository } = createRepository();
+    const session = sessionWith([{ role: 'user', content: 'q', type: 'text', timestamp: 5 }]);
+
+    repository.hydrate([session], 's1');
+
+    expect(repository.get('s1')).toBe(session);
   });
 });

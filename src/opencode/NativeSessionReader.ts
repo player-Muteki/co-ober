@@ -444,6 +444,127 @@ export async function readNativeMessageStats(sessionId: string, deps: NativeSess
 	return stats;
 }
 
+/** Chronological user/assistant rows feeding turn-stat computation. */
+export interface NativeTurnRow {
+	messageId: string;
+	role: 'user' | 'assistant';
+	parentId?: string;
+	startedAt?: number;
+	completedAt?: number;
+	finish?: string;
+	hasError: boolean;
+	outputTokens: number;
+	reasoningTokens: number;
+}
+
+/** Throughput for one cleanly finished turn, keyed by closing assistant id. */
+export interface NativeTurnStat {
+	messageId: string;
+	outputTokens: number;
+	durationMs: number;
+}
+
+/**
+ * Turn-evidence rows for one session: user/assistant message timestamps,
+ * finish state, errors and generated tokens, ordered chronologically.
+ */
+export function buildTurnStatsSql(sessionId: string): string {
+	const id = escapeSqlLiteral(sessionId);
+	return [
+		'select m.id as message_id,',
+		"json_extract(m.data, '$.role') as role,",
+		"json_extract(m.data, '$.parentID') as parent_id,",
+		"coalesce(cast(json_extract(m.data, '$.time.created') as integer), m.time_created) as started_at,",
+		"cast(json_extract(m.data, '$.time.completed') as integer) as completed_at,",
+		"json_extract(m.data, '$.finish') as finish,",
+		"json_extract(m.data, '$.error') as error,",
+		"coalesce(cast(json_extract(m.data, '$.tokens.output') as integer), 0) as output_tokens,",
+		"coalesce(cast(json_extract(m.data, '$.tokens.reasoning') as integer), 0) as reasoning_tokens",
+		'from message m',
+		`where m.session_id = '${id}'`,
+		"and json_extract(m.data, '$.role') in ('user', 'assistant')",
+		'order by m.time_created asc, m.id asc',
+	].join(' ');
+}
+
+export function buildTurnStatsSqlV2(sessionId: string): string {
+	const id = escapeSqlLiteral(sessionId);
+	return [
+		'select sm.id as message_id,',
+		'sm.type as role,',
+		'null as parent_id,',
+		"coalesce(cast(json_extract(sm.data, '$.time.created') as integer), sm.time_created) as started_at,",
+		"cast(json_extract(sm.data, '$.time.completed') as integer) as completed_at,",
+		"json_extract(sm.data, '$.finish') as finish,",
+		"json_extract(sm.data, '$.error') as error,",
+		"coalesce(cast(json_extract(sm.data, '$.tokens.output') as integer), 0) as output_tokens,",
+		"coalesce(cast(json_extract(sm.data, '$.tokens.reasoning') as integer), 0) as reasoning_tokens",
+		'from session_message sm',
+		`where sm.session_id = '${id}' and sm.type in ('user', 'assistant') and json_valid(sm.data)`,
+		'order by sm.seq asc',
+	].join(' ');
+}
+
+/**
+ * Fold turn-evidence rows into throughput stats: tokens accumulate across
+ * the assistants of one user turn, and only a cleanly finished assistant
+ * (stop/length) closes the turn, measuring wall clock from the user row.
+ * Errored or misparented assistants invalidate the open turn so missing
+ * evidence never becomes an estimated rate.
+ */
+export function computeNativeTurnStats(rows: NativeTurnRow[]): NativeTurnStat[] {
+	const stats: NativeTurnStat[] = [];
+	let turn: { userId: string; startedAt: number; outputTokens: number } | null = null;
+	for (const row of rows) {
+		if (row.role === 'user') {
+			turn = typeof row.startedAt === 'number' ? { userId: row.messageId, startedAt: row.startedAt, outputTokens: 0 } : null;
+			continue;
+		}
+		if (!turn) continue;
+		if (row.hasError || (row.parentId && row.parentId !== turn.userId)) {
+			turn = null;
+			continue;
+		}
+		turn.outputTokens += Math.max(0, Math.trunc(row.outputTokens)) + Math.max(0, Math.trunc(row.reasoningTokens));
+		if ((row.finish === 'stop' || row.finish === 'length') && typeof row.completedAt === 'number') {
+			const durationMs = row.completedAt - turn.startedAt;
+			if (turn.outputTokens > 0 && durationMs > 0) {
+				stats.push({ messageId: row.messageId, outputTokens: turn.outputTokens, durationMs });
+			}
+			turn = null;
+		}
+	}
+	return stats;
+}
+
+/** Per-turn throughput stats for one session; empty list on any failure. */
+export async function readNativeTurnStats(sessionId: string, deps: NativeSessionReaderDeps = {}): Promise<NativeTurnStat[]> {
+	if (!sessionId) return [];
+	const rows = await readNativeRows(
+		(format) => (format === 'v2' ? buildTurnStatsSqlV2(sessionId) : buildTurnStatsSql(sessionId)),
+		deps,
+		'native turn stats',
+	);
+	if (!rows) return [];
+	const parsed: NativeTurnRow[] = [];
+	for (const row of rows) {
+		if (typeof row.message_id !== 'string') continue;
+		if (row.role !== 'user' && row.role !== 'assistant') continue;
+		parsed.push({
+			messageId: row.message_id,
+			role: row.role,
+			parentId: typeof row.parent_id === 'string' ? row.parent_id : undefined,
+			startedAt: toOptionalNumber(row.started_at),
+			completedAt: toOptionalNumber(row.completed_at),
+			finish: typeof row.finish === 'string' ? row.finish : undefined,
+			hasError: row.error !== null && row.error !== undefined,
+			outputTokens: toNumber(row.output_tokens),
+			reasoningTokens: toNumber(row.reasoning_tokens),
+		});
+	}
+	return computeNativeTurnStats(parsed);
+}
+
 /** Select call IDs of errored tool parts so failed calls can be re-rendered on restore. */
 export function buildToolErrorsSql(sessionId: string): string {
 	const id = escapeSqlLiteral(sessionId);

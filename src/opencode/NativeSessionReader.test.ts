@@ -19,6 +19,10 @@ import {
 	buildNativeSessionSearchSql,
 	buildNativeSessionSearchSqlV2,
 	searchNativeSessions,
+	buildTurnStatsSql,
+	buildTurnStatsSqlV2,
+	computeNativeTurnStats,
+	readNativeTurnStats,
 	probeNativeSchema,
 	resetNativeSchemaProbe,
 } from './NativeSessionReader';
@@ -464,6 +468,96 @@ describe('v2 (forked database) SQL builders', () => {
 	});
 });
 
+describe('native turn stats', () => {
+	it('builds a chronological v1 turn-evidence query', () => {
+		const sql = buildTurnStatsSql("ses_it's");
+		expect(sql).toContain('from message m');
+		expect(sql).toContain("m.session_id = 'ses_it''s'");
+		expect(sql).toContain("json_extract(m.data, '$.role') in ('user', 'assistant')");
+		expect(sql).toContain("coalesce(cast(json_extract(m.data, '$.time.created') as integer), m.time_created) as started_at");
+		expect(sql).toContain('order by m.time_created asc, m.id asc');
+	});
+
+	it('builds a seq-ordered v2 turn-evidence query over session_message', () => {
+		const sql = buildTurnStatsSqlV2('ses_a');
+		expect(sql).toContain('from session_message sm');
+		expect(sql).toContain("sm.type in ('user', 'assistant')");
+		expect(sql).toContain('json_valid');
+		expect(sql).toContain('order by sm.seq asc');
+	});
+
+	it('accumulates turn tokens and emits only on a clean finish', () => {
+		const stats = computeNativeTurnStats([
+			{ messageId: 'u1', role: 'user', startedAt: 1000, outputTokens: 0, reasoningTokens: 0, hasError: false },
+			{ messageId: 'a1', role: 'assistant', parentId: 'u1', outputTokens: 10, reasoningTokens: 2, finish: 'tool-calls', hasError: false },
+			{ messageId: 'a2', role: 'assistant', parentId: 'u1', outputTokens: 20, reasoningTokens: 5, completedAt: 7000, finish: 'stop', hasError: false },
+		]);
+		expect(stats).toEqual([{ messageId: 'a2', outputTokens: 37, durationMs: 6000 }]);
+	});
+
+	it('emits once per user turn and restarts accumulation on the next', () => {
+		const stats = computeNativeTurnStats([
+			{ messageId: 'u1', role: 'user', startedAt: 1000, outputTokens: 0, reasoningTokens: 0, hasError: false },
+			{ messageId: 'a1', role: 'assistant', outputTokens: 4, reasoningTokens: 0, completedAt: 3000, finish: 'stop', hasError: false },
+			{ messageId: 'u2', role: 'user', startedAt: 4000, outputTokens: 0, reasoningTokens: 0, hasError: false },
+			{ messageId: 'a2', role: 'assistant', outputTokens: 6, reasoningTokens: 1, completedAt: 6000, finish: 'length', hasError: false },
+		]);
+		expect(stats).toEqual([
+			{ messageId: 'a1', outputTokens: 4, durationMs: 2000 },
+			{ messageId: 'a2', outputTokens: 7, durationMs: 2000 },
+		]);
+	});
+
+	it('invalidates the turn on errors or mismatched v1 parents', () => {
+		expect(computeNativeTurnStats([
+			{ messageId: 'u1', role: 'user', startedAt: 1000, outputTokens: 0, reasoningTokens: 0, hasError: false },
+			{ messageId: 'a1', role: 'assistant', outputTokens: 5, reasoningTokens: 0, completedAt: 2000, finish: 'stop', hasError: true },
+		])).toEqual([]);
+		expect(computeNativeTurnStats([
+			{ messageId: 'u1', role: 'user', startedAt: 1000, outputTokens: 0, reasoningTokens: 0, hasError: false },
+			{ messageId: 'a1', role: 'assistant', parentId: 'u_other', outputTokens: 5, reasoningTokens: 0, completedAt: 2000, finish: 'stop', hasError: false },
+		])).toEqual([]);
+	});
+
+	it('requires positive tokens and a positive measured duration', () => {
+		expect(computeNativeTurnStats([
+			{ messageId: 'u1', role: 'user', startedAt: 1000, outputTokens: 0, reasoningTokens: 0, hasError: false },
+			{ messageId: 'a1', role: 'assistant', outputTokens: 0, reasoningTokens: 0, completedAt: 5000, finish: 'stop', hasError: false },
+		])).toEqual([]);
+		expect(computeNativeTurnStats([
+			{ messageId: 'u1', role: 'user', startedAt: 5000, outputTokens: 0, reasoningTokens: 0, hasError: false },
+			{ messageId: 'a1', role: 'assistant', outputTokens: 9, reasoningTokens: 0, completedAt: 5000, finish: 'stop', hasError: false },
+		])).toEqual([]);
+	});
+
+	it('ignores assistants that precede any user row and keeps accumulating without a close', () => {
+		expect(computeNativeTurnStats([
+			{ messageId: 'a0', role: 'assistant', outputTokens: 9, reasoningTokens: 0, completedAt: 100, finish: 'stop', hasError: false },
+		])).toEqual([]);
+		expect(computeNativeTurnStats([
+			{ messageId: 'u1', role: 'user', startedAt: 0, outputTokens: 0, reasoningTokens: 0, hasError: false },
+			{ messageId: 'a1', role: 'assistant', outputTokens: 3, reasoningTokens: 0, finish: 'stop', hasError: false },
+			{ messageId: 'a2', role: 'assistant', outputTokens: 4, reasoningTokens: 0, completedAt: 2000, finish: 'stop', hasError: false },
+		])).toEqual([{ messageId: 'a2', outputTokens: 7, durationMs: 2000 }]);
+	});
+
+	it('maps raw rows through the reader and degrades on blank ids', async () => {
+		const rows = [
+			{ message_id: 'u1', role: 'user', parent_id: null, started_at: 1000, completed_at: null, finish: null, error: null, output_tokens: 0, reasoning_tokens: 0 },
+			{ message_id: 'a1', role: 'assistant', parent_id: 'u1', started_at: 1100, completed_at: 3000, finish: 'stop', error: null, output_tokens: 30, reasoning_tokens: 10 },
+			{ message_id: '', role: 'assistant', parent_id: null, started_at: null, completed_at: null, finish: null, error: null, output_tokens: 0, reasoning_tokens: 0 },
+			{ message_id: 'a2', role: 'session.updated', parent_id: null, started_at: null, completed_at: null, finish: null, error: null, output_tokens: 0, reasoning_tokens: 0 },
+		];
+		const stats = await readNativeTurnStats('ses_a', {
+			env: { HOME: '/home/u' },
+			fs: fakeFs,
+			sqlite: sqliteBacked(rows) as never,
+		});
+		expect(stats).toEqual([{ messageId: 'a1', outputTokens: 40, durationMs: 2000 }]);
+		expect(await readNativeTurnStats('')).toEqual([]);
+	});
+});
+
 describe('v2 SQL against a real SQLite engine', () => {
 	let db: { prepare(sql: string): { all(...params: unknown[]): Record<string, unknown>[]; run(...params: unknown[]): void } } | null = null;
 	try {
@@ -487,7 +581,8 @@ describe('v2 SQL against a real SQLite engine', () => {
 				"('m_user', 'ses_a', 'user', 1, 200, 200, '{\"text\":\"hello needle here\"}'), " +
 				"('m_ctrl', 'ses_a', 'session.updated', 2, 300, 300, '{}'), " +
 				"('m_asst', 'ses_a', 'assistant', 3, 400, 400, " +
-					"'{\"tokens\":{\"input\":10,\"output\":5,\"reasoning\":2,\"total\":17,\"cache\":{\"read\":90,\"write\":3}}," +
+					"'{\"time\":{\"created\":400,\"completed\":6400},\"finish\":\"stop\"," +
+					"\"tokens\":{\"input\":10,\"output\":5,\"reasoning\":2,\"total\":17,\"cache\":{\"read\":90,\"write\":3}}," +
 					"\"content\":[{\"type\":\"step-finish\",\"cost\":0.5,\"tokens\":{\"input\":10,\"output\":5,\"total\":15}}," +
 					"{\"type\":\"text\",\"text\":\"reply about needle here\"}," +
 					"{\"type\":\"tool\",\"callID\":\"call_1\",\"state\":{\"error\":\"boom\"}}]}')",
@@ -505,6 +600,7 @@ describe('v2 SQL against a real SQLite engine', () => {
 			['usage', () => buildSessionUsageSqlV2('ses_a')],
 			['stats', () => buildMessageStatsSqlV2('ses_a')],
 			['errors', () => buildToolErrorsSqlV2('ses_a')],
+			['turn stats', () => buildTurnStatsSqlV2('ses_a')],
 		];
 		it.each(queries)('%s', (_name, build) => {
 			expect(() => db!.prepare(build()).all()).not.toThrow();
@@ -530,6 +626,20 @@ describe('v2 SQL against a real SQLite engine', () => {
 
 			const errors = db!.prepare(buildToolErrorsSqlV2('ses_a')).all();
 			expect(errors).toEqual([{ call_id: 'call_1', error: 'boom' }]);
+
+			const turnRows = db!.prepare(buildTurnStatsSqlV2('ses_a')).all();
+			expect(turnRows.map((r) => r.role)).toEqual(['user', 'assistant']);
+			const turnStats = computeNativeTurnStats(turnRows.map((r) => ({
+				messageId: String(r.message_id),
+				role: r.role as 'user' | 'assistant',
+				startedAt: typeof r.started_at === 'number' ? r.started_at : undefined,
+				completedAt: typeof r.completed_at === 'number' ? r.completed_at : undefined,
+				finish: typeof r.finish === 'string' ? r.finish : undefined,
+				hasError: r.error !== null && r.error !== undefined,
+				outputTokens: typeof r.output_tokens === 'number' ? r.output_tokens : 0,
+				reasoningTokens: typeof r.reasoning_tokens === 'number' ? r.reasoning_tokens : 0,
+			})));
+			expect(turnStats).toEqual([{ messageId: 'm_asst', outputTokens: 7, durationMs: 6200 }]);
 		});
 	});
 });

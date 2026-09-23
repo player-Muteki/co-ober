@@ -1,7 +1,7 @@
 import type { App } from 'obsidian';
 import { MarkdownRenderer, setIcon, type Component } from 'obsidian';
 import { t, onLocaleChange } from '../i18n/index';
-import type { UsageInfo, ContentBlock, SerializedMessage, ToolCallContent, ImageAttachment, MessageUsage } from '../types';
+import type { UsageInfo, ContentBlock, SerializedMessage, ToolCallContent, ImageAttachment, MessageUsage, TurnStats } from '../types';
 import { COPY_BUTTON_RESET_MS } from '../constants';
 import {
   renderLiveThinkingBlock,
@@ -311,7 +311,7 @@ export class ChatRenderer {
   // Layer 1: Text Render Pipeline
   // ============================================
 
-  appendText(text: string, messageId?: string, timestamp?: number, usage?: MessageUsage): void {
+  appendText(text: string, messageId?: string, timestamp?: number, usage?: MessageUsage, turnStats?: TurnStats): void {
     if (messageId && this.currentAssistantId !== messageId) {
       this.currentAssistantId = messageId;
       this.currentAssistantEl = null;
@@ -331,18 +331,22 @@ export class ChatRenderer {
       wrap.dataset.timestamp = this.formatTimestamp(timestamp ?? Date.now());
       this.currentAssistantWrap = wrap;
       this.currentAssistantEl = wrap.createDiv({ cls: 'co-ober-msg-body' });
-      if (usage) this.attachUsageFooter(wrap, usage);
+      if (usage || turnStats) this.attachUsageFooter(wrap, usage, turnStats);
     }
     this.scheduleTextRender();
     this.scrollToBottom();
   }
 
   /** Compact per-message cost/token footer, used when restoring native OpenCode transcripts. */
-  private attachUsageFooter(wrap: HTMLElement, usage: MessageUsage): void {
-    const text = formatMessageUsage(usage);
-    if (!text) return;
+  private attachUsageFooter(wrap: HTMLElement, usage?: MessageUsage, turnStats?: TurnStats): void {
+    const parts: string[] = [];
+    const usageText = usage ? formatMessageUsage(usage) : '';
+    if (usageText) parts.push(usageText);
+    const rate = turnStats ? ChatRenderer.throughput(turnStats.outputTokens, turnStats.durationMs) : null;
+    if (rate !== null) parts.push(`${rate.toFixed(1)} tok/s`);
+    if (parts.length === 0) return;
     const footer = wrap.createDiv({ cls: 'co-ober-response-footer' });
-    footer.createSpan({ cls: 'co-ober-msg-usage', text });
+    footer.createSpan({ cls: 'co-ober-msg-usage', text: parts.join(' · ') });
   }
 
   /**
@@ -819,22 +823,33 @@ export class ChatRenderer {
     const wrap = parentEl ?? this.container.createDiv({ cls: 'co-ober-msg assistant' });
     if (!msg.contentBlocks || msg.contentBlocks.length === 0) return wrap;
 
-    // Duration + interrupt + native usage footer
-    if (msg.durationSeconds || msg.isInterrupt || msg.usage) {
+    // Duration + interrupt + native usage + turn throughput footer
+    const turnRate = msg.turnStats ? ChatRenderer.throughput(msg.turnStats.outputTokens, msg.turnStats.durationMs) : null;
+    if (msg.durationSeconds || msg.isInterrupt || msg.usage || turnRate !== null) {
       const footer = wrap.createDiv({ cls: 'co-ober-response-footer' });
+      let hasPart = false;
+      const dot = () => {
+        if (hasPart) footer.createSpan({ cls: 'footer-dot' });
+        hasPart = true;
+      };
       if (msg.durationSeconds) {
+        dot();
         footer.createSpan({ cls: 'co-ober-baked-duration', text: this.formatDuration(msg.durationSeconds) });
       }
       if (msg.isInterrupt) {
-        if (msg.durationSeconds) footer.createSpan({ cls: 'footer-dot' });
+        dot();
         footer.createSpan({ cls: 'co-ober-interrupt-badge', text: t().interrupted.badge.toLowerCase() });
       }
       if (msg.usage) {
         const usageText = formatMessageUsage(msg.usage);
         if (usageText) {
-          if (msg.durationSeconds || msg.isInterrupt) footer.createSpan({ cls: 'footer-dot' });
+          dot();
           footer.createSpan({ cls: 'co-ober-msg-usage', text: usageText });
         }
+      }
+      if (turnRate !== null) {
+        dot();
+        footer.createSpan({ cls: 'co-ober-msg-usage', text: `${turnRate.toFixed(1)} tok/s` });
       }
     }
 

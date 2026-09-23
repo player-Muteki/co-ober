@@ -41,7 +41,9 @@ import {
   readNativeSessionTodos,
   readNativeSessionUsage,
   readNativeToolErrors,
+  readNativeTurnStats,
   type NativeMessageStat,
+  type NativeTurnStat,
 } from '../opencode/NativeSessionReader';
 import { commandRegistry } from '../commands/registry';
 import { parseSlashCommand } from '../commands/executor';
@@ -581,7 +583,7 @@ export class CoOberViewController {
         } else if (msg.type === 'thinking') {
           this.deps.renderer.appendThinking(msg.content, restoreId, msg.timestamp);
         } else {
-          this.deps.renderer.appendText(msg.content, restoreId, msg.timestamp, msg.usage);
+          this.deps.renderer.appendText(msg.content, restoreId, msg.timestamp, msg.usage, msg.turnStats);
         }
       }
     }
@@ -1034,16 +1036,19 @@ export class CoOberViewController {
   }
 
   /**
-   * Enrich a restored transcript with per-message cost/token footers and tool
-   * errors from the OpenCode database. Silently no-ops when unavailable.
+   * Enrich a restored transcript with per-message cost/token footers, turn
+   * throughput and tool errors from the OpenCode database. Silently no-ops
+   * when unavailable.
    */
   private async enrichMessagesFromNative(session: SerializedSession): Promise<void> {
-    const [stats, toolErrors] = await Promise.all([
+    const [stats, toolErrors, turnStats] = await Promise.all([
       readNativeMessageStats(session.sessionId),
       readNativeToolErrors(session.sessionId),
+      readNativeTurnStats(session.sessionId),
     ]);
     let changed = false;
     if (stats.length > 0) changed = this.attachNativeUsage(session, stats);
+    if (turnStats.length > 0) changed = this.attachNativeTurnStats(session, turnStats) || changed;
     if (Object.keys(toolErrors).length > 0) changed = this.attachNativeToolErrors(session, toolErrors) || changed;
     if (!changed) return;
     try {
@@ -1090,6 +1095,26 @@ export class CoOberViewController {
         changed = true;
       }
     });
+    return changed;
+  }
+
+  /**
+   * Attach native turn throughput to the closing assistant message of each
+   * turn. Only id-matched transcripts qualify; positional guessing would
+   * attribute someone else's wall clock.
+   */
+  private attachNativeTurnStats(session: SerializedSession, turnStats: NativeTurnStat[]): boolean {
+    const byId = new Map(turnStats.map((s) => [s.messageId, s]));
+    let changed = false;
+    for (const msg of session.messages) {
+      if (msg.role !== 'assistant' || msg.type === 'thinking' || msg.turnStats) continue;
+      const nativeId = msg.nativeMessageId;
+      if (!nativeId) continue;
+      const stat = byId.get(nativeId);
+      if (!stat) continue;
+      msg.turnStats = { outputTokens: stat.outputTokens, durationMs: stat.durationMs };
+      changed = true;
+    }
     return changed;
   }
 

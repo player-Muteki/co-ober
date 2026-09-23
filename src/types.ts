@@ -298,6 +298,8 @@ export interface SerializedMessage {
   timestamp: number;
   /** @since Phase 1 — structured content blocks for ordered rendering */
   contentBlocks?: ContentBlock[];
+  /** Persistence-only marker set when text-only blocks were elided from the data.json copy. */
+  blocksElided?: boolean;
   /** @since Phase 1 — total response duration in seconds */
   durationSeconds?: number;
   /** @since Phase 1 — whether this message was interrupted mid-generation */
@@ -306,6 +308,8 @@ export interface SerializedMessage {
   images?: ImageAttachment[];
   /** Per-message cost/token totals read from the OpenCode native database. */
   usage?: MessageUsage;
+  /** Turn wall-clock throughput re-derived from the native database on reload. */
+  turnStats?: TurnStats;
   /** OpenCode-native message id this replayed message was aggregated from, when known. */
   nativeMessageId?: string;
 }
@@ -315,6 +319,12 @@ export interface MessageUsage {
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
+}
+
+/** Generated tokens and measured wall clock for one completed turn. */
+export interface TurnStats {
+  outputTokens: number;
+  durationMs: number;
 }
 
 export interface SerializedSession {
