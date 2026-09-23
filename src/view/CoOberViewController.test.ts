@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { CoOberViewController, deriveSessionTitle } from './CoOberViewController';
+import { CoOberViewController, deriveSessionTitle, normalizeEffortLabel } from './CoOberViewController';
 import type { ControllerCallbacks, ControllerDeps } from './CoOberViewController';
 import { installObsidianDomHelpers } from '../test/domHelpers';
 import type {
@@ -1482,6 +1482,115 @@ describe('CoOberViewController', () => {
       expect(deps.toolbar.updateModels).toHaveBeenCalled();
       expect(deps.toolbar.updateEffort).toHaveBeenCalled();
       expect(controller.state.currentModelId).toBe('gpt-4');
+    });
+
+    it('surfaces agent-provided effort options with normalized labels', () => {
+      const ef = t().toolbar.effort;
+      const client = createMockClient({
+        getSessionSnapshot: vi.fn(() => ({
+          configOptions: [
+            {
+              id: 'effort',
+              name: 'Effort',
+              category: 'thought_level',
+              type: 'select',
+              currentValue: 'minimal',
+              options: [
+                { value: 'minimal', name: 'minimal' },
+                { value: 'x-high', name: 'x high' },
+                { value: 'turbo', name: 'Turbo Mode' },
+              ],
+            },
+          ],
+          availableCommands: [],
+          availableModels: [],
+          availableModes: [],
+          currentModelId: null,
+          currentModeId: null,
+        })),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      controller.loadToolbarOptions();
+
+      expect(deps.toolbar.updateEffort).toHaveBeenCalledWith(
+        [
+          { value: 'minimal', label: ef.minimal },
+          { value: 'x-high', label: ef.xhigh },
+          { value: 'turbo', label: 'Turbo Mode' },
+        ],
+        'minimal',
+      );
+    });
+
+    it('falls back to the built-in effort list when the agent provides none', () => {
+      const ef = t().toolbar.effort;
+      const client = createMockClient({
+        getSessionSnapshot: vi.fn(() => ({
+          configOptions: [],
+          availableCommands: [],
+          availableModels: [],
+          availableModes: [],
+          currentModelId: null,
+          currentModeId: null,
+        })),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      controller.loadToolbarOptions();
+
+      expect(deps.toolbar.updateEffort).toHaveBeenCalledWith(
+        [
+          { value: 'default', label: ef.default },
+          { value: 'low', label: ef.low },
+          { value: 'medium', label: ef.medium },
+          { value: 'high', label: ef.high },
+        ],
+        'default',
+      );
+    });
+  });
+
+  describe('applyConfigOptions effort normalization', () => {
+    it('localizes known effort values in config_option_update', () => {
+      const ef = t().toolbar.effort;
+      controller.applyConfigOptions([
+        {
+          id: 'effort',
+          name: 'Effort',
+          category: 'thought_level',
+          type: 'select',
+          currentValue: 'xhigh',
+          options: [
+            { value: 'xhigh', name: 'xhigh' },
+            { value: 'auto', name: 'Auto' },
+          ],
+        },
+      ]);
+      expect(deps.toolbar.updateEffort).toHaveBeenCalledWith(
+        [
+          { value: 'xhigh', label: ef.xhigh },
+          { value: 'auto', label: 'Auto' },
+        ],
+        'xhigh',
+      );
+    });
+  });
+
+  describe('normalizeEffortLabel', () => {
+    it('localizes known effort values case- and separator-insensitively', () => {
+      const ef = t().toolbar.effort;
+      expect(normalizeEffortLabel('high', 'HIGH')).toBe(ef.high);
+      expect(normalizeEffortLabel(' High ', 'x')).toBe(ef.high);
+      expect(normalizeEffortLabel('x_high', 'x')).toBe(ef.xhigh);
+      expect(normalizeEffortLabel('MINIMAL', 'minimal')).toBe(ef.minimal);
+      expect(normalizeEffortLabel('max', 'maximum')).toBe(ef.max);
+    });
+
+    it('keeps agent-provided names for unknown values', () => {
+      expect(normalizeEffortLabel('turbo', 'Turbo Mode')).toBe('Turbo Mode');
+      expect(normalizeEffortLabel('turbo', '')).toBe('turbo');
+      expect(normalizeEffortLabel('constructor', 'ctor')).toBe('ctor');
     });
   });
 

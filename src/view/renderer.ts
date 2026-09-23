@@ -375,11 +375,30 @@ export class ChatRenderer {
     if (this.textRenderFrame === null && !this.isTextRenderRunning) {
       this.textRenderFrame = window.requestAnimationFrame(() => {
         this.textRenderFrame = null;
+        // Re-rendering replaces the message DOM, which silently kills any
+        // text the user is selecting mid-stream. Defer the pass while a
+        // selection lives in the chat until it is released or flushed.
+        if (this.hasUserSelectionInView()) {
+          void this.scheduleTextRender();
+          return;
+        }
         void this.executeTextRender();
       });
     }
 
     return this.textRenderPromise;
+  }
+
+  private hasUserSelectionInView(): boolean {
+    let selection: Selection | null = null;
+    try {
+      selection = this.doc.getSelection();
+    } catch {
+      return false;
+    }
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false;
+    const anchor = selection.anchorNode;
+    return anchor !== null && this.container.contains(anchor);
   }
 
   /**
@@ -409,6 +428,10 @@ export class ChatRenderer {
 
         const placeholder = this.doc.createElement('div');
         placeholder.addClass('md-render-subsystem');
+        // Obsidian themes only style list markers (ordered "1." counters,
+        // bullet li::before) under .markdown-rendered; without it, rendered
+        // ordered lists lose their numbers.
+        placeholder.addClass('markdown-rendered');
         this.currentAssistantEl.appendChild(placeholder);
 
         await MarkdownRenderer.render(
@@ -457,6 +480,11 @@ export class ChatRenderer {
     codeBlocks.forEach((codeEl) => {
       const pre = codeEl.parentElement;
       if (!pre || pre.querySelector('.co-ober-copy-btn')) return;
+      // Mermaid fences are replaced by Obsidian's post-processor; injecting a
+      // copy button (or the code-block class) into their <pre> corrupts the
+      // rendered diagram, so leave them alone.
+      const classes = `${(codeEl as HTMLElement).className ?? ''} ${pre.className ?? ''}`;
+      if (/(^|[\s-])mermaid($|[\s-])/.test(classes)) return;
 
       const btn = this.doc.createElement('button');
       btn.className = 'co-ober-copy-btn';
@@ -720,6 +748,9 @@ export class ChatRenderer {
     if (usage.inputTokens) parts.push(`↑${usage.inputTokens}`);
     if (usage.outputTokens) parts.push(`↓${usage.outputTokens}`);
     if (usage.thoughtTokens) parts.push(`💭${usage.thoughtTokens}`);
+    const generated = (usage.outputTokens || 0) + (usage.thoughtTokens || 0);
+    const rate = ChatRenderer.throughput(generated, usage.elapsedMs);
+    if (rate !== null) parts.push(`${rate.toFixed(1)} tok/s`);
     if (usage.cost?.amount) parts.push(`$${usage.cost.amount.toFixed(4)}`);
     el.textContent = parts.join(' · ');
     this.usageEls.set(el, usage);
@@ -738,9 +769,22 @@ export class ChatRenderer {
     }
   }
 
+  /**
+   * Tokens/second for a turn, computed only from native usage evidence:
+   * generated tokens (output + thinking) over the measured wall clock.
+   * Returns null when either number is missing or the turn was too short
+   * for the rate to mean anything.
+   */
+  private static throughput(generatedTokens: number, elapsedMs: number | undefined): number | null {
+    if (generatedTokens <= 0 || elapsedMs === undefined || elapsedMs < 1000) return null;
+    return generatedTokens / (elapsedMs / 1000);
+  }
+
   private formatUsageTitle(usage: UsageInfo): string {
     const labels = t().usage;
-    return `${labels.model}: ${usage.modelId ?? '?'} | ${labels.input}: ${usage.inputTokens}, ${labels.output}: ${usage.outputTokens}${usage.thoughtTokens ? `, ${labels.thinking}: ${usage.thoughtTokens}` : ''}`;
+    const rate = ChatRenderer.throughput((usage.outputTokens || 0) + (usage.thoughtTokens || 0), usage.elapsedMs);
+    const rateSuffix = rate !== null ? ` | ${labels.rate}: ${rate.toFixed(1)} tok/s` : '';
+    return `${labels.model}: ${usage.modelId ?? '?'} | ${labels.input}: ${usage.inputTokens}, ${labels.output}: ${usage.outputTokens}${usage.thoughtTokens ? `, ${labels.thinking}: ${usage.thoughtTokens}` : ''}${rateSuffix}`;
   }
 
   private formatTimestamp(ts: number): string {
@@ -856,6 +900,7 @@ export class ChatRenderer {
   renderInline(el: HTMLElement, markdown: string): void {
     if (!markdown) return;
     const placeholder = this.doc.createElement('div');
+    placeholder.addClass('markdown-rendered');
     el.appendChild(placeholder);
     MarkdownRenderer.render(
       this.app,

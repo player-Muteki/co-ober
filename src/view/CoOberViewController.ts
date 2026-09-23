@@ -1472,12 +1472,14 @@ export class CoOberViewController {
       snapshot.availableModels.map((model) => ({ value: model.modelId, label: model.name })),
     );
     const ef = t().toolbar.effort;
-    const efforts = [
-      { value: 'default', label: ef.default },
-      { value: 'low', label: ef.low },
-      { value: 'medium', label: ef.medium },
-      { value: 'high', label: ef.high },
-    ];
+    const efforts = effortConfig && effortConfig.options.length > 0
+      ? effortConfig.options.map((o) => ({ value: o.value, label: normalizeEffortLabel(o.value, o.name) }))
+      : [
+          { value: 'default', label: ef.default },
+          { value: 'low', label: ef.low },
+          { value: 'medium', label: ef.medium },
+          { value: 'high', label: ef.high },
+        ];
 
     this.deps.toolbar.updateAgents(
       agents,
@@ -1502,7 +1504,7 @@ export class CoOberViewController {
       }
       if (opt.id === 'effort') {
         this.deps.toolbar.updateEffort(
-          opt.options.map((o) => ({ value: o.value, label: o.name })),
+          opt.options.map((o) => ({ value: o.value, label: normalizeEffortLabel(o.value, o.name) })),
           opt.currentValue,
         );
       }
@@ -1577,6 +1579,21 @@ function isPlainPrompt(entry: { text: string; refs: ContextRef[] }): boolean {
 export function deriveSessionTitle(text: string): string {
   if (parseSlashCommand(text)) return '';
   return queuePreview(text);
+}
+
+const EFFORT_LABEL_KEYS = ['default', 'low', 'medium', 'high', 'minimal', 'xhigh', 'max'] as const;
+
+/**
+ * Localize well-known reasoning-effort values; agent-supplied names for
+ * unknown values pass through untouched so custom tiers stay visible.
+ */
+export function normalizeEffortLabel(value: string, name: string): string {
+  const key = value.trim().toLowerCase().replace(/[\s_-]+/g, '');
+  const ef = t().toolbar.effort;
+  for (const known of EFFORT_LABEL_KEYS) {
+    if (known === key) return ef[known];
+  }
+  return name || value;
 }
 
 function buildNotesBlock(resolved: Array<{ name: string; content: string }>): string {

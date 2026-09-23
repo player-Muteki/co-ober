@@ -23,7 +23,11 @@ export const OBSIDIAN_OPERATIONS =
   '- XML escaping lesson: note content frequently contains markup such as <details>, HTML tags, ' +
   'and raw & < > characters. Pass such content verbatim inside JSON tool arguments; do not ' +
   're-wrap raw note text in XML-style tags, and if a tool input is XML-based escape & as &amp;, ' +
-  '< as &lt; and > as &gt; so the markup never breaks parsing.';
+  '< as &lt; and > as &gt; so the markup never breaks parsing.\n' +
+  '- Path attributes carry the same risk: vault paths and note titles used in XML-style ' +
+  'attributes such as path="..." or name="..." frequently contain &, <, > or quote characters ' +
+  '(e.g. notes/a & b<c>.md). Escape & as &amp;, < as &lt;, > as &gt; and " as &quot; inside ' +
+  'attribute values so a path never terminates the tag or breaks parsing.';
 
 export function buildSystemPrompt(customInstructions: string): string {
   const parts = [BASE_IDENTITY, OBSIDIAN_OPERATIONS];

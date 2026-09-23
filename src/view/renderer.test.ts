@@ -373,6 +373,100 @@ describe('ChatRenderer', () => {
     });
   });
 
+  describe('markdown render pipeline', () => {
+    async function renderSpy(): Promise<ReturnType<typeof vi.fn>> {
+      const { MarkdownRenderer } = await import('obsidian');
+      const spy = MarkdownRenderer.render as unknown as ReturnType<typeof vi.fn>;
+      spy.mockReset();
+      spy.mockResolvedValue(undefined);
+      return spy;
+    }
+
+    async function runTextRender(): Promise<void> {
+      renderer.cancelTextRender();
+      await Reflect.get(renderer, 'executeTextRender').call(renderer);
+    }
+
+    it('renders assistant markdown into a .markdown-rendered placeholder so list markers survive', async () => {
+      const spy = await renderSpy();
+      renderer.appendText('1. one');
+      await runTextRender();
+      const placeholder = container.querySelector('.md-render-subsystem');
+      expect(placeholder).not.toBeNull();
+      expect(placeholder?.classList.contains('markdown-rendered')).toBe(true);
+      expect(spy).toHaveBeenCalled();
+    });
+
+    it('adds copy buttons to code blocks but leaves mermaid fences untouched', async () => {
+      const spy = await renderSpy();
+      spy.mockImplementation((_app: unknown, _md: unknown, el: HTMLElement) => {
+        el.innerHTML =
+          '<pre><code class="language-js">let a = 1;</code></pre>' +
+          '<pre><code class="language-mermaid">graph TD; A-->B;</code></pre>';
+        return Promise.resolve();
+      });
+      renderer.appendText('code');
+      await runTextRender();
+      const pres = container.querySelectorAll('pre');
+      expect(pres.length).toBe(2);
+      expect(pres[0].querySelector('.co-ober-copy-btn')).not.toBeNull();
+      expect(pres[0].classList.contains('co-ober-code-block')).toBe(true);
+      expect(pres[1].querySelector('.co-ober-copy-btn')).toBeNull();
+      expect(pres[1].classList.contains('co-ober-code-block')).toBe(false);
+      spy.mockResolvedValue(undefined);
+    });
+
+    it('defers streaming re-renders while the user is selecting text in the chat', async () => {
+      const spy = await renderSpy();
+      const anchor = document.createElement('span');
+      container.appendChild(anchor);
+      const selectionSpy = vi
+        .spyOn(document, 'getSelection')
+        .mockReturnValue({ isCollapsed: false, rangeCount: 1, anchorNode: anchor } as unknown as Selection);
+      const frames: Array<FrameRequestCallback> = [];
+      const rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+        frames.push(cb);
+        return frames.length;
+      });
+
+      renderer.appendText('stream');
+      // scheduleTextRender arms its frame before scrollToBottom's, so frames[0]
+      // is the markdown pass; with a live selection it must defer and re-arm.
+      frames[0](0);
+      expect(spy).not.toHaveBeenCalled();
+      expect(frames.length).toBeGreaterThan(1);
+
+      selectionSpy.mockReturnValue(null);
+      await renderer.flushTextRender();
+      expect(spy).toHaveBeenCalled();
+      rafSpy.mockRestore();
+      selectionSpy.mockRestore();
+    });
+  });
+
+  describe('showUsage throughput', () => {
+    it('appends tok/s derived from native output+thinking evidence', () => {
+      renderer.showUsage({
+        totalTokens: 500,
+        inputTokens: 100,
+        outputTokens: 300,
+        thoughtTokens: 100,
+        elapsedMs: 2000,
+        modelId: 'provider/claude',
+      });
+      const el = container.querySelector('.co-ober-usage') as HTMLElement;
+      expect(el.textContent).toContain('200.0 tok/s');
+      expect(el.title).toContain('Rate: 200.0 tok/s');
+    });
+
+    it('omits tok/s without generated tokens or a measurable wall clock', () => {
+      renderer.showUsage({ totalTokens: 0, inputTokens: 0, outputTokens: 0, elapsedMs: 2000 });
+      expect(container.querySelector('.co-ober-usage')?.textContent).not.toContain('tok/s');
+      renderer.showUsage({ totalTokens: 40, inputTokens: 10, outputTokens: 30, elapsedMs: 800 });
+      expect(container.querySelector('.co-ober-usage')?.textContent).not.toContain('tok/s');
+    });
+  });
+
   describe('appendThinking', () => {
     it('creates thinking block', () => {
       renderer.appendThinking('Thinking...');
