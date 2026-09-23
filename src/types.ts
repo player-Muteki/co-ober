@@ -136,7 +136,7 @@ export type NormalizedUpdate =
   | { kind: 'usage'; totalTokens?: number; inputTokens?: number; outputTokens?: number; thoughtTokens?: number; cost?: { amount: number; currency: string }; used?: number; size?: number };
 
 export interface AcpResponse {
-  stopReason: 'end_turn' | 'max_tokens' | 'tool_calls' | 'interrupted';
+  stopReason: 'end_turn' | 'max_tokens' | 'max_turn_requests' | 'tool_calls' | 'interrupted' | 'refusal' | 'cancelled';
   usage?: {
     totalTokens: number;
     inputTokens: number;

@@ -85,6 +85,13 @@ const en = {
     rejectOnce: 'Reject',
     rejectAlways: 'Reject Always',
     moreLocations: '+{count} more',
+    unreadable: 'Permission request was unreadable and was cancelled.',
+  },
+
+  stopReason: {
+    refusal: 'The model declined to answer this request.',
+    maxTokens: 'Response truncated: the model hit its per-message token limit. Try asking for a shorter answer or continue where it stopped.',
+    maxTurnRequests: 'The agent stopped after reaching its per-message turn limit. Send "continue" to keep going.',
   },
 
   error: {

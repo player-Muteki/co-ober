@@ -465,7 +465,9 @@ export class ChatRenderer {
         const text = codeEl.textContent || '';
         void navigator.clipboard.writeText(text);
         btn.textContent = t().copy.copied;
-        window.setTimeout(() => { btn.textContent = t().copy.button; }, COPY_BUTTON_RESET_MS);
+        window.setTimeout(() => {
+          if (btn.isConnected) btn.textContent = t().copy.button;
+        }, COPY_BUTTON_RESET_MS);
       };
       pre.classList.add('co-ober-code-block');
       pre.appendChild(btn);
@@ -902,7 +904,9 @@ export class ChatRenderer {
     btn.onclick = () => {
       void navigator.clipboard.writeText(markdown);
       btn.textContent = t().copy.copied;
-      window.setTimeout(() => { btn.textContent = t().copy.button; }, COPY_BUTTON_RESET_MS);
+      window.setTimeout(() => {
+        if (btn.isConnected) btn.textContent = t().copy.button;
+      }, COPY_BUTTON_RESET_MS);
     };
     textEl.appendChild(btn);
   }

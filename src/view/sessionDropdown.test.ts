@@ -143,6 +143,22 @@ describe('SessionDropdown', () => {
       dropdown.close();
       // Should not throw
     });
+
+    it('clears armed delete-confirm timers when closed', () => {
+      vi.useFakeTimers();
+      try {
+        dropdown.open();
+        const del = container.querySelector('.session-delete') as HTMLButtonElement;
+        del.click(); // first click arms the confirmation and starts the revert timer
+        expect(del.classList.contains('is-confirm')).toBe(true);
+        expect(vi.getTimerCount()).toBe(1);
+
+        dropdown.close();
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   describe('isOpen', () => {

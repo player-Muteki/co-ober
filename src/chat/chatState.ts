@@ -22,6 +22,10 @@ export class ChatState {
 	// Auto-scroll
 	autoScrollEnabled = true;
 
+	// Timestamp of the last streamed plan update; used to suppress a
+	// post-turn native plan refresh that would overwrite newer in-flight data.
+	lastPlanUpdateAt: number | null = null;
+
 	resetStreamingState(): void {
 		this.isStreaming = false;
 	}
@@ -34,6 +38,7 @@ export class ChatState {
 		this.currentModelId = null;
 		this.currentModeId = null;
 		this.availableModes = [];
+		this.lastPlanUpdateAt = null;
 		this.resetStreamingState();
 	}
 }

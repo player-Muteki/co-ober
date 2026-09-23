@@ -1,6 +1,6 @@
 import type { PermissionRequest, FsCapabilityMode, TerminalCapabilityMode, TerminalCreateParams } from '../types';
 import type { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
-import { FsDelegate } from './fsDelegate';
+import { FsDelegate, type VaultWriteIo } from './fsDelegate';
 import { TerminalManager, TerminalError } from './terminalManager';
 import { z } from 'zod';
 import { REQUEST_DEFAULT_TIMEOUT_MS, REQUEST_DEFAULT_MAX_OUTPUT_BYTES } from '../constants';
@@ -45,6 +45,8 @@ export interface AcpRequestHandlerOptions {
   transport: AcpJsonRpcTransport;
   vaultPath: string;
   onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
+  vaultIo?: VaultWriteIo;
+  onPermissionUnreadable?: (summary: string) => void;
 }
 
 export class AcpRequestHandler {
@@ -55,15 +57,18 @@ export class AcpRequestHandler {
   private transport: AcpJsonRpcTransport;
   private vaultPath: string;
   onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
+  onPermissionUnreadable?: (summary: string) => void;
 
   constructor(options: AcpRequestHandlerOptions) {
     this.transport = options.transport;
     this.vaultPath = options.vaultPath;
     this.onPermissionRequest = options.onPermissionRequest;
+    this.onPermissionUnreadable = options.onPermissionUnreadable;
 
     this.fsDelegate = new FsDelegate({
       vaultPath: this.vaultPath,
       maxBytes: 8000,
+      vaultIo: options.vaultIo,
     });
 
     this.terminalManager = new TerminalManager({
@@ -158,6 +163,14 @@ export class AcpRequestHandler {
   private handleServerRequestPermission = (params: Record<string, unknown>): Promise<unknown> => {
     const parsed = zPermissionParams.safeParse(params);
     if (!parsed.success) {
+      // A malformed request must not pass silently: the agent proceeds either
+      // way, so the user needs to know the prompt they never saw was cancelled.
+      const summary = parsed.error.issues
+        .map((issue) => `${issue.path.join('.') || '<root>'}: ${issue.message}`)
+        .join('; ')
+        .slice(0, 240);
+      console.error('[co-ober] unreadable permission request, cancelling it:', summary);
+      this.onPermissionUnreadable?.(summary);
       return Promise.resolve({ outcome: { outcome: 'cancelled' } });
     }
     const req: PermissionRequest = {

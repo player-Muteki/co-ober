@@ -879,6 +879,86 @@ describe('CoOberViewController', () => {
       expect(deps.renderer.addError).toHaveBeenCalledWith(t().error.processExit, 'restart', expect.any(Function));
       expect(controller.isBusy()).toBe(false);
     });
+
+    it('does not let a superseded turn tear down the current turn state', async () => {
+      const gate = deferred<AcpResponse>();
+      const client = createMockClient({
+        sendMessage: vi.fn().mockImplementation(() => gate.promise),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      const first = controller.send('first', []);
+      await vi.waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(1));
+
+      // Reconnect mid-stream: it bumps the generation and resets the busy flag,
+      // so the pending turn is now superseded.
+      controller.bindClientHandlers();
+      const handlers = (client.setClientHandlers as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
+      await handlers.onReconnect();
+      const collapseCallsAfterReset = (deps.renderer.collapseTurns as ReturnType<typeof vi.fn>).mock.calls.length;
+      const meterCallsAfterReset = (deps.updateContextMeter as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      gate.resolve({ stopReason: 'end_turn' });
+      await first;
+
+      // The stale turn's finally must not fold turns, report usage, or run post-response hooks.
+      expect(deps.renderer.collapseTurns).toHaveBeenCalledTimes(collapseCallsAfterReset);
+      expect(deps.updateContextMeter).toHaveBeenCalledTimes(meterCallsAfterReset);
+    });
+
+    it('surfaces refusal and truncation stop reasons instead of silent success', async () => {
+      const client = createMockClient({
+        sendMessage: vi.fn().mockResolvedValue({ stopReason: 'refusal' }),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      await controller.send('hello', []);
+      expect(deps.renderer.addError).toHaveBeenCalledWith(t().stopReason.refusal);
+
+      (client.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({ stopReason: 'max_tokens' });
+      await controller.send('again', []);
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().stopReason.maxTokens);
+
+      (client.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({ stopReason: 'max_turn_requests' });
+      await controller.send('more', []);
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().stopReason.maxTurnRequests);
+
+      // User-initiated cancellations stay silent.
+      const sysCalls = (deps.renderer.addSystemMessage as ReturnType<typeof vi.fn>).mock.calls.length;
+      (client.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({ stopReason: 'cancelled' });
+      await controller.send('done', []);
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledTimes(sysCalls);
+    });
+
+    it('gates the post-turn native plan refresh on streamed plan freshness', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      const refreshSpy = vi.fn().mockResolvedValue(undefined);
+      Reflect.set(controller, 'refreshNativePlan', refreshSpy);
+
+      await controller.send('a', []);
+      expect(refreshSpy).toHaveBeenCalledTimes(1);
+
+      // A plan that arrived during this turn is newer than any native snapshot.
+      refreshSpy.mockClear();
+      controller.state.lastPlanUpdateAt = Date.now() + 5_000;
+      await controller.send('b', []);
+      expect(refreshSpy).not.toHaveBeenCalled();
+    });
+
+    it('surfaces unreadable permission requests as errors', () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      controller.bindClientHandlers();
+      const handlers = (client.setClientHandlers as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      handlers.onPermissionUnreadable('options: required');
+
+      expect(deps.renderer.addError).toHaveBeenCalledWith(t().permission.unreadable);
+    });
   });
 
   describe('stopGeneration', () => {

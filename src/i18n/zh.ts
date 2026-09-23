@@ -87,6 +87,13 @@ const zh: Locale = {
     rejectOnce: '拒绝',
     rejectAlways: '总是拒绝',
     moreLocations: '另有 {count} 处',
+    unreadable: '权限请求无法解析，已取消。',
+  },
+
+  stopReason: {
+    refusal: '模型拒绝回答本次请求。',
+    maxTokens: '回复被截断：模型达到了单条消息的 token 上限。可要求更简短的回答，或让它从中断处继续。',
+    maxTurnRequests: '智能体达到了单条消息的回合上限并停止。发送“继续”可让它接着执行。',
   },
 
   error: {

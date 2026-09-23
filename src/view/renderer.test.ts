@@ -650,4 +650,31 @@ describe('ChatRenderer', () => {
       setLocale('en');
     });
   });
+
+  describe('copy button reset timer', () => {
+    it('leaves a detached button untouched when the reset timer fires', () => {
+      Object.defineProperty(globalThis, 'navigator', {
+        value: { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } },
+        configurable: true,
+      });
+      vi.useFakeTimers();
+      try {
+        const host = document.createElement('div');
+        container.appendChild(host);
+        renderer.addTextCopyButton(host, 'markdown body');
+        const btn = host.querySelector('.co-ober-text-copy-btn') as HTMLButtonElement;
+
+        btn.click();
+        expect(btn.textContent).toBe('Copied');
+
+        // Transcript torn down (session switch / rerender) before the revert fires.
+        host.remove();
+        vi.runAllTimers();
+        expect(btn.textContent).toBe('Copied');
+        expect(btn.isConnected).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
 });

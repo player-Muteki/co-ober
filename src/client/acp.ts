@@ -25,6 +25,7 @@ import { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
 import { SessionUpdateNormalizer } from './sessionUpdateNormalizer';
 import type { NormalizedUpdate } from '../types';
 import { AcpRequestHandler } from './AcpRequestHandler';
+import type { VaultWriteIo } from './fsDelegate';
 import {
   zAgentMessageChunk,
   zAgentThoughtChunk,
@@ -274,14 +275,14 @@ export class AcpClient implements OpencodeClient {
   private transport: AcpJsonRpcTransport | null = null;
   private requestHandler: AcpRequestHandler | null = null;
   private agentCapabilities: AgentCapabilities | null = null;
-  private activeStreamSessionId: string | null = null;
-  private activeAbortController: AbortController | null = null;
-  private chunkHandler: ((update: NormalizedUpdate) => void) | null = null;
+  private activeStreams = new Map<string, { handler: (update: NormalizedUpdate) => void; abort: AbortController }>();
   private replayHandler: ((update: NormalizedUpdate) => void) | null = null;
+  private replaySessionId: string | null = null;
   private normalizer = new SessionUpdateNormalizer();
   private sessionId_: string | null = null;
   private cmdPath: string;
   private cwd?: string;
+  private vaultIo?: VaultWriteIo;
   private availableCommands: AvailableCommand[] = [{ name: 'compact', description: t().slash.compact }];
   private availableModels: ModelOption[] = [];
   private availableModes: ModeOption[] = [];
@@ -291,6 +292,7 @@ export class AcpClient implements OpencodeClient {
   private sessionInfo: { sessionId?: string; title?: string; cwd?: string } | null = null;
   onClose?: () => void;
   onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
+  onPermissionUnreadable?: (summary: string) => void;
   onReconnect?: () => Promise<void>;
   onReconnectFailed?: () => void;
   private reconnectAttempts = 0;
@@ -306,9 +308,10 @@ export class AcpClient implements OpencodeClient {
    */
   private kernelGeneration = 0;
 
-  constructor(cmdPath: string, cwd?: string) {
+  constructor(cmdPath: string, cwd?: string, vaultIo?: VaultWriteIo) {
     this.cmdPath = cmdPath;
     this.cwd = cwd;
+    this.vaultIo = vaultIo;
   }
 
   // Real state kept on the client: main.ts / toolbar assign the active
@@ -364,30 +367,15 @@ export class AcpClient implements OpencodeClient {
         transport,
         vaultPath: cwd,
         onPermissionRequest: this.onPermissionRequest,
+        vaultIo: this.vaultIo,
+        onPermissionUnreadable: (summary) => this.onPermissionUnreadable?.(summary),
       });
       this.requestHandler = requestHandler;
 
       const onSessionUpdate = (params: unknown): void => {
         // Drop updates from a transport that has since been replaced or disposed.
         if (this.transport !== transport) return;
-        const p = params as Record<string, unknown> | undefined;
-        const update = this.parseUpdate(p?.update as Record<string, unknown> | undefined);
-        if (update) {
-          if (update.sessionUpdate === 'usage_update') {
-            // Usage updates are frequent in long sessions; only log when debug is enabled.
-            if (typeof process.env.DEBUG_CO_OBER !== 'undefined') {
-              console.debug('[co-ober] usage_update:', JSON.stringify(update));
-            }
-          }
-          this.applySessionUpdate(update);
-          if (this.chunkHandler) {
-            const norm = this.normalizer.normalize(update);
-            if (norm) this.chunkHandler(norm);
-          } else if (this.replayHandler) {
-            const norm = this.normalizer.normalize(update);
-            if (norm) this.replayHandler(norm);
-          }
-        }
+        this.dispatchSessionUpdate(params);
       };
       // Exact-match dispatch: accept both the spec and legacy wire names.
       transport.onNotification('session/update', onSessionUpdate);
@@ -451,6 +439,7 @@ export class AcpClient implements OpencodeClient {
   ): Promise<void> {
     this.normalizer.reset();
     this.replayHandler = onReplayUpdate ?? null;
+    this.replaySessionId = id;
     try {
       const r = await this.requestWithFallback('loadSession', {
         sessionId: id,
@@ -464,6 +453,7 @@ export class AcpClient implements OpencodeClient {
       throw e;
     } finally {
       this.replayHandler = null;
+      this.replaySessionId = null;
     }
   }
 
@@ -488,6 +478,7 @@ export class AcpClient implements OpencodeClient {
   async resumeSession(id: string, cwd?: string, onReplayUpdate?: (u: NormalizedUpdate) => void): Promise<void> {
     this.normalizer.reset();
     this.replayHandler = onReplayUpdate ?? null;
+    this.replaySessionId = id;
     try {
       const r = await this.requestWithFallback('resumeSession', { sessionId: id, cwd: this.resolveCwd(cwd) });
       this.applySessionSnapshot(r as Record<string, unknown>);
@@ -497,6 +488,7 @@ export class AcpClient implements OpencodeClient {
       throw e;
     } finally {
       this.replayHandler = null;
+      this.replaySessionId = null;
     }
   }
 
@@ -526,15 +518,49 @@ export class AcpClient implements OpencodeClient {
     return configOptions;
   }
 
+  /**
+   * Route one session/update notification frame: state updates apply only to
+   * the main (or replaying) session, chunk delivery targets that session's
+   * active stream slot.
+   */
+  private dispatchSessionUpdate(params: unknown): void {
+    const p = params as Record<string, unknown> | undefined;
+    const sid = typeof p?.sessionId === 'string' ? p.sessionId : null;
+    const update = this.parseUpdate(p?.update as Record<string, unknown> | undefined);
+    if (!update) return;
+    if (update.sessionUpdate === 'usage_update' && typeof process.env.DEBUG_CO_OBER !== 'undefined') {
+      // Usage updates are frequent in long sessions; only log when debug is enabled.
+      console.debug('[co-ober] usage_update:', JSON.stringify(update));
+    }
+    // Client state (models, modes, commands, config) is per-session:
+    // a side-chat or a session we switched away from must not clobber it.
+    if (!sid || sid === this.sessionId_ || sid === this.replaySessionId) {
+      this.applySessionUpdate(update);
+    }
+    const norm = this.normalizer.normalize(update);
+    if (!norm) return;
+    let entry = sid ? this.activeStreams.get(sid) : undefined;
+    if (!entry && !sid && this.activeStreams.size === 1) {
+      // Legacy wire frames without a session id: safe only when unambiguous.
+      entry = this.activeStreams.values().next().value;
+    }
+    if (entry) {
+      entry.handler(norm);
+    } else if (this.replayHandler && (!sid || sid === this.replaySessionId)) {
+      this.replayHandler(norm);
+    }
+  }
+
   sendMessage(id: string, parts: PromptPart[], onChunk: (u: NormalizedUpdate) => void): Promise<AcpResponse> {
-    if (this.activeStreamSessionId !== null) {
+    if (this.activeStreams.has(id)) {
       return Promise.reject(new Error(t().acp.streamActive));
     }
-    this.normalizer.reset();
-    this.activeStreamSessionId = id;
-    this.chunkHandler = onChunk;
-    this.activeAbortController = new AbortController();
-    const signal = this.activeAbortController.signal;
+    // One normalizer serves all streams (state is keyed by messageId), but a
+    // reset mid-flight would wipe another session's accumulated text.
+    if (this.activeStreams.size === 0) this.normalizer.reset();
+    const stream = { handler: onChunk, abort: new AbortController() };
+    this.activeStreams.set(id, stream);
+    const signal = stream.abort.signal;
 
     // Use 0 timeout to disable transport-level timeout for streaming
     // The idle timeout in AgentRuntime handles cancellation
@@ -569,22 +595,16 @@ export class AcpClient implements OpencodeClient {
         return parsed.data as AcpResponse;
       })
       .finally(() => {
-        if (this.activeStreamSessionId === id) {
-          this.activeStreamSessionId = null;
-          this.chunkHandler = null;
-          this.activeAbortController = null;
-        }
+        if (this.activeStreams.get(id) === stream) this.activeStreams.delete(id);
       });
   }
 
   cancel(id: string): Promise<void> {
-    // Abort in-flight prompt FIRST so sendMessage() rejects immediately,
-    // then clean up state so sendMessage's .finally() can detect completion.
-    const controller = this.activeAbortController;
-    this.activeAbortController = null;
-    controller?.abort();
-    this.activeStreamSessionId = null;
-    this.chunkHandler = null;
+    // Abort the in-flight prompt for THIS session first so its sendMessage()
+    // rejects immediately; other sessions' streams keep running.
+    const stream = this.activeStreams.get(id);
+    this.activeStreams.delete(id);
+    stream?.abort.abort();
 
     return this.requestWithFallback('cancel', { sessionId: id })
       .then(() => {})
@@ -621,10 +641,18 @@ export class AcpClient implements OpencodeClient {
   }
 
   abort(): void {
-    if (this.activeAbortController) {
-      this.activeAbortController.abort();
-      this.activeAbortController = null;
-    }
+    // Stop the main session's stream; with no main stream fall back to a
+    // single unambiguous active stream (legacy global-abort semantics).
+    const targetId =
+      this.sessionId_ && this.activeStreams.has(this.sessionId_)
+        ? this.sessionId_
+        : this.activeStreams.size === 1
+          ? [...this.activeStreams.keys()][0]
+          : null;
+    if (!targetId) return;
+    const stream = this.activeStreams.get(targetId);
+    this.activeStreams.delete(targetId);
+    stream?.abort.abort();
   }
 
   setClientHandlers(handlers: import('./index').ClientHandlers): void {
@@ -632,8 +660,12 @@ export class AcpClient implements OpencodeClient {
     this.onReconnect = handlers.onReconnect ?? undefined;
     this.onReconnectFailed = handlers.onReconnectFailed ?? undefined;
     this.onPermissionRequest = handlers.onPermissionRequest ?? undefined;
-    if (this.requestHandler && handlers.onPermissionRequest) {
-      this.requestHandler.onPermissionRequest = handlers.onPermissionRequest;
+    this.onPermissionUnreadable = handlers.onPermissionUnreadable ?? undefined;
+    if (this.requestHandler) {
+      if (handlers.onPermissionRequest) {
+        this.requestHandler.onPermissionRequest = handlers.onPermissionRequest;
+      }
+      this.requestHandler.onPermissionUnreadable = (summary) => this.onPermissionUnreadable?.(summary);
     }
   }
 
@@ -772,9 +804,8 @@ export class AcpClient implements OpencodeClient {
 
     // Clear session state so reconnect reloads models/modes
     this.sessionId_ = null;
-    this.activeStreamSessionId = null;
-    this.chunkHandler = null;
-    this.activeAbortController = null;
+    this.activeStreams.clear();
+    this.replaySessionId = null;
     this.normalizer.reset();
 
     transport?.dispose(error);

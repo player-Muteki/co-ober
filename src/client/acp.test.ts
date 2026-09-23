@@ -457,40 +457,64 @@ describe('AcpRequestHandler permission handling', () => {
     handler.dispose();
   });
 
+  it('cancels and surfaces a permission request that fails schema validation', async () => {
+    const registrations = new Map<string, (params: unknown) => Promise<unknown>>();
+    const mockTransport = {
+      onRequest: vi.fn((name: string, h: (params: unknown) => Promise<unknown>) => {
+        registrations.set(name, h);
+      }),
+      request: vi.fn(),
+      notify: vi.fn(),
+      start: vi.fn(),
+      dispose: vi.fn(),
+      rejectPending: vi.fn(),
+      isClosed: false,
+      onNotification: vi.fn(),
+    } as unknown as AcpJsonRpcTransport;
+
+    const unreadable = vi.fn();
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const handler = new AcpRequestHandler({
+      transport: mockTransport,
+      vaultPath: '/test',
+      onPermissionRequest: vi.fn(),
+      onPermissionUnreadable: unreadable,
+    });
+
+    const dispatch = registrations.get('session/request_permission')!;
+    // options is missing → schema failure must not reject the RPC nor hang the banner
+    const result = await dispatch({ sessionId: 's1', toolCall: { kind: 'edit', title: 'Edit file' } });
+
+    expect(result).toEqual({ outcome: { outcome: 'cancelled' } });
+    expect(unreadable).toHaveBeenCalledTimes(1);
+    expect(String(unreadable.mock.calls[0][0])).toContain('options');
+    consoleSpy.mockRestore();
+    handler.dispose();
+  });
+
   it('uses the current release version for ACP clientInfo', () => {
     expect(CLIENT_VERSION).toBe(pkg.version);
   });
 });
 
 describe('sendMessage flow', () => {
+  const dispatch = (client: AcpClient, params: unknown): void => {
+    (client as unknown as { dispatchSessionUpdate(p: unknown): void }).dispatchSessionUpdate(params);
+  };
+  const messageUpdate = (text: string) => ({
+    sessionUpdate: 'agent_message_chunk',
+    messageId: 'm1',
+    content: { type: 'text', text },
+  });
+
   it('normalizes session updates and passes them to chunkHandler', async () => {
     const client = new AcpClient('opencode');
     Reflect.set(client, 'transport', { request: vi.fn().mockResolvedValue({}) });
 
-    // Access internal methods
     const chunkHandler = vi.fn();
-    // Simulate sendMessage state
     client.sendMessage('s1', [], chunkHandler).catch(() => {});
 
-    // Call the mock response block of the internal session update apply logic
-    // we bypass transport and just call the chunkHandler directly as transport notification does
-    const update = {
-      sessionUpdate: 'agent_message_chunk',
-      messageId: 'm1',
-      content: { type: 'text', text: 'Hello' },
-    };
-
-    // Replicate the onNotification('session/update') logic:
-    const p = { update };
-    const parsed = (client as any).parseUpdate(p.update);
-    if (parsed) {
-      (client as any).applySessionUpdate(parsed);
-      const internalHandler = (client as any).chunkHandler;
-      if (internalHandler) {
-        const norm = (client as any).normalizer.normalize(parsed);
-        if (norm) internalHandler(norm);
-      }
-    }
+    dispatch(client, { sessionId: 's1', update: messageUpdate('Hello') });
 
     expect(chunkHandler).toHaveBeenCalledTimes(1);
     expect(chunkHandler).toHaveBeenCalledWith(
@@ -502,6 +526,76 @@ describe('sendMessage flow', () => {
         accumulatedText: 'Hello',
       }),
     );
+  });
+
+  it('routes each update only to its own session stream (side-chat isolation)', async () => {
+    const client = new AcpClient('opencode');
+    Reflect.set(client, 'transport', { request: vi.fn().mockResolvedValue({}) });
+    const main = vi.fn();
+    const side = vi.fn();
+    client.sendMessage('s1', [], main).catch(() => {});
+    client.sendMessage('s2', [], side).catch(() => {});
+
+    dispatch(client, { sessionId: 's2', update: messageUpdate('over there') });
+
+    expect(side).toHaveBeenCalledTimes(1);
+    expect(main).not.toHaveBeenCalled();
+  });
+
+  it('delivers session-id-less updates only when a single stream is active', async () => {
+    const client = new AcpClient('opencode');
+    Reflect.set(client, 'transport', { request: vi.fn().mockResolvedValue({}) });
+    const a = vi.fn();
+    const b = vi.fn();
+    client.sendMessage('s1', [], a).catch(() => {});
+
+    dispatch(client, { update: messageUpdate('legacy') });
+    expect(a).toHaveBeenCalledTimes(1);
+
+    client.sendMessage('s2', [], b).catch(() => {});
+    dispatch(client, { update: messageUpdate('ambiguous') });
+    expect(a).toHaveBeenCalledTimes(1);
+    expect(b).not.toHaveBeenCalled();
+  });
+
+  it('rejects a second concurrent stream for the same session', async () => {
+    const client = new AcpClient('opencode');
+    Reflect.set(client, 'transport', { request: vi.fn().mockResolvedValue(new Promise(() => {})) });
+    client.sendMessage('s1', [], vi.fn()).catch(() => {});
+    await expect(client.sendMessage('s1', [], vi.fn())).rejects.toThrow(Error);
+  });
+
+  it('gates client-state application to the main or replaying session', async () => {
+    const client = new AcpClient('opencode');
+    Reflect.set(client, 'transport', { request: vi.fn().mockResolvedValue({}) });
+    Reflect.set(client, 'sessionId_', 's1');
+    const applySpy = vi.spyOn(client as unknown as { applySessionUpdate(u: unknown): void }, 'applySessionUpdate');
+    const chunkHandler = vi.fn();
+    client.sendMessage('s1', [], chunkHandler).catch(() => {});
+
+    dispatch(client, { sessionId: 'side-1', update: messageUpdate('from side chat') });
+    expect(applySpy).not.toHaveBeenCalled();
+
+    dispatch(client, { sessionId: 's1', update: messageUpdate('mine') });
+    expect(applySpy).toHaveBeenCalledTimes(1);
+
+    // During a replay the replaying session also owns client state.
+    Reflect.set(client, 'replaySessionId', 's2');
+    dispatch(client, { sessionId: 's2', update: messageUpdate('replaying') });
+    expect(applySpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('routes replay updates to the replay handler when no stream is active', async () => {
+    const client = new AcpClient('opencode');
+    const replay = vi.fn();
+    Reflect.set(client, 'transport', { request: vi.fn().mockResolvedValue({}) });
+    Reflect.set(client, 'replaySessionId', 's9');
+    Reflect.set(client, 'replayHandler', replay);
+
+    dispatch(client, { sessionId: 's9', update: messageUpdate('restored') });
+
+    expect(replay).toHaveBeenCalledTimes(1);
+    expect(replay).toHaveBeenCalledWith(expect.objectContaining({ kind: 'message_chunk', chunkText: 'restored' }));
   });
 });
 

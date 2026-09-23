@@ -1,6 +1,7 @@
-﻿import { Plugin, Notice, TFile } from 'obsidian';
+﻿import { Plugin, Notice, TFile, TFolder } from 'obsidian';
 import { AgentRuntime } from './client/agent';
 import { AcpClient } from './client/acp';
+import type { VaultWriteIo } from './client/fsDelegate';
 import { applyPermissionTier } from './client/permissionTier';
 import { CoOberView } from './view/CoOberView';
 import { CoOberSettingsTab } from './settings';
@@ -170,10 +171,40 @@ export default class CoOberPlugin extends Plugin {
     }
   }
 
+  /**
+   * Agent fs/writeTextFile goes through the Vault API so the metadata index
+   * and open editors stay in sync; raw fs stays only as an out-of-vault fallback.
+   */
+  private createVaultIo(): VaultWriteIo {
+    const app = this.app;
+    return {
+      async writeText(relPath, content) {
+        const existing = app.vault.getAbstractFileByPath(relPath);
+        if (existing instanceof TFile) {
+          await app.vault.modify(existing, content);
+          return;
+        }
+        let parent = '';
+        for (const dir of relPath.split('/').slice(0, -1)) {
+          parent = parent ? `${parent}/${dir}` : dir;
+          if (!app.vault.getAbstractFileByPath(parent)) {
+            try {
+              await app.vault.createFolder(parent);
+            } catch (e) {
+              if (!(e instanceof Error) || !e.message.includes('already exists')) throw e;
+            }
+          }
+        }
+        if (existing instanceof TFolder) throw new Error(`Cannot write over folder: ${relPath}`);
+        await app.vault.create(relPath, content);
+      },
+    };
+  }
+
   private async connectClient(): Promise<boolean> {
     this.resolveClientWaiters(false);
     try {
-      const acp = new AcpClient(this.settings.opencodePath, getVaultPath(this.app));
+      const acp = new AcpClient(this.settings.opencodePath, getVaultPath(this.app), this.createVaultIo());
       await acp.connect();
       this.client = new AgentRuntime(acp);
       this.client.permissionMode = this.settings.permissionMode;

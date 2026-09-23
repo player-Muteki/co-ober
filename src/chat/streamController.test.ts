@@ -566,4 +566,27 @@ describe('StreamController', () => {
     expect(errorSpy).toHaveBeenCalledWith('[co-ober] save session:', error);
     errorSpy.mockRestore();
   });
+
+  it('stamps streamed plan updates on state (post-turn refresh gate)', () => {
+    vi.setSystemTime(new Date('2026-01-01T00:00:05Z'));
+
+    controller.handleChunk({
+      kind: 'plan',
+      entries: [{ content: 'Step 1', status: 'pending', priority: 'high' }],
+    });
+
+    expect(deps.renderer.setPlanEntries).toHaveBeenCalledTimes(1);
+    expect(deps.state.lastPlanUpdateAt).toBe(Date.now());
+  });
+
+  it('does not schedule saves after dispose', async () => {
+    controller.saveMessage('user', 'first', 'text');
+    await controller.dispose(); // flushes the pending save (1 call)
+
+    controller.saveMessage('user', 'late', 'text');
+    vi.runAllTimers();
+
+    // dispose's own flush is the only save; the late message schedules none.
+    expect(deps.sessionStore.save).toHaveBeenCalledOnce();
+  });
 });

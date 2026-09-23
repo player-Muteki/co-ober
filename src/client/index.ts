@@ -22,6 +22,8 @@ export interface ClientHandlers {
   onReconnect?: () => Promise<void>;
   onReconnectFailed?: () => void;
   onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
+  /** Called when an inbound permission request fails schema validation and had to be cancelled. */
+  onPermissionUnreadable?: (summary: string) => void;
 }
 
 export interface OpencodeClient {

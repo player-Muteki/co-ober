@@ -24,6 +24,66 @@ describe('FsDelegate', () => {
 		});
 	});
 
+	describe('writeTextFile', () => {
+		it('routes in-vault writes through the injected VaultWriteIo (vault-path relative)', async () => {
+			const writes: Array<[string, string]> = [];
+			// Trailing slash in vaultPath must not defeat the boundary check or the rel-path.
+			const ioDelegate = new FsDelegate({
+				vaultPath: '/vault/',
+				maxBytes: 8000,
+				vaultIo: {
+					writeText: async (rel, content) => {
+						writes.push([rel, content]);
+					},
+				},
+			});
+
+			const result = await ioDelegate.writeTextFile('notes/a.md', 'hello');
+
+			expect(result.success).toBe(true);
+			expect(writes).toEqual([['notes/a.md', 'hello']]);
+		});
+
+		it('refuses absolute paths outside the vault without touching vaultIo', async () => {
+			const writeText = vi.fn();
+			const ioDelegate = new FsDelegate({ vaultPath: '/vault', maxBytes: 8000, vaultIo: { writeText } });
+
+			const result = await ioDelegate.writeTextFile('/etc/passwd', 'x');
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain('outside vault');
+			expect(writeText).not.toHaveBeenCalled();
+		});
+
+		it('refuses to overwrite the vault root itself', async () => {
+			const writeText = vi.fn();
+			const ioDelegate = new FsDelegate({ vaultPath: '/vault', maxBytes: 8000, vaultIo: { writeText } });
+
+			const result = await ioDelegate.writeTextFile('/vault', 'x');
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain('vault root');
+			expect(writeText).not.toHaveBeenCalled();
+		});
+
+		it('reports VaultWriteIo failures as write errors', async () => {
+			const ioDelegate = new FsDelegate({
+				vaultPath: '/vault',
+				maxBytes: 8000,
+				vaultIo: {
+					writeText: async () => {
+						throw new Error('disk on fire');
+					},
+				},
+			});
+
+			const result = await ioDelegate.writeTextFile('a.md', 'x');
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain('disk on fire');
+		});
+	});
+
 	describe('readTextFile', () => {
 		it('reads file within vault boundary', () => {
 			(existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);

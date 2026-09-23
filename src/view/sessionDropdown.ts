@@ -29,6 +29,8 @@ export interface SessionDropdownCallbacks {
 export class SessionDropdown {
 	private dropdownEl: HTMLDivElement | null = null;
 	private outsideHandler: ((e: MouseEvent) => void) | null = null;
+	/** Armed delete-confirm timers; must not fire after the dropdown closes. */
+	private pendingDeleteTimers = new Set<number>();
 	private doc: Document;
 	private nativeSessions: SessionMeta[] = [];
 	private nativeLoading = false;
@@ -237,6 +239,8 @@ export class SessionDropdown {
 	}
 
 	close(): void {
+		for (const timer of this.pendingDeleteTimers) window.clearTimeout(timer);
+		this.pendingDeleteTimers.clear();
 		if (this.dropdownEl) {
 			this.dropdownEl.remove();
 			this.dropdownEl = null;
@@ -290,6 +294,7 @@ export class SessionDropdown {
 		const reset = (): void => {
 			if (confirmTimer !== null) {
 				window.clearTimeout(confirmTimer);
+				this.pendingDeleteTimers.delete(confirmTimer);
 				confirmTimer = null;
 			}
 			button.classList.remove('is-confirm');
@@ -303,6 +308,7 @@ export class SessionDropdown {
 				button.textContent = '✓';
 				button.setAttribute('title', t().sessionDropdown.confirmDelete);
 				confirmTimer = window.setTimeout(reset, DELETE_CONFIRM_TIMEOUT_MS);
+				this.pendingDeleteTimers.add(confirmTimer);
 				return;
 			}
 			reset();

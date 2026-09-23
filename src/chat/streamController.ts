@@ -167,6 +167,7 @@ export class StreamController {
       }
       case 'plan': {
         renderer.setPlanEntries(ch.entries);
+        state.lastPlanUpdateAt = Date.now();
         break;
       }
       case 'config_options': {
@@ -362,6 +363,7 @@ export class StreamController {
   }
 
   private scheduleSave(): void {
+    if (this.disposed) return;
     if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => {
       this.saveTimer = null;

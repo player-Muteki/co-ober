@@ -417,6 +417,9 @@ export class CoOberViewController {
         this.deps.renderer.addError(t().error.reconnectFailed);
         this.handleDisconnect();
       },
+      onPermissionUnreadable: () => {
+        this.deps.renderer.addError(t().permission.unreadable);
+      },
       onPermissionRequest: async (req) =>
         client.permissionMode === 'safe'
           ? this.deps.permissionBanner.show(req)
@@ -913,22 +916,27 @@ export class CoOberViewController {
         if (this.genId !== currentGen || !this.busy || this.state.sessionId !== sessionId) return;
         this.streamCtrl.handleChunk(ch);
       });
-      if (response?.usage) {
-        this.state.usage = {
-          totalTokens: response.usage.totalTokens ?? 0,
-          inputTokens: response.usage.inputTokens ?? 0,
-          outputTokens: response.usage.outputTokens ?? 0,
-          thoughtTokens: response.usage.thoughtTokens,
-          cost: this.state.usage?.cost,
-          contextWindow: this.state.usage?.contextWindow,
-          contextTokens: this.state.usage?.contextTokens,
-        };
-        this.applyResponseMeta(response._meta);
-        this.deps.updateContextMeter(this.state.usage);
-      } else {
-        this.applyResponseMeta(response?._meta);
+      // If this turn was superseded (new prompt, session switch), a newer
+      // generation owns the transcript — don't clobber its state.
+      if (this.genId === currentGen && this.state.sessionId === sessionId) {
+        if (response?.usage) {
+          this.state.usage = {
+            totalTokens: response.usage.totalTokens ?? 0,
+            inputTokens: response.usage.inputTokens ?? 0,
+            outputTokens: response.usage.outputTokens ?? 0,
+            thoughtTokens: response.usage.thoughtTokens,
+            cost: this.state.usage?.cost,
+            contextWindow: this.state.usage?.contextWindow,
+            contextTokens: this.state.usage?.contextTokens,
+          };
+          this.applyResponseMeta(response._meta);
+          this.deps.updateContextMeter(this.state.usage);
+        } else {
+          this.applyResponseMeta(response?._meta);
+        }
+        this.surfaceStopReason(response);
+        if (config.onAfterResponse) await config.onAfterResponse(response);
       }
-      if (config.onAfterResponse) await config.onAfterResponse(response);
     } catch (e: unknown) {
       if (!this.state.isConnected && !(e instanceof AcpProcessExitError)) return;
       if (this.state.sessionId === sessionId) {
@@ -948,23 +956,45 @@ export class CoOberViewController {
         }
       }
     } finally {
-      // Turn over: buffered tool calls that never received a final
-      // update must render with a terminal state instead of vanishing.
-      this.streamCtrl.finalizeBufferedToolCalls();
-      this.deps.renderer.removeAssistantPlaceholder();
       if (this.genId === currentGen) {
+        // Turn over: buffered tool calls that never received a final
+        // update must render with a terminal state instead of vanishing.
+        // Only safe while this generation still owns the transcript; a
+        // newer turn has its own placeholder and tool-call buffers.
+        this.streamCtrl.finalizeBufferedToolCalls();
+        this.deps.renderer.removeAssistantPlaceholder();
         this.busy = false;
         this.state.isStreaming = false;
         this.deps.input.setStreaming(false);
         this.deps.toolbar.setSending(false);
         this.deps.input.focus();
         config.onFinally?.();
-        // The agent may have rewritten its todo list this turn; resync the plan panel.
-        void this.refreshNativePlan(sessionId).catch(() => {});
+        // The agent may have rewritten its todo list this turn; resync the
+        // plan panel — but skip when the stream already delivered a plan
+        // after this turn started, so the refresh can't overwrite it.
+        if ((this.state.lastPlanUpdateAt ?? 0) < this.sendStartTime) {
+          void this.refreshNativePlan(sessionId).catch(() => {});
+        }
         // Fold the finished turn: thinking/tool steps behind a summary header.
         this.deps.renderer.collapseTurns?.();
       }
     }
+  }
+
+  /**
+   * Make non-successful turn endings visible: a refusal or a truncated
+   * response must not render as a normal completed answer.
+   */
+  private surfaceStopReason(response: AcpResponse | undefined): void {
+    const reason = response?.stopReason;
+    if (reason === 'refusal') {
+      this.deps.renderer.addError(t().stopReason.refusal);
+    } else if (reason === 'max_tokens') {
+      this.deps.renderer.addSystemMessage(t().stopReason.maxTokens);
+    } else if (reason === 'max_turn_requests') {
+      this.deps.renderer.addSystemMessage(t().stopReason.maxTurnRequests);
+    }
+    // 'cancelled' / 'interrupted' are user-initiated; no banner needed.
   }
 
   /**

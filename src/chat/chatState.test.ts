@@ -61,4 +61,14 @@ describe('ChatState', () => {
     expect(state.availableModels).toEqual([]);
     expect(state.availableModes).toEqual([]);
   });
+
+  it('should reset the plan-refresh gate timestamp on clear()', () => {
+    const state = new ChatState();
+    expect(state.lastPlanUpdateAt).toBeNull();
+    state.lastPlanUpdateAt = 12345;
+
+    state.clear();
+
+    expect(state.lastPlanUpdateAt).toBeNull();
+  });
 });

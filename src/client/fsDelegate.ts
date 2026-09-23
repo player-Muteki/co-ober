@@ -11,18 +11,31 @@ export interface FsWriteResult {
 	error?: string;
 }
 
+/**
+ * Obsidian-aware write path. When provided, writes go through the vault API so
+ * the metadata cache and open editors see the change; when absent, the raw fs
+ * fallback remains for tests and headless use.
+ */
+export interface VaultWriteIo {
+	/** Write a vault-relative path, creating parent folders and overwriting as needed. */
+	writeText(relPath: string, content: string): Promise<void>;
+}
+
 export interface FsDelegateOptions {
 	vaultPath: string;
 	maxBytes: number;
+	vaultIo?: VaultWriteIo;
 }
 
 export class FsDelegate {
 	private vaultPath: string;
 	private maxBytes: number;
+	private vaultIo: VaultWriteIo | null;
 
 	constructor(options: FsDelegateOptions) {
 		this.vaultPath = this.normalizePath(options.vaultPath);
 		this.maxBytes = options.maxBytes;
+		this.vaultIo = options.vaultIo ?? null;
 	}
 
 	setMaxBytes(maxBytes: number): void {
@@ -69,11 +82,20 @@ export class FsDelegate {
 	 * @param content - Content to write
 	 * @returns Success status or error message
 	 */
-	writeTextFile(filePath: string, content: string): FsWriteResult {
+	async writeTextFile(filePath: string, content: string): Promise<FsWriteResult> {
 		try {
 			const resolvedPath = this.resolveWithinVault(filePath);
 			if (!resolvedPath) {
 				return { success: false, error: 'Access denied: path is outside vault boundary' };
+			}
+
+			if (this.vaultIo) {
+				const rel = toVaultRelativePath(resolvedPath, this.vaultPath);
+				if (!rel) {
+					return { success: false, error: 'Refusing to write the vault root' };
+				}
+				await this.vaultIo.writeText(rel, content);
+				return { success: true };
 			}
 
 			// Ensure parent directory exists
@@ -122,7 +144,8 @@ export class FsDelegate {
 	 * Normalize path separators and remove trailing slashes.
 	 */
 	private normalizePath(p: string): string {
-		return normalize(p).replace(/[/\\]$/, '');
+		const normalized = normalize(p);
+		return normalized.replace(/[/\\]+$/, '') || normalized;
 	}
 
 	/**
