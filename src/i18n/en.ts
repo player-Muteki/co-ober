@@ -24,6 +24,8 @@ const en = {
     contentSection: 'Content matches',
     actionFailed: 'Session action failed: {error}',
     rename: 'Rename session',
+    pin: 'Pin session',
+    unpin: 'Unpin session',
     confirmDelete: 'Click again to confirm deletion',
     summaryBadge: '{files} files +{additions} -{deletions}',
   },

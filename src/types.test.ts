@@ -11,7 +11,7 @@ describe('DEFAULT_SETTINGS', () => {
     expect(DEFAULT_SETTINGS).toHaveProperty('defaultNoteFolder', 'opencode-sync');
     expect(DEFAULT_SETTINGS).toHaveProperty('systemPrompt', '');
     expect(DEFAULT_SETTINGS).toHaveProperty('maxNoteSize', 8000);
-    expect(DEFAULT_SETTINGS).toHaveProperty('autoConnect', false);
+    expect(DEFAULT_SETTINGS).toHaveProperty('autoConnect', true);
     expect(DEFAULT_SETTINGS).toHaveProperty('autoScrollEnabled', true);
     expect(DEFAULT_SETTINGS).toHaveProperty('maxSessionMessages', 200);
     expect(DEFAULT_SETTINGS).toHaveProperty('sessionRetentionDays', 30);

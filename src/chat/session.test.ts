@@ -61,6 +61,35 @@ describe('SessionRepository', () => {
     expect(repository.rename('missing', 'x')).toBe(false);
   });
 
+  it('lists pinned sessions first, then most recently active', () => {
+    const { repository } = createRepository();
+    repository.hydrate([createSession('a', 100), createSession('b', 300), createSession('c', 200)], 'a');
+
+    expect(repository.setPinned('b', true)).toBe(true);
+
+    expect(repository.list().map((s) => s.sessionId)).toEqual(['b', 'c', 'a']);
+    expect(repository.list()[0].pinned).toBe(true);
+    expect(repository.list()[1].pinned).toBeUndefined();
+  });
+
+  it('unpinning drops the flag and restores recency order', () => {
+    const { repository } = createRepository();
+    const session = createSession('a', 100);
+    repository.hydrate([session, createSession('b', 300)], 'a');
+    repository.setPinned('a', true);
+
+    expect(repository.setPinned('a', false)).toBe(true);
+
+    expect(session.pinned).toBeUndefined();
+    expect(repository.list().map((s) => s.sessionId)).toEqual(['b', 'a']);
+    expect(repository.list().every((s) => s.pinned === undefined)).toBe(true);
+  });
+
+  it('returns false when pinning an unknown session', () => {
+    const { repository } = createRepository();
+    expect(repository.setPinned('missing', true)).toBe(false);
+  });
+
   it('localizes new session titles', () => {
     setLocale('zh');
     const { repository } = createRepository();

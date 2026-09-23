@@ -108,6 +108,37 @@ describe('CoOberPlugin persistence', () => {
   });
 });
 
+describe('CoOberPlugin.loadData autoConnect migration', () => {
+  it('keeps auto-connect for legacy data where a stored false was never honored', async () => {
+    const loadSpy = vi.spyOn(Plugin.prototype, 'loadData').mockResolvedValue({
+      settings: { autoConnect: false },
+      sessions: [],
+      activeSessionId: null,
+    });
+    const plugin = new CoOberPlugin({} as never, {} as never);
+
+    const data = await plugin.loadData();
+
+    expect(data?.settings.autoConnect).toBe(true);
+    loadSpy.mockRestore();
+  });
+
+  it('respects an explicit false saved under the current schema', async () => {
+    const loadSpy = vi.spyOn(Plugin.prototype, 'loadData').mockResolvedValue({
+      schemaVersion: 1,
+      settings: { autoConnect: false },
+      sessions: [],
+      activeSessionId: null,
+    });
+    const plugin = new CoOberPlugin({} as never, {} as never);
+
+    const data = await plugin.loadData();
+
+    expect(data?.settings.autoConnect).toBe(false);
+    loadSpy.mockRestore();
+  });
+});
+
 function createLeaf(onDetach?: () => void) {
   return {
     setViewState: vi.fn().mockResolvedValue(undefined),

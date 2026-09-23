@@ -10,6 +10,7 @@ export interface SessionStore {
   rekey(oldId: string, newId: string): void;
   setActive(id: string): void;
   rename(id: string, title: string): boolean;
+  setPinned(id: string, pinned: boolean): boolean;
   list(): SessionMeta[];
   save(): Promise<void>;
   remove(id: string): void;
@@ -143,12 +144,27 @@ export class SessionRepository implements SessionStore {
     return true;
   }
 
+  setPinned(id: string, pinned: boolean): boolean {
+    const session = this.sessions.get(id);
+    if (!session) return false;
+    if (pinned) session.pinned = true;
+    else delete session.pinned;
+    return true;
+  }
+
+  /** Pinned conversations first, then most recently active. */
   list(): SessionMeta[] {
-    return [...this.sessions.values()].map((session) => ({
-      sessionId: session.sessionId,
-      title: session.title,
-      updatedAt: new Date(session.updatedAt).toISOString(),
-    }));
+    return [...this.sessions.values()]
+      .sort((a, b) => Number(b.pinned === true) - Number(a.pinned === true) || b.updatedAt - a.updatedAt)
+      .map((session) => {
+        const meta: SessionMeta = {
+          sessionId: session.sessionId,
+          title: session.title,
+          updatedAt: new Date(session.updatedAt).toISOString(),
+        };
+        if (session.pinned) meta.pinned = true;
+        return meta;
+      });
   }
 
   save(): Promise<void> {

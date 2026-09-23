@@ -95,7 +95,7 @@ export class CoOberSettingsTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName(labels.autostart.name)
       .setDesc(labels.autostart.desc)
-      .addToggle((t) => t.setValue(s.autoConnect ?? false)
+      .addToggle((t) => t.setValue(s.autoConnect ?? true)
         .onChange(async (v) => { s.autoConnect = v; await this.save(); }));
 
     this.addDiagnosticsBlock(containerEl);

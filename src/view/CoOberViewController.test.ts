@@ -2276,6 +2276,24 @@ describe('CoOberViewController — side chat (/btw)', () => {
     expect(client.closeSession).not.toHaveBeenCalled();
   });
 
+  it('abortSideChat cancels the side session turn', async () => {
+    const client = forkClient();
+    controller.state.sessionId = 'local-1';
+    await controller.startSideChat('hi');
+
+    controller.abortSideChat();
+
+    expect(client.cancel).toHaveBeenCalledWith('forked-session');
+  });
+
+  it('abortSideChat is inert without an active side session', () => {
+    const client = forkClient();
+
+    controller.abortSideChat();
+
+    expect(client.cancel).not.toHaveBeenCalled();
+  });
+
   it('tears the panel down from resetConversationView', async () => {
     const client = forkClient();
     controller.state.sessionId = 'local-1';

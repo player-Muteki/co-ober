@@ -26,6 +26,8 @@ const zh: Locale = {
     contentSection: '内容匹配',
     actionFailed: '会话操作失败：{error}',
     rename: '重命名会话',
+    pin: '置顶会话',
+    unpin: '取消置顶',
     confirmDelete: '再次点击以确认删除',
     summaryBadge: '{files} 个文件 +{additions} -{deletions}',
   },

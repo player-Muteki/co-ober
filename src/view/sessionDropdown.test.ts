@@ -284,6 +284,56 @@ describe('SessionDropdown', () => {
       dd.destroy();
     });
 
+    it('renders pin buttons reflecting each session state', () => {
+      sessionStore.list.mockReturnValue([
+        { sessionId: 'session-1', title: 'Chat 1', pinned: true },
+        { sessionId: 'session-2', title: 'Chat 2' },
+      ]);
+      dropdown.open();
+      const items = container.querySelectorAll('.co-ober-session-item');
+      expect(items[0].querySelector('.session-pin')?.textContent).toBe('★');
+      expect(items[1].querySelector('.session-pin')?.textContent).toBe('☆');
+    });
+
+    it('calls onTogglePin with the flipped state and re-renders', async () => {
+      const onTogglePin = vi.fn().mockResolvedValue(undefined);
+      const dd = new SessionDropdown(
+        container,
+        anchor,
+        sessionStore as any,
+        () => 'session-1',
+        { ...callbacks, onTogglePin } as any,
+        () => ({ sessionCapabilities: { close: true, fork: true, list: true, resume: true } }),
+      );
+      dd.open();
+      (container.querySelectorAll('.co-ober-session-item')[1].querySelector('.session-pin') as HTMLElement).click();
+      await new Promise(r => setTimeout(r, 10));
+      expect(onTogglePin).toHaveBeenCalledWith('session-2', true);
+      expect(container.querySelectorAll('.co-ober-session-item').length).toBe(3);
+      dd.destroy();
+    });
+
+    it('unpins a pinned session through its star button', async () => {
+      sessionStore.list.mockReturnValue([
+        { sessionId: 'session-1', title: 'Chat 1', pinned: true },
+        { sessionId: 'session-2', title: 'Chat 2' },
+      ]);
+      const onTogglePin = vi.fn().mockResolvedValue(undefined);
+      const dd = new SessionDropdown(
+        container,
+        anchor,
+        sessionStore as any,
+        () => 'session-2',
+        { ...callbacks, onTogglePin } as any,
+        () => ({ sessionCapabilities: { close: true, fork: true, list: true, resume: true } }),
+      );
+      dd.open();
+      (container.querySelector('.session-pin') as HTMLElement).click();
+      await new Promise(r => setTimeout(r, 10));
+      expect(onTogglePin).toHaveBeenCalledWith('session-1', false);
+      dd.destroy();
+    });
+
     it('notices the user when a session action rejects', async () => {
       const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       Notice.messages.length = 0;

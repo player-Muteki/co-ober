@@ -27,13 +27,14 @@ describe('SideChatPanel', () => {
     document.body.appendChild(container);
   });
 
-  function makePanel(overrides: Partial<{ ask: SideChatAsk; isMainBusy: () => boolean; onClose: () => void }> = {}) {
+  function makePanel(overrides: Partial<{ ask: SideChatAsk; isMainBusy: () => boolean; onClose: () => void; abort: () => void }> = {}) {
     const base = makeAsk();
     const deps = {
       containerEl: container,
       ask: (overrides.ask ?? base.ask) as SideChatAsk,
       isMainBusy: overrides.isMainBusy ?? (() => false),
       onClose: overrides.onClose ?? vi.fn(),
+      ...(overrides.abort ? { abort: overrides.abort } : {}),
     };
     return { panel: new SideChatPanel(deps), ...base, deps };
   }
@@ -166,5 +167,33 @@ describe('SideChatPanel', () => {
     panel.open('two');
     expect(ask).toHaveBeenCalledTimes(2);
     expect(container.querySelectorAll('.co-ober-side-chat')).toHaveLength(1);
+  });
+
+  it('aborts the in-flight turn when closed while busy', async () => {
+    let release: (() => void) | null = null;
+    const slow: SideChatAsk = () => new Promise<AcpResponse>((resolve) => {
+      release = () => resolve(okResponse);
+    });
+    const abort = vi.fn();
+    const { panel } = makePanel({ ask: slow, abort });
+    void panel.send('hello');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(panel.isBusy()).toBe(true);
+
+    panel.close();
+
+    expect(abort).toHaveBeenCalledTimes(1);
+    release!();
+    await new Promise((r) => setTimeout(r, 0));
+  });
+
+  it('does not abort when closing an idle panel', () => {
+    const abort = vi.fn();
+    const { panel } = makePanel({ abort });
+    panel.open();
+
+    panel.close();
+
+    expect(abort).not.toHaveBeenCalled();
   });
 });

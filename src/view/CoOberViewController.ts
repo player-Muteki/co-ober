@@ -749,6 +749,15 @@ export class CoOberViewController {
     }
   }
 
+  /** Cancel a still-streaming side-chat turn; the panel calls this when closed mid-answer. */
+  abortSideChat(): void {
+    const sideId = this.sideChatSessionId;
+    if (!sideId) return;
+    const client = this.deps.runtime.getClient();
+    if (!client) return;
+    void client.cancel(sideId).catch((e) => console.warn('[co-ober] side chat cancel:', e));
+  }
+
   async resumeSession(sessionId: string): Promise<void> {    const client = this.deps.runtime.getClient();
     if (!client) return;
     const collector = new SessionReplayCollector();

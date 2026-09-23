@@ -11,7 +11,7 @@ import { getVaultPath } from './utils/vault';
 import { setLocale, t } from './i18n/index';
 import { Mutex } from './utils/mutex';
 import { SessionRepository } from './chat/session';
-import { migratePluginDataSessions, PLUGIN_DATA_SCHEMA_VERSION } from './chat/pluginDataMigration';
+import { migratePluginDataSessions, readSchemaVersion, PLUGIN_DATA_SCHEMA_VERSION } from './chat/pluginDataMigration';
 
 export default class CoOberPlugin extends Plugin {
   settings: CoOberSettings = DEFAULT_SETTINGS;
@@ -71,9 +71,13 @@ export default class CoOberPlugin extends Plugin {
     if (hasPluginData) {
       const data = saved as Partial<PluginData>;
       const restored = migratePluginDataSessions(data.sessions, data.activeSessionId);
+      const settings = { ...DEFAULT_SETTINGS, ...(data.settings ?? {}) };
+      // The autoConnect toggle did nothing before 0.1.34, so a stored false in
+      // pre-schema data is the old default, not a choice: keep auto-connect.
+      if (readSchemaVersion(saved) < 1 && settings.autoConnect === false) settings.autoConnect = true;
       return {
         schemaVersion: PLUGIN_DATA_SCHEMA_VERSION,
-        settings: { ...DEFAULT_SETTINGS, ...(data.settings ?? {}) },
+        settings,
         sessions: restored.sessions,
         activeSessionId: restored.activeSessionId,
       };

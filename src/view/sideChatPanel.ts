@@ -9,6 +9,8 @@ export interface SideChatPanelDeps {
   ask: SideChatAsk;
   isMainBusy: () => boolean;
   onClose?: () => void;
+  /** Invoked when the panel closes while a turn is still streaming. */
+  abort?: () => void;
 }
 
 /**
@@ -126,6 +128,7 @@ export class SideChatPanel {
   }
 
   close(): void {
+    if (this.busy) this.deps.abort?.();
     this.el?.remove();
     this.el = null;
     this.transcriptEl = null;

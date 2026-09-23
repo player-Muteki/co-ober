@@ -352,13 +352,18 @@ export class CoOberView extends ItemView {
         onRename: async (sessionId: string, newTitle: string) => {
           await this.controller.renameSession(sessionId, newTitle);
         },
+        onTogglePin: async (sessionId: string, pinned: boolean) => {
+          this.sessionStore.setPinned(sessionId, pinned);
+          await this.sessionStore.save();
+        },
       },
       () => this.plugin.getClient()?.getAgentCapabilities() ?? null,
       async () => listNativeSessions(this.plugin.getVaultCwd()),
       async (query) => searchNativeSessions(this.plugin.getVaultCwd(), query),
     );
 
-    // Init connection - always try to connect when view opens
+    // Init connection: auto-connect when the setting is on, otherwise leave
+    // the manual reconnect button as the entry point.
     const connectedClient = this.plugin.getClient();
     this.controller.state.isConnected = connectedClient?.isConnected() ?? false;
     if (this.controller.state.isConnected) {
@@ -366,9 +371,10 @@ export class CoOberView extends ItemView {
       void this.controller.syncRuntimeSession(this.controller.getSessionId()).catch((e) => {
         console.error('[co-ober] session sync:', e);
       });
-    } else {
-      // Always try to connect when view opens, not just when autoConnect is true
+    } else if (this.plugin.settings.autoConnect) {
       void this.controller.ensureClientConnected();
+    } else {
+      this.showReconnectBtn();
     }
 
     // Restore previous messages if any
@@ -546,6 +552,7 @@ export class CoOberView extends ItemView {
         containerEl: this.contentEl,
         ask,
         isMainBusy: () => this.controller.isBusy(),
+        abort: () => this.controller.abortSideChat(),
         onClose: () => {
           this.sideChatPanel = null;
           void this.controller.endSideChat();

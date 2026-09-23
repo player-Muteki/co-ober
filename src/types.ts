@@ -17,6 +17,8 @@ export interface SessionMeta {
   agent?: string;
   /** Model id the session last ran on (native v1 database only). */
   model?: string;
+  /** Local sessions only: pinned conversations sort to the top of the dropdown. */
+  pinned?: boolean;
 }
 
 export interface PromptPart {
@@ -345,6 +347,8 @@ export interface SerializedSession {
   messages: SerializedMessage[];
   createdAt: number;
   updatedAt: number;
+  /** Keep this conversation at the top of the session dropdown. */
+  pinned?: boolean;
 }
 
 export interface PluginData {
@@ -401,7 +405,8 @@ export const DEFAULT_SETTINGS: CoOberSettings = {
 	customAgents: [],
 	activeCustomAgentId: '',
 	commonModels: [],
-	autoConnect: false,
+	// The view auto-connects on open when this is on; off shows the manual button.
+	autoConnect: true,
 	autoScrollEnabled: true,
 	maxSessionMessages: 200,
 	sessionRetentionDays: 30,

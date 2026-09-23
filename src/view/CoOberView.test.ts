@@ -78,6 +78,17 @@ describe('CoOberView runtime session sync', () => {
     expect(plugin.getClient()).toBeNull();
   });
 
+  it('leaves the reconnect button as the entry point when autoConnect is off', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ settings: { autoConnect: false } });
+    const view = createView(plugin);
+
+    await view.onOpen();
+
+    expect(plugin.initClient).not.toHaveBeenCalled();
+    expect(view.contentEl.querySelector('.co-ober-reconnect-btn')).not.toBeNull();
+  });
+
   it('connects and creates a runtime session when sending the first message', async () => {
     setLocale('en');
     const client = createClient();
@@ -201,6 +212,7 @@ function createPlugin(overrides: {
       activeCustomAgentId: '',
       commonModels: [],
       autoScrollEnabled: true,
+      autoConnect: true,
       ...(overrides.settings ?? {}),
     },
     loadPluginData: vi.fn().mockResolvedValue(undefined),

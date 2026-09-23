@@ -24,6 +24,7 @@ export interface SessionDropdownCallbacks {
 	onFork?(sessionId: string): Promise<void>;
 	onResume?(sessionId: string): Promise<void>;
 	onRename?(sessionId: string, newTitle: string): Promise<void>;
+	onTogglePin?(sessionId: string, pinned: boolean): Promise<void>;
 }
 
 export class SessionDropdown {
@@ -98,6 +99,10 @@ export class SessionDropdown {
 					cls: `co-ober-session-item${s.sessionId === currentId ? ' active' : ''}`,
 				});
 				it.createSpan({ text: s.title || s.sessionId, cls: 'session-label' });
+				this.createActionButton(it, 'session-pin', s.pinned ? '★' : '☆', true, s.pinned ? t().sessionDropdown.unpin : t().sessionDropdown.pin, async () => {
+					await this.callbacks.onTogglePin?.(s.sessionId, !(s.pinned === true));
+					this.rerender();
+				});
 				this.createActionButton(it, 'session-rename', '✎', capabilities?.list !== false, t().sessionDropdown.rename, async () => {
 					this.startInlineRename(it, s);
 				});
