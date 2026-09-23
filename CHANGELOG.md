@@ -1,3 +1,18 @@
+## 0.1.34 - 2026-09-23
+
+### Added
+- **Non-text streamed content**: chunk content now parses permissively instead of being dropped at the schema gate — image payloads render inline through a dedicated assistant-image style, other typed payloads (audio, resources) ride along unpainted, and interleaved text keeps accumulating correctly.
+- **Pinned conversations**: each session row gains a star button; pinned chats sort to the top of the dropdown, the rest by most recently active, and pins persist with the plugin data.
+- **`data.json` schema versioning**: plugin data is saved under a schema version and older files are sanitized at load (v0→v1), so a truncated or hand-edited `data.json` degrades instead of crashing hydrate.
+- **Native agent/model metadata**: the v1 native session listing reads each session's `agent` and `model` columns into `SessionMeta`.
+
+### Fixed
+- **Ref-preserving stop**: pressing stop returns plain queued prompts to the input but keeps entries carrying @-mention or image refs queued — the textarea cannot represent refs, and dropping them silently lost context.
+- **No more silent error swallowing**: a turn error discarded while disconnected and a cosmetic enrichment save failure now leave a console trace.
+- **Plan and update resilience**: plan entries with missing fields fall back to neutral defaults instead of dropping the whole update, and an unknown `sessionUpdate` kind warns once per kind rather than vanishing silently.
+- **Side-chat close aborts the turn**: closing the side-chat panel mid-answer cancels the in-flight turn instead of leaving a orphaned stream running.
+- **autoConnect actually honored**: the toggle now controls startup behavior — on auto-connects the view, off leaves the manual reconnect button as the entry point — and it defaults to on; a legacy stored `false` (which the dead toggle could never express before 0.1.34) migrates to keep existing auto-connect behavior, while an explicit off after this release is respected.
+
 ## 0.1.33 - 2026-09-23
 
 ### Added
