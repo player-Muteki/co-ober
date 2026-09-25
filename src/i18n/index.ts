@@ -30,3 +30,17 @@ export function getLocale(): Locale {
 export function t(): Locale {
   return currentLocale;
 }
+
+/**
+ * Resolve a dotted key path (e.g. "copy.button") against the active locale.
+ * Returns undefined for missing paths or non-string leaves, so callers can
+ * fall back to their own rendering instead of printing "undefined".
+ */
+export function lookupLocaleString(path: string): string | undefined {
+  let node: unknown = currentLocale;
+  for (const seg of path.split('.')) {
+    if (typeof node !== 'object' || node === null) return undefined;
+    node = (node as Record<string, unknown>)[seg];
+  }
+  return typeof node === 'string' ? node : undefined;
+}

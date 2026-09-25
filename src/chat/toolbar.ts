@@ -117,6 +117,7 @@ export class InputToolbar {
     // Send/Stop button
     this.sendBtn = row.createEl('button', { cls: 'co-ober-send-btn' });
     setIcon(this.sendBtn, 'send');
+    this.sendBtn.setAttribute('aria-label', t().toolbar.sendAria);
     this.sendBtn.onclick = () => this.handleSendClick();
   }
 
@@ -402,6 +403,7 @@ export class InputToolbar {
     this.sendBtn.empty();
     setIcon(this.sendBtn, on ? 'square' : 'send');
     this.sendBtn.classList.toggle('mod-stop', on);
+    this.sendBtn.setAttribute('aria-label', on ? t().toolbar.stopAria : t().toolbar.sendAria);
     this.sendBtn.disabled = false;
   }
 

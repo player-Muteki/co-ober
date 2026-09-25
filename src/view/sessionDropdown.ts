@@ -1,6 +1,7 @@
 import { Notice } from 'obsidian';
 import type { SessionStore } from '../chat/session';
 import { t } from '../i18n/index';
+import { isImeComposing } from '../utils/ime';
 import type { AgentCapabilities, SessionMeta } from '../types';
 
 const DELETE_CONFIRM_TIMEOUT_MS = 3000;
@@ -38,6 +39,7 @@ export class SessionDropdown {
 	private nativeLoadedOnce = false;
 	private nativeLoadError: string | null = null;
 	private contentResults: SessionMeta[] = [];
+	private contentSearchFailed = false;
 	private searchToken = 0;
 	/** Live title filter while open; survives mid-open rerenders, cleared on close. */
 	private searchValue = '';
@@ -67,6 +69,7 @@ export class SessionDropdown {
 		const canList = capabilities?.list !== false;
 		const list = this.getRenderableSessions(this.sessionStore.list(), canList);
 		const dd = this.container.createDiv({ cls: 'co-ober-session-list' });
+		dd.setAttribute('aria-label', t().sessionDropdown.listboxAria);
 
 		const rect = this.anchorEl.getBoundingClientRect();
 		dd.setCssProps({
@@ -83,9 +86,16 @@ export class SessionDropdown {
 		if (searchInput && this.searchValue) searchInput.value = this.searchValue;
 
 		const itemsContainer = dd.createDiv({ cls: 'co-ober-session-items' });
+		itemsContainer.setAttribute('role', 'listbox');
 
 		const renderItems = (filter: string) => {
 			itemsContainer.empty();
+			// Native and content sections are appended to dd, below the local
+			// rows, so itemsContainer.empty() cannot reach them. Without this
+			// sweep every keystroke leaves another stale copy behind.
+			for (const el of Array.from(dd.children)) {
+				if (el.classList.contains('co-ober-session-native-section') || el.classList.contains('co-ober-session-content-section')) el.remove();
+			}
 			const filtered = filter && canList
 				? list.filter(s => s.title?.toLowerCase().includes(filter.toLowerCase()))
 				: list;
@@ -102,6 +112,8 @@ export class SessionDropdown {
 				const it = itemsContainer.createDiv({
 					cls: `co-ober-session-item${s.sessionId === currentId ? ' active' : ''}`,
 				});
+				it.setAttribute('role', 'option');
+				it.setAttribute('aria-selected', String(s.sessionId === currentId));
 				it.createSpan({ text: s.title || s.sessionId, cls: 'session-label' });
 				this.createActionButton(it, 'session-pin', s.pinned ? '★' : '☆', true, s.pinned ? t().sessionDropdown.unpin : t().sessionDropdown.pin, async () => {
 					await this.callbacks.onTogglePin?.(s.sessionId, !(s.pinned === true));
@@ -214,6 +226,7 @@ export class SessionDropdown {
 
 	private async runContentSearch(query: string, onSettled: () => void): Promise<void> {
 		const trimmed = query.trim();
+		this.contentSearchFailed = false;
 		if (!this.searchNativeSessions || trimmed.length < 2) {
 			this.contentResults = [];
 			return;
@@ -225,15 +238,25 @@ export class SessionDropdown {
 			this.contentResults = results;
 			onSettled();
 		} catch (e) {
-			if (token === this.searchToken) this.contentResults = [];
 			console.warn('[co-ober] native session search failed:', e);
+			if (token !== this.searchToken) return;
+			this.contentResults = [];
+			this.contentSearchFailed = true;
+			onSettled();
 		}
 	}
 
 	private renderContentSection(itemsContainer: HTMLElement, currentId: string | null, filter: string): void {
-		if (!this.searchNativeSessions || filter.trim().length < 2 || this.contentResults.length === 0) return;
+		if (!this.searchNativeSessions || filter.trim().length < 2) return;
 		const dd = itemsContainer.parentElement;
 		if (!dd) return;
+		if (this.contentSearchFailed) {
+			// A silent console warning leaves the user believing there are no
+			// matches; say out loud that the search itself failed.
+			itemsContainer.createDiv({ cls: 'co-ober-session-native-error', text: t().sessionDropdown.contentError });
+			return;
+		}
+		if (this.contentResults.length === 0) return;
 
 		const listed = new Set([
 			...this.sessionStore.list().map((s) => s.sessionId),
@@ -368,6 +391,8 @@ export class SessionDropdown {
 			this.rerender({ force: true });
 		};
 		input.addEventListener('keydown', (e: KeyboardEvent) => {
+			// Enter/Escape mid-composition are IME candidate keys, not commit/cancel.
+			if (isImeComposing(e)) return;
 			if (e.key === 'Enter') {
 				e.preventDefault();
 				e.stopPropagation();

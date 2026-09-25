@@ -1,5 +1,6 @@
 import type { ContextRef } from '../types';
 import { t, onLocaleChange } from '../i18n/index';
+import { isImeComposing } from '../utils/ime';
 
 export interface InputCallbacks {
   onSend: (text: string, refs?: ContextRef[]) => void;
@@ -36,6 +37,7 @@ export class ChatInput {
     this.unsubscribeLocale = onLocaleChange(() => this.refreshLocale());
 
     this.keydownHandler = (e: KeyboardEvent) => {
+      if (isImeComposing(e)) return;
       if (e.key === 'Escape' && this.streaming) { e.preventDefault(); this.callbacks.onStop(); return; }
       if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); this.callbacks.onCycleMode?.(1); return; }
       if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); this.callbacks.onCycleMode?.(-1); return; }

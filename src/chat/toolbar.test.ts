@@ -27,6 +27,24 @@ describe('InputToolbar locale refresh', () => {
     expect(container.querySelector('.co-ober-effort-option')?.textContent).toBe('默认');
     expect(container.querySelector('.co-ober-send-btn')?.classList.contains('mod-stop')).toBe(true);
   });
+
+  it('keeps the send button aria-label in sync with its icon and locale', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const toolbar = new InputToolbar(container, {});
+
+    expect(container.querySelector('.co-ober-send-btn')?.getAttribute('aria-label')).toBe('Send message');
+    toolbar.setSending(true);
+    expect(container.querySelector('.co-ober-send-btn')?.getAttribute('aria-label')).toBe('Stop generation');
+
+    setLocale('zh');
+    // refreshLocale re-runs setSending, so the aria label follows too.
+    toolbar.refreshLocale();
+    expect(container.querySelector('.co-ober-send-btn')?.getAttribute('aria-label')).toBe('停止生成');
+    toolbar.setSending(false);
+    expect(container.querySelector('.co-ober-send-btn')?.getAttribute('aria-label')).toBe('发送消息');
+    setLocale('en');
+  });
 });
 
 describe('InputToolbar effort locale refresh', () => {

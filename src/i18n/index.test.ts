@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getLocale, setLocale, t } from './index';
+import { getLocale, lookupLocaleString, setLocale, t } from './index';
 
 describe('i18n locale switching', () => {
   it('switches runtime labels between English and Chinese', () => {
@@ -46,5 +46,26 @@ describe('i18n locale switching', () => {
     expect(t().settings.diagnostics.runtimeDetail).toContain('{commands}');
     expect(t().settings.diagnostics.mcpDetail).toContain('{enabled}');
     expect(t().settings.diagnostics.mcpDetail).toContain('{configured}');
+  });
+});
+
+describe('lookupLocaleString', () => {
+  it('resolves dotted paths against the active locale', () => {
+    setLocale('en');
+    expect(lookupLocaleString('copy.button')).toBe('Copy');
+    expect(lookupLocaleString('toolKind.switch_mode')).toBe('Switch Mode');
+    setLocale('zh');
+    expect(lookupLocaleString('copy.button')).toBe('复制');
+    expect(lookupLocaleString('toolKind.switch_mode')).toBe('切换模式');
+    setLocale('en');
+  });
+
+  it('returns undefined for missing paths and non-string leaves', () => {
+    setLocale('en');
+    expect(lookupLocaleString('nope.nothing')).toBeUndefined();
+    expect(lookupLocaleString('copy.button.extra')).toBeUndefined();
+    expect(lookupLocaleString('appName.extra')).toBeUndefined();
+    // A namespace is an object, not a label.
+    expect(lookupLocaleString('toolbar.effort')).toBeUndefined();
   });
 });

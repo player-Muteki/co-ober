@@ -69,6 +69,17 @@ describe('Autocomplete', () => {
       const item = container.querySelector('.co-ober-ac-item');
       expect(item?.textContent).toBe('No matches');
     });
+
+    it('exposes listbox semantics to assistive tech', () => {
+      autocomplete.open(sampleItems, '@');
+      const dropdown = container.querySelector('.co-ober-ac-dropdown');
+      expect(dropdown?.getAttribute('role')).toBe('listbox');
+      expect(dropdown?.getAttribute('aria-label')).toBe('Suggestions');
+      const items = container.querySelectorAll('.co-ober-ac-item');
+      expect(items[0].getAttribute('role')).toBe('option');
+      expect(items[0].getAttribute('aria-selected')).toBe('true');
+      expect(items[1].getAttribute('aria-selected')).toBe('false');
+    });
   });
 
   describe('close', () => {

@@ -23,12 +23,14 @@ const en = {
     loadingNative: 'Loading OpenCode sessions…',
     nativeError: 'Native sessions unavailable (see console)',
     contentSection: 'Content matches',
+    contentError: 'Content search failed (see console)',
     actionFailed: 'Session action failed: {error}',
     rename: 'Rename session',
     pin: 'Pin session',
     unpin: 'Unpin session',
     confirmDelete: 'Click again to confirm deletion',
     summaryBadge: '{files} files +{additions} -{deletions}',
+    listboxAria: 'Session list',
   },
 
   header: {
@@ -39,6 +41,7 @@ const en = {
 
   input: {
     placeholder: 'Type a message… (Enter to send, Shift+Enter for newline)',
+    removeChip: 'Remove from context',
   },
 
   session: {
@@ -210,6 +213,27 @@ const en = {
     fileDeleted: 'File deleted',
   },
 
+  toolKind: {
+    read: 'Read',
+    edit: 'Edit',
+    write: 'Write',
+    execute: 'Execute',
+    search: 'Search',
+    think: 'Think',
+    fetch: 'Fetch',
+    delete: 'Delete',
+    move: 'Move',
+    switch_mode: 'Switch Mode',
+    plan: 'Plan',
+    bash: 'Bash',
+    grep: 'Grep',
+    ls: 'List',
+    apply_patch: 'Apply Patch',
+    web_search: 'Web Search',
+    file_search: 'File Search',
+    other: 'Other',
+  },
+
   app: {
     ribbon: 'Open Co-Ober',
     cmdOpen: 'Open',
@@ -218,6 +242,10 @@ const en = {
 
   plan: {
     title: '📋 Plan',
+  },
+
+  subagent: {
+    label: 'sub-agent',
   },
 
   slash: {
@@ -269,11 +297,14 @@ const en = {
 
   autocomplete: {
     noMatches: 'No matches',
+    listboxAria: 'Suggestions',
   },
 
   toolbar: {
     send: 'Send',
     stop: 'Stop',
+    sendAria: 'Send message',
+    stopAria: 'Stop generation',
     attachImage: 'Attach image',
     attachImageUnsupported: 'This agent does not support image prompts',
     applyFailed: 'Setting failed; reverted to the agent-side value',
@@ -315,6 +346,7 @@ const en = {
     thinking: 'Thinking',
     rate: 'Rate',
     context: 'Context',
+    contextMeterAria: 'Context window usage',
     tokensUnit: 'tokens',
     approachingLimit: '⚠ Approaching limit — run /compact',
   },

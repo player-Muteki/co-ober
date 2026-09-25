@@ -1,6 +1,6 @@
 import type { App } from 'obsidian';
 import { MarkdownRenderer, setIcon, type Component } from 'obsidian';
-import { t, onLocaleChange } from '../i18n/index';
+import { t, onLocaleChange, lookupLocaleString } from '../i18n/index';
 import type { UsageInfo, ContentBlock, SerializedMessage, ToolCallContent, ImageAttachment, MessageUsage, TurnStats } from '../types';
 import { COPY_BUTTON_RESET_MS, MIN_THROUGHPUT_SAMPLE_MS } from '../constants';
 import {
@@ -16,6 +16,7 @@ import { openImagePreview } from './imagePreview';
 import {
   createToolCallElement,
   updateToolCallElement,
+  getToolDisplayName,
   type ToolCallState,
 } from './ToolCallRenderer';
 
@@ -202,11 +203,13 @@ export class ChatRenderer {
     const regenBtn = actions.createEl('button', { cls: 'co-ober-user-action-btn' });
     setIcon(regenBtn, 'rotate-cw');
     regenBtn.title = t().rewind.regenerate;
+    regenBtn.dataset.i18nTitle = 'rewind.regenerate';
     regenBtn.onclick = () => handlers.onRegenerate(ordinal);
 
     const editBtn = actions.createEl('button', { cls: 'co-ober-user-action-btn' });
     setIcon(editBtn, 'pencil');
     editBtn.title = t().rewind.editResend;
+    editBtn.dataset.i18nTitle = 'rewind.editResend';
     editBtn.onclick = () => this.beginUserTurnEdit(wrap, body, ordinal);
   }
 
@@ -223,6 +226,7 @@ export class ChatRenderer {
     const submitBtn = btnRow.createEl('button', { cls: 'co-ober-user-action-btn' });
     setIcon(submitBtn, 'check');
     submitBtn.title = t().rewind.submit;
+    submitBtn.dataset.i18nTitle = 'rewind.submit';
     submitBtn.onclick = () => {
       const text = textarea.value.trim();
       editor.remove();
@@ -234,6 +238,7 @@ export class ChatRenderer {
     const cancelBtn = btnRow.createEl('button', { cls: 'co-ober-user-action-btn' });
     setIcon(cancelBtn, 'x');
     cancelBtn.title = t().rewind.cancel;
+    cancelBtn.dataset.i18nTitle = 'rewind.cancel';
     cancelBtn.onclick = () => editor.remove();
 
     textarea.focus();
@@ -244,7 +249,8 @@ export class ChatRenderer {
     const wrap = this.container.createDiv({ cls: 'co-ober-msg assistant' });
     const el = wrap.createDiv({ cls: 'co-ober-loading' });
     el.createDiv({ cls: 'co-ober-spinner' });
-    el.createSpan({ text: t().loading.thinking });
+    const thinkingEl = el.createSpan({ text: t().loading.thinking });
+    thinkingEl.dataset.i18nText = 'loading.thinking';
     this.placeholderEl = wrap;
     this.scrollToBottom();
   }
@@ -299,6 +305,7 @@ export class ChatRenderer {
     header.setAttribute('tabindex', '0');
     header.setAttribute('aria-expanded', 'false');
     header.title = t().turnCollapse.toggle;
+    header.dataset.i18nTitle = 'turnCollapse.toggle';
     const chevron = this.doc.createElement('span');
     chevron.className = 'co-ober-turn-chevron';
     setIcon(chevron, 'chevron-right');
@@ -306,6 +313,8 @@ export class ChatRenderer {
     const summary = this.doc.createElement('span');
     summary.className = 'co-ober-turn-summary';
     summary.textContent = t().turnCollapse.summary.replace('{count}', String(hidden.length));
+    summary.dataset.i18nCount = 'turnCollapse.summary';
+    summary.dataset.count = String(hidden.length);
     header.appendChild(summary);
     const body = this.doc.createElement('div');
     body.className = 'co-ober-turn-collapsed-body';
@@ -542,6 +551,7 @@ export class ChatRenderer {
       const btn = this.doc.createElement('button');
       btn.className = 'co-ober-copy-btn';
       btn.textContent = t().copy.button;
+      btn.dataset.i18nText = 'copy.button';
       btn.onclick = () => {
         const text = codeEl.textContent || '';
         void navigator.clipboard.writeText(text);
@@ -746,7 +756,8 @@ export class ChatRenderer {
   setPlanEntries(entries: Array<{ content: string; status: string; priority?: string }>): void {
     if (!this.planEl) {
       this.planEl = this.container.createDiv({ cls: 'co-ober-plan-panel' });
-      this.planEl.createDiv({ cls: 'plan-title', text: t().plan.title });
+      const titleEl = this.planEl.createDiv({ cls: 'plan-title', text: t().plan.title });
+      titleEl.dataset.i18nText = 'plan.title';
     }
     this.planEl.querySelectorAll('.plan-item').forEach((el) => el.remove());
     for (const e of entries) {
@@ -822,6 +833,23 @@ export class ChatRenderer {
       }
       el.title = this.formatUsageTitle(usage);
     }
+    // Labels rendered at creation time carry their i18n key in a data
+    // attribute so a locale switch can relabel the live DOM in place.
+    this.container.querySelectorAll<HTMLElement>('[data-i18n-title]').forEach((el) => {
+      const label = lookupLocaleString(el.dataset.i18nTitle ?? '');
+      if (label !== undefined) el.title = label;
+    });
+    this.container.querySelectorAll<HTMLElement>('[data-i18n-text]').forEach((el) => {
+      const label = lookupLocaleString(el.dataset.i18nText ?? '');
+      if (label !== undefined) el.textContent = label;
+    });
+    this.container.querySelectorAll<HTMLElement>('[data-i18n-count]').forEach((el) => {
+      const label = lookupLocaleString(el.dataset.i18nCount ?? '');
+      if (label !== undefined) el.textContent = label.replace('{count}', el.dataset.count ?? '');
+    });
+    this.container.querySelectorAll<HTMLElement>('[data-i18n-kind]').forEach((el) => {
+      el.textContent = getToolDisplayName(el.dataset.i18nKind ?? '');
+    });
   }
 
   /**
@@ -1012,7 +1040,8 @@ export class ChatRenderer {
   renderSubagentBlock(parentEl: HTMLElement, block: ContentBlock): void {
     const info = block.subagentInfo;
     if (!info) {
-      parentEl.createDiv({ cls: 'co-ober-subagent-block', text: 'sub-agent' });
+      const stub = parentEl.createDiv({ cls: 'co-ober-subagent-block', text: t().subagent.label });
+      stub.dataset.i18nText = 'subagent.label';
       return;
     }
     const el = parentEl.createDiv({ cls: 'co-ober-subagent-block' });
@@ -1031,6 +1060,7 @@ export class ChatRenderer {
     const btn = this.doc.createElement('button');
     btn.className = 'co-ober-text-copy-btn';
     btn.textContent = t().copy.button;
+    btn.dataset.i18nText = 'copy.button';
     btn.onclick = () => {
       void navigator.clipboard.writeText(markdown);
       btn.textContent = t().copy.copied;

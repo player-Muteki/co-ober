@@ -25,12 +25,14 @@ const zh: Locale = {
     loadingNative: '正在加载 OpenCode 会话…',
     nativeError: '原生会话读取失败（详见控制台）',
     contentSection: '内容匹配',
+    contentError: '内容搜索失败（详见控制台）',
     actionFailed: '会话操作失败：{error}',
     rename: '重命名会话',
     pin: '置顶会话',
     unpin: '取消置顶',
     confirmDelete: '再次点击以确认删除',
     summaryBadge: '{files} 个文件 +{additions} -{deletions}',
+    listboxAria: '会话列表',
   },
 
   header: {
@@ -41,6 +43,7 @@ const zh: Locale = {
 
   input: {
     placeholder: '输入消息… (Enter 发送, Shift+Enter 换行)',
+    removeChip: '从上下文移除',
   },
 
   session: {
@@ -212,6 +215,27 @@ const zh: Locale = {
     fileDeleted: '文件已删除',
   },
 
+  toolKind: {
+    read: '读取',
+    edit: '编辑',
+    write: '写入',
+    execute: '执行',
+    search: '搜索',
+    think: '思考',
+    fetch: '获取',
+    delete: '删除',
+    move: '移动',
+    switch_mode: '切换模式',
+    plan: '规划',
+    bash: 'Bash',
+    grep: 'Grep',
+    ls: '列目录',
+    apply_patch: '应用补丁',
+    web_search: '网页搜索',
+    file_search: '文件搜索',
+    other: '其他',
+  },
+
   app: {
     ribbon: '打开 Co-Ober',
     cmdOpen: '打开',
@@ -220,6 +244,10 @@ const zh: Locale = {
 
   plan: {
     title: '📋 计划',
+  },
+
+  subagent: {
+    label: '子智能体',
   },
 
   slash: {
@@ -271,11 +299,14 @@ const zh: Locale = {
 
   autocomplete: {
     noMatches: '无匹配',
+    listboxAria: '建议列表',
   },
 
   toolbar: {
     send: '发送',
     stop: '停止',
+    sendAria: '发送消息',
+    stopAria: '停止生成',
     attachImage: '添加图片',
     attachImageUnsupported: '当前 Agent 不支持图片提示词',
     applyFailed: '设置失败，已回退为智能体侧当前值',
@@ -317,6 +348,7 @@ const zh: Locale = {
     thinking: '思考',
     rate: '速率',
     context: '上下文',
+    contextMeterAria: '上下文用量',
     tokensUnit: 'tokens',
     approachingLimit: '⚠ 接近上限——请运行 /compact',
   },

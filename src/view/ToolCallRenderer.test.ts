@@ -55,6 +55,18 @@ describe('ToolCallRenderer', () => {
     it('capitalizes unknown kinds', () => {
       expect(getToolDisplayName('custom_tool')).toBe('Custom_tool');
     });
+
+    it('follows the active locale through the toolKind namespace', () => {
+      setLocale('zh');
+      try {
+        expect(getToolDisplayName('read')).toBe('读取');
+        expect(getToolDisplayName('apply_patch')).toBe('应用补丁');
+        // Unknown kinds keep the capitalized pass-through in every locale.
+        expect(getToolDisplayName('custom_tool')).toBe('Custom_tool');
+      } finally {
+        setLocale('en');
+      }
+    });
   });
 
   describe('getToolSummary', () => {
@@ -144,13 +156,19 @@ describe('ToolCallRenderer', () => {
       expect(state.body.textContent).toContain('pondering');
     });
 
-    it('marks failed with the error class and serialized rawOutput', () => {
+    it('marks failed with the readable error message instead of a JSON dump', () => {
       const state = createToolCallElement(container, 'tc', 'execute', 'Run', { command: 'false' });
       updateToolCallElement(state, 'failed', 'execute', { error: 'boom' });
       expect(state.wrapper.classList.contains('status-error')).toBe(true);
       expect(state.statusEl.classList.contains('tc-stat-fail')).toBe(true);
       expect(setIconMock).toHaveBeenCalledWith(state.statusEl, 'x');
-      expect(state.body.textContent).toContain('"error": "boom"');
+      expect(state.body.textContent).toBe('boom');
+    });
+
+    it('falls back to serialized rawOutput when the failure carries no message', () => {
+      const state = createToolCallElement(container, 'tc', 'execute', 'Run', { command: 'false' });
+      updateToolCallElement(state, 'failed', 'execute', { exitCode: 3 });
+      expect(state.body.textContent).toContain('"exitCode": 3');
     });
 
     it('renders pending with the circle icon', () => {

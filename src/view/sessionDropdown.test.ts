@@ -643,6 +643,74 @@ describe('SessionDropdown', () => {
       expect(container.querySelector('.co-ober-session-content-section')).toBeNull();
       dd.destroy();
     });
+
+    it('shows a visible failure line when content search throws', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const dd = makeContentDropdown(async () => {
+        throw new Error('search exploded');
+      });
+      typeQuery(dd, 'foo');
+      await new Promise((r) => setTimeout(r, 10));
+      expect(container.querySelector('.co-ober-session-native-error')?.textContent)
+        .toBe('Content search failed (see console)');
+      warnSpy.mockRestore();
+      dd.destroy();
+    });
+
+    it('clears the failure line once a later search succeeds', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      let fail = true;
+      const dd = makeContentDropdown(async () => {
+        if (fail) throw new Error('search exploded');
+        return [{ sessionId: 'ses_ok', title: 'Recovered hit' }];
+      });
+      typeQuery(dd, 'foo');
+      await new Promise((r) => setTimeout(r, 10));
+      expect(container.querySelector('.co-ober-session-native-error')).not.toBeNull();
+
+      fail = false;
+      const search = container.querySelector('.co-ober-session-search') as HTMLInputElement;
+      search.value = 'foobar';
+      search.dispatchEvent(new Event('input'));
+      await new Promise((r) => setTimeout(r, 10));
+      expect(container.querySelector('.co-ober-session-native-error')).toBeNull();
+      const labels = [...container.querySelectorAll('.co-ober-session-content .session-label')].map((n) => n.textContent);
+      expect(labels).toEqual(['Recovered hit']);
+      warnSpy.mockRestore();
+      dd.destroy();
+    });
+
+    it('does not stack duplicate content sections across re-renders', async () => {
+      let results: unknown[] = [{ sessionId: 'ses_a', title: 'Hit A' }];
+      const dd = makeContentDropdown(async () => results);
+      typeQuery(dd, 'foo');
+      await new Promise((r) => setTimeout(r, 10));
+      results = [{ sessionId: 'ses_b', title: 'Hit B' }];
+      const search = container.querySelector('.co-ober-session-search') as HTMLInputElement;
+      search.value = 'foobar';
+      search.dispatchEvent(new Event('input'));
+      await new Promise((r) => setTimeout(r, 10));
+      expect(container.querySelectorAll('.co-ober-session-content-section')).toHaveLength(1);
+      const labels = [...container.querySelectorAll('.co-ober-session-content .session-label')].map((n) => n.textContent);
+      expect(labels).toEqual(['Hit B']);
+      dd.destroy();
+    });
+
+    it('exposes listbox semantics for the session rows', async () => {
+      const dd = makeContentDropdown(null);
+      dd.open();
+      const items = container.querySelector('.co-ober-session-items');
+      expect(items?.getAttribute('role')).toBe('listbox');
+      expect(container.querySelector('.co-ober-session-list')?.getAttribute('aria-label')).toBe('Session list');
+      const rows = [...(items?.querySelectorAll('.co-ober-session-item') ?? [])] as HTMLElement[];
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) expect(row.getAttribute('role')).toBe('option');
+      const active = rows.find((r) => r.classList.contains('active'));
+      expect(active?.getAttribute('aria-selected')).toBe('true');
+      const inactive = rows.find((r) => !r.classList.contains('active'));
+      expect(inactive?.getAttribute('aria-selected')).toBe('false');
+      dd.destroy();
+    });
   });
 
   describe('destroy', () => {

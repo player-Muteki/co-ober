@@ -1,5 +1,5 @@
 import type { PermissionRequest } from '../types';
-import { t, onLocaleChange } from '../i18n/index';
+import { t, onLocaleChange, lookupLocaleString } from '../i18n/index';
 import { PERMISSION_MAX_LOCATIONS, PERMISSION_SUMMARY_MAX_KEYS, PERMISSION_TRUNCATE_LENGTH } from '../constants';
 
 export class PermissionBanner {
@@ -50,7 +50,7 @@ export class PermissionBanner {
 
     // Tool kind badge
     const kind = req.toolCall.kind || 'other';
-    banner.createDiv({ cls: 'perm-kind', text: kind.toUpperCase() });
+    banner.createDiv({ cls: 'perm-kind', text: (lookupLocaleString(`toolKind.${kind}`) ?? kind).toUpperCase() });
 
     // Title
     const title = req.toolCall.title || req.toolCall.kind;

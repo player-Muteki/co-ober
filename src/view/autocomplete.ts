@@ -1,4 +1,5 @@
 import { t } from '../i18n/index';
+import { isImeComposing } from '../utils/ime';
 
 export interface ACItem {
   value: string;
@@ -44,6 +45,8 @@ export class Autocomplete {
     // Create the dropdown container element
     this.dropdownEl = this.doc.createElement('div');
     this.dropdownEl.addClass('co-ober-ac-dropdown');
+    this.dropdownEl.setAttribute('role', 'listbox');
+    this.dropdownEl.setAttribute('aria-label', t().autocomplete.listboxAria);
     this.container.appendChild(this.dropdownEl);
     this.mode = mode;
     this.allItems = items;
@@ -53,6 +56,9 @@ export class Autocomplete {
     this.render();
 
     this.keyHandler = (e: KeyboardEvent) => {
+      // The handler swallows printable keys and Enter into the filter; during
+      // IME composition those belong to the input engine, not to us.
+      if (isImeComposing(e)) return;
       if (e.key === 'Escape') {
         this.close();
         e.preventDefault();
@@ -203,6 +209,8 @@ export class Autocomplete {
     const el = ac.createDiv({
       cls: `co-ober-ac-item${idx === this.selIdx ? ' selected' : ''}`,
     });
+    el.setAttribute('role', 'option');
+    el.setAttribute('aria-selected', String(idx === this.selIdx));
 
     // First row: label + badge
     const row1 = el.createDiv({ cls: 'ac-row' });

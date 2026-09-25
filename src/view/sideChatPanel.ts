@@ -1,4 +1,5 @@
 import { t } from '../i18n/index';
+import { isImeComposing } from '../utils/ime';
 import type { AcpResponse, NormalizedUpdate } from '../types';
 
 /** Sends one question to the forked side session; resolves with the turn response. */
@@ -61,6 +62,7 @@ export class SideChatPanel {
     });
     this.inputEl = textarea;
     textarea.onkeydown = (e: KeyboardEvent) => {
+      if (isImeComposing(e)) return;
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         this.submitFromInput();

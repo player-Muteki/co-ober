@@ -135,6 +135,8 @@ export class CoOberView extends ItemView {
 
     // Context arc meter (right of title)
     this.meterEl = header.createDiv({ cls: 'co-ober-arc-meter' });
+    this.meterEl.setAttribute('role', 'meter');
+    this.meterEl.setAttribute('aria-label', t().usage.contextMeterAria);
     const svg = this.doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 40 24');
     svg.setAttribute('class', 'co-ober-arc-svg');
@@ -572,6 +574,10 @@ export class CoOberView extends ItemView {
     if (this.reconnectBtn) {
       this.reconnectBtn.textContent = this.reconnectBtn.disabled ? t().reconnect.connecting : t().reconnect.text;
     }
+    this.meterEl?.setAttribute('aria-label', t().usage.contextMeterAria);
+    this.contextChipsEl?.querySelectorAll('.chip-remove').forEach((el) => {
+      el.setAttribute('aria-label', t().input.removeChip);
+    });
   }
 
   // ── Reconnect button (view-owned DOM) ──
@@ -717,9 +723,18 @@ export class CoOberView extends ItemView {
     const label = ref.path !== ref.name ? `${ref.name} (${ref.path})` : ref.name;
     chip.createSpan({ text: `@${label}` });
     const x = chip.createSpan({ cls: 'chip-remove', text: '×' });
+    x.setAttribute('role', 'button');
+    x.setAttribute('tabindex', '0');
+    x.setAttribute('aria-label', t().input.removeChip);
     x.onclick = (e: MouseEvent) => {
       e.stopPropagation();
       this.removeChip(ref.id);
+    };
+    x.onkeydown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        this.removeChip(ref.id);
+      }
     };
   }
 
@@ -867,6 +882,7 @@ export class CoOberView extends ItemView {
       this.meterEl.addClass('empty');
       this.meterEl.removeClass('warning', 'critical');
       this.meterPctEl.setText('—');
+      this.meterEl.setAttribute('aria-valuenow', '0');
       this.meterArcFill.setAttribute('stroke-dasharray', `0 ${ARC_LEN}`);
       this.meterEl.removeAttribute('data-tooltip');
       return;
@@ -880,6 +896,7 @@ export class CoOberView extends ItemView {
 
     const filled = (pct / 100) * ARC_LEN;
     this.meterArcFill.setAttribute('stroke-dasharray', `${filled} ${ARC_LEN}`);
+    this.meterEl.setAttribute('aria-valuenow', String(pct));
 
     this.meterPctEl.setText(`${pct}%`);
 

@@ -53,6 +53,20 @@ describe('ChatInput', () => {
 		expect(callbacks.onStop).toHaveBeenCalled();
 	});
 
+	it('ignores Enter while an IME composition is confirming a candidate', () => {
+		const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+		textarea.value = '候选';
+		textarea.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true, cancelable: true }),
+		);
+		expect(callbacks.onSend).not.toHaveBeenCalled();
+		expect(textarea.value).toBe('候选');
+
+		// A plain Enter still sends.
+		textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+		expect(callbacks.onSend).toHaveBeenCalledTimes(1);
+	});
+
 	it('dispose mid-drag detaches the document resize listeners', () => {
 		const setCss = vi.fn();
 		(container as unknown as { setCssProps: ReturnType<typeof vi.fn> }).setCssProps = setCss;

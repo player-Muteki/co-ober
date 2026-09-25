@@ -15,7 +15,7 @@ import type { ToolCallContent } from '../types';
 import { setupCollapsible, collapseElement, type CollapsibleState } from './collapsible';
 import { parseDiffLines, renderDiffContent } from './DiffRenderer';
 import { createWriteEditBlock, updateWriteEditContent, type WriteEditState } from './writeEditRenderer';
-import { t } from '../i18n/index';
+import { t, lookupLocaleString } from '../i18n/index';
 
 // ---- Constants ----
 
@@ -51,28 +51,9 @@ export interface ToolCallState {
 
 // ---- Tool Display Helpers ----
 
-/** Map tool kind to a human-readable display name. */
+/** Map tool kind to a localized display name; unknown kinds get a capitalized pass-through. */
 export function getToolDisplayName(kind: string): string {
-  const map: Record<string, string> = {
-    read: 'Read',
-    edit: 'Edit',
-    write: 'Write',
-    execute: 'Execute',
-    search: 'Search',
-    think: 'Think',
-    fetch: 'Fetch',
-    delete: 'Delete',
-    move: 'Move',
-    switch_mode: 'Switch Mode',
-    plan: 'Plan',
-    bash: 'Bash',
-    grep: 'Grep',
-    ls: 'List',
-    apply_patch: 'Apply Patch',
-    web_search: 'Web Search',
-    file_search: 'File Search',
-  };
-  return map[kind] ?? kind.charAt(0).toUpperCase() + kind.slice(1);
+  return lookupLocaleString(`toolKind.${kind}`) ?? kind.charAt(0).toUpperCase() + kind.slice(1);
 }
 
 /** Extract a one-line summary of a tool call from its input. */
@@ -164,6 +145,7 @@ export function createToolCallElement(
   setIcon(iconEl, TOOL_ICONS[kind] || 'tool');
 
   const kindEl = header.createSpan({ cls: 'tc-kind', text: getToolDisplayName(kind) });
+  kindEl.dataset.i18nKind = kind;
 
   const summary = getToolSummary(kind, input, locations);
   const summaryEl = header.createSpan({ cls: 'tc-file', text: summary });
@@ -292,7 +274,13 @@ export function updateToolCallElement(
     statusEl.addClass('tc-stat-fail');
     if (rawOutput) {
       body.empty();
-      body.createDiv({ text: JSON.stringify(rawOutput, null, 2) });
+      const message =
+        typeof rawOutput.error === 'string' && rawOutput.error
+          ? rawOutput.error
+          : typeof rawOutput.message === 'string' && rawOutput.message
+            ? rawOutput.message
+            : JSON.stringify(rawOutput, null, 2);
+      body.createDiv({ text: message });
     }
     // Auto-collapse on failure as well
     collapseElement(wrapper, state.header, state.collapsibleState);
@@ -638,7 +626,7 @@ export function renderLinesExpanded(container: HTMLElement, result: string, maxL
 export function renderTruncatedText(text: string, maxLines: number): string {
   const lines = text.split('\n');
   if (lines.length <= maxLines) return text;
-  return lines.slice(0, maxLines).join('\n') + `\n... ${lines.length - maxLines} more lines`;
+  return lines.slice(0, maxLines).join('\n') + `\n${t().tool.moreLines.replace('{count}', String(lines.length - maxLines))}`;
 }
 
 // ---- Internal Helpers ----

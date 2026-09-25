@@ -831,6 +831,41 @@ describe('ChatRenderer', () => {
       expect(container.querySelector('.co-ober-turn-summary')?.textContent).toContain('个步骤');
       setLocale('en');
     });
+
+    it('keeps the step count when refreshLocale relabels a collapsed turn', async () => {
+      await buildStepTurn();
+      renderer.collapseTurns();
+      setLocale('zh');
+      renderer.refreshLocale();
+      expect(container.querySelector('.co-ober-turn-summary')?.textContent).toBe('2 个步骤');
+      setLocale('en');
+    });
+  });
+
+  describe('refreshLocale', () => {
+    it('relabels the loading placeholder and plan title in the live DOM', () => {
+      renderer.addAssistantPlaceholder();
+      renderer.setPlanEntries([{ content: 'step', status: 'in_progress' }]);
+
+      setLocale('zh');
+      renderer.refreshLocale();
+      expect(container.querySelector('.co-ober-loading span')?.textContent).toBe('思考中…');
+      expect(container.querySelector('.plan-title')?.textContent).toBe('📋 计划');
+
+      setLocale('en');
+      renderer.refreshLocale();
+      expect(container.querySelector('.co-ober-loading span')?.textContent).toBe('Thinking…');
+      expect(container.querySelector('.plan-title')?.textContent).toBe('📋 Plan');
+    });
+
+    it('relabels tool kind badges via their data tag', () => {
+      renderer.addToolCall('call-1', 'Read note', 'read', {});
+      expect(container.querySelector('.tc-kind')?.textContent).toBe('Read');
+      setLocale('zh');
+      renderer.refreshLocale();
+      expect(container.querySelector('.tc-kind')?.textContent).toBe('读取');
+      setLocale('en');
+    });
   });
 
   describe('copy button reset timer', () => {
