@@ -1,3 +1,21 @@
+## 0.1.39 - 2026-09-25
+
+### Added
+- **IME-safe key handling**: Enter and printable keys during IME composition no longer send messages, feed the dropdown filter, or commit/cancel a session rename — a shared composition guard covers the chat input, side chat, autocomplete and session rename.
+- **Live locale relabeling**: the thinking placeholder, collapsed-turn summaries (keeping their step count), code and text copy buttons, the plan title, tool kind badges and rewind tooltips follow a language switch without re-rendering the conversation.
+- **Listbox and meter semantics**: the autocomplete and session dropdowns expose `listbox`/`option` roles with selection state, and the send/stop button, context arc meter and chip-remove buttons carry localized accessible names; chips can be removed from the keyboard.
+
+### Changed
+- **Lenient permission frames**: a malformed option drops just that option instead of the whole request, and a prompt that arrives with no usable options is cancelled visibly instead of hanging.
+- **Honest tool status**: cancelled/aborted/rejected report as `failed` and unknown statuses as in-progress — a malformed frame can never fake a clean completion.
+- **Readable tool failures**: a failed tool card shows the agent's own error or message text instead of a raw JSON dump; the "more lines" suffix and every tool kind name follow the active language.
+- **Protocol conformance**: the initialize handshake now closes with `notifications/initialized`, a protocol-version mismatch warns instead of failing, JSON-RPC batch frames are answered per message, and file/terminal failures leave the result lane as real RPC errors.
+- **Session search failures are visible**: a content-search exception shows a failure line in the dropdown instead of only a console warning, and stale native/content sections are swept between re-renders.
+
+### Fixed
+- **Subprocess teardown drains stdout**: exit handling moved from `exit` to `close`, so buffered JSON-RPC frames are still read before the connection is disposed.
+- **Session and input correctness**: restoring a session is guarded against stale completions, retry replays captured images, the effort list survives a locale switch, a stale stream turn recreates its message, dropdown re-renders preserve an in-progress rename and filter, and input resize listeners detach on dispose.
+
 ## 0.1.38 - 2026-09-25
 
 ### Added
