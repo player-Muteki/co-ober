@@ -35,8 +35,18 @@ export interface SlashCommandDef {
   icon?: string;
   /** Optional runtime gate — command is hidden when this returns false. */
   enabled?: () => boolean;
-  /** Execute the command. Receives parsed args. */
-  run: (args: string) => Promise<void>;
+  /** Execute the command. Receives parsed args and the tab that admitted it. */
+  run: (args: string, scope?: CommandScope) => Promise<void>;
+}
+
+/**
+ * Which conversation a dispatched command was typed into. The slash menu and
+ * the composer are one shared surface, so a command that runs late (queued
+ * behind a turn) must still act on the tab it came from, not whatever happens
+ * to be on screen when its turn arrives.
+ */
+export interface CommandScope {
+  tabId: string;
 }
 
 /**

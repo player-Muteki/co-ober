@@ -93,7 +93,8 @@ export class CoOberView extends ItemView {
   private permissionBanner!: PermissionBanner;
   private fileCommandSource: FileCommandStorage | null = null;
   private inlineEditPanel!: InlineEditPanel;
-  private sideChatPanel: SideChatPanel | null = null;
+  /** One /btw panel per tab that asked for a scratch thread; only one is visible. */
+  private sideChatPanels = new Map<string, SideChatPanel>();
   private pendingImageParts: ImageEntry[] = [];
   private lastAutoRefId: string | null = null;
   private headerTitleEl: HTMLDivElement | null = null;
@@ -339,8 +340,8 @@ export class CoOberView extends ItemView {
       onOpenSessions: () => {
         void this.toggleSessions();
       },
-      onOpenSideChat: (ask, question) => this.showSideChat(ask, question),
-      onCloseSideChat: () => this.sideChatPanel?.close(),
+      onOpenSideChat: (ask, question, tabId) => this.showSideChat(ask, question, tabId),
+      onCloseSideChat: (tabId) => this.sideChatPanels.get(tabId)?.close(),
       onTabsChanged: () => this.refreshTabBar(),
     };
 
@@ -497,8 +498,8 @@ export class CoOberView extends ItemView {
     this.permissionBanner?.dispose();
     this.welcomeView?.dispose();
     this.inlineEditPanel?.dispose();
-    this.sideChatPanel?.close();
-    this.sideChatPanel = null;
+    for (const panel of [...this.sideChatPanels.values()]) panel.close();
+    this.sideChatPanels.clear();
     for (const tabId of [...this.panels.keys()]) this.disposeTabPanel(tabId);
     this.tabBar?.dispose();
     this.tabBar = null;
@@ -608,6 +609,12 @@ export class CoOberView extends ItemView {
     next.el.removeClass('co-ober-tab-panel-hidden');
     this.messagesEl = next.el;
     this.renderer = next.renderer;
+    // Each scratch thread stays with the tab it was asked from: switch away and
+    // it is only out of sight, switch back and its answers are still there.
+    for (const [owner, panel] of this.sideChatPanels) {
+      if (owner === tabId) panel.show();
+      else panel.hide();
+    }
     // Hide before the emptiness check: the welcome element itself lives inside
     // the panel, so a visible welcome would make every panel look non-empty.
     this.welcomeView.hide();
@@ -732,21 +739,26 @@ export class CoOberView extends ItemView {
 
   // ── Reconnect button (view-owned DOM) ──
 
-  /** Lazily mount the /btw side-chat panel and forward the question to it. */
-  private showSideChat(ask: SideChatAsk, question: string): void {
-    if (!this.sideChatPanel) {
-      this.sideChatPanel = new SideChatPanel({
+  /** Lazily mount the /btw panel belonging to one tab and forward the question. */
+  private showSideChat(ask: SideChatAsk, question: string, tabId: string): void {
+    let panel = this.sideChatPanels.get(tabId);
+    if (!panel) {
+      panel = new SideChatPanel({
         containerEl: this.contentEl,
         ask,
-        isMainBusy: () => this.controller.isBusy(),
-        abort: () => this.controller.abortSideChat(),
+        // "Main busy" is the tab this thread was forked from, not whichever
+        // conversation happens to be on screen.
+        isMainBusy: () => this.controller?.runtimeForTab(tabId)?.busy ?? false,
+        abort: () => this.controller?.abortSideChat(tabId),
         onClose: () => {
-          this.sideChatPanel = null;
-          void this.controller.endSideChat();
+          this.sideChatPanels.delete(tabId);
+          const rt = this.controller?.runtimeForTab(tabId);
+          if (rt) this.controller?.endSideChat(rt);
         },
       });
+      this.sideChatPanels.set(tabId, panel);
     }
-    this.sideChatPanel.open(question);
+    panel.open(question);
   }
 
   /** A rejected mode/model/effort change must not leave the toolbar showing a lie. */

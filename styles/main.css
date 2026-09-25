@@ -2475,6 +2475,11 @@ body.theme-light .co-ober-msg.user .co-ober-msg-body {
 }
 /* ── Side chat (/btw) ── */
 
+/* A tab switched away from keeps its thread alive, out of sight. */
+.co-ober-side-chat.co-ober-side-chat-hidden {
+  display: none;
+}
+
 .co-ober-side-chat {
   position: absolute;
   top: 8px;

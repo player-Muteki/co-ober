@@ -49,6 +49,7 @@ import {
 } from '../opencode/NativeSessionReader';
 import { Notice } from 'obsidian';
 import { commandRegistry } from '../commands/registry';
+import type { CommandScope } from '../commands/registry';
 import { parseSlashCommand } from '../commands/executor';
 import {
   NOTECACHE_MAX_SIZE,
@@ -75,9 +76,9 @@ export interface ControllerCallbacks {
   /** Open the session dropdown (used by /resume without arguments). */
   onOpenSessions?(): void;
   /** Show the side-chat panel wired to a questioner for the forked session. */
-  onOpenSideChat?(ask: SideChatAsk, question: string): void;
-  /** Hide the side-chat panel (main session was switched or reset). */
-  onCloseSideChat?(): void;
+  onOpenSideChat?(ask: SideChatAsk, question: string, tabId: string): void;
+  /** Tear the side-chat panel belonging to one tab down. */
+  onCloseSideChat?(tabId: string): void;
   /** The tab strip changed shape or state; the bar should re-render. */
   onTabsChanged?(): void;
 }
@@ -148,7 +149,6 @@ export class CoOberViewController {
   private activeRuntime!: SessionRuntime;
   private tabSeq = 0;
   private unsubscribeLocale: (() => void) | null = null;
-  private sideChatSessionId: string | null = null;
   queueIndicatorEl: HTMLDivElement | null = null;
 
   // Single-tab API surface: these proxy to the active tab so existing
@@ -227,6 +227,16 @@ export class CoOberViewController {
     return this.runtimes.get(tabId);
   }
 
+  /**
+   * The tab a dispatched slash command belongs to. A scope naming a tab that is
+   * already gone means the command lost its conversation while it waited, so it
+   * runs nowhere — rather than against whichever tab happens to be on screen.
+   */
+  private scopeRuntime(scope?: CommandScope): SessionRuntime | null {
+    if (!scope) return this.activeRuntime;
+    return this.runtimes.get(scope.tabId) ?? null;
+  }
+
   activeTabId(): string {
     return this.activeRuntime.tabId;
   }
@@ -279,6 +289,10 @@ export class CoOberViewController {
     const wasActive = rt === this.activeRuntime;
     // Prompts waiting in a closed tab are gone; say so like every other drop.
     this.dropQueuedPrompts(rt);
+    // Its scratch thread goes with it: a fork nobody can reach again would
+    // stay open on the agent side for the rest of the session.
+    this.endSideChat(rt);
+    this.callbacks.onCloseSideChat?.(tabId);
     this.runtimes.delete(tabId);
     this.deps.disposeTabPanel?.(tabId);
     await rt.streamCtrl.dispose();
@@ -440,6 +454,9 @@ export class CoOberViewController {
     const registry = commandRegistry;
     const client = () => this.deps.runtime.getClient();
     const caps = () => client()?.getAgentCapabilities?.();
+    // `scope` is the tab the command was typed into. Every body below runs
+    // against that tab — a command drained out of a queue fires long after the
+    // user may have clicked elsewhere, and must not rewrite that other tab.
 
     registry.registerBuiltin({
       id: 'compact',
@@ -449,8 +466,9 @@ export class CoOberViewController {
       description: t().slash.compact,
       category: 'session',
       source: 'builtin',
-      run: async () => {
-        await this.compactSession();
+      run: async (_args: string, scope?: CommandScope) => {
+        const rt = this.scopeRuntime(scope);
+        if (rt) await this.compactSession(rt);
       },
     });
     registry.registerBuiltin({
@@ -460,8 +478,9 @@ export class CoOberViewController {
       description: t().slash.new,
       category: 'session',
       source: 'builtin',
-      run: async () => {
-        await this.createNewSession();
+      run: async (_args: string, scope?: CommandScope) => {
+        const rt = this.scopeRuntime(scope);
+        if (rt) await this.createNewSession(rt);
       },
     });
     registry.registerBuiltin({
@@ -471,15 +490,16 @@ export class CoOberViewController {
       description: t().slash.clear,
       category: 'view',
       source: 'builtin',
-      run: async () => {
-        const rt = this.activeRuntime;
+      run: async (_args: string, scope?: CommandScope) => {
+        const rt = this.scopeRuntime(scope);
+        if (!rt) return;
         // Cancel while the turn is still marked busy, then hand the tab to the
         // one reset path: a cleared tab must drop its stream controller, its
         // painted markers and its queue, or stale frames keep landing on it.
         await this.cancelActiveGeneration(rt);
         rt.state.clear();
         this.resetRuntimeView(rt);
-        this.callbacks.onShowWelcome(true);
+        if (this.isActiveTab(rt)) this.callbacks.onShowWelcome(true);
       },
     });
     registry.registerBuiltin({
@@ -489,13 +509,15 @@ export class CoOberViewController {
       description: t().slash.help,
       category: 'view',
       source: 'builtin',
-      run: async () => {
+      run: async (_args: string, scope?: CommandScope) => {
+        const rt = this.scopeRuntime(scope);
+        if (!rt) return;
         const cmds = registry.getAll();
         const helpText = cmds
           .map((c) => `- **/${c.trigger}**${c.aliases?.length ? ` (${c.aliases.join(', ')})` : ''}: ${c.description}`)
           .join('\n');
-        this.renderer.addUserMessage('/help');
-        this.renderer.addSystemMessage(`### ${t().slash.helpHeader}\n\n${helpText}`);
+        rt.renderer.addUserMessage('/help');
+        rt.renderer.addSystemMessage(`### ${t().slash.helpHeader}\n\n${helpText}`);
       },
     });
     registry.registerBuiltin({
@@ -507,11 +529,12 @@ export class CoOberViewController {
       category: 'session',
       source: 'builtin',
       enabled: () => client() !== null,
-      run: async (args: string) => {
+      run: async (args: string, scope?: CommandScope) => {
+        const rt = this.scopeRuntime(scope);
         const c = client();
-        if (!c || !this.state.sessionId) return;
+        if (!c || !rt?.state.sessionId) return;
         const path = args.trim() || this.getVaultCwd();
-        await this.sendTextToAgent(`/add-dir ${path}`);
+        await this.sendTextToAgent(`/add-dir ${path}`, undefined, rt);
       },
     });
     registry.registerBuiltin({
@@ -522,14 +545,19 @@ export class CoOberViewController {
       category: 'session',
       source: 'builtin',
       enabled: () => caps()?.sessionCapabilities?.resume ?? false,
-      run: async (args: string) => {
+      run: async (args: string, scope?: CommandScope) => {
+        const rt = this.scopeRuntime(scope);
+        if (!rt) return;
         const id = args.trim();
         if (id) {
-          await this.resumeSession(id);
+          await this.resumeSession(id, rt);
           return;
         }
-        if (this.callbacks.onOpenSessions) this.callbacks.onOpenSessions();
-        else this.renderer.addSystemMessage(t().slash.resumeHint);
+        // The picker is a screen surface; a tab that is not on screen gets the
+        // hint in its own transcript instead of opening a dialog for someone
+        // else's conversation.
+        if (this.isActiveTab(rt) && this.callbacks.onOpenSessions) this.callbacks.onOpenSessions();
+        else rt.renderer.addSystemMessage(t().slash.resumeHint);
       },
     });
     registry.registerBuiltin({
@@ -540,9 +568,10 @@ export class CoOberViewController {
       category: 'session',
       source: 'builtin',
       enabled: () => caps()?.sessionCapabilities?.fork ?? false,
-      run: async () => {
-        if (!this.state.sessionId) return;
-        await this.forkSession(this.state.sessionId);
+      run: async (_args: string, scope?: CommandScope) => {
+        const rt = this.scopeRuntime(scope);
+        if (!rt?.state.sessionId) return;
+        await this.forkSession(rt.state.sessionId);
       },
     });
     registry.registerBuiltin({
@@ -554,8 +583,9 @@ export class CoOberViewController {
       category: 'session',
       source: 'builtin',
       enabled: () => caps()?.sessionCapabilities?.fork ?? false,
-      run: async (args: string) => {
-        await this.startSideChat(args.trim());
+      run: async (args: string, scope?: CommandScope) => {
+        const rt = this.scopeRuntime(scope);
+        if (rt) await this.startSideChat(args.trim(), rt);
       },
     });
     registry.registerBuiltin({
@@ -565,8 +595,9 @@ export class CoOberViewController {
       description: t().slash.export,
       category: 'session',
       source: 'builtin',
-      run: async () => {
-        await this.exportSessionToNote();
+      run: async (_args: string, scope?: CommandScope) => {
+        const rt = this.scopeRuntime(scope);
+        if (rt) await this.exportSessionToNote(rt);
       },
     });
     registry.registerBuiltin({
@@ -576,8 +607,9 @@ export class CoOberViewController {
       description: t().slash.copy,
       category: 'session',
       source: 'builtin',
-      run: async () => {
-        this.copyTranscript();
+      run: async (_args: string, scope?: CommandScope) => {
+        const rt = this.scopeRuntime(scope);
+        if (rt) this.copyTranscript(rt);
       },
     });
     registry.registerBuiltin({
@@ -589,18 +621,20 @@ export class CoOberViewController {
       category: 'agent',
       source: 'builtin',
       enabled: () => client() !== null && this.state.sessionId !== null,
-      run: async (args: string) => {
+      run: async (args: string, scope?: CommandScope) => {
+        const rt = this.scopeRuntime(scope);
+        if (!rt) return;
         const modelId = args.trim();
         if (!modelId) {
-          this.renderer.addSystemMessage(
-            `${t().slash.availableModels}\n${this.state.availableModels.map((m) => `- \`${m.modelId}\`: ${m.name}`).join('\n')}`,
+          rt.renderer.addSystemMessage(
+            `${t().slash.availableModels}\n${rt.state.availableModels.map((m) => `- \`${m.modelId}\`: ${m.name}`).join('\n')}`,
           );
           return;
         }
         const c = client();
-        if (!c || !this.state.sessionId) return;
-        await c.setModel(this.state.sessionId, modelId);
-        this.renderer.addSystemMessage(`${t().slash.modelSwitched} \`${modelId}\``);
+        if (!c || !rt.state.sessionId) return;
+        await c.setModel(rt.state.sessionId, modelId);
+        rt.renderer.addSystemMessage(`${t().slash.modelSwitched} \`${modelId}\``);
       },
     });
     registry.registerBuiltin({
@@ -612,18 +646,20 @@ export class CoOberViewController {
       category: 'agent',
       source: 'builtin',
       enabled: () => client() !== null && this.state.sessionId !== null,
-      run: async (args: string) => {
+      run: async (args: string, scope?: CommandScope) => {
+        const rt = this.scopeRuntime(scope);
+        if (!rt) return;
         const modeId = args.trim();
         if (!modeId) {
-          this.renderer.addSystemMessage(
-            `${t().slash.availableModes}\n${this.state.availableModes.map((m) => `- \`${m.id}\`: ${m.name}`).join('\n')}`,
+          rt.renderer.addSystemMessage(
+            `${t().slash.availableModes}\n${rt.state.availableModes.map((m) => `- \`${m.id}\`: ${m.name}`).join('\n')}`,
           );
           return;
         }
         const c = client();
-        if (!c || !this.state.sessionId) return;
-        await c.setMode(this.state.sessionId, modeId);
-        this.renderer.addSystemMessage(`${t().slash.modeSwitched} \`${modeId}\``);
+        if (!c || !rt.state.sessionId) return;
+        await c.setMode(rt.state.sessionId, modeId);
+        rt.renderer.addSystemMessage(`${t().slash.modeSwitched} \`${modeId}\``);
       },
     });
   }
@@ -648,7 +684,7 @@ export class CoOberViewController {
     this.unsubscribeLocale?.();
     this.unsubscribeLocale = null;
     for (const rt of this.runtimes.values()) this.dropQueuedPrompts(rt);
-    this.endSideChat();
+    for (const rt of this.runtimes.values()) this.endSideChat(rt);
     for (const rt of this.runtimes.values()) await rt.streamCtrl.dispose();
     this.noteContentCache.clear();
   }
@@ -882,34 +918,37 @@ export class CoOberViewController {
     }
   }
 
-  async compactSession(): Promise<void> {
+  async compactSession(rt: SessionRuntime = this.activeRuntime): Promise<void> {
     // Cancel any active generation, then send /compact through the ACP agent
-    await this.cancelActiveGeneration();
-    await this.sendTextToAgent('/compact');
+    await this.cancelActiveGeneration(rt);
+    await this.sendTextToAgent('/compact', undefined, rt);
   }
 
-  async createNewSession(): Promise<void> {
-    await this.newSession();
+  async createNewSession(rt: SessionRuntime = this.activeRuntime): Promise<void> {
+    await this.newSession(false, rt);
   }
 
   /**
-   * The active tab may host the next session without a new tab when it holds
-   * no in-flight turn and nothing the user could lose (no session, or an
-   * empty transcript).
+   * A tab may host the next session without a new tab when it holds no
+   * in-flight turn and nothing the user could lose (no session, or an empty
+   * transcript).
    */
-  private canAdoptActiveTab(): boolean {
-    const rt = this.activeRuntime;
+  private canAdoptTab(rt: SessionRuntime): boolean {
     if (rt.busy) return false;
     if (!rt.state.sessionId) return true;
     const session = this.deps.sessionStore.get(rt.state.sessionId);
     return (session?.messages.length ?? 0) === 0;
   }
 
+  private canAdoptActiveTab(): boolean {
+    return this.canAdoptTab(this.activeRuntime);
+  }
+
   /**
-   * `/new` may reuse the current tab; the strip's "+" (`forceNewTab`) always
-   * opens another one so the conversation in view is never replaced.
+   * `/new` may reuse the tab it was typed in; the strip's "+" (`forceNewTab`)
+   * always opens another one so the conversation in view is never replaced.
    */
-  async newSession(forceNewTab = false): Promise<void> {
+  async newSession(forceNewTab = false, homeTab: SessionRuntime = this.activeRuntime): Promise<void> {
     await this.deps.sessionStore.save();
     const connected = await this.ensureClientConnected();
     if (!connected) return;
@@ -917,9 +956,9 @@ export class CoOberViewController {
     if (!c) return;
 
     // A streaming tab is never stolen: /new opens a fresh tab beside it.
-    const adopt = !forceNewTab && this.canAdoptActiveTab();
+    const adopt = !forceNewTab && this.canAdoptTab(homeTab);
     if (!adopt && this.tabLimitReached()) return;
-    const rt = adopt ? this.activeRuntime : this.openRuntime(null);
+    const rt = adopt ? homeTab : this.openRuntime(null);
     if (!adopt) this.activateRuntime(rt);
     else this.resetRuntimeView(rt);
 
@@ -1118,46 +1157,46 @@ export class CoOberViewController {
    * questioner to the view's side-chat panel. The main session is never
    * touched: no transcript, store or toolbar state changes here.
    */
-  async startSideChat(question: string): Promise<void> {
+  async startSideChat(question: string, rt: SessionRuntime = this.activeRuntime): Promise<void> {
     const client = this.deps.runtime.getClient();
     if (!client) {
-      this.renderer.addError(t().sideChat.notConnected);
+      rt.renderer.addError(t().sideChat.notConnected);
       return;
     }
     if (client.getAgentCapabilities?.()?.sessionCapabilities?.fork !== true) {
-      this.renderer.addError(t().sideChat.forkUnsupported);
+      rt.renderer.addError(t().sideChat.forkUnsupported);
       return;
     }
-    if (this.busy) {
-      this.renderer.addSystemMessage(t().sideChat.busy);
+    if (rt.busy) {
+      rt.renderer.addSystemMessage(t().sideChat.busy);
       return;
     }
     try {
-      if (!this.sideChatSessionId) {
-        const parent = await this.ensureRuntimeSession();
+      if (!rt.sideChatSessionId) {
+        const parent = await this.ensureRuntimeSession(rt);
         if (!parent) return;
-        this.sideChatSessionId = await client.forkSession(parent, this.getVaultCwd());
+        rt.sideChatSessionId = await client.forkSession(parent, this.getVaultCwd());
       }
-      this.callbacks.onOpenSideChat?.(this.buildSideChatAsk(), question);
+      this.callbacks.onOpenSideChat?.(this.buildSideChatAsk(rt), question, rt.tabId);
     } catch (e) {
       console.error('[co-ober] side chat fork:', e);
-      this.renderer.addError(t().sideChat.failed.replace('{error}', e instanceof Error ? e.message : String(e)));
+      rt.renderer.addError(t().sideChat.failed.replace('{error}', e instanceof Error ? e.message : String(e)));
     }
   }
 
-  private buildSideChatAsk(): SideChatAsk {
+  private buildSideChatAsk(rt: SessionRuntime): SideChatAsk {
     return async (text, onChunk) => {
       const client = this.deps.runtime.getClient();
-      const sideId = this.sideChatSessionId;
+      const sideId = rt.sideChatSessionId;
       if (!client || !sideId) throw new Error(t().sideChat.notConnected);
       return client.sendMessage(sideId, [{ type: 'text', text }], onChunk);
     };
   }
 
-  /** Close and release the side session; the panel's onClose hook calls this. */
-  endSideChat(): void {
-    const sideId = this.sideChatSessionId;
-    this.sideChatSessionId = null;
+  /** Close and release one tab's side session; the panel's onClose hook calls this. */
+  endSideChat(rt: SessionRuntime = this.activeRuntime): void {
+    const sideId = rt.sideChatSessionId;
+    rt.sideChatSessionId = null;
     if (!sideId) return;
     const client = this.deps.runtime.getClient();
     if (client?.getAgentCapabilities?.()?.sessionCapabilities?.close) {
@@ -1166,17 +1205,19 @@ export class CoOberViewController {
   }
 
   /** Cancel a still-streaming side-chat turn; the panel calls this when closed mid-answer. */
-  abortSideChat(): void {
-    const sideId = this.sideChatSessionId;
+  abortSideChat(tabId?: string): void {
+    const rt = tabId ? this.runtimes.get(tabId) : this.activeRuntime;
+    const sideId = rt?.sideChatSessionId;
     if (!sideId) return;
     const client = this.deps.runtime.getClient();
     if (!client) return;
     void client.cancel(sideId).catch((e) => console.warn('[co-ober] side chat cancel:', e));
   }
 
-  async resumeSession(sessionId: string): Promise<void> {
+  async resumeSession(sessionId: string, homeTab?: SessionRuntime): Promise<void> {
     const client = this.deps.runtime.getClient();
     if (!client) return;
+    const home = homeTab ?? this.activeRuntime;
     // Mirror switchSession's tab semantics: an open session just takes focus;
     // otherwise the current tab is adopted when idle-and-empty, or a new tab
     // leaves the streaming one untouched.
@@ -1185,9 +1226,9 @@ export class CoOberViewController {
       if (existing !== this.activeRuntime) this.activateRuntime(existing);
       return;
     }
-    const adopt = this.canAdoptActiveTab();
+    const adopt = this.canAdoptTab(home);
     if (!adopt && this.tabLimitReached()) return;
-    const rt = adopt ? this.activeRuntime : this.openRuntime(sessionId);
+    const rt = adopt ? home : this.openRuntime(sessionId);
     if (adopt) this.resetRuntimeView(rt);
     else this.activateRuntime(rt);
     rt.state.sessionId = sessionId;
@@ -1215,7 +1256,7 @@ export class CoOberViewController {
     await this.deps.sessionStore.save();
     this.notifyTabsChanged();
     this.persistTabShell();
-    this.loadToolbarOptions();
+    this.loadToolbarOptions(rt);
     if (this.isActiveTab(rt)) {
       this.callbacks.onShowWelcome(this.deps.runtime.getClient() !== null);
       this.callbacks.onAutoRefActiveFile();
@@ -1751,7 +1792,7 @@ export class CoOberViewController {
         if (def.source === 'builtin') {
           rt.renderer.addUserMessage(text);
           rt.streamCtrl.saveMessage('user', text, 'text');
-          await def.run(parsed.args);
+          await def.run(parsed.args, { tabId: rt.tabId });
           return;
         }
         if (def.source === 'file' && def.template) {
@@ -2071,11 +2112,11 @@ export class CoOberViewController {
     }
   }
 
-  async exportSessionToNote(): Promise<void> {
-    const id = this.state.sessionId;
+  async exportSessionToNote(rt: SessionRuntime = this.activeRuntime): Promise<void> {
+    const id = rt.state.sessionId;
     const session = id ? this.deps.sessionStore.get(id) : undefined;
     if (!session || session.messages.length === 0) {
-      this.renderer.addSystemMessage(t().export.noSession);
+      rt.renderer.addSystemMessage(t().export.noSession);
       return;
     }
     const markdown = buildTranscriptMarkdown(session);
@@ -2084,23 +2125,23 @@ export class CoOberViewController {
     const path = folder ? `${folder}/${name}` : name;
     try {
       await this.deps.runtime.createNote(path, markdown);
-      this.renderer.addSystemMessage(t().export.saved.replace('{path}', path));
+      rt.renderer.addSystemMessage(t().export.saved.replace('{path}', path));
     } catch (e) {
-      this.renderer.addSystemMessage(
+      rt.renderer.addSystemMessage(
         t().export.failed.replace('{error}', e instanceof Error ? e.message : String(e)),
       );
     }
   }
 
-  copyTranscript(): void {
-    const id = this.state.sessionId;
+  copyTranscript(rt: SessionRuntime = this.activeRuntime): void {
+    const id = rt.state.sessionId;
     const session = id ? this.deps.sessionStore.get(id) : undefined;
     if (!session || session.messages.length === 0) {
-      this.renderer.addSystemMessage(t().export.noSession);
+      rt.renderer.addSystemMessage(t().export.noSession);
       return;
     }
     void navigator.clipboard.writeText(buildTranscriptMarkdown(session)).then(() => {
-      this.renderer.addSystemMessage(t().copy.transcript);
+      rt.renderer.addSystemMessage(t().copy.transcript);
     });
   }
 
@@ -2230,11 +2271,13 @@ export class CoOberViewController {
   /** Tear one tab's screen down without touching any other tab's turn. */
   private resetRuntimeView(rt: SessionRuntime): void {
     const active = this.isActiveTab(rt);
+    // The scratch thread was forked from this tab's conversation, so it is
+    // this tab's to release — whether or not it is the one on screen.
+    this.endSideChat(rt);
+    this.callbacks.onCloseSideChat?.(rt.tabId);
     if (active) {
       this.deps.inlineEditPanel.clearState();
       this.deps.permissionBanner.dismiss();
-      this.endSideChat();
-      this.callbacks.onCloseSideChat?.();
       this.deps.welcomeView.hide();
     }
     rt.renderer.clear();

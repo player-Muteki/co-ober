@@ -40,8 +40,23 @@ export class SideChatPanel {
     return this.busy;
   }
 
+  /** Put this tab's thread in front; the scratch Q&A survives a tab switch. */
+  show(): void {
+    if (!this.el) return;
+    this.el.removeClass('co-ober-side-chat-hidden');
+    this.inputEl?.focus();
+  }
+
+  /** Take it out of sight without closing it — closing would release the session. */
+  hide(): void {
+    this.el?.addClass('co-ober-side-chat-hidden');
+  }
+
   open(initialQuestion?: string): void {
     if (!this.el) this.render();
+    // Asking again from a tab whose panel was hidden behind another brings it
+    // back; hide() only takes it out of sight.
+    this.el?.removeClass('co-ober-side-chat-hidden');
     const question = (initialQuestion ?? '').trim();
     if (question) void this.send(question);
     else this.inputEl?.focus();

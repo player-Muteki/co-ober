@@ -31,6 +31,12 @@ export class SessionRuntime {
   unread = false;
   /** Set when a drained turn lost the race for a stream slot and re-queued. */
   capacityParked = false;
+  /**
+   * The /btw scratch thread this tab forked, if any. It is owned here rather
+   * than by the view or the controller: a fork outliving the tab that asked
+   * for it leaks a live session on the agent side.
+   */
+  sideChatSessionId: string | null = null;
 
   constructor(
     readonly tabId: string,

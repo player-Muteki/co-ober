@@ -757,7 +757,7 @@ describe('CoOberViewController — tab strip and shells (0.2.0 stage 3)', () => 
   });
 });
 
-describe('CoOberViewController — one tab’s teardown stays inside that tab (0.3.0 stage 2)', () => {
+describe('CoOberViewController — one tab’s teardown stays inside that tab (0.2.1 stage 2)', () => {
   let h: Harness;
 
   beforeEach(() => {
@@ -968,7 +968,7 @@ describe('CoOberViewController — one tab’s teardown stays inside that tab (0
   });
 });
 
-describe('CoOberViewController — the slash menu speaks for the tab in view (0.3.0 stage 3)', () => {
+describe('CoOberViewController — the slash menu speaks for the tab in view (0.2.1 stage 3)', () => {
   let h: Harness;
   const cmdA: AvailableCommand[] = [{ name: 'cmdA', description: 'from A' }];
   const cmdB: AvailableCommand[] = [{ name: 'cmdB', description: 'from B' }];
@@ -1048,5 +1048,165 @@ describe('CoOberViewController — the slash menu speaks for the tab in view (0.
     // previous tab's commands.
     await h.controller.newSession(true);
     expect(commandRegistry.find('cmdA')).toBeUndefined();
+  });
+});
+
+describe('CoOberViewController — a thread and a command belong to one tab (0.2.2 stage 1)', () => {
+  let h: Harness;
+
+  beforeEach(() => {
+    h = createHarness();
+    commandRegistry.updateAcpCommands([]);
+    Notice.messages.length = 0;
+  });
+
+  /** A client that can fork and close, so /btw has somewhere to go. */
+  function forkClient(overrides: Record<string, unknown> = {}) {
+    const client = createMockClient({
+      getAgentCapabilities: vi.fn(() => ({ sessionCapabilities: { fork: true, close: true } })),
+      ...overrides,
+    });
+    (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+    return client;
+  }
+
+  /** Tab A kept on its own session, tab B freshly created and on screen. */
+  async function tabBehindTheFrontOne(client: ReturnType<typeof createMockClient>) {
+    (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+    h.controller.state.sessionId = 'ses-a';
+    const tabA = h.controller.activeTabId();
+    await h.controller.newSession(true);
+    const tabB = h.controller.activeTabId();
+    expect(tabB).not.toBe(tabA);
+    return { tabA, tabB };
+  }
+
+  describe('the /btw thread', () => {
+    it('is forked from the conversation that asked, not the one on screen', async () => {
+      const client = forkClient({
+        forkSession: vi.fn().mockResolvedValueOnce('fork-a').mockResolvedValueOnce('fork-b'),
+      });
+      const { tabA, tabB } = await tabBehindTheFrontOne(client);
+
+      await h.controller.startSideChat('from the background tab', rtOf(h, tabA));
+
+      expect(client.forkSession).toHaveBeenCalledWith('ses-a', '/vault');
+      const calls = (h.callbacks.onOpenSideChat as ReturnType<typeof vi.fn>).mock.calls as Array<
+        [unknown, string, string]
+      >;
+      // The panel is opened for the asking tab, so two tabs get two threads.
+      expect(calls[calls.length - 1][1]).toBe('from the background tab');
+      expect(calls[calls.length - 1][2]).toBe(tabA);
+      expect(rtOf(h, tabB).sideChatSessionId).toBeNull();
+    });
+
+    it('survives a tab switch, because switching is not closing', async () => {
+      const client = forkClient();
+      const { tabA, tabB } = await tabBehindTheFrontOne(client);
+      await h.controller.startSideChat('still thinking', rtOf(h, tabB));
+
+      h.controller.switchToTab(tabA);
+      h.controller.switchToTab(tabB);
+
+      expect(rtOf(h, tabB).sideChatSessionId).toBe('forked-session');
+      expect(client.closeSession).not.toHaveBeenCalled();
+      expect(h.callbacks.onCloseSideChat).not.toHaveBeenCalled();
+    });
+
+    it('goes back with the tab that owns it, even from the background', async () => {
+      const client = forkClient();
+      const { tabA, tabB } = await tabBehindTheFrontOne(client);
+      await h.controller.startSideChat('bye then', rtOf(h, tabA));
+      client.closeSession.mockClear();
+
+      await h.controller.closeTab(tabA);
+
+      expect(client.closeSession).toHaveBeenCalledWith('forked-session');
+      expect(h.callbacks.onCloseSideChat).toHaveBeenCalledWith(tabA);
+      // The strip fell back to the other tab, thread and all.
+      expect(h.controller.activeTabId()).toBe(tabB);
+      expect(rtOf(h, tabB).sideChatSessionId).toBeNull();
+    });
+
+    it('is released by a reset of its own tab and left alone by a reset of another', async () => {
+      const client = forkClient({
+        forkSession: vi.fn().mockResolvedValueOnce('fork-a').mockResolvedValueOnce('fork-b'),
+      });
+      const { tabA, tabB } = await tabBehindTheFrontOne(client);
+      await h.controller.startSideChat('from A', rtOf(h, tabA));
+      await h.controller.startSideChat('from B', rtOf(h, tabB));
+      client.closeSession.mockClear();
+
+      await commandRegistry.find('clear')!.run('', { tabId: tabA });
+
+      expect(client.closeSession).toHaveBeenCalledTimes(1);
+      expect(client.closeSession).toHaveBeenCalledWith('fork-a');
+      expect(rtOf(h, tabB).sideChatSessionId).toBe('fork-b');
+    });
+
+    it('is cancelled by its own tab only', async () => {
+      const client = forkClient();
+      const { tabA, tabB } = await tabBehindTheFrontOne(client);
+      await h.controller.startSideChat('from B', rtOf(h, tabB));
+
+      h.controller.abortSideChat(tabA);
+      expect(client.cancel).not.toHaveBeenCalled();
+      h.controller.abortSideChat(tabB);
+      expect(client.cancel).toHaveBeenCalledWith('forked-session');
+    });
+  });
+
+  describe('builtin commands', () => {
+    it('apply to the tab that queued them, once its turn finally releases', async () => {
+      let finish: (r: AcpResponse) => void = () => {};
+      const client = createMockClient({
+        sendMessage: vi.fn(() => new Promise<AcpResponse>((resolve) => { finish = resolve; })),
+      });
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      h.controller.state.sessionId = 'ses-a';
+      const tabA = h.controller.activeTabId();
+      void h.controller.send('question A', []);
+      await tick();
+      await h.controller.send('/model gpt-x', []);
+      expect(rtOf(h, tabA).promptQueue.map((e) => e.text)).toEqual(['/model gpt-x']);
+
+      // The reader moves on while the turn is still running.
+      await h.controller.switchSession('ses-b');
+      const tabB = h.controller.activeTabId();
+      finish({ stopReason: 'end_turn' } as AcpResponse);
+      await tick();
+
+      expect(client.setModel).toHaveBeenCalledWith('ses-a', 'gpt-x');
+      expect(rtOf(h, tabA).renderer.addSystemMessage).toHaveBeenCalledWith(expect.stringContaining('gpt-x'));
+      expect(rtOf(h, tabB).renderer.addSystemMessage).not.toHaveBeenCalled();
+      expect(h.controller.activeTabId()).toBe(tabB);
+    });
+
+    it('take over the tab they were typed in instead of the screen', async () => {
+      const client = createMockClient({
+        createSession: vi.fn().mockResolvedValueOnce('ses-new-1').mockResolvedValueOnce('ses-new-2'),
+      });
+      const { tabA, tabB } = await tabBehindTheFrontOne(client);
+      expect(rtOf(h, tabB).state.sessionId).toBe('ses-new-1');
+      const welcomeCalls = (h.callbacks.onShowWelcome as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      await commandRegistry.find('new')!.run('', { tabId: tabA });
+
+      expect(rtOf(h, tabA).state.sessionId).toBe('ses-new-2');
+      expect(rtOf(h, tabB).state.sessionId).toBe('ses-new-1');
+      // `/new` greets the user with a welcome screen only on the tab it reset;
+      // a background reset must not blank the tab in view.
+      expect(h.callbacks.onShowWelcome).toHaveBeenCalledTimes(welcomeCalls);
+    });
+
+    it('do nothing at all once their tab is gone', async () => {
+      const client = forkClient();
+      const front = h.controller.activeTabId();
+
+      await commandRegistry.find('model')!.run('gpt-x', { tabId: 'tab-404' });
+
+      expect(client.setModel).not.toHaveBeenCalled();
+      expect(rtOf(h, front).renderer.addSystemMessage).not.toHaveBeenCalled();
+    });
   });
 });

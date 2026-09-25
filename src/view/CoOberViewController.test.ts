@@ -2696,10 +2696,15 @@ describe('CoOberViewController — side chat (/btw)', () => {
     const client = forkClient();
     controller.state.sessionId = 'local-1';
 
-    await commandRegistry.find('btw')!.run('quick question');
+    await commandRegistry.find('btw')!.run('quick question', { tabId: controller.activeTabId() });
 
     expect(client.forkSession).toHaveBeenCalledWith('local-1', '/vault');
-    expect(callbacks.onOpenSideChat).toHaveBeenCalledWith(expect.any(Function), 'quick question');
+    // The panel is opened for the asking tab, so it follows that tab around.
+    expect(callbacks.onOpenSideChat).toHaveBeenCalledWith(
+      expect.any(Function),
+      'quick question',
+      controller.activeTabId(),
+    );
   });
 
   it('surfaces fork failures as errors', async () => {
