@@ -196,4 +196,39 @@ describe('SideChatPanel', () => {
 
     expect(abort).not.toHaveBeenCalled();
   });
+
+  it('relabels the panel chrome live when the locale changes', () => {
+    const { panel } = makePanel();
+    panel.open();
+
+    setLocale('zh');
+    try {
+      const root = container.querySelector('.co-ober-side-chat');
+      expect(root?.querySelector('.co-ober-side-chat-title')?.textContent).toBe('侧边对话');
+      expect(root?.querySelector('.co-ober-side-chat-subtitle')?.textContent).toContain('fork');
+      expect(root?.querySelector('.co-ober-side-chat-close')?.textContent).toBe('关闭');
+      expect(root?.querySelector('.co-ober-side-chat-send')?.textContent).toBe('提问');
+      expect((root?.querySelector('.co-ober-side-chat-textarea') as HTMLTextAreaElement).placeholder)
+        .toBe('问一个支线问题…');
+    } finally {
+      setLocale('en');
+    }
+    expect(container.querySelector('.co-ober-side-chat-title')?.textContent).toBe('Side chat');
+    panel.close();
+  });
+
+  it('drops its locale subscription once closed', () => {
+    const { panel } = makePanel();
+    panel.open();
+    const root = container.querySelector('.co-ober-side-chat') as HTMLElement;
+    panel.close();
+
+    setLocale('zh');
+    try {
+      // The detached shell must keep its English chrome — no stale listener mutates it.
+      expect(root.querySelector('.co-ober-side-chat-title')?.textContent).toBe('Side chat');
+    } finally {
+      setLocale('en');
+    }
+  });
 });

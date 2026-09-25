@@ -178,7 +178,7 @@ function createWriteEditToolCall(
   const bw = createWriteEditBlock(
     parentEl,
     toolCallId,
-    getToolDisplayName(kind),
+    kind,
     getToolSummary(kind, input, locations),
   );
 

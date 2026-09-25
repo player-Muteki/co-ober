@@ -122,10 +122,10 @@ export class SessionDropdown {
 				this.createActionButton(it, 'session-rename', '✎', capabilities?.list !== false, t().sessionDropdown.rename, async () => {
 					this.startInlineRename(it, s);
 				});
-				this.createActionButton(it, 'session-fork', '⎇', capabilities?.fork === true, t().sessionDropdown.forkDisabled, async () => {
+				this.createActionButton(it, 'session-fork', '⎇', capabilities?.fork === true, capabilities?.fork === true ? t().sessionDropdown.fork : t().sessionDropdown.forkDisabled, async () => {
 					await this.callbacks.onFork?.(s.sessionId);
 				});
-				this.createActionButton(it, 'session-resume', '↻', capabilities?.resume === true, t().sessionDropdown.resumeDisabled, async () => {
+				this.createActionButton(it, 'session-resume', '↻', capabilities?.resume === true, capabilities?.resume === true ? t().sessionDropdown.resume : t().sessionDropdown.resumeDisabled, async () => {
 					await this.callbacks.onResume?.(s.sessionId);
 				});
 				this.createDeleteButton(it, s.sessionId, capabilities?.close === true);
@@ -311,12 +311,14 @@ export class SessionDropdown {
 		return current.length > 0 ? current : [{ sessionId: currentId, title: currentId }];
 	}
 
-	private createActionButton(container: HTMLElement, cls: string, text: string, enabled: boolean, disabledTitle: string, onClick: () => Promise<void>): void {
+	/** `title` labels the button in both states: why it works, or why it cannot. */
+	private createActionButton(container: HTMLElement, cls: string, text: string, enabled: boolean, title: string, onClick: () => Promise<void>): void {
 		const button = container.createEl('button', { text, cls });
+		button.setAttribute('title', title);
+		button.setAttribute('aria-label', title);
 		if (!enabled) {
 			button.disabled = true;
 			button.addClass('is-disabled');
-			button.setAttribute('title', disabledTitle);
 			return;
 		}
 		button.onclick = (e: MouseEvent) => {
@@ -328,10 +330,12 @@ export class SessionDropdown {
 	/** Delete needs a second confirming click; a timeout reverts to the armed-off state. */
 	private createDeleteButton(container: HTMLElement, sessionId: string, enabled: boolean): void {
 		const button = container.createEl('button', { text: '×', cls: 'session-delete' });
+		button.setAttribute('aria-label', t().sessionDropdown.delete);
 		if (!enabled) {
 			button.disabled = true;
 			button.addClass('is-disabled');
 			button.setAttribute('title', t().sessionDropdown.closeDisabled);
+			button.setAttribute('aria-label', t().sessionDropdown.closeDisabled);
 			return;
 		}
 		let confirmTimer: number | null = null;
@@ -343,6 +347,7 @@ export class SessionDropdown {
 			}
 			button.classList.remove('is-confirm');
 			button.textContent = '×';
+			button.setAttribute('aria-label', t().sessionDropdown.delete);
 			button.removeAttribute('title');
 		};
 		button.onclick = (e: MouseEvent) => {
@@ -351,6 +356,7 @@ export class SessionDropdown {
 				button.classList.add('is-confirm');
 				button.textContent = '✓';
 				button.setAttribute('title', t().sessionDropdown.confirmDelete);
+				button.setAttribute('aria-label', t().sessionDropdown.confirmDelete);
 				confirmTimer = window.setTimeout(reset, DELETE_CONFIRM_TIMEOUT_MS);
 				this.pendingDeleteTimers.add(confirmTimer);
 				return;
@@ -369,7 +375,7 @@ export class SessionDropdown {
 		const original = session.title || session.sessionId;
 		const input = item.createEl('input', {
 			cls: 'session-rename-input',
-			attr: { type: 'text' },
+			attr: { type: 'text', 'aria-label': t().sessionDropdown.renameInput },
 		});
 		label.replaceWith(input);
 		input.value = original;

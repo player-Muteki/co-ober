@@ -1,4 +1,4 @@
-import { t } from '../i18n/index';
+import { t, onLocaleChange } from '../i18n/index';
 import { isImeComposing } from '../utils/ime';
 import type { AcpResponse, NormalizedUpdate } from '../types';
 
@@ -23,6 +23,11 @@ export class SideChatPanel {
   private el: HTMLDivElement | null = null;
   private transcriptEl: HTMLDivElement | null = null;
   private inputEl: HTMLTextAreaElement | null = null;
+  private titleEl: HTMLDivElement | null = null;
+  private subtitleEl: HTMLDivElement | null = null;
+  private closeBtnEl: HTMLButtonElement | null = null;
+  private sendBtnEl: HTMLButtonElement | null = null;
+  private unsubscribeLocale: (() => void) | null = null;
   private busy = false;
 
   constructor(private deps: SideChatPanelDeps) {}
@@ -48,9 +53,10 @@ export class SideChatPanel {
 
     const header = root.createDiv({ cls: 'co-ober-side-chat-header' });
     const heading = header.createDiv({ cls: 'co-ober-side-chat-heading' });
-    heading.createDiv({ cls: 'co-ober-side-chat-title', text: t().sideChat.title });
-    heading.createDiv({ cls: 'co-ober-side-chat-subtitle', text: t().sideChat.subtitle });
+    this.titleEl = heading.createDiv({ cls: 'co-ober-side-chat-title', text: t().sideChat.title });
+    this.subtitleEl = heading.createDiv({ cls: 'co-ober-side-chat-subtitle', text: t().sideChat.subtitle });
     const closeBtn = header.createEl('button', { cls: 'co-ober-side-chat-close', text: t().sideChat.close });
+    this.closeBtnEl = closeBtn;
     closeBtn.onclick = () => this.close();
 
     this.transcriptEl = root.createDiv({ cls: 'co-ober-side-chat-transcript' });
@@ -73,8 +79,20 @@ export class SideChatPanel {
       }
     };
     const sendBtn = form.createEl('button', { cls: 'co-ober-side-chat-send', text: t().sideChat.send });
+    this.sendBtnEl = sendBtn;
     sendBtn.onclick = () => this.submitFromInput();
+    // Relabel the chrome in place when the user switches locale while open.
+    this.unsubscribeLocale?.();
+    this.unsubscribeLocale = onLocaleChange(() => this.relabel());
     textarea.focus();
+  }
+
+  private relabel(): void {
+    if (this.titleEl) this.titleEl.textContent = t().sideChat.title;
+    if (this.subtitleEl) this.subtitleEl.textContent = t().sideChat.subtitle;
+    if (this.closeBtnEl) this.closeBtnEl.textContent = t().sideChat.close;
+    if (this.sendBtnEl) this.sendBtnEl.textContent = t().sideChat.send;
+    if (this.inputEl) this.inputEl.placeholder = t().sideChat.placeholder;
   }
 
   private submitFromInput(): void {
@@ -131,10 +149,16 @@ export class SideChatPanel {
 
   close(): void {
     if (this.busy) this.deps.abort?.();
+    this.unsubscribeLocale?.();
+    this.unsubscribeLocale = null;
     this.el?.remove();
     this.el = null;
     this.transcriptEl = null;
     this.inputEl = null;
+    this.titleEl = null;
+    this.subtitleEl = null;
+    this.closeBtnEl = null;
+    this.sendBtnEl = null;
     this.deps.onClose?.();
   }
 }

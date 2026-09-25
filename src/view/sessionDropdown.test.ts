@@ -131,6 +131,63 @@ describe('SessionDropdown', () => {
     });
   });
 
+  describe('action labels', () => {
+    it('gives every enabled action button a title and aria-label', () => {
+      dropdown.open();
+      const item = container.querySelector('.co-ober-session-item') as HTMLElement;
+      const assertLabel = (cls: string, label: string) => {
+        const button = item.querySelector(`.${cls}`) as HTMLButtonElement;
+        expect(button.getAttribute('title')).toBe(label);
+        expect(button.getAttribute('aria-label')).toBe(label);
+      };
+      assertLabel('session-pin', 'Pin session');
+      assertLabel('session-rename', 'Rename session');
+      assertLabel('session-fork', 'Fork session');
+      assertLabel('session-resume', 'Resume session');
+      // The delete button only carries an aria-label until it arms for confirmation.
+      const del = item.querySelector('.session-delete') as HTMLButtonElement;
+      expect(del.getAttribute('aria-label')).toBe('Delete session');
+      expect(del.getAttribute('title')).toBeNull();
+    });
+
+    it('keeps the disabled reason on both title and aria-label', () => {
+      dropdown = new SessionDropdown(container, anchor, sessionStore as any, () => 'session-1', callbacks as any, () => ({ sessionCapabilities: {} }));
+      dropdown.open();
+      const item = container.querySelector('.co-ober-session-item') as HTMLElement;
+      const fork = item.querySelector('.session-fork') as HTMLButtonElement;
+      expect(fork.disabled).toBe(true);
+      expect(fork.getAttribute('title')).toBe('Fork is not supported by this OpenCode agent');
+      expect(fork.getAttribute('aria-label')).toBe('Fork is not supported by this OpenCode agent');
+      const del = item.querySelector('.session-delete') as HTMLButtonElement;
+      expect(del.getAttribute('aria-label')).toBe('Close is not supported by this OpenCode agent');
+    });
+
+    it('moves the delete aria-label through confirm and back on timeout', () => {
+      vi.useFakeTimers();
+      try {
+        dropdown.open();
+        const del = container.querySelector('.session-delete') as HTMLButtonElement;
+        del.click();
+        expect(del.getAttribute('aria-label')).toBe('Click again to confirm deletion');
+        expect(del.getAttribute('title')).toBe('Click again to confirm deletion');
+        vi.advanceTimersByTime(3000);
+        expect(del.getAttribute('aria-label')).toBe('Delete session');
+        expect(del.getAttribute('title')).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('labels the inline rename input', () => {
+      dropdown.open();
+      const item = container.querySelector('.co-ober-session-item') as HTMLElement;
+      (item.querySelector('.session-rename') as HTMLButtonElement).click();
+      const input = item.querySelector('.session-rename-input') as HTMLInputElement;
+      expect(input).not.toBeNull();
+      expect(input.getAttribute('aria-label')).toBe('New session name');
+    });
+  });
+
   describe('close', () => {
     it('removes dropdown element', () => {
       dropdown.open();

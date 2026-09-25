@@ -886,6 +886,22 @@ describe('ChatRenderer', () => {
       expect(container.querySelector('.tc-kind')?.textContent).toBe('读取');
       setLocale('en');
     });
+
+    it('rebuilds collapsible aria-labels with the localized action word', () => {
+      renderer.addToolCall('call-1', 'Read note', 'read', {});
+      const header = container.querySelector('.co-ober-tool-call-header') as HTMLElement;
+      expect(header.getAttribute('aria-label')).toContain('- click to expand');
+
+      setLocale('zh');
+      renderer.refreshLocale();
+      expect(header.getAttribute('aria-label')).toContain('- 点击展开');
+
+      // Expanded headers must relabel with the collapse word instead.
+      header.click();
+      renderer.refreshLocale();
+      expect(header.getAttribute('aria-label')).toContain('- 点击收起');
+      setLocale('en');
+    });
   });
 
   describe('copy button reset timer', () => {

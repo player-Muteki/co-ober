@@ -9,6 +9,7 @@
  */
 
 import { setIcon } from 'obsidian';
+import { lookupLocaleString, t } from '../i18n/index';
 import { setupCollapsible, collapseElement, type CollapsibleState } from './collapsible';
 import {
   parseDiffLines,
@@ -30,6 +31,7 @@ export interface WriteEditState {
 
 /**
  * Create a write/edit block element with collapsible diff content.
+ * `kind` is the raw tool kind ('write' | 'edit'); the visible label is localized.
  */
 export function createWriteEditBlock(
   parentEl: HTMLElement,
@@ -40,16 +42,18 @@ export function createWriteEditBlock(
   const wrapper = parentEl.createDiv({ cls: 'co-ober-write-edit' });
   wrapper.dataset.toolId = toolCallId;
 
+  const displayName = lookupLocaleString(`toolKind.${kind}`) ?? kind.charAt(0).toUpperCase() + kind.slice(1);
   const header = wrapper.createDiv({ cls: 'co-ober-tool-call-header' });
   header.setAttribute('role', 'button');
   header.setAttribute('tabindex', '0');
-  header.setAttribute('aria-label', `${kind}: ${filePath || 'file'} - click to expand`);
+  header.setAttribute('aria-label', `${displayName}: ${filePath || 'file'} - ${t().collapsible.expand}`);
 
   const iconEl = header.createSpan({ cls: 'tc-icon' });
   const icon = kind === 'edit' ? 'file-pen' : 'file-plus';
   setIcon(iconEl, icon);
 
-  const nameEl = header.createSpan({ cls: 'tc-kind', text: kind });
+  const nameEl = header.createSpan({ cls: 'tc-kind', text: displayName });
+  nameEl.dataset.i18nKind = kind;
   const fileNameEl = header.createSpan({ cls: 'tc-file', text: filePath || '' });
   const statsEl = header.createSpan({ cls: 'tc-diff-stats' });
   const statusEl = header.createSpan({ cls: 'tc-stat', text: '' });
@@ -59,7 +63,7 @@ export function createWriteEditBlock(
   const collapsibleState: CollapsibleState = { isExpanded: false };
   setupCollapsible(wrapper, header, body, collapsibleState, {
     initiallyExpanded: false,
-    baseAriaLabel: `${kind}: ${filePath || 'file'}`,
+    baseAriaLabel: `${displayName}: ${filePath || 'file'}`,
     scrollOnExpand: true,
   });
 

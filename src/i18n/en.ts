@@ -31,6 +31,10 @@ const en = {
     confirmDelete: 'Click again to confirm deletion',
     summaryBadge: '{files} files +{additions} -{deletions}',
     listboxAria: 'Session list',
+    fork: 'Fork session',
+    resume: 'Resume session',
+    delete: 'Delete session',
+    renameInput: 'New session name',
   },
 
   header: {
@@ -89,6 +93,11 @@ const en = {
     forkUnsupported: 'This OpenCode agent does not support session forking, so side chat is unavailable.',
     busy: 'Wait for the current response to finish before asking the side chat.',
     failed: 'Side chat request failed: {error}',
+  },
+
+  collapsible: {
+    expand: 'click to expand',
+    collapse: 'click to collapse',
   },
 
   permission: {

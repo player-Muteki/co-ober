@@ -13,10 +13,11 @@
  * @since Phase 1 (refactored)
  */
 
+import { t } from '../i18n/index';
+
 export interface CollapsibleState {
   isExpanded: boolean;
 }
-
 export interface CollapsibleOptions {
   /** Initial expanded state (default: false) */
   initiallyExpanded?: boolean;
@@ -46,10 +47,14 @@ export function setupCollapsible(
 ): void {
   const { initiallyExpanded = false, onToggle, onExpand, baseAriaLabel, scrollOnExpand = false } = options;
 
+  const actionWord = (expanded: boolean): string =>
+    expanded ? t().collapsible.collapse : t().collapsible.expand;
+
   const updateAriaLabel = (expanded: boolean) => {
     if (baseAriaLabel) {
-      const action = expanded ? 'click to collapse' : 'click to expand';
-      headerEl.setAttribute('aria-label', `${baseAriaLabel} - ${action}`);
+      headerEl.setAttribute('aria-label', `${baseAriaLabel} - ${actionWord(expanded)}`);
+      // Tag the header so a locale switch relabels the live aria-label in place.
+      headerEl.dataset.i18nToggle = baseAriaLabel;
     }
   };
 

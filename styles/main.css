@@ -88,7 +88,8 @@
   transition: opacity 0.15s ease;
 }
 
-.co-ober-msg.user:hover .co-ober-user-actions {
+.co-ober-msg.user:hover .co-ober-user-actions,
+.co-ober-msg.user:focus-within .co-ober-user-actions {
   opacity: 1;
 }
 
@@ -1042,7 +1043,10 @@
 
 .co-ober-session-item:hover .session-fork,
 .co-ober-session-item:hover .session-resume,
-.co-ober-session-item:hover .session-delete {
+.co-ober-session-item:hover .session-delete,
+.co-ober-session-item:focus-within .session-fork,
+.co-ober-session-item:focus-within .session-resume,
+.co-ober-session-item:focus-within .session-delete {
   opacity: 1;
 }
 
@@ -1189,7 +1193,12 @@
   transition: opacity 0.15s;
 }
 
-pre:hover .co-ober-copy-btn {
+pre:hover .co-ober-copy-btn,
+pre:focus-within .co-ober-copy-btn {
+  opacity: 1;
+}
+
+.co-ober-copy-btn:focus-visible {
   opacity: 1;
 }
 
@@ -1601,13 +1610,15 @@ pre:hover .co-ober-copy-btn {
   opacity: 1;
   color: var(--text-normal);
 }
-.co-ober-text-block:hover .co-ober-text-copy-btn {
+.co-ober-text-block:hover .co-ober-text-copy-btn,
+.co-ober-text-block:focus-within .co-ober-text-copy-btn {
   display: block;
 }
 .co-ober-msg.user {
   position: relative;
 }
-.co-ober-msg.user:hover .co-ober-text-copy-btn {
+.co-ober-msg.user:hover .co-ober-text-copy-btn,
+.co-ober-msg.user:focus-within .co-ober-text-copy-btn {
   display: block;
 }
 

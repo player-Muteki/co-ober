@@ -856,6 +856,16 @@ export class ChatRenderer {
     this.container.querySelectorAll<HTMLElement>('[data-i18n-kind]').forEach((el) => {
       el.textContent = getToolDisplayName(el.dataset.i18nKind ?? '');
     });
+    // Collapsible headers rebuild their aria-label from the stored base plus
+    // the current expand/collapse word and expanded state.
+    this.container.querySelectorAll<HTMLElement>('[data-i18n-toggle]').forEach((el) => {
+      const base = el.dataset.i18nToggle ?? '';
+      const expanded = el.getAttribute('aria-expanded') === 'true';
+      el.setAttribute(
+        'aria-label',
+        `${base} - ${expanded ? t().collapsible.collapse : t().collapsible.expand}`,
+      );
+    });
   }
 
   /**

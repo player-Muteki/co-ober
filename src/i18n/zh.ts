@@ -33,6 +33,10 @@ const zh: Locale = {
     confirmDelete: '再次点击以确认删除',
     summaryBadge: '{files} 个文件 +{additions} -{deletions}',
     listboxAria: '会话列表',
+    fork: '分叉会话',
+    resume: '恢复会话',
+    delete: '删除会话',
+    renameInput: '新的会话名称',
   },
 
   header: {
@@ -91,6 +95,11 @@ const zh: Locale = {
     forkUnsupported: '当前 OpenCode agent 不支持会话 fork，无法使用侧边对话。',
     busy: '请等待当前回复结束后再向侧边对话提问。',
     failed: '侧边对话请求失败：{error}',
+  },
+
+  collapsible: {
+    expand: '点击展开',
+    collapse: '点击收起',
   },
 
   permission: {
