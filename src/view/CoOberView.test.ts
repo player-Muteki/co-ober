@@ -153,6 +153,43 @@ describe('CoOberView runtime session sync', () => {
     expect(plugin.savePluginData).toHaveBeenCalled();
   });
 
+  it('removes the exact pending part when chips carry byte-identical images', async () => {
+    setLocale('en');
+    const plugin = createPlugin();
+    const view = createView(plugin);
+    await view.onOpen();
+
+    // Both files encode to the same base64 payload; only the MIME type differs.
+    function MockFileReader(this: any) {
+      this.onload = null;
+      this.result = null;
+      this.readAsDataURL = vi.fn(() => {
+        this.result = 'data:image/png;base64,SAME=';
+        setTimeout(() => {
+          if (this.onload) this.onload({ target: this });
+        }, 0);
+      });
+    }
+    vi.spyOn(globalThis, 'FileReader').mockImplementation(MockFileReader as any);
+
+    const dragDropManager = Reflect.get(view, 'dragDropManager') as {
+      handleFiles: (files: File[]) => Promise<void>;
+    };
+    await dragDropManager.handleFiles([new File(['x'], 'a.png', { type: 'image/png' })]);
+    await dragDropManager.handleFiles([new File(['x'], 'a.jpg', { type: 'image/jpeg' })]);
+
+    const parts = Reflect.get(view, 'pendingImageParts') as Array<{ mimeType: string }>;
+    expect(parts.map((p) => p.mimeType)).toEqual(['image/png', 'image/jpeg']);
+
+    const chips = (Reflect.get(view, 'contextChipsEl') as HTMLElement).querySelectorAll('[data-kind="image"]');
+    expect(chips).toHaveLength(2);
+    (chips[1] as HTMLElement).click();
+
+    // Object-identity removal drops the jpeg part; a data-keyed lookup would
+    // have removed the first byte-identical (png) part instead.
+    expect(parts.map((p) => p.mimeType)).toEqual(['image/png']);
+  });
+
   it('loads restored sessions with configured MCP servers', async () => {
     const mcpServers = [
       { id: 'fs', enabled: true, name: 'filesystem', command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem'] },

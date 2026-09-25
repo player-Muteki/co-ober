@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { SessionRepository } from './session';
 import type { ContentBlock, SerializedMessage, SerializedSession } from '../types';
-import { setLocale } from '../i18n/index';
+import { setLocale, t } from '../i18n/index';
 
 function createSession(id: string, updatedAt = 1, messageCount = 0): SerializedSession {
   return {
@@ -313,5 +313,113 @@ describe('sidecar text-block elision', () => {
     repository.hydrate([session], 's1');
 
     expect(repository.get('s1')).toBe(session);
+  });
+});
+
+describe('stored image budget', () => {
+  function imageBlockSession(id: string, messages: SerializedMessage[]): SerializedSession {
+    return { sessionId: id, title: id, messages, createdAt: 1, updatedAt: 1 };
+  }
+
+  function enforce(repository: SessionRepository, budgetBytes: number): void {
+    const method = Reflect.get(repository, 'enforceStoredImageBudget') as (b: number) => void;
+    method.call(repository, budgetBytes);
+  }
+
+  function imageBlock(data: string, timestamp: number): SerializedMessage {
+    return { role: 'user', content: 'look', type: 'text', timestamp, contentBlocks: [{ type: 'image', mimeType: 'image/png', data }] };
+  }
+
+  it('leaves images untouched while the total fits the budget', () => {
+    const { repository } = createRepository();
+    repository.hydrate([imageBlockSession('s1', [imageBlock('aaaa', 1), imageBlock('bbbb', 2)])], 's1');
+
+    enforce(repository, 8);
+
+    const msgs = repository.get('s1')!.messages;
+    expect(msgs[0].contentBlocks).toHaveLength(1);
+    expect(msgs[1].contentBlocks).toHaveLength(1);
+  });
+
+  it('strips whole image payloads oldest-first until the budget fits', () => {
+    const { repository } = createRepository();
+    const old = imageBlock('AAAAAAAA', 1);
+    const recent = imageBlock('BBBB', 2);
+    repository.hydrate([imageBlockSession('s1', [old, recent])], 's1');
+
+    // Total 12 bytes; budget 4 → the oldest (8 bytes) is stripped, bringing
+    // the total to 4, so the newer payload is kept.
+    enforce(repository, 4);
+
+    const msgs = repository.get('s1')!.messages;
+    expect(msgs[0].contentBlocks).toBeUndefined();
+    expect(msgs[1].contentBlocks).toHaveLength(1);
+  });
+
+  it('keeps non-image blocks on a mixed message and preserves its text', () => {
+    const { repository } = createRepository();
+    const mixed: SerializedMessage = {
+      role: 'assistant',
+      content: 'answer',
+      type: 'text',
+      timestamp: 1,
+      contentBlocks: [
+        { type: 'text', text: 'answer' },
+        { type: 'image', mimeType: 'image/png', data: 'IMG' },
+      ],
+    };
+    repository.hydrate([imageBlockSession('s1', [mixed])], 's1');
+
+    enforce(repository, 0);
+
+    const msg = repository.get('s1')!.messages[0];
+    expect(msg.contentBlocks).toEqual([{ type: 'text', text: 'answer' }]);
+    expect(msg.content).toBe('answer');
+  });
+
+  it('counts images[] attachments against the budget and drops them too', () => {
+    const { repository } = createRepository();
+    const withImages: SerializedMessage = {
+      role: 'user',
+      content: 'pic',
+      type: 'text',
+      timestamp: 1,
+      images: [{ mimeType: 'image/png', data: 'DATADATADATA' }],
+    };
+    repository.hydrate([imageBlockSession('s1', [withImages])], 's1');
+
+    enforce(repository, 0);
+
+    const msg = repository.get('s1')!.messages[0];
+    expect(msg.images).toBeUndefined();
+    expect(msg.content).toBe('pic');
+  });
+
+  it('leaves a localized note when a purged image-only message would render empty', () => {
+    setLocale('en');
+    const { repository } = createRepository();
+    const imageOnly: SerializedMessage = {
+      role: 'user',
+      content: '',
+      type: 'text',
+      timestamp: 1,
+      contentBlocks: [{ type: 'image', mimeType: 'image/png', data: 'IMG' }],
+    };
+    repository.hydrate([imageBlockSession('s1', [imageOnly])], 's1');
+
+    enforce(repository, 0);
+
+    expect(repository.get('s1')!.messages[0].content).toBe(t().session.imagePurged);
+  });
+
+  it('prune() enforces the stored image budget via the default cap', () => {
+    const { repository } = createRepository();
+    // An oversized image that exceeds the real 8 MB budget must be stripped.
+    const huge = imageBlock('A'.repeat(9 * 1024 * 1024), 1);
+    repository.hydrate([imageBlockSession('s1', [huge])], 's1');
+
+    repository.prune({ maxMessages: 200, retentionDays: 30 });
+
+    expect(repository.get('s1')!.messages[0].contentBlocks).toBeUndefined();
   });
 });

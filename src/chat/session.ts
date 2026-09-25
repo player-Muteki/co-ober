@@ -1,6 +1,6 @@
 import type { SessionMeta, SerializedMessage, SerializedSession } from '../types';
 import { t } from '../i18n/index';
-import { MS_PER_DAY } from '../constants';
+import { MS_PER_DAY, STORED_IMAGE_BUDGET_BYTES } from '../constants';
 
 export interface SessionStore {
   readonly activeId: string | null;
@@ -204,5 +204,49 @@ export class SessionRepository implements SessionStore {
         ];
       }
     }
+
+    this.enforceStoredImageBudget();
   }
+
+  /**
+   * Base64 images persisted with the transcript are unbounded otherwise —
+   * data.json bloat slows every save and eventually breaks it. On each prune,
+   * strip whole image payloads (oldest message first) until the stored total
+   * fits the budget; the text of the affected messages is untouched.
+   */
+  private enforceStoredImageBudget(budgetBytes = STORED_IMAGE_BUDGET_BYTES): void {
+    const carriers: Array<{ msg: SerializedMessage; bytes: number }> = [];
+    let total = 0;
+    for (const session of this.sessions.values()) {
+      for (const msg of session.messages) {
+        let bytes = 0;
+        for (const block of msg.contentBlocks ?? []) {
+          if (block.type === 'image') bytes += block.data?.length ?? 0;
+        }
+        for (const image of msg.images ?? []) bytes += image.data.length;
+        if (bytes > 0) {
+          total += bytes;
+          carriers.push({ msg, bytes });
+        }
+      }
+    }
+    if (total <= budgetBytes) return;
+    carriers.sort((a, b) => a.msg.timestamp - b.msg.timestamp);
+    for (const { msg, bytes } of carriers) {
+      if (total <= budgetBytes) break;
+      purgeImagePayload(msg);
+      total -= bytes;
+    }
+  }
+}
+
+/** Drops every image payload from one message; leaves a note when nothing else would render. */
+function purgeImagePayload(msg: SerializedMessage): void {
+  if (msg.contentBlocks) {
+    const kept = msg.contentBlocks.filter((block) => block.type !== 'image');
+    if (kept.length > 0) msg.contentBlocks = kept;
+    else delete msg.contentBlocks;
+  }
+  if (msg.images) delete msg.images;
+  if (!msg.content.trim()) msg.content = t().session.imagePurged;
 }

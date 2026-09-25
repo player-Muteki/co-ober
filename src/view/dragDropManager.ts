@@ -115,7 +115,9 @@ export class DragDropManager {
 				// Image → base64 PromptPart
 				try {
 					const data = await this.fileToBase64(file);
-					const imageBytes = file.size;
+					// Budget against the encoded payload — that is what the app
+					// actually holds and persists (~4/3 of the file size).
+					const imageBytes = data.length;
 					if (this.pendingImageTotalBytes + imageBytes > DragDropManager.MAX_IMAGE_BYTES) {
 						new Notice(t().dragDrop.imageTooLarge.replace('{name}', file.name));
 						continue;

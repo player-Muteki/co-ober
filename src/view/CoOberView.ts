@@ -371,6 +371,7 @@ export class CoOberView extends ItemView {
       this.controller.bindClientHandlers();
       void this.controller.syncRuntimeSession(this.controller.getSessionId()).catch((e) => {
         console.error('[co-ober] session sync:', e);
+        this.controller.notifyLostSession(e);
       });
     } else if (this.plugin.settings.autoConnect) {
       // Spawn-attempting a binary that is not anywhere on disk only yields a
@@ -421,14 +422,18 @@ export class CoOberView extends ItemView {
       {
         onAddNoteRef: (ref) => this.addChip(ref, 'manual'),
         onAddImagePart: (data, mimeType, size, name) => {
-          this.pendingImageParts.push({ type: 'image', mimeType, data });
+          // Keep the exact object identity: two chips carrying byte-identical
+          // images must not collapse into each other on removal.
+          const part: PromptPart = { type: 'image', mimeType, data };
+          this.pendingImageParts.push(part);
           const chip = this.contextChipsEl.createDiv({
             cls: 'co-ober-chip',
             text: `🖼 ${name}`,
           });
           chip.dataset.kind = 'image';
           chip.onclick = () => {
-            this.pendingImageParts = this.pendingImageParts.filter((p) => p.data !== data);
+            const index = this.pendingImageParts.indexOf(part);
+            if (index >= 0) this.pendingImageParts.splice(index, 1);
             this.dragDropManager.onRemoveImagePart(data, size);
             chip.remove();
           };

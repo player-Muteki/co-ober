@@ -35,6 +35,23 @@ describe('DragDropManager', () => {
     manager = new DragDropManager(dropZone, overlayContainer, handlers as any);
   });
 
+  // The budget is measured against the encoded payload, so limit tests derive
+  // the base64 length from the file's declared size instead of reading bytes.
+  function mockSizedImageReader() {
+    function MockFileReader(this: any) {
+      this.onload = null;
+      this.onerror = null;
+      this.result = null;
+      this.readAsDataURL = vi.fn().mockImplementation((file: File) => {
+        this.result = 'data:image/png;base64,' + 'a'.repeat(file.size);
+        setTimeout(() => {
+          if (this.onload) this.onload({ target: this });
+        }, 0);
+      });
+    }
+    vi.spyOn(globalThis, 'FileReader').mockImplementation(MockFileReader as any);
+  }
+
   describe('setup and teardown', () => {
     it('adds event listeners on setup', () => {
       const addSpy = vi.spyOn(dropZone, 'addEventListener');
@@ -178,7 +195,7 @@ describe('DragDropManager', () => {
       expect(handlers.onAddImagePart).toHaveBeenCalledWith(
         'aW1hZ2UtZGF0YQ==',
         'image/png',
-        1024,
+        16,
         'test.png'
       );
     });
@@ -202,8 +219,9 @@ describe('DragDropManager', () => {
 
     it('notices and skips images exceeding the pending-image budget', async () => {
       manager.setup();
+      mockSizedImageReader();
 
-      // Create a large image file (over 10MB)
+      // The encoded payload is derived from the declared size (over 10MB).
       const file = new File(['image-data'], 'large.png', { type: 'image/png' });
       Object.defineProperty(file, 'size', { value: 11 * 1024 * 1024 });
 
@@ -274,11 +292,10 @@ describe('DragDropManager', () => {
     it('accepts image files routed through handleFiles', async () => {
       mockImageReader();
       const file = new File(['image-data'], 'pasted.png', { type: 'image/png' });
-      Object.defineProperty(file, 'size', { value: 2048 });
 
       await manager.handleFiles([file]);
 
-      expect(handlers.onAddImagePart).toHaveBeenCalledWith('aW1hZ2UtZGF0YQ==', 'image/png', 2048, 'pasted.png');
+      expect(handlers.onAddImagePart).toHaveBeenCalledWith('aW1hZ2UtZGF0YQ==', 'image/png', 16, 'pasted.png');
     });
 
     it('rejects images when image capability is false', async () => {
@@ -292,13 +309,14 @@ describe('DragDropManager', () => {
     });
 
     it('does not track bytes for rejected images across multiple calls', async () => {
-      mockImageReader();
+      mockSizedImageReader();
       (Notice as any).messages.length = 0;
       const file = new File(['image-data'], 'pasted.png', { type: 'image/png' });
       Object.defineProperty(file, 'size', { value: 9 * 1024 * 1024 });
 
       await manager.handleFiles([file]);
-      // Total now 9MB; a second 2MB image would exceed the 10MB budget and be skipped.
+      // Total now 9MB of encoded payload; a second 2MB image would exceed the
+      // 10MB budget and be skipped.
       const second = new File(['more'], 'second.png', { type: 'image/png' });
       Object.defineProperty(second, 'size', { value: 2 * 1024 * 1024 });
       await manager.handleFiles([second]);

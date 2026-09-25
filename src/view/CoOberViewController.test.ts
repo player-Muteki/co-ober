@@ -707,6 +707,42 @@ describe('CoOberViewController', () => {
       expect(controller.isBusy()).toBe(false);
     });
 
+    it('finalizes the thinking block when a turn completes', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      await controller.send('hello', []);
+
+      // A turn whose last update was a thought must not leave the live
+      // thinking block (and its running timer) un-finalized.
+      expect(deps.renderer.finalizeCurrentThinking).toHaveBeenCalled();
+    });
+
+    it('finalizes the thinking block and placeholder when reconnect resets a busy turn', async () => {
+      const gate = deferred<AcpResponse>();
+      const client = createMockClient({
+        sendMessage: vi.fn().mockImplementation(() => gate.promise),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      const first = controller.send('first', []);
+      await vi.waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(1));
+
+      controller.bindClientHandlers();
+      const handlers = (client.setClientHandlers as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
+      (deps.renderer.finalizeCurrentThinking as ReturnType<typeof vi.fn>).mockClear();
+      (deps.renderer.removeAssistantPlaceholder as ReturnType<typeof vi.fn>).mockClear();
+      await handlers.onReconnect();
+
+      expect(deps.renderer.finalizeCurrentThinking).toHaveBeenCalled();
+      expect(deps.renderer.removeAssistantPlaceholder).toHaveBeenCalled();
+
+      gate.resolve({ stopReason: 'end_turn' });
+      await first;
+    });
+
     it('resyncs the plan panel when a turn completes', async () => {
       const client = createMockClient();
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
@@ -1116,6 +1152,18 @@ describe('CoOberViewController', () => {
       expect(controller.state.isStreaming).toBe(false);
     });
 
+    it('finalizes the thinking block when generation is stopped', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      controller.state.sessionId = 'test-session';
+      Reflect.set(controller, 'busy', true);
+      controller.state.isStreaming = true;
+
+      await controller.stopGeneration();
+
+      expect(deps.renderer.finalizeCurrentThinking).toHaveBeenCalled();
+    });
+
     it('renders buffered tool calls terminal instead of leaking them into the next turn', async () => {
       const client = createMockClient();
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
@@ -1217,6 +1265,22 @@ describe('CoOberViewController', () => {
       await controller.ensureClientConnected();
 
       expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(t().session.runtimeSessionLost);
+    });
+
+    it('surfaces a generic notifyLostSession error as a visible error line', () => {
+      const returned = controller.notifyLostSession(new Error('transport died'));
+
+      expect(returned).toBe(false);
+      expect(deps.renderer.addError).toHaveBeenCalledWith(`${t().session.syncFailed}: transport died`);
+      expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(t().session.runtimeSessionLost);
+    });
+
+    it('reports a missing-session notifyLostSession as a neutral system note', () => {
+      const returned = controller.notifyLostSession(new AcpSessionMissingError('ses_gone'));
+
+      expect(returned).toBe(true);
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().session.runtimeSessionLost);
+      expect(deps.renderer.addError).not.toHaveBeenCalled();
     });
   });
 

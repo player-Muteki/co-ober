@@ -5,6 +5,7 @@ import { Notice } from './test/obsidianMock';
 import CoOberPlugin from './main';
 import { DEFAULT_SETTINGS, VIEW_TYPE } from './types';
 import { SessionRepository } from './chat/session';
+import { t } from './i18n';
 
 describe('CoOberPlugin view activation', () => {
   it('does not connect to OpenCode while loading the plugin', async () => {
@@ -224,6 +225,59 @@ describe('CoOberPlugin corrupted data recovery', () => {
     await plugin.savePluginData();
 
     expect(Notice.messages.filter((m) => m.includes('failed to save'))).toHaveLength(1);
+    saveSpy.mockRestore();
+  });
+
+  it('surfaces a save failure as a sticky notice', async () => {
+    Notice.messages.length = 0;
+    const saveSpy = vi.spyOn(Plugin.prototype, 'saveData').mockRejectedValue(new Error('disk full'));
+    const plugin = new CoOberPlugin({} as never, {} as never);
+    plugin.settings = { ...DEFAULT_SETTINGS };
+
+    await plugin.savePluginData();
+
+    const alarm = Reflect.get(plugin, 'saveAlarm') as Notice | null;
+    expect(alarm).toBeInstanceOf(Notice);
+    expect(alarm?.message).toBe(t().notice.saveFailed);
+    expect(alarm?.duration).toBe(0);
+    saveSpy.mockRestore();
+  });
+
+  it('hides the sticky alarm once a later save succeeds', async () => {
+    Notice.messages.length = 0;
+    Notice.hidden.length = 0;
+    const saveSpy = vi.spyOn(Plugin.prototype, 'saveData').mockRejectedValueOnce(new Error('disk full'));
+    const plugin = new CoOberPlugin({} as never, {} as never);
+    plugin.settings = { ...DEFAULT_SETTINGS };
+
+    await plugin.savePluginData();
+    expect(Reflect.get(plugin, 'saveAlarm')).toBeInstanceOf(Notice);
+
+    // A successful write clears the alarm and resets the throttle.
+    saveSpy.mockResolvedValueOnce(undefined);
+    await plugin.savePluginData();
+
+    expect(Notice.hidden).toContain(t().notice.saveFailed);
+    expect(Reflect.get(plugin, 'saveAlarm')).toBeNull();
+    saveSpy.mockRestore();
+  });
+
+  it('re-arms a fresh alarm after a success even within the throttle window', async () => {
+    Notice.messages.length = 0;
+    Notice.hidden.length = 0;
+    const saveSpy = vi.spyOn(Plugin.prototype, 'saveData');
+    const plugin = new CoOberPlugin({} as never, {} as never);
+    plugin.settings = { ...DEFAULT_SETTINGS };
+
+    saveSpy.mockRejectedValueOnce(new Error('disk full'));
+    await plugin.savePluginData();
+    saveSpy.mockResolvedValueOnce(undefined);
+    await plugin.savePluginData();
+    saveSpy.mockRejectedValueOnce(new Error('disk full'));
+    await plugin.savePluginData();
+
+    // The reset lastSaveNoticeAt means the second failure is not swallowed.
+    expect(Notice.messages.filter((m) => m.includes('failed to save'))).toHaveLength(2);
     saveSpy.mockRestore();
   });
 

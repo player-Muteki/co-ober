@@ -134,6 +134,14 @@ export default class CoOberPlugin extends Plugin {
   }
 
   private lastSaveNoticeAt = 0;
+  private saveAlarm: Notice | null = null;
+
+  /** Clear the sticky save-failure alarm once a write finally succeeds. */
+  private dismissSaveAlarm(): void {
+    const alarm = this.saveAlarm;
+    this.saveAlarm = null;
+    alarm?.hide();
+  }
 
   async savePluginData(): Promise<void> {
     try {
@@ -144,14 +152,20 @@ export default class CoOberPlugin extends Plugin {
         });
         await super.saveData(this.buildPluginData());
       });
+      // A successful write ends the failure streak: drop the alarm and let
+      // the next failure notify immediately.
+      this.lastSaveNoticeAt = 0;
+      this.dismissSaveAlarm();
     } catch (e) {
       // Every save call site except unload is fire-and-forget; surface failures
-      // here once (throttled) instead of losing chat data silently.
+      // here (throttled) instead of losing chat data silently. The Notice is
+      // sticky (duration 0) so a persistently failing disk stays visible
+      // between throttle windows instead of evaporating after a few seconds.
       console.error('[co-ober] save failed:', e);
       const now = Date.now();
       if (now - this.lastSaveNoticeAt > SAVE_NOTICE_THROTTLE_MS) {
         this.lastSaveNoticeAt = now;
-        new Notice(t().notice.saveFailed);
+        this.saveAlarm = new Notice(t().notice.saveFailed, 0);
       }
     }
   }

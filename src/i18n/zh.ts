@@ -50,7 +50,9 @@ const zh: Locale = {
     nativeSessionMissing: '该 OpenCode 会话已不存在（可能已在 OpenCode 中删除）。',
     runtimeSessionLost: 'Agent 端已不再持有该会话（可能已重启）。本地历史仍会保留；下一条消息将开启新的 Agent 会话。',
     syncUnsupported: '该 Agent 既不支持 session/load 也不支持 session/resume，无法重新挂载已存储的会话。下一条消息将在新的 Agent 会话中发送。',
+    syncFailed: '无法恢复 Agent 会话',
     truncated: '[前面 {count} 条消息已省略]',
+    imagePurged: '[为节省空间已移除存储的图片]',
   },
 
   reconnect: {

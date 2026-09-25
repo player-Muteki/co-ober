@@ -8,6 +8,8 @@ export const CONTEXT_METER_CRITICAL_PCT = 90;
 export const K_FORMAT_THRESHOLD = 1000;
 export const STREAM_SAVE_DEBOUNCE_MS = 500;
 export const SAVE_NOTICE_THROTTLE_MS = 5 * 60 * 1000;
+/** Total base64 image payload kept in data.json; older images are stripped first. */
+export const STORED_IMAGE_BUDGET_BYTES = 8 * 1024 * 1024;
 export const COPY_BUTTON_RESET_MS = 1500;
 export const THINKING_TIMER_INTERVAL_MS = 1000;
 export const PERMISSION_TRUNCATE_LENGTH = 50;

@@ -64,9 +64,14 @@ export class PluginSettingTab {
 
 export class Notice {
   static messages: string[] = [];
+  static hidden: string[] = [];
 
-  constructor(public message: string) {
+  constructor(public message: string, public duration?: number) {
     Notice.messages.push(message);
+  }
+
+  hide(): void {
+    Notice.hidden.push(this.message);
   }
 }
 

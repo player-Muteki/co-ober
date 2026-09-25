@@ -413,6 +413,7 @@ export class CoOberViewController {
           this.state.isStreaming = false;
           this.deps.input.setStreaming(false);
           this.deps.toolbar.setSending(false);
+          this.deps.renderer.finalizeCurrentThinking();
           this.deps.renderer.removeAssistantPlaceholder();
           this.deps.renderer.addError(t().error.reconnected);
         }
@@ -512,12 +513,17 @@ export class CoOberViewController {
     await this.deps.sessionStore.save();
   }
 
-  /** Inform the user when the agent dropped a session (e.g. after an agent restart). */
-  private notifyLostSession(err: unknown): boolean {
+  /** Surface a session-sync failure: a dropped session gets a neutral note, any other error gets a visible line. */
+  notifyLostSession(err: unknown): boolean {
     if (err instanceof AcpSessionMissingError) {
       this.deps.renderer.addSystemMessage(t().session.runtimeSessionLost);
       return true;
     }
+    // Any other resync failure means the transcript the user sees may be
+    // stale — say so instead of leaving it in the console.
+    this.deps.renderer.addError(
+      `${t().session.syncFailed}: ${err instanceof Error ? err.message : String(err)}`,
+    );
     return false;
   }
 
@@ -1015,6 +1021,9 @@ export class CoOberViewController {
         // Only safe while this generation still owns the transcript; a
         // newer turn has its own placeholder and tool-call buffers.
         this.streamCtrl.finalizeBufferedToolCalls();
+        // A turn whose last update was a thought must not leave the live
+        // thinking block (and its running timer) un-finalized.
+        this.deps.renderer.finalizeCurrentThinking();
         this.deps.renderer.removeAssistantPlaceholder();
         this.busy = false;
         this.state.isStreaming = false;
@@ -1352,6 +1361,9 @@ export class CoOberViewController {
     // turn: render them terminal now so they neither vanish nor ghost into
     // the next turn (its finally is skipped by the genId bump above).
     this.streamCtrl.finalizeBufferedToolCalls();
+    // Stop during a thought: close the live thinking block before the
+    // interrupt marker, so its timer stops and the label finalizes.
+    this.deps.renderer.finalizeCurrentThinking();
     // Append "Interrupted" indicator to the current assistant response
     this.deps.renderer.appendInterruptIndicator();
     this.deps.renderer.flushTextRender().catch(() => {});
