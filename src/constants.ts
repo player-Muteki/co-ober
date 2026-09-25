@@ -1,5 +1,7 @@
 export const ACP_LIST_SESSIONS_LIMIT = 100;
 export const ACP_LIST_SESSIONS_MAX_PAGES = 10;
+/** session/load runs unbounded but fails fast when the replay stalls. */
+export const ACP_LOAD_SESSION_IDLE_TIMEOUT_MS = 30_000;
 export const ACP_RECONNECT_BACKOFF_BASE_MS = 2000;
 export const MS_PER_DAY = 24 * 60 * 60 * 1000;
 export const SCROLL_NEAR_BOTTOM_THRESHOLD = 50;

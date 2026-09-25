@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => {
     stdin = { fake: 'stdin' };
     started = false;
     shutdownCalls = 0;
+    stderrSnapshot = '';
+    exitInfo: { code: number | null; signal: string | null } | null = null;
     closeCb: ((error?: Error) => void) | null = null;
 
     constructor(public spec: unknown) {
@@ -23,7 +25,7 @@ const mocks = vi.hoisted(() => {
     }
 
     getStderrSnapshot(): string {
-      return '';
+      return this.stderrSnapshot;
     }
 
     shutdown(): Promise<void> {
@@ -39,6 +41,7 @@ const mocks = vi.hoisted(() => {
     requests: Array<{ method: string; params: unknown }> = [];
     serverRequests = new Map<string, (params: unknown) => Promise<unknown>>();
     disposed = false;
+    disposeError: Error | null = null;
     deferred!: { promise: Promise<unknown>; resolve: (v: unknown) => void; reject: (e: unknown) => void };
 
     constructor(_opts: unknown) {
@@ -71,8 +74,9 @@ const mocks = vi.hoisted(() => {
       this.sentNotifications.push({ method, params });
     }
 
-    dispose(): void {
+    dispose(error?: Error): void {
       this.disposed = true;
+      this.disposeError = error ?? null;
     }
   }
 
@@ -83,6 +87,8 @@ vi.mock('./AcpSubprocess', () => ({ AcpSubprocess: mocks.FakeSubprocess }));
 vi.mock('./AcpJsonRpcTransport', () => ({ AcpJsonRpcTransport: mocks.FakeTransport }));
 
 import { AcpClient } from './acp';
+import { AcpTimeoutError } from './AcpErrors';
+import { ACP_LOAD_SESSION_IDLE_TIMEOUT_MS } from '../constants';
 import type { NormalizedUpdate } from '../types';
 
 const { FakeSubprocess, FakeTransport } = mocks;
@@ -467,5 +473,121 @@ describe('permission handler wiring', () => {
     await expect(onPermission(permissionParams)).resolves.toEqual({
       outcome: { outcome: 'selected', optionId: 'reject_once' },
     });
+  });
+});
+
+describe('0.1.40 stage 2 protocol pack', () => {
+  beforeEach(() => {
+    FakeSubprocess.instances.length = 0;
+    FakeTransport.instances.length = 0;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Connected client whose post-handshake requests hang until resolved. */
+  async function connectedPendingClient() {
+    const client = new AcpClient('opencode', '/vault');
+    const connecting = client.connect();
+    await tick();
+    const transport = FakeTransport.instances[0];
+    transport.deferred.resolve({ agentCapabilities: {} });
+    await connecting;
+    let resolve!: (v: unknown) => void;
+    let reject!: (e: unknown) => void;
+    const promise = new Promise<unknown>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    transport.deferred = { promise, resolve, reject };
+    return { client, transport };
+  }
+
+  it('sends session/cancel as notifications and resolves without a response', async () => {
+    const { client, transport } = await connectedPendingClient();
+    const requestsBefore = transport.requests.length;
+
+    await expect(client.cancel('ses_1')).resolves.toBeUndefined();
+
+    const methods = transport.sentNotifications.map((n) => n.method);
+    expect(methods).toContain('session/cancel');
+    expect(methods).toContain('cancel');
+    const frame = transport.sentNotifications.find((n) => n.method === 'session/cancel');
+    expect(frame?.params).toEqual({ sessionId: 'ses_1' });
+    // Nothing awaited a response, so no request went out for the cancel.
+    expect(transport.requests).toHaveLength(requestsBefore);
+  });
+
+  it('cancel still aborts the local prompt stream and clears its slot', async () => {
+    const { client, transport } = await connectedPendingClient();
+    const sending = client.sendMessage('ses_1', [{ type: 'text', text: 'hi' }], () => {});
+    await tick();
+    const streams = Reflect.get(client, 'activeStreams') as Map<string, unknown>;
+    expect(streams.has('ses_1')).toBe(true);
+
+    await client.cancel('ses_1');
+    expect(streams.has('ses_1')).toBe(false);
+
+    // The hang-up prompt must not keep the test transport pending forever.
+    transport.deferred.resolve({ stopReason: 'cancelled' });
+    await sending.catch(() => {});
+  });
+
+  it('times out a stalled session/load once the idle window passes with no replay', async () => {
+    const { client } = await connectedPendingClient();
+    vi.useFakeTimers();
+    const loading = client.loadSession('ses_big', '/vault', [], () => {});
+    let outcome: 'pending' | 'resolved' | unknown = 'pending';
+    loading.then(
+      () => (outcome = 'resolved'),
+      (e: unknown) => (outcome = e),
+    );
+
+    await vi.advanceTimersByTimeAsync(ACP_LOAD_SESSION_IDLE_TIMEOUT_MS + 1000);
+    expect(outcome).not.toBe('pending');
+    expect(outcome).toBeInstanceOf(AcpTimeoutError);
+    expect((outcome as Error).message).toMatch(/timed out/);
+  });
+
+  it('a replay update refreshes the load deadline', async () => {
+    const { client, transport } = await connectedPendingClient();
+    vi.useFakeTimers();
+    const notify = transport.notifications.get('session/update')!;
+    const onReplay = vi.fn();
+    const loading = client.loadSession('ses_big', '/vault', [], onReplay);
+    let failure: unknown = null;
+    loading.catch((e: unknown) => (failure = e));
+
+    await vi.advanceTimersByTimeAsync(25_000);
+    notify({
+      update: { sessionUpdate: 'agent_message_chunk', messageId: 'm1', content: { type: 'text', text: 'chunk' } },
+    });
+    // 50s total since the request, but only 25s since the replay ticked.
+    await vi.advanceTimersByTimeAsync(25_000);
+    expect(failure).toBe(null);
+
+    transport.deferred.resolve({ sessionId: 'ses_big' });
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(loading).resolves.toBeUndefined();
+    expect(onReplay).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces the real exit code and stderr tail when the agent process closes', async () => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { client } = await connectedPendingClient();
+    const subprocess = FakeSubprocess.instances[0];
+    subprocess.stderrSnapshot = 'panic: model registry unreachable';
+    subprocess.exitInfo = { code: 3, signal: null };
+
+    subprocess.closeCb!(undefined);
+    await tick();
+
+    const disposeError = FakeTransport.instances[0].disposeError;
+    expect(disposeError).not.toBeNull();
+    expect(disposeError!.message).toContain('code 3');
+    expect(disposeError!.message).toContain('panic: model registry unreachable');
+    errorLog.mockRestore();
+    await client.disconnect().catch(() => {});
   });
 });

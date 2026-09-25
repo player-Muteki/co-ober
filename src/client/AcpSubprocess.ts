@@ -12,6 +12,7 @@ type CloseListener = (error?: Error) => void;
 export class AcpSubprocess {
   private proc: ChildProcess | null = null;
   private stderrBuffer = '';
+  private lastExit: { code: number | null; signal: string | null } | null = null;
   private readonly closeListeners = new Set<CloseListener>();
   private closed = false;
   constructor(private readonly launchSpec: AcpSubprocessLaunchSpec) {}
@@ -24,6 +25,7 @@ export class AcpSubprocess {
   start(): void {
     if (this.proc) return;
     this.closed = false;
+    this.lastExit = null;
     const proc = spawn(this.launchSpec.command, this.launchSpec.args, {
       cwd: this.launchSpec.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -40,10 +42,14 @@ export class AcpSubprocess {
     // hold buffered frames, and tearing down then drops the agent's last
     // responses. 'close' means both pipes have drained.
     proc.on('close', (code, signal) => {
+      this.lastExit = { code, signal };
       const exitError = code === 0 && signal === null ? undefined : new AcpProcessExitError(code, signal);
       this.notifyClose(exitError);
     });
     this.proc = proc;
+  }
+  get exitInfo(): { code: number | null; signal: string | null } | null {
+    return this.lastExit;
   }
   isAlive(): boolean {
     return this.proc !== null && this.proc.exitCode === null && !this.proc.killed;
@@ -66,10 +72,12 @@ export class AcpSubprocess {
       const proc = this.proc!;
       let done = false;
       let timeout: ReturnType<typeof nodeSetTimeout> | null = null;
+      let killFallback: ReturnType<typeof nodeSetTimeout> | null = null;
       const onDone = () => {
         if (done) return;
         done = true;
         if (timeout) nodeClearTimeout(timeout);
+        if (killFallback) nodeClearTimeout(killFallback);
         proc.removeAllListeners();
         resolve();
       };
@@ -80,8 +88,17 @@ export class AcpSubprocess {
         onDone();
       }
       timeout = nodeSetTimeout(() => {
-        if (!done) proc.kill('SIGKILL');
-        // onDone will be called by the existing 'close' listener once the process exits
+        if (done) return;
+        try {
+          proc.kill('SIGKILL');
+        } catch {
+          onDone();
+          return;
+        }
+        // A process stuck in uninterruptible sleep never emits 'close';
+        // without this fallback the shutdown chain (and with it disconnect)
+        // would hang for the lifetime of the app.
+        killFallback = nodeSetTimeout(onDone, SIGKILL_TIMEOUT_MS);
       }, SIGKILL_TIMEOUT_MS);
     });
     this.closed = true;

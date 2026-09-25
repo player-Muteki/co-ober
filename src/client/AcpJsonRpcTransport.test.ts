@@ -86,6 +86,27 @@ describe('AcpJsonRpcTransport', () => {
     await expect(requestPromise).rejects.toThrow(/timed out/);
   });
 
+  it('request() timeout detaches the abort listener from the signal', async () => {
+    transport.start();
+    const added: Array<() => void> = [];
+    const signal = {
+      aborted: false,
+      addEventListener: (_ev: string, handler: () => void) => {
+        added.push(handler);
+      },
+      removeEventListener: vi.fn(),
+    };
+
+    await expect(
+      transport.request('hangMethod', undefined, 10, signal as unknown as AbortSignal),
+    ).rejects.toThrow(/timed out/);
+
+    // A timed-out request must not leave its abort closure attached: agents
+    // that reuse one long-lived signal would accumulate a listener per miss.
+    expect(added).toHaveLength(1);
+    expect(signal.removeEventListener).toHaveBeenCalledWith('abort', added[0]);
+  });
+
   it('request() rejects when transport is disposed', async () => {
     transport.dispose();
     await expect(transport.request('method')).rejects.toThrow('Transport closed');

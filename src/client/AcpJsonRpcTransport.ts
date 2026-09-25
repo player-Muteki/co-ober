@@ -69,6 +69,10 @@ export class AcpJsonRpcTransport {
       if (effectiveTimeout > 0) {
         timeout = window.setTimeout(() => {
           this.pending.delete(id);
+          // Without the detach, every timed-out request leaves an abort
+          // listener on a long-lived signal (and a dangling abortHandler
+          // reference) for the life of the connection.
+          if (signal && abortHandler) signal.removeEventListener('abort', abortHandler);
           reject(new AcpTimeoutError(method, effectiveTimeout));
         }, effectiveTimeout);
       }

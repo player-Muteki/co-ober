@@ -124,6 +124,35 @@ describe('TerminalManager', () => {
 		});
 	});
 
+	describe('waitForExit', () => {
+		it('resolves every concurrent waiter when the process exits', async () => {
+			const instance = manager.create({ command: 'sleep 5' }, '/vault');
+			const first = manager.waitForExit(instance.terminalId);
+			const second = manager.waitForExit(instance.terminalId);
+
+			const proc = vi.mocked(spawn).mock.results[0].value as unknown as { emit: (e: string, ...a: unknown[]) => void };
+			proc.emit('exit', 0, null);
+
+			await expect(first).resolves.toEqual({ exitCode: 0, signal: null });
+			await expect(second).resolves.toEqual({ exitCode: 0, signal: null });
+		});
+
+		it('answers both waiters with SIGTERM when the shared deadline expires', async () => {
+			vi.useFakeTimers();
+			const localManager = new TerminalManager({ timeoutMs: 1000, maxOutputBytes: 1000 });
+			const instance = localManager.create({ command: 'sleep 5' }, '/vault');
+			const first = localManager.waitForExit(instance.terminalId);
+			const second = localManager.waitForExit(instance.terminalId);
+
+			vi.advanceTimersByTime(1500);
+
+			await expect(first).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' });
+			await expect(second).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' });
+			localManager.dispose();
+			vi.useRealTimers();
+		});
+	});
+
 	describe('getAll', () => {
 		it('returns all terminals', () => {
 			manager.create({ command: 'echo 1' }, '/vault');

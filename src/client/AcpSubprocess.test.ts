@@ -10,6 +10,13 @@ vi.mock('child_process', () => {
   };
 });
 
+// AcpSubprocess schedules its kill grace via the 'timers' module, which
+// vitest's fake timers do not patch; route it through the faked globals.
+vi.mock('timers', () => ({
+  setTimeout: (...args: Parameters<typeof setTimeout>) => setTimeout(...args),
+  clearTimeout: (...args: Parameters<typeof clearTimeout>) => clearTimeout(...args),
+}));
+
 describe('AcpSubprocess', () => {
   let launchSpec: AcpSubprocessLaunchSpec;
   let mockProc: any;
@@ -297,5 +304,41 @@ describe('AcpSubprocess', () => {
 
     expect(mockProc.removeAllListeners).toHaveBeenCalled();
     vi.useRealTimers();
+  });
+
+  it('shutdown resolves even when SIGKILL never yields a close event', async () => {
+    vi.useFakeTimers();
+    const subprocess = new AcpSubprocess(launchSpec);
+    subprocess.start();
+    // An uninterruptible process: neither SIGTERM nor SIGKILL emits close.
+    mockProc.kill.mockImplementation(() => false);
+
+    let settled = false;
+    const shutdownPromise = subprocess.shutdown().then(() => {
+      settled = true;
+    });
+
+    await vi.advanceTimersByTimeAsync(3_000); // SIGTERM grace -> SIGKILL
+    expect(mockProc.kill).toHaveBeenCalledWith('SIGKILL');
+    expect(settled).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(3_000); // SIGKILL grace -> give up and resolve
+    await shutdownPromise;
+    expect(settled).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it('exitInfo records the code and signal of the last close, and resets on start', () => {
+    const subprocess = new AcpSubprocess(launchSpec);
+    expect(subprocess.exitInfo).toBe(null);
+
+    subprocess.start();
+    mockProc.emit('close', 3, null);
+    expect(subprocess.exitInfo).toEqual({ code: 3, signal: null });
+
+    const subprocess2 = new AcpSubprocess(launchSpec);
+    subprocess2.start();
+    mockProc.emit('close', null, 'SIGKILL');
+    expect(subprocess2.exitInfo).toEqual({ code: null, signal: 'SIGKILL' });
   });
 });

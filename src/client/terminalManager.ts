@@ -56,7 +56,7 @@ function isAllowedCommand(command: string): boolean {
 }
 
 interface ExitWaiter {
-	resolve: (value: { exitCode: number | null; signal: string | null } | null) => void;
+	resolves: Array<(value: { exitCode: number | null; signal: string | null } | null) => void>;
 	timeout: number;
 }
 
@@ -181,13 +181,25 @@ export class TerminalManager {
 		}
 
 		return new Promise((resolve) => {
+			// A second wait on the same terminal must join the first waiter,
+			// not replace it — an overwritten resolver would hang that caller
+			// until dispose while the process is long gone.
+			const existing = this.exitWaiters.get(terminalId);
+			if (existing) {
+				existing.resolves.push(resolve);
+				return;
+			}
+
 			const timeout = window.setTimeout(() => {
+				const waiter = this.exitWaiters.get(terminalId);
 				this.exitWaiters.delete(terminalId);
 				this.kill(terminalId);
-				resolve({ exitCode: null, signal: 'SIGTERM' });
+				for (const r of waiter?.resolves ?? []) {
+					r({ exitCode: null, signal: 'SIGTERM' });
+				}
 			}, this.timeoutMs);
 
-			this.exitWaiters.set(terminalId, { resolve, timeout });
+			this.exitWaiters.set(terminalId, { resolves: [resolve], timeout });
 		});
 	}
 
@@ -302,6 +314,8 @@ export class TerminalManager {
 		this.exitWaiters.delete(terminalId);
 
 		const instance = this.terminals.get(terminalId);
-		waiter.resolve(instance ? { exitCode: instance.exitCode, signal: instance.signal } : null);
+		for (const resolve of waiter.resolves) {
+			resolve(instance ? { exitCode: instance.exitCode, signal: instance.signal } : null);
+		}
 	}
 }

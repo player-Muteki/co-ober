@@ -1,9 +1,15 @@
-import { ACP_LIST_SESSIONS_LIMIT, ACP_LIST_SESSIONS_MAX_PAGES, ACP_RECONNECT_BACKOFF_BASE_MS } from '../constants';
+import { ACP_LIST_SESSIONS_LIMIT, ACP_LIST_SESSIONS_MAX_PAGES, ACP_RECONNECT_BACKOFF_BASE_MS, ACP_LOAD_SESSION_IDLE_TIMEOUT_MS } from '../constants';
 import { getSpawnInfo } from '../utils/commandResolution';
 import { AcpSubprocess, type AcpSubprocessLaunchSpec } from './AcpSubprocess';
 
 import { type AcpLogicalMethod, getAcpMethodCandidates } from './AcpMethodNames';
-import { AcpProtocolError, AcpSessionMissingError, isSessionMissingError, isAuthRequiredError } from './AcpErrors';
+import {
+  AcpProtocolError,
+  AcpSessionMissingError,
+  AcpTimeoutError,
+  isSessionMissingError,
+  isAuthRequiredError,
+} from './AcpErrors';
 import type {
   SessionUpdate,
   PromptPart,
@@ -49,6 +55,9 @@ import {
 import { z } from 'zod';
 
 export const CLIENT_VERSION = '0.1.39';
+
+/** Tail length of the agent stderr snapshot attached to a close error. */
+const STDERR_SNAPSHOT_CHARS = 800;
 
 export interface AcpSessionMeta {
   availableCommands: AvailableCommand[];
@@ -621,20 +630,48 @@ export class AcpClient implements OpencodeClient {
     // A replay reset while another session streams would wipe its
     // accumulated text — same guard as sendMessage.
     if (this.activeStreams.size === 0) this.normalizer.reset();
-    this.replayHandler = onReplayUpdate ?? null;
+    // A big history keeps the load alive far past the fixed per-request
+    // timeout; the deadline is idle-based instead — every replay update
+    // refreshes it, so only a stalled load ever expires.
+    const userReplay = onReplayUpdate ?? null;
+    let touchReplayDeadline: () => void = () => {};
+    this.replayHandler = (u) => {
+      touchReplayDeadline();
+      userReplay?.(u);
+    };
     this.replaySessionId = id;
+    let idleTimer: number | null = null;
+    const idleDeadline = new Promise<never>((_, reject) => {
+      const arm = () => {
+        if (idleTimer !== null) window.clearTimeout(idleTimer);
+        idleTimer = window.setTimeout(
+          () => reject(new AcpTimeoutError('session/load', ACP_LOAD_SESSION_IDLE_TIMEOUT_MS)),
+          ACP_LOAD_SESSION_IDLE_TIMEOUT_MS,
+        );
+      };
+      touchReplayDeadline = arm;
+      arm();
+    });
     try {
-      const r = await this.requestWithFallback('loadSession', {
-        sessionId: id,
-        cwd: this.resolveCwd(cwd),
-        mcpServers: buildMcpServers(mcpServers),
-      });
+      const r = await Promise.race([
+        this.requestWithFallback(
+          'loadSession',
+          {
+            sessionId: id,
+            cwd: this.resolveCwd(cwd),
+            mcpServers: buildMcpServers(mcpServers),
+          },
+          0,
+        ),
+        idleDeadline,
+      ]);
       this.applySessionSnapshot(r as Record<string, unknown>);
       this.sessionId_ = id;
     } catch (e) {
       if (isSessionMissingError(e)) throw new AcpSessionMissingError(id, e);
       throw e;
     } finally {
+      if (idleTimer !== null) window.clearTimeout(idleTimer);
       this.replayHandler = null;
       this.replaySessionId = null;
     }
@@ -803,11 +840,20 @@ export class AcpClient implements OpencodeClient {
     this.activeStreams.delete(id);
     stream?.abort.abort();
 
-    return this.requestWithFallback('cancel', { sessionId: id })
-      .then(() => {})
-      .catch((e) => {
-        console.warn('[co-ober] cancel RPC failed:', e);
-      });
+    // session/cancel is a notification in ACP: awaiting a response held the
+    // Stop button for the full timeout against agents that never answer it.
+    // Unknown notification methods are ignorable per JSON-RPC, so both wire
+    // aliases are sent — the agent acts on the one it knows.
+    const transport = this.transport;
+    if (!transport) return Promise.resolve();
+    try {
+      for (const candidate of getAcpMethodCandidates('cancel')) {
+        transport.notify(candidate, { sessionId: id });
+      }
+    } catch (e) {
+      console.warn('[co-ober] cancel notification failed:', e);
+    }
+    return Promise.resolve();
   }
 
   getAvailableAgents(): Promise<ModeOption[]> {
@@ -1022,7 +1068,15 @@ export class AcpClient implements OpencodeClient {
     if (this.connectingGeneration !== null && !this.connected) return;
 
     const stderrMsg = subprocess.getStderrSnapshot() || '';
-    const closeError = error ?? new Error(t().acp.processExited.replace('{code}', t().acp.unknownCode));
+    // A clean exit still needs a concrete cause: without the real code the
+    // message says "unknown", and the last stderr lines are usually the only
+    // clue to why the agent walked away mid-session.
+    const exit = subprocess.exitInfo;
+    const codeText = exit && exit.code !== null ? String(exit.code) : t().acp.unknownCode;
+    const closeError = error ?? new Error(t().acp.processExited.replace('{code}', codeText));
+    if (stderrMsg) {
+      closeError.message = `${closeError.message}\nstderr: ${stderrMsg.slice(-STDERR_SNAPSHOT_CHARS)}`;
+    }
     if (error) {
       console.error('[co-ober] process error:', error, 'stderr:', stderrMsg);
     } else {

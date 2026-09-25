@@ -555,19 +555,25 @@ describe('AcpClient session loading', () => {
       { type: 'stdio', id: 'off', enabled: false, name: 'disabled', command: 'npx', args: [] },
     ]);
 
-    expect(requestWithFallback).toHaveBeenCalledWith('loadSession', {
-      sessionId: 's1',
-      cwd: '/vault',
-      mcpServers: [
-        {
-          type: 'stdio',
-          name: 'filesystem',
-          command: 'npx',
-          args: ['-y', '@modelcontextprotocol/server-filesystem'],
-          env: [],
-        },
-      ],
-    });
+    // The trailing 0 is the idle-deadline contract: session/load runs with no
+    // fixed transport timeout; replay updates refresh a 30s idle timer.
+    expect(requestWithFallback).toHaveBeenCalledWith(
+      'loadSession',
+      {
+        sessionId: 's1',
+        cwd: '/vault',
+        mcpServers: [
+          {
+            type: 'stdio',
+            name: 'filesystem',
+            command: 'npx',
+            args: ['-y', '@modelcontextprotocol/server-filesystem'],
+            env: [],
+          },
+        ],
+      },
+      0,
+    );
     expect(client.getCurrentSessionId()).toBe('s1');
   });
 
