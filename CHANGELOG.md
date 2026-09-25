@@ -1,3 +1,25 @@
+## 0.1.36 - 2026-09-25
+
+### Added
+- **Official v2 notice frames**: `notice` session updates (severity/title/description) fold onto one transcript shape — warning and error lines render level-labeled, info renders plain.
+- **Compaction upsert state machine**: v2 `compaction_update` frames carrying a `compactionId` pin the boundary marker at the first frame, suppress in-flight patch replays, surface a failure notice on `failed`, and stay silent on `cancelled`; legacy id-less frames behave exactly as before.
+- **Idle state usage**: an `state_update` frame at idle carrying a usage record is adopted for the turn footer.
+- **Durable stop badges and turn footers**: stop-reason badges persist as transcript system messages and usage stamps persist on the assistant message, so a finished conversation looks the same after reload as it did live.
+- **Durable agent images**: images streamed by the agent are stored as image content blocks (deduped per message) and re-render from the transcript on reload.
+- **The missing binary gets named**: an ENOENT launch failure reports the configured command and points at installation or the Settings path field instead of a bare connection error.
+- **Over-budget image notice**: a pasted or dropped image that would exceed the 10 MB pending-image budget is now announced by file name instead of being skipped quietly.
+
+### Changed
+- **Desktop PATH gaps no longer block connect**: POSIX launches resolve a bare command against PATH plus the common install dirs (`~/.opencode/bin`, `~/.local/bin`, `~/.bun/bin`, `/usr/local/bin`, `/opt/homebrew/bin`, `/usr/bin`); the auto-connect pre-check, diagnostics and the spawn itself all use the same resolver, so they can never disagree.
+- **Effort ladder widened**: the default-effort selector offers the full ladder — minimal, low, medium, high, xhigh and max.
+- **Auto-connect pre-checks reachability**: an unresolvable command shows the notice and reconnect button immediately rather than spawning a doomed subprocess.
+
+### Fixed
+- **Corrupted `data.json` degrades**: a plugin-data load failure now falls back to defaults with a visible Notice and sets the unreadable file aside as `data.corrupt-<timestamp>.json` — the plugin no longer bricks on a damaged file.
+- **Save failures are visible**: a failed chat-data save surfaces a throttled Notice instead of being silently dropped by fire-and-forget call sites.
+- **Session switch cancels the outgoing turn**: the in-flight turn is cancelled before the session pointer moves, so the cancel actually reaches that turn rather than no-op'ing against the session being switched into.
+- **Handshake-raced closes stop reconnect storms**: a subprocess close that races an in-flight handshake no longer schedules a reconnect — the failed connect owns its teardown, so a dead binary is not respawned over and over.
+
 ## 0.1.35 - 2026-09-23
 
 ### Added
