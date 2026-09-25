@@ -7,6 +7,7 @@ import {
   AcpSessionMissingError,
   isSessionMissingError,
   isAuthRequiredError,
+  isMissingBinaryError,
 } from './AcpErrors';
 
 describe('AcpErrors', () => {
@@ -142,5 +143,21 @@ describe('isAuthRequiredError', () => {
     expect(isAuthRequiredError(new AcpProtocolError('Session not found', 'session/load', -32000))).toBe(false);
     expect(isAuthRequiredError(new Error('auth_required'))).toBe(false);
     expect(isAuthRequiredError(undefined)).toBe(false);
+  });
+});
+
+describe('isMissingBinaryError', () => {
+  it('classifies spawn ENOENT errors from code or message', () => {
+    const errno = Object.assign(new Error('spawn /x/opencode ENOENT'), { code: 'ENOENT' });
+    expect(isMissingBinaryError(errno)).toBe(true);
+    expect(isMissingBinaryError(new Error('spawn opencode ENOENT'))).toBe(true);
+    const codeOnly = Object.assign(new Error('no such file or directory'), { code: 'ENOENT' });
+    expect(isMissingBinaryError(codeOnly)).toBe(true);
+  });
+
+  it('is false for unrelated failures', () => {
+    expect(isMissingBinaryError(new Error('EACCES'))).toBe(false);
+    expect(isMissingBinaryError('string')).toBe(false);
+    expect(isMissingBinaryError(undefined)).toBe(false);
   });
 });

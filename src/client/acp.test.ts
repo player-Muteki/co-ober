@@ -1103,6 +1103,11 @@ describe('parseSessionUpdate non-text content and observability', () => {
 });
 
 describe('AcpClient subprocess close during the connect handshake', () => {
+  it('rejects connect() with the spawn error when the binary cannot launch', async () => {
+    const client = new AcpClient('/nonexistent/co-ober-missing-binary-xyz');
+    await expect(client.connect()).rejects.toThrow(/ENOENT/);
+  });
+
   function makeClient() {
     const client = new AcpClient('opencode');
     const subprocess = {

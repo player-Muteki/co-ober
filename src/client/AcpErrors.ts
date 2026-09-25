@@ -85,3 +85,10 @@ export function isAuthRequiredError(err: unknown): boolean {
   }
   return false;
 }
+
+/** Classify a connect failure as "the binary could not be spawned" (ENOENT). */
+export function isMissingBinaryError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if ((err as NodeJS.ErrnoException).code === 'ENOENT') return true;
+  return /\bENOENT\b/.test(err.message);
+}

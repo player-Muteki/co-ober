@@ -3,6 +3,7 @@ import { AgentRuntime } from './client/agent';
 import { AcpClient } from './client/acp';
 import type { VaultWriteIo } from './client/fsDelegate';
 import { applyPermissionTier } from './client/permissionTier';
+import { isMissingBinaryError } from './client/AcpErrors';
 import { CoOberView } from './view/CoOberView';
 import { CoOberSettingsTab } from './settings';
 import { DEFAULT_SETTINGS, VIEW_TYPE } from './types';
@@ -272,7 +273,10 @@ export default class CoOberPlugin extends Plugin {
       this.client = null;
       this.resolveClientWaiters(false);
       console.error('[co-ober] Connect failed:', e);
-      new Notice(t().notice.connectFailed);
+      const cmd = this.settings.opencodePath;
+      new Notice(
+        isMissingBinaryError(e) ? t().notice.binaryNotFound.replace('{cmd}', cmd) : t().notice.connectFailed,
+      );
       return false;
     }
   }

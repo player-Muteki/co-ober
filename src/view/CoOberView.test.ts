@@ -90,6 +90,19 @@ describe('CoOberView runtime session sync', () => {
     expect(view.contentEl.querySelector('.co-ober-reconnect-btn')).not.toBeNull();
   });
 
+  it('names an unresolvable command instead of a doomed auto-connect', async () => {
+    setLocale('en');
+    Notice.messages.length = 0;
+    const plugin = createPlugin({ settings: { opencodePath: '/nonexistent/co-ober-view-xyz' } });
+    const view = createView(plugin);
+
+    await view.onOpen();
+
+    expect(plugin.initClient).not.toHaveBeenCalled();
+    expect(Notice.messages.some((m) => m.includes('Could not find') && m.includes('co-ober-view-xyz'))).toBe(true);
+    expect(view.contentEl.querySelector('.co-ober-reconnect-btn')).not.toBeNull();
+  });
+
   it('notifies and reloads authoritative toolbar state when a model change fails', async () => {
     setLocale('en');
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -239,6 +252,9 @@ function createPlugin(overrides: {
       commonModels: [],
       autoScrollEnabled: true,
       autoConnect: true,
+      // The auto-connect pre-check resolves this before spawning; a binary we
+      // know exists keeps every other test on the connect path.
+      opencodePath: process.execPath,
       ...(overrides.settings ?? {}),
     },
     loadPluginData: vi.fn().mockResolvedValue(undefined),

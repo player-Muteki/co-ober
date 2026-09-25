@@ -117,7 +117,7 @@ export class DragDropManager {
 					const data = await this.fileToBase64(file);
 					const imageBytes = file.size;
 					if (this.pendingImageTotalBytes + imageBytes > DragDropManager.MAX_IMAGE_BYTES) {
-						console.warn(`[co-ober] Image "${file.name}" exceeds total size limit (10MB), skipped`);
+						new Notice(t().dragDrop.imageTooLarge.replace('{name}', file.name));
 						continue;
 					}
 					this.pendingImageTotalBytes += imageBytes;

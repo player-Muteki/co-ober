@@ -253,3 +253,44 @@ function createPlugin(workspace: unknown): CoOberPlugin {
   });
   return plugin;
 }
+
+describe('CoOberPlugin connect failure messaging', () => {
+  function createConnectPlugin(opencodePath: string) {
+    const plugin = Object.create(CoOberPlugin.prototype) as CoOberPlugin;
+    Object.assign(plugin, {
+      app: { vault: { adapter: { getBasePath: () => process.cwd() } } },
+      manifest: { id: 'co-ober' },
+      settings: { ...DEFAULT_SETTINGS, opencodePath },
+      clientReadyResolvers: [],
+    });
+    return plugin;
+  }
+
+  const connectClientOf = (plugin: CoOberPlugin) =>
+    (plugin as unknown as { connectClient: () => Promise<boolean> }).connectClient.bind(plugin);
+
+  it('names the missing binary when the configured command cannot spawn', async () => {
+    Notice.messages.length = 0;
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const plugin = createConnectPlugin('/nonexistent/co-ober-connect-xyz');
+
+    const ok = await connectClientOf(plugin)();
+
+    expect(ok).toBe(false);
+    expect(Notice.messages.some((m) => m.includes('Could not find') && m.includes('co-ober-connect-xyz'))).toBe(true);
+    errSpy.mockRestore();
+  });
+
+  it('keeps the generic failure notice for a launch that dies after spawning', async () => {
+    Notice.messages.length = 0;
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const plugin = createConnectPlugin(process.execPath);
+
+    const ok = await connectClientOf(plugin)();
+
+    expect(ok).toBe(false);
+    expect(Notice.messages.some((m) => m.includes('Could not find'))).toBe(false);
+    expect(Notice.messages.some((m) => m.includes('Failed to connect'))).toBe(true);
+    errSpy.mockRestore();
+  });
+});

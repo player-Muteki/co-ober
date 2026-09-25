@@ -422,9 +422,16 @@ export class AcpClient implements OpencodeClient {
     let transport: AcpJsonRpcTransport | null = null;
     let requestHandler: AcpRequestHandler | null = null;
 
+    // A failed spawn (ENOENT) surfaces here first; the transport only sees
+    // a closed pipe. Keep the launch error so the UI can name the binary.
+    let launchError: Error | null = null;
+
     try {
       subprocess.start();
-      subprocess.onClose((error) => this.handleSubprocessClose(subprocess, error));
+      subprocess.onClose((error) => {
+        if (error) launchError = launchError ?? error;
+        this.handleSubprocessClose(subprocess, error);
+      });
       const input = subprocess.stdout;
       const output = subprocess.stdin;
       if (!input || !output) {
@@ -481,16 +488,17 @@ export class AcpClient implements OpencodeClient {
       this.methodCache.clear();
       this.connected = true;
     } catch (error) {
+      const failure = launchError ?? (error instanceof Error ? error : new Error(String(error)));
       if (this.kernelGeneration === generation) {
         this.onClose?.();
-        await this.disposeConnection(error instanceof Error ? error : new Error(String(error)), true);
+        await this.disposeConnection(failure, true);
       } else {
         // A newer connection owns the client state now; only clean up our own resources.
         requestHandler?.dispose();
-        transport?.dispose(error instanceof Error ? error : new Error(String(error)));
+        transport?.dispose(failure);
         await subprocess.shutdown().catch(() => {});
       }
-      throw error;
+      throw failure;
     } finally {
       if (this.connectingGeneration === generation) this.connectingGeneration = null;
     }

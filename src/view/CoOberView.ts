@@ -20,6 +20,7 @@ import type { SessionStore } from '../chat/session';
 import { SessionDropdown } from './sessionDropdown';
 import { listNativeSessions, searchNativeSessions } from '../opencode/NativeSessionReader';
 import { applyPermissionTier } from '../client/permissionTier';
+import { resolveCommandPath } from '../utils/commandResolution';
 import { commandRegistry } from '../commands/registry';
 import { FileCommandStorage } from '../commands/storage/FileCommandStorage';
 import { Autocomplete } from './autocomplete';
@@ -372,7 +373,15 @@ export class CoOberView extends ItemView {
         console.error('[co-ober] session sync:', e);
       });
     } else if (this.plugin.settings.autoConnect) {
-      void this.controller.ensureClientConnected();
+      // Spawn-attempting a binary that is not anywhere on disk only yields a
+      // generic failure notice; name the missing command and offer the button.
+      const cmd = this.plugin.settings.opencodePath;
+      if (resolveCommandPath(cmd) === null) {
+        new Notice(t().notice.binaryNotFound.replace('{cmd}', cmd));
+        this.showReconnectBtn();
+      } else {
+        void this.controller.ensureClientConnected();
+      }
     } else {
       this.showReconnectBtn();
     }

@@ -65,6 +65,7 @@ const zh: Locale = {
   dragDrop: {
     imageNotSupported: '当前 OpenCode Agent 不支持图片提示词',
     audioNotSupported: '不支持音频附件',
+    imageTooLarge: '图片 "{name}" 超过待发送图片 10MB 上限',
   },
 
   lightbox: {
@@ -108,7 +109,6 @@ const zh: Locale = {
   },
 
   stream: {
-    noticeInfo: '提示',
     noticeWarning: '警告',
     noticeError: '注意',
     compacted: '— 智能体已压缩上下文 —',
@@ -291,6 +291,7 @@ const zh: Locale = {
     noSelection: '未选择文本',
     connected: 'Co-Ober 已连接',
     connectFailed: '连接 OpenCode 失败',
+    binaryNotFound: '找不到可执行文件 "{cmd}"——请安装 OpenCode，或在设置中填写它的完整路径',
     dataLoadFailed: '无法读取已保存的聊天数据，将以默认设置启动；不可读的文件已保留为 {file}',
     dataLoadFailedNoBackup: '无法读取已保存的聊天数据，且未能保留不可读文件；将以默认设置启动',
     saveFailed: 'Co-Ober 保存聊天数据失败——最近的更改可能丢失',

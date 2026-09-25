@@ -200,7 +200,7 @@ describe('DragDropManager', () => {
       expect((Notice as any).messages).toContain('This OpenCode agent does not support image prompts');
     });
 
-    it('skips images exceeding size limit', async () => {
+    it('notices and skips images exceeding the pending-image budget', async () => {
       manager.setup();
 
       // Create a large image file (over 10MB)
@@ -212,14 +212,13 @@ describe('DragDropManager', () => {
       Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
       Object.defineProperty(event, 'preventDefault', { value: vi.fn() });
 
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      (Notice as any).messages.length = 0;
       dropZone.dispatchEvent(event);
 
       await new Promise(r => setTimeout(r, 10));
 
       expect(handlers.onAddImagePart).not.toHaveBeenCalled();
-      expect(warnSpy).toHaveBeenCalled();
-      warnSpy.mockRestore();
+      expect((Notice as any).messages).toContain('"large.png" exceeds the 10 MB pending-image limit');
     });
 
     it('ignores unsupported file types', async () => {
@@ -294,6 +293,7 @@ describe('DragDropManager', () => {
 
     it('does not track bytes for rejected images across multiple calls', async () => {
       mockImageReader();
+      (Notice as any).messages.length = 0;
       const file = new File(['image-data'], 'pasted.png', { type: 'image/png' });
       Object.defineProperty(file, 'size', { value: 9 * 1024 * 1024 });
 
@@ -301,12 +301,10 @@ describe('DragDropManager', () => {
       // Total now 9MB; a second 2MB image would exceed the 10MB budget and be skipped.
       const second = new File(['more'], 'second.png', { type: 'image/png' });
       Object.defineProperty(second, 'size', { value: 2 * 1024 * 1024 });
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       await manager.handleFiles([second]);
 
       expect(handlers.onAddImagePart).toHaveBeenCalledTimes(1);
-      expect(warnSpy).toHaveBeenCalled();
-      warnSpy.mockRestore();
+      expect((Notice as any).messages).toContain('"second.png" exceeds the 10 MB pending-image limit');
     });
 
     it('ignores an empty file list', async () => {

@@ -63,6 +63,7 @@ const en = {
   dragDrop: {
     imageNotSupported: 'This OpenCode agent does not support image prompts',
     audioNotSupported: 'Audio attachments are not supported',
+    imageTooLarge: '"{name}" exceeds the 10 MB pending-image limit',
   },
 
   lightbox: {
@@ -106,7 +107,6 @@ const en = {
   },
 
   stream: {
-    noticeInfo: 'Notice',
     noticeWarning: 'Warning',
     noticeError: 'Alert',
     compacted: '— Context compacted by the agent —',
@@ -289,6 +289,7 @@ const en = {
     noSelection: 'No text selected',
     connected: 'Co-Ober connected',
     connectFailed: 'Failed to connect to OpenCode',
+    binaryNotFound: 'Could not find "{cmd}" — install OpenCode or set its full path in Settings',
     dataLoadFailed: 'Could not read saved chat data; starting with defaults. The unreadable file was kept as {file}',
     dataLoadFailedNoBackup: 'Could not read saved chat data or set the unreadable file aside; starting with defaults',
     saveFailed: 'Co-Ober failed to save chat data — recent changes may be lost',

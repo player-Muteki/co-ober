@@ -1,10 +1,14 @@
 import { extname, delimiter } from 'path';
 import { existsSync } from 'fs';
+import { homedir } from 'os';
 
 /**
  * Determine how to spawn a command on Windows.
  *
- * On non-Windows platforms this is a no-op passthrough.
+ * On POSIX the bare command is resolved through PATH plus the installer
+ * directories GUI apps routinely miss (Obsidian on a desktop does not
+ * inherit the shell PATH from .profile), so `opencode` still launches when
+ * it only lives in e.g. ~/.opencode/bin.
  */
 export function getSpawnInfo(
   cmd: string,
@@ -12,7 +16,10 @@ export function getSpawnInfo(
   platform: NodeJS.Platform,
   env: NodeJS.ProcessEnv,
 ): { command: string; args: string[] } {
-  if (platform !== 'win32') return { command: cmd, args };
+  if (platform !== 'win32') {
+    const resolved = resolveCommandPath(cmd, platform, env);
+    return { command: resolved ?? cmd, args };
+  }
 
   const resolved = resolveWindowsCommand(cmd);
   if (resolved.useCmdShell) {
@@ -76,4 +83,57 @@ function quoteCmdArg(value: string): string {
   if (!value) return '""';
   if (!/[\s"]/.test(value)) return value;
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+/** Install locations a desktop-launched Obsidian usually misses in PATH. */
+function posixExtraBinDirs(env: NodeJS.ProcessEnv): string[] {
+  const home = env.HOME || homedir();
+  return [
+    `${home}/.opencode/bin`,
+    `${home}/.local/bin`,
+    `${home}/.bun/bin`,
+    '/usr/local/bin',
+    '/opt/homebrew/bin',
+    '/usr/bin',
+  ];
+}
+
+/**
+ * Resolve a command (quoted, bare, or explicit path) to an existing
+ * executable file, or null when nothing matches. Used both for spawning and
+ * for the settings/diagnostics path verdict so they can never disagree.
+ */
+export function resolveCommandPath(
+  cmd: string,
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+  exists: (p: string) => boolean = existsSync,
+): string | null {
+  const bare = cmd.trim().replace(/^"(.+)"$/, '$1').replace(/^'(.+)'$/, '$1').trim();
+  if (!bare) return null;
+
+  if (platform === 'win32') {
+    const names = /\.(cmd|bat|exe)$/i.test(bare) ? [bare] : [bare, `${bare}.cmd`, `${bare}.bat`, `${bare}.exe`];
+    if (bare.includes('\\') || bare.includes('/')) {
+      for (const name of names) if (exists(name)) return name;
+      return null;
+    }
+    const pathDirs = (env.PATH ?? '').split(';').filter(Boolean);
+    for (const dir of pathDirs) {
+      for (const name of names) {
+        const candidate = `${dir}\\${name}`;
+        if (exists(candidate)) return candidate;
+      }
+    }
+    return null;
+  }
+
+  if (bare.includes('/')) return exists(bare) ? bare : null;
+
+  const dirs = [...(env.PATH ?? '').split(delimiter).filter(Boolean), ...posixExtraBinDirs(env)];
+  for (const dir of dirs) {
+    const candidate = `${dir}/${bare}`;
+    if (exists(candidate)) return candidate;
+  }
+  return null;
 }

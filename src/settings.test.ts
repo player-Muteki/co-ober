@@ -398,3 +398,26 @@ function createPlugin(
 function flushPromises(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
+
+describe('CoOberSettingsTab default effort options', () => {
+  it('offers the full reasoning-effort ladder', () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const tab = new CoOberSettingsTab(plugin);
+
+    tab.display();
+
+    const effortSelect = [...tab.containerEl.querySelectorAll('select')]
+      .find((select) => [...select.options].some((option) => option.value === 'xhigh')) as HTMLSelectElement | undefined;
+    expect(effortSelect).toBeDefined();
+    expect([...effortSelect!.options].map((option) => option.value)).toEqual([
+      'default',
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
+  });
+});

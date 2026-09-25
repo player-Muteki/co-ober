@@ -1,6 +1,4 @@
 import { PluginSettingTab, Setting, Notice } from 'obsidian';
-import { existsSync } from 'fs';
-import { delimiter, isAbsolute } from 'path';
 import CoOberPlugin from './main';
 import { VIEW_TYPE } from './types';
 import type { AgentCapabilities, AvailableCommand, CustomAgentDefinition, CustomSkillDefinition, McpServerConfig, ModeOption, ModelOption, PermissionLevel, SyncRule, FsCapabilityMode, TerminalCapabilityMode } from './types';
@@ -8,6 +6,7 @@ import type { OpencodeClient } from './client';
 import { setLocale, t as locale } from './i18n/index';
 import { CLIENT_VERSION } from './client/acp';
 import { applyPermissionTier } from './client/permissionTier';
+import { resolveCommandPath } from './utils/commandResolution';
 
 import { addCustomAgentBlock, addCustomSkillBlock, addCommonModelToggle, addMcpServerBlock, addSyncRuleBlock, renameCustomAgent, renameCustomSkill } from './settings/settingBlocks';
 
@@ -127,9 +126,12 @@ export class CoOberSettingsTab extends PluginSettingTab {
       .setDesc(labels.defaultEffort.desc)
       .addDropdown((d) => d.addOptions({
         default: locale().toolbar.effort.default,
+        minimal: locale().toolbar.effort.minimal,
         low: locale().toolbar.effort.low,
         medium: locale().toolbar.effort.medium,
         high: locale().toolbar.effort.high,
+        xhigh: locale().toolbar.effort.xhigh,
+        max: locale().toolbar.effort.max,
       })
         .setValue(s.defaultEffort)
         .onChange(async (v) => { s.defaultEffort = v; await this.save(); }));
@@ -769,17 +771,10 @@ export class CoOberSettingsTab extends PluginSettingTab {
   private getOpencodePathStatus(path: string): PathDiagnostic {
     const labels = locale().settings.diagnostics;
     if (!path) return { ok: false, detail: labels.pathEmpty };
-    if (isAbsolute(path) || path.includes('/') || path.includes('\\')) {
-      if (existsSync(path)) return { ok: true, detail: labels.pathFound.replace('{path}', path) };
-      return { ok: false, detail: locale().settings.opencodePath.notFound.replace('{path}', path) };
-    }
-
-    const executableNames = process.platform === 'win32' ? [path, `${path}.cmd`, `${path}.exe`] : [path];
-    const found = (process.env.PATH ?? '')
-      .split(delimiter)
-      .some((dir) => executableNames.some((name) => existsSync(`${dir}/${name}`)));
-
-    if (!found) return { ok: false, detail: locale().settings.opencodePath.notFound.replace('{path}', path) };
-    return { ok: true, detail: labels.pathFound.replace('{path}', path) };
+    // Same resolver the spawn path uses, so diagnostics can never disagree
+    // with what actually launches (desktop PATH misses ~/.opencode/bin).
+    const resolved = resolveCommandPath(path);
+    if (resolved) return { ok: true, detail: labels.pathFound.replace('{path}', path) };
+    return { ok: false, detail: locale().settings.opencodePath.notFound.replace('{path}', path) };
   }
 }
