@@ -1,3 +1,25 @@
+## 0.1.38 - 2026-09-25
+
+### Added
+- **Save failure is visible**: a failed data write raises a sticky notice that hides itself on the next successful save — silent loss of recent chat data is no longer the failure mode.
+- **Stored image budget**: images persisted in a session are kept under a total byte budget, evicting the oldest payloads first and leaving a localized placeholder where a message becomes empty.
+- **Settings bounds with hints**: numeric settings fields gain explicit ranges and reject out-of-range or non-numeric input with a visible localized hint instead of silently discarding the value.
+
+### Changed
+- **Tool frames degrade instead of dropping**: unknown tool kinds parse as `other`, `apply_patch` is recognized, and any status string keeps the frame — a patch update can no longer silently vanish.
+- **Config-option resilience**: an option with an unknown id, category, type or current value no longer costs the whole `config_option_update`; the model list survives the ride.
+- **Honest permission outcomes**: a decision matching none of the offered options reports `cancelled` on the wire, and deny-intent modes (plan/readonly/safe) never fall through to an allow-shaped option.
+- **JSON-RPC tolerance**: string request ids are answered, `null` results resolve pending requests, and `error.data` text surfaces when the error object carries no message.
+- **Thinking blocks finalize**: the live thinking block closes when a turn completes, is stopped or is reset by a reconnect — no orphaned timers or mislabeled headers.
+- **Session loss is told honestly**: a runtime session the agent no longer holds becomes a neutral system note, while other sync failures render as a visible error line.
+- **Pending images measured on the wire**: the attach budget compares the encoded base64 payload, not the claimed file size.
+- **Stop keeps the queue separated**: stopping a turn restores queued prompts into the input with blank-line separation so independent messages stay independent.
+- **Localized polish**: one rendered form for token rates, the empty tool-result line follows the active language, session list dates use the locale calendar, and idle `state_update` usage keeps its cost.
+- **Keyboard and screen-reader access**: mode-cycle and permission toggles are proper buttons operable with Enter/Space, and the header and jump-to-latest icon buttons carry localized accessible names.
+
+### Fixed
+- **Byte-identical attachments remove independently**: pending-image chips splice their own part by object identity, so attaching the same image twice no longer deletes the wrong one.
+
 ## 0.1.37 - 2026-09-25
 
 ### Added
