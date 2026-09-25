@@ -803,6 +803,9 @@ export class CoOberViewController {
       onPermissionUnreadable: () => {
         this.renderer.addError(t().permission.unreadable);
       },
+      onProtocolDrift: (sessionId) => {
+        this.noteProtocolDrift(sessionId);
+      },
       onElicitationComplete: (elicitationId) => {
         this.deps.permissionBanner.resolveExternally(elicitationId);
       },
@@ -835,6 +838,29 @@ export class CoOberViewController {
       if (rt.state.sessionId === sessionId) return rt;
     }
     return undefined;
+  }
+
+  /** The tab a frame of this session belongs to — a side chat counts as its owner's. */
+  private findOwningRuntime(sessionId: string | null): SessionRuntime | undefined {
+    if (!sessionId) return undefined;
+    for (const rt of this.runtimes.values()) {
+      if (rt.state.sessionId === sessionId || rt.sideChatSessionId === sessionId) return rt;
+    }
+    return undefined;
+  }
+
+  /**
+   * A frame that could not be drawn is content the user would otherwise assume
+   * arrived. Every tab counts its own, because the gap is in that transcript,
+   * and one line carrying the running total keeps a chatty agent from burying
+   * the conversation in repeats. Which kind of frame was lost is the client's
+   * console warning to carry; the transcript only owes the reader a count.
+   */
+  noteProtocolDrift(sessionId: string | null): void {
+    const rt = this.findOwningRuntime(sessionId) ?? (this.runtimes.size > 0 ? this.activeRuntime : undefined);
+    if (!rt) return;
+    rt.droppedFrames += 1;
+    rt.renderer.setSystemNote('droppedFrames', 'stream.droppedFrames', rt.droppedFrames);
   }
 
   handleDisconnect(): void {
@@ -2315,6 +2341,9 @@ export class CoOberViewController {
     rt.streamCtrl.reset();
     ++rt.genId;
     rt.painted = false;
+    // The line this number feeds was painted into the transcript just cleared,
+    // so the count starts over with the transcript.
+    rt.droppedFrames = 0;
     // The adopter paints this panel itself; a pending lazy restore must not
     // replay an old transcript into it afterwards.
     rt.needsRestore = false;

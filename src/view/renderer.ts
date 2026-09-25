@@ -102,6 +102,9 @@ export class ChatRenderer {
   // Structured tool call states
   private toolCallStates = new Map<string, ToolCallState>();
 
+  /** Replaceable status lines, one per condition key (see setSystemNote). */
+  private systemNotes = new Map<string, HTMLDivElement>();
+
   // Throttled thinking markdown render (RAF-based, ~16ms between frames)
   private thinkingRenderFrame: number | null = null;
 
@@ -186,6 +189,7 @@ export class ChatRenderer {
     this.placeholderEl = null;
     this.usageEls.clear();
     this.userTurnCount = 0;
+    this.systemNotes.clear();
   }
 
   private scrollToBottom(): void {
@@ -205,6 +209,37 @@ export class ChatRenderer {
     const wrap = this.container.createDiv({ cls: 'co-ober-msg system' });
     const body = wrap.createDiv({ cls: 'co-ober-msg-body' });
     MarkdownRenderer.renderMarkdown(text, body, '', this.app as unknown as Component);
+    this.scrollToBottom();
+  }
+
+  /**
+   * A notice for a condition that keeps holding: calling this again with the
+   * same key rewrites the line already on screen instead of stacking another
+   * copy of it, so a count of dropped frames reads as one growing line rather
+   * than a wall of repeats. The key names the message in the current locale
+   * and `{count}` carries the number, which also lets a language switch
+   * relabel the line in place.
+   */
+  setSystemNote(key: string, messageKey: string, count: number): void {
+    let wrap = this.systemNotes.get(key);
+    // `clear()` and the stale-line sweeps take the element with them, and a
+    // panel is not always in the document, so containment — not connectivity —
+    // decides whether the line is still the one on screen.
+    if (wrap && !this.container.contains(wrap)) {
+      this.systemNotes.delete(key);
+      wrap = undefined;
+    }
+    if (!wrap) {
+      wrap = this.container.createDiv({ cls: 'co-ober-msg system' });
+      wrap.createDiv({ cls: 'co-ober-msg-body' });
+      this.systemNotes.set(key, wrap);
+    }
+    const body = wrap.querySelector<HTMLElement>('.co-ober-msg-body');
+    if (body) {
+      body.dataset.i18nCount = messageKey;
+      body.dataset.count = String(count);
+      body.textContent = (lookupLocaleString(messageKey) ?? '').replace('{count}', String(count));
+    }
     this.scrollToBottom();
   }
 

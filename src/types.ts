@@ -56,6 +56,13 @@ export interface ModeOption {
 export interface AvailableCommand {
   name: string;
   description: string;
+  /**
+   * What the agent expects after the command name, folded in from the wire's
+   * `input.hint`. The slash menu shows it under the command.
+   */
+  argumentHint?: string;
+  /** Wire spelling of the hint; read once when the command list is merged. */
+  input?: { hint?: string } | null;
 }
 
 export interface SessionSnapshot {

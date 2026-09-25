@@ -1,4 +1,4 @@
-import type { PermissionRequest, FsCapabilityMode, TerminalCapabilityMode, TerminalCreateParams } from '../types';
+import type { PermissionRequest, FsCapabilityMode, TerminalCapabilityMode, TerminalCreateParams, TerminalOutputResult } from '../types';
 import type { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
 import { FsDelegate, type VaultWriteIo } from './fsDelegate';
 import { TerminalManager, TerminalError } from './terminalManager';
@@ -194,6 +194,15 @@ export class AcpRequestHandler {
     if (this.terminalManager) {
       this.terminalManager.setConfig({ timeoutMs, maxOutputBytes });
     }
+  }
+
+  /**
+   * Read a terminal this client hosts, for rendering rather than for the
+   * agent's own terminal/output request. Null means the manager is gone
+   * (disconnected or disposed).
+   */
+  readTerminal(terminalId: string): TerminalOutputResult | null {
+    return this.terminalManager?.output(terminalId) ?? null;
   }
 
   private handleServerRequestPermission = (params: Record<string, unknown>): Promise<unknown> => {

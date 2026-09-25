@@ -11,10 +11,12 @@ import {
   extractSessionSnapshot,
   extractConfigMeta,
   mergeAvailableCommands,
+  terminalContentFrom,
 } from './acp';
 import { AcpRequestHandler } from './AcpRequestHandler';
 import { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
-import type { NormalizedUpdate, SessionUpdate } from '../types';
+import { t } from '../i18n/index';
+import type { NormalizedUpdate, SessionUpdate, ToolCallContent } from '../types';
 
 describe('parseSessionUpdate', () => {
   it('should return null for empty input', () => {
@@ -317,6 +319,53 @@ describe('parseSessionUpdate', () => {
   });
 });
 
+describe('parseSessionUpdate drop reporting', () => {
+  it('names a frame that failed validation, so the transcript can say it vanished', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const dropped: string[] = [];
+    expect(parseSessionUpdate({ sessionUpdate: 'tool_call' }, (kind) => dropped.push(kind))).toBeNull();
+    expect(dropped).toEqual(['tool_call']);
+    warn.mockRestore();
+  });
+
+  it('names an unknown kind too', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const dropped: string[] = [];
+    expect(parseSessionUpdate({ sessionUpdate: 'module_chunk' }, (kind) => dropped.push(kind))).toBeNull();
+    expect(dropped).toEqual(['module_chunk']);
+    warn.mockRestore();
+  });
+
+  it('counts a plan_update whose content variant cannot be listed', () => {
+    const dropped: string[] = [];
+    expect(
+      parseSessionUpdate({ sessionUpdate: 'plan_update', plan: { type: 'text', content: 'prose' } }, (kind) =>
+        dropped.push(kind),
+      ),
+    ).toBeNull();
+    expect(dropped).toEqual(['plan_update']);
+  });
+
+  it('leaves a frame the transcript chooses not to paint out of the count', () => {
+    const dropped: string[] = [];
+    expect(
+      parseSessionUpdate({ sessionUpdate: 'compaction_summary_chunk', compactionId: 'c-1' }, (kind) => dropped.push(kind)),
+    ).toBeNull();
+    expect(dropped).toEqual([]);
+  });
+
+  it('stays silent about a frame it drew', () => {
+    const dropped: string[] = [];
+    expect(
+      parseSessionUpdate(
+        { sessionUpdate: 'agent_message_chunk', messageId: 'm', content: { type: 'text', text: 'hi' } },
+        (kind) => dropped.push(kind),
+      ),
+    ).not.toBeNull();
+    expect(dropped).toEqual([]);
+  });
+});
+
 describe('dispatchSessionUpdate v2-alpha pre-layer', () => {
   function clientWithStream(sid: string): { client: AcpClient; norms: NormalizedUpdate[] } {
     const client = new AcpClient('opencode');
@@ -363,6 +412,115 @@ describe('dispatchSessionUpdate v2-alpha pre-layer', () => {
       },
     });
     expect(norms).toEqual([{ kind: 'plan', entries: [{ content: 'Step 1', status: 'pending', priority: 'high' }] }]);
+  });
+});
+
+describe('terminalContentFrom', () => {
+  it('carries the output and stays quiet about a clean exit', () => {
+    expect(
+      terminalContentFrom({ output: 'total 1\nsrc', truncated: false, exitStatus: { exitCode: 0, signal: null } }),
+    ).toEqual({ type: 'content', content: { type: 'text', text: 'total 1\nsrc' } });
+  });
+
+  it('says the buffer was trimmed and names a failing exit code', () => {
+    const item = terminalContentFrom({
+      output: 'tail',
+      truncated: true,
+      exitStatus: { exitCode: 2, signal: null },
+    }) as Extract<ToolCallContent, { type: 'content' }>;
+    const text = (item.content as { text: string }).text;
+    expect(text).toContain(t().tool.outputTrimmed);
+    expect(text).toContain('tail');
+    expect(text).toContain(t().tool.exitCode.replace('{code}', '2'));
+  });
+
+  it('reports the signal that killed the process', () => {
+    const item = terminalContentFrom({ output: '', exitStatus: { exitCode: null, signal: 'SIGTERM' } }) as Extract<
+      ToolCallContent,
+      { type: 'content' }
+    >;
+    expect((item.content as { text: string }).text).toBe(t().tool.terminated.replace('{signal}', 'SIGTERM'));
+  });
+
+  it('says the terminal is gone rather than painting an empty card', () => {
+    const gone = { type: 'content', content: { type: 'text', text: t().tool.terminalGone } };
+    expect(terminalContentFrom(null)).toEqual(gone);
+    expect(terminalContentFrom({ output: '', error: 'terminal not found' })).toEqual(gone);
+  });
+});
+
+describe('AcpClient terminal reads and drift reports', () => {
+  function clientWithStream(sid: string): { client: AcpClient; norms: NormalizedUpdate[]; drifts: [string | null, string][] } {
+    const client = new AcpClient('opencode');
+    const norms: NormalizedUpdate[] = [];
+    const drifts: [string | null, string][] = [];
+    const streams = Reflect.get(client, 'activeStreams') as Map<
+      string,
+      { handler: (u: NormalizedUpdate) => void; abort: AbortController }
+    >;
+    streams.set(sid, { handler: (u) => norms.push(u), abort: new AbortController() });
+    Reflect.set(client, 'sessionId_', sid);
+    client.onProtocolDrift = (sessionId, kind) => drifts.push([sessionId, kind]);
+    return { client, norms, drifts };
+  }
+
+  const dispatch = (client: AcpClient, params: unknown) =>
+    Reflect.get(client, 'dispatchSessionUpdate').call(client, params);
+
+  it('replaces a terminal reference with the output of the process it hosts', () => {
+    const { client, norms } = clientWithStream('s1');
+    const readTerminal = vi.fn((id: string) => ({ output: `read ${id}`, exitStatus: { exitCode: 0, signal: null } }));
+    Reflect.set(client, 'requestHandler', { readTerminal });
+    dispatch(client, {
+      sessionId: 's1',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'tc1',
+        title: 'ls',
+        kind: 'execute',
+        content: [{ type: 'terminal', terminalId: 'term-9' }],
+      },
+    });
+    expect(readTerminal).toHaveBeenCalledWith('term-9');
+    const snapshot = norms[0] as Extract<NormalizedUpdate, { kind: 'tool_call_snapshot' }>;
+    expect(snapshot.contents).toEqual([{ type: 'content', content: { type: 'text', text: 'read term-9' } }]);
+  });
+
+  it('leaves a non-terminal tool frame untouched', () => {
+    const { client, norms } = clientWithStream('s1');
+    Reflect.set(client, 'requestHandler', { readTerminal: vi.fn() });
+    dispatch(client, {
+      sessionId: 's1',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'tc1',
+        title: 'read',
+        content: [{ type: 'content', content: { type: 'text', text: 'plain' } }],
+      },
+    });
+    const snapshot = norms[0] as Extract<NormalizedUpdate, { kind: 'tool_call_snapshot' }>;
+    expect(snapshot.contents).toEqual([{ type: 'content', content: { type: 'text', text: 'plain' } }]);
+  });
+
+  it('reports the conversation a dropped frame belonged to', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { client, drifts } = clientWithStream('s1');
+    dispatch(client, { sessionId: 's1', update: { sessionUpdate: 'usage_update', used: 'not-a-number' } });
+    expect(drifts).toEqual([['s1', 'usage_update']]);
+    warn.mockRestore();
+  });
+
+  it('blames a frame it would have to guess a owner for on this client’s session', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { client, drifts } = clientWithStream('s1');
+    const streams = Reflect.get(client, 'activeStreams') as Map<
+      string,
+      { handler: (u: NormalizedUpdate) => void; abort: AbortController }
+    >;
+    streams.set('s2', { handler: () => {}, abort: new AbortController() });
+    dispatch(client, { update: { sessionUpdate: 'agent_message_chunk', messageId: 'm', content: { type: 'text', text: 'x' } } });
+    expect(drifts).toEqual([['s1', 'session update without a sessionId']]);
+    warn.mockRestore();
   });
 });
 
@@ -479,6 +637,27 @@ describe('mergeAvailableCommands', () => {
     const result = mergeAvailableCommands([{ name: '', description: 'empty' }]);
     expect(result).toHaveLength(1);
     expect(result[0].name).toBe('compact');
+  });
+
+  it('folds the wire input hint onto the argument hint the menu reads', () => {
+    const result = mergeAvailableCommands([
+      { name: 'deploy', description: 'ship it', input: { hint: '<environment>' } },
+    ]);
+    const deploy = result.find((c) => c.name === 'deploy');
+    expect(deploy?.argumentHint).toBe('<environment>');
+    // The raw pair is the client's business; consumers read argumentHint only.
+    expect(deploy?.input).toBeUndefined();
+  });
+
+  it('keeps an already-merged argumentHint and omits the field when there is no hint', () => {
+    const result = mergeAvailableCommands([
+      { name: 'a', description: '', argumentHint: '<first>' },
+      { name: 'b', description: '', argumentHint: '<first>', input: { hint: '<second>' } },
+      { name: 'c', description: 'bare' },
+    ]);
+    expect(result.find((cmd) => cmd.name === 'a')?.argumentHint).toBe('<first>');
+    expect(result.find((cmd) => cmd.name === 'b')?.argumentHint).toBe('<first>');
+    expect('argumentHint' in (result.find((cmd) => cmd.name === 'c') ?? {})).toBe(false);
   });
 });
 

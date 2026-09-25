@@ -150,6 +150,7 @@ const en = {
     compacted: '— Context compacted by the agent —',
     compactionFailed: 'Context compaction failed',
     unsupportedContent: '[{type} content — cannot be shown here]',
+    droppedFrames: 'Co-Ober could not draw {count} update frame(s) from this agent — the transcript may be missing part of the response.',
   },
 
   error: {
@@ -240,6 +241,9 @@ const en = {
     moreMatches: '... {count} more matches',
     moreLines: '... {count} more lines',
     fileDeleted: 'File deleted',
+    terminalGone: 'This terminal is no longer available.',
+    outputTrimmed: '… earlier output was trimmed …',
+    terminated: 'Terminated by {signal}',
   },
 
   toolKind: {

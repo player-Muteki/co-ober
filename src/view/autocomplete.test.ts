@@ -57,6 +57,11 @@ describe('Autocomplete', () => {
       expect(descs[0].textContent).toBe('First file');
     });
 
+    it('shows what an agent command expects after its name', () => {
+      autocomplete.open([{ value: 'deploy', label: 'deploy', description: 'ship it', argumentHint: '<environment>' }], '/');
+      expect(container.querySelector('.ac-arg-hint')?.textContent).toBe('<environment>');
+    });
+
     it('selects first item by default', () => {
       autocomplete.open(sampleItems, '@');
       const selected = container.querySelector('.co-ober-ac-item.selected');

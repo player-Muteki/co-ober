@@ -45,6 +45,7 @@ function createTabRenderer() {
     flushTextRender: vi.fn().mockResolvedValue(undefined),
     addError: vi.fn(),
     addSystemMessage: vi.fn(),
+    setSystemNote: vi.fn(),
     showUsage: vi.fn(),
     forceScrollToBottom: vi.fn(),
     addToolCall: vi.fn(),
@@ -1308,5 +1309,66 @@ describe('CoOberViewController — what survives a restart (0.2.2 stage 2)', () 
       expect(r.addSystemMessage).toHaveBeenCalledTimes(before[i] + 2);
     }
     expect(h.controller.reportPersistence(false)).toBeUndefined();
+  });
+
+  describe('protocol drift', () => {
+    function twoTabs(): [string, string] {
+      h.controller.restoreTabShells(
+        [{ tabId: 'tab-1', sessionId: 'ses-a' }, { tabId: 'tab-2', sessionId: 'ses-b' }],
+        'tab-1',
+      );
+      return h.controller.listTabIds() as [string, string];
+    }
+
+    it('counts a background tab’s lost frames in that tab alone', () => {
+      const [tabA, tabB] = twoTabs();
+      h.controller.noteProtocolDrift('ses-b');
+      h.controller.noteProtocolDrift('ses-b');
+
+      expect(h.renderers.get(tabA)?.setSystemNote).not.toHaveBeenCalled();
+      expect(rtOf(h, tabB).droppedFrames).toBe(2);
+      expect(h.renderers.get(tabB)?.setSystemNote).toHaveBeenLastCalledWith('droppedFrames', 'stream.droppedFrames', 2);
+    });
+
+    it('gives a side chat’s drops to the tab that forked it', () => {
+      const [tabA] = twoTabs();
+      rtOf(h, tabA).sideChatSessionId = 'fork-1';
+      h.controller.noteProtocolDrift('fork-1');
+      expect(h.renderers.get(tabA)?.setSystemNote).toHaveBeenCalledWith('droppedFrames', 'stream.droppedFrames', 1);
+    });
+
+    it('blames the tab on screen when a frame names no session', () => {
+      const [tabA, tabB] = twoTabs();
+      h.controller.noteProtocolDrift(null);
+      expect(h.renderers.get(tabA)?.setSystemNote).toHaveBeenCalledTimes(1);
+      expect(h.renderers.get(tabB)?.setSystemNote).not.toHaveBeenCalled();
+    });
+
+    it('starts the count over when the tab’s transcript is torn down', async () => {
+      const client = createMockClient();
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      const [tabA] = twoTabs();
+      h.controller.noteProtocolDrift('ses-a');
+      expect(rtOf(h, tabA).droppedFrames).toBe(1);
+
+      await h.controller.newSession();
+
+      expect(rtOf(h, tabA).droppedFrames).toBe(0);
+    });
+
+    it('reaches the tab through the handler the view binds to the client', () => {
+      const client = createMockClient();
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      const [tabA, tabB] = twoTabs();
+
+      h.controller.bindClientHandlers();
+      const handlers = (client.setClientHandlers as ReturnType<typeof vi.fn>).mock.calls[0][0] as {
+        onProtocolDrift: (sessionId: string | null, kind: string) => void;
+      };
+      handlers.onProtocolDrift('ses-b', 'module_chunk');
+
+      expect(h.renderers.get(tabB)?.setSystemNote).toHaveBeenCalledWith('droppedFrames', 'stream.droppedFrames', 1);
+      expect(h.renderers.get(tabA)?.setSystemNote).not.toHaveBeenCalled();
+    });
   });
 });

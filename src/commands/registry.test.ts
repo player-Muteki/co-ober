@@ -81,3 +81,25 @@ describe('CommandRegistry.unregisterSource', () => {
     expect(registry.find('gone')).toBeUndefined();
   });
 });
+
+describe('CommandRegistry.updateAcpCommands', () => {
+  it('carries the agent’s argument hint onto the menu entry', () => {
+    const registry = new CommandRegistry();
+    registry.updateAcpCommands([
+      { name: 'deploy', description: 'ship it', argumentHint: '<environment>' },
+      { name: 'review', description: 'nothing expected' },
+    ]);
+
+    expect(registry.find('deploy')?.argumentHint).toBe('<environment>');
+    expect(registry.find('review')?.argumentHint).toBeUndefined();
+  });
+
+  it('replaces the previous agent list rather than accumulating it', () => {
+    const registry = new CommandRegistry();
+    registry.updateAcpCommands([{ name: 'stale', description: '', argumentHint: '<x>' }]);
+    registry.updateAcpCommands([{ name: 'fresh', description: '' }]);
+
+    expect(registry.find('stale')).toBeUndefined();
+    expect(registry.find('fresh')).toBeDefined();
+  });
+});

@@ -39,6 +39,40 @@ describe('ChatRenderer', () => {
     });
   });
 
+  describe('setSystemNote', () => {
+    const noteBody = () => container.querySelector('.co-ober-msg.system .co-ober-msg-body');
+
+    it('writes a notice line carrying the count', () => {
+      renderer.setSystemNote('droppedFrames', 'stream.droppedFrames', 1);
+      expect(container.querySelectorAll('.co-ober-msg.system').length).toBe(1);
+      expect(noteBody()?.textContent).toContain('could not draw 1 update frame');
+    });
+
+    it('rewrites the line it already drew instead of stacking repeats', () => {
+      renderer.setSystemNote('droppedFrames', 'stream.droppedFrames', 1);
+      renderer.setSystemNote('droppedFrames', 'stream.droppedFrames', 2);
+      renderer.setSystemNote('droppedFrames', 'stream.droppedFrames', 3);
+      expect(container.querySelectorAll('.co-ober-msg.system').length).toBe(1);
+      expect(noteBody()?.textContent).toContain('could not draw 3 update frame');
+    });
+
+    it('draws a fresh line once the transcript it belonged to was cleared', () => {
+      renderer.setSystemNote('droppedFrames', 'stream.droppedFrames', 4);
+      renderer.clear();
+      renderer.setSystemNote('droppedFrames', 'stream.droppedFrames', 1);
+      expect(container.querySelectorAll('.co-ober-msg.system').length).toBe(1);
+      expect(noteBody()?.textContent).toContain('could not draw 1 update frame');
+    });
+
+    it('relabels itself when the locale changes underneath it', () => {
+      renderer.setSystemNote('droppedFrames', 'stream.droppedFrames', 7);
+      setLocale('zh');
+      expect(noteBody()?.textContent).toContain('7');
+      expect(noteBody()?.textContent).toContain('未能绘制');
+      setLocale('en');
+    });
+  });
+
   describe('addUserMessage', () => {
     it('adds user message to container', () => {
       renderer.addUserMessage('Hello world');

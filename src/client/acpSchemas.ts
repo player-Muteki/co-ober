@@ -38,7 +38,13 @@ const zConfigOption = z.object({
 });
 const zModeOption = z.object({ id: z.string(), name: z.string(), description: z.string().optional() });
 const zModelOption = z.object({ modelId: z.string(), name: z.string() });
-const zAvailableCommand = z.object({ name: z.string(), description: z.string() });
+// ACP carries the expected-argument hint in `input.hint`; dropping it here is
+// what made agent commands render bare in the slash menu.
+const zAvailableCommand = z.object({
+  name: z.string(),
+  description: z.string(),
+  input: z.object({ hint: z.string().optional() }).nullish(),
+});
 const zCost = z.object({ amount: z.number(), currency: z.string() });
 // Chunk content is deliberately permissive: text is the only shape the
 // transcript accumulates, but image/audio/resource payloads must parse so a

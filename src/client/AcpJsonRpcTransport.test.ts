@@ -56,6 +56,35 @@ describe('AcpJsonRpcTransport', () => {
     warn.mockRestore();
   });
 
+  it('counts every unrouted notification, past the single console warning', async () => {
+    transport.start();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const seen: string[] = [];
+    transport.onUnknownNotification = (method) => seen.push(method);
+
+    for (let i = 0; i < 2; i++) {
+      input.write(JSON.stringify({ jsonrpc: '2.0', method: 'co-ober-test/drifting' }) + '\n');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    expect(seen).toEqual(['co-ober-test/drifting', 'co-ober-test/drifting']);
+    expect(warn.mock.calls.filter((call) => String(call[0]).includes('co-ober-test/drifting'))).toHaveLength(1);
+    warn.mockRestore();
+  });
+
+  it('does not report a notification a handler received, nor one convention says to ignore', async () => {
+    transport.start();
+    const seen: string[] = [];
+    transport.onUnknownNotification = (method) => seen.push(method);
+    transport.onNotification('co-ober-test/routed', () => {});
+
+    input.write(JSON.stringify({ jsonrpc: '2.0', method: 'co-ober-test/routed' }) + '\n');
+    input.write(JSON.stringify({ jsonrpc: '2.0', method: '$/exit' }) + '\n');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(seen).toEqual([]);
+  });
+
   it('request() sends JSON-RPC message and resolves on response', async () => {
     transport.start();
 

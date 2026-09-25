@@ -224,6 +224,22 @@ describe('acpSchemas', () => {
       });
       expect(r.success).toBe(true);
     });
+
+    it('keeps the input hint the agent sends after the command name', () => {
+      const r = zAvailableCommandsUpdate.safeParse({
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [
+          { name: 'deploy', description: 'ship it', input: { hint: '<environment>' } },
+          { name: 'review', description: 'no hint' },
+          { name: 'status', description: 'null on the wire', input: null },
+        ],
+      });
+      expect(r.success).toBe(true);
+      if (!r.success) return;
+      expect(r.data.availableCommands[0].input).toEqual({ hint: '<environment>' });
+      expect(r.data.availableCommands[1].input).toBeUndefined();
+      expect(r.data.availableCommands[2].input).toBeNull();
+    });
   });
 
   describe('zCurrentModeUpdate', () => {

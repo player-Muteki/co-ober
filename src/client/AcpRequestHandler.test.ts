@@ -165,3 +165,25 @@ describe('AcpRequestHandler fs/terminal in-band errors', () => {
     handler.dispose();
   });
 });
+
+describe('AcpRequestHandler.readTerminal', () => {
+  it('reads through the manager that hosts the agent’s own terminals', () => {
+    const handler = makeHandler({});
+    const output = vi.fn(() => ({ output: 'total 1\nsrc', truncated: false }));
+    Reflect.set(handler, 'terminalManager', { output });
+    expect(handler.readTerminal('term-1')).toEqual({ output: 'total 1\nsrc', truncated: false });
+    expect(output).toHaveBeenCalledWith('term-1');
+  });
+
+  it('keeps the manager’s error for an id it no longer knows', () => {
+    const handler = makeHandler({});
+    expect(handler.readTerminal('term-404')).toMatchObject({ error: expect.stringContaining('term-404') });
+    handler.dispose();
+  });
+
+  it('says nothing is there once the manager is gone', () => {
+    const handler = makeHandler({});
+    handler.dispose();
+    expect(handler.readTerminal('term-1')).toBeNull();
+  });
+});

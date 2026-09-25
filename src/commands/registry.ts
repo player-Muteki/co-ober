@@ -223,6 +223,7 @@ export class CommandRegistry {
         trigger: cmd.name,
         title: cmd.name,
         description: cmd.description ?? '',
+        argumentHint: cmd.argumentHint,
         category: 'agent',
         source: 'acp',
         run: async () => {

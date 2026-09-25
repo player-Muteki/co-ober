@@ -23,6 +23,8 @@ import type {
   SessionSnapshot,
   McpServerConfig,
   AgentCapabilities,
+  ToolCallContent,
+  TerminalOutputResult,
 } from '../types';
 import type { OpencodeClient } from './index';
 import type { SessionMeta } from '../types';
@@ -79,57 +81,91 @@ const warnedUnknownUpdateKinds = new Set<string>();
 /** Kinds already reported as validation-rejected; each logs once per lifetime. */
 const warnedRejectedKinds = new Set<string>();
 
+/** Why a frame was not drawn, reported for every drop so a tab can count them. */
+export type DropReporter = (kind: string) => void;
+
+/**
+ * A `terminal` content item names a process this very client spawned, so its
+ * output is ours to read — the renderer has no way to fetch it. Fold the
+ * output and exit status into the only content shape it can paint.
+ */
+export function terminalContentFrom(res: TerminalOutputResult | null): ToolCallContent {
+  if (!res || res.error) {
+    // The agent released it (or the manager is gone): say so, do not paint an
+    // empty card that reads like a command that printed nothing.
+    return { type: 'content', content: { type: 'text', text: t().tool.terminalGone } };
+  }
+  const lines: string[] = [];
+  if (res.truncated) lines.push(t().tool.outputTrimmed);
+  if (res.output) lines.push(res.output);
+  const exit = res.exitStatus;
+  // A clean 0 exit is what a finished tool card already says; the line is
+  // worth its space when the process ended badly.
+  if (exit?.signal) lines.push(t().tool.terminated.replace('{signal}', exit.signal));
+  else if (exit && exit.exitCode) lines.push(t().tool.exitCode.replace('{code}', String(exit.exitCode)));
+  return { type: 'content', content: { type: 'text', text: lines.join('\n') } };
+}
+
 /**
  * Known update kinds that fail validation were invisible drops — protocol
  * drift never surfaced. Log the first offending issue once per kind, then
  * drop the frame as before.
  */
-function unwrapParsed<T>(su: string, r: { success: true; data: T } | { success: false; error: { issues: { path: readonly unknown[]; message: string }[] } }): T | null {
+function unwrapParsed<T>(
+  su: string,
+  r: { success: true; data: T } | { success: false; error: { issues: { path: readonly unknown[]; message: string }[] } },
+  onDrop?: DropReporter,
+): T | null {
   if (r.success) return r.data;
   if (!warnedRejectedKinds.has(su)) {
     warnedRejectedKinds.add(su);
     const issue = r.error.issues[0];
     console.warn(`[co-ober] ${su} frame rejected: ${issue ? `${issue.path.map(String).join('.') || '(root)'} — ${issue.message}` : 'invalid'}`);
   }
+  onDrop?.(su);
   return null;
 }
 
 /** Parse a JSON-RPC update into a strongly typed SessionUpdate */
-export function parseSessionUpdate(u: Record<string, unknown> | undefined | null): SessionUpdate | null {
+export function parseSessionUpdate(
+  u: Record<string, unknown> | undefined | null,
+  onDrop?: DropReporter,
+): SessionUpdate | null {
   if (!u || !u.sessionUpdate) return null;
   const su = u.sessionUpdate as string;
   switch (su) {
     case 'agent_message_chunk': {
       const r = zAgentMessageChunk.safeParse(u);
-      return unwrapParsed(su, r);
+      return unwrapParsed(su, r, onDrop);
     }
     case 'agent_thought_chunk': {
       const r = zAgentThoughtChunk.safeParse(u);
-      return unwrapParsed(su, r);
+      return unwrapParsed(su, r, onDrop);
     }
     case 'tool_call': {
       const r = zToolCall.safeParse(u);
-      return unwrapParsed(su, r);
+      return unwrapParsed(su, r, onDrop);
     }
     case 'tool_call_update': {
       const r = zToolCallUpdate.safeParse(u);
-      return unwrapParsed(su, r);
+      return unwrapParsed(su, r, onDrop);
     }
     case 'plan': {
       const r = zPlan.safeParse(u);
-      return unwrapParsed(su, r);
+      return unwrapParsed(su, r, onDrop);
     }
     case 'plan_update': {
       // v2: coerce the item-based envelope onto the v1 plan shape; reserved
       // non-items content variants stay unrendered.
       const r = zPlanUpdate.safeParse(u);
-      if (!r.success) return unwrapParsed(su, r);
+      if (!r.success) return unwrapParsed(su, r, onDrop);
       if (r.data.plan.type !== 'items' || !Array.isArray(r.data.plan.entries)) {
         const key = `plan_update:${r.data.plan.type}`;
         if (!warnedRejectedKinds.has(key)) {
           warnedRejectedKinds.add(key);
           console.warn(`[co-ober] plan_update with content type '${r.data.plan.type}' has no renderable items; dropping`);
         }
+        onDrop?.(su);
         return null;
       }
       return { sessionUpdate: 'plan', entries: r.data.plan.entries };
@@ -137,24 +173,29 @@ export function parseSessionUpdate(u: Record<string, unknown> | undefined | null
     case 'plan_removed': {
       // v2 signals plan completion by removal; an empty plan clears the panel.
       const r = zPlanRemoved.safeParse(u);
+      if (!r.success) onDrop?.(su);
       return r.success ? { sessionUpdate: 'plan', entries: [] } : null;
     }
     case 'notice_update': {
       const r = zNoticeUpdate.safeParse(u);
+      if (!r.success) onDrop?.(su);
       return r.success && r.data.message ? r.data : null;
     }
     case 'notice': {
       // Official v2-alpha spelling; fold severity/title/description onto the
       // internal notice_update shape so every consumer keeps one representation.
       const r = zNotice.safeParse(u);
-      if (!r.success) return null;
+      if (!r.success) {
+        onDrop?.(su);
+        return null;
+      }
       const message = [r.data.title, r.data.description].filter(Boolean).join(' — ');
       if (!message) return null;
       return { sessionUpdate: 'notice_update', level: r.data.severity, message };
     }
     case 'compaction_update': {
       const r = zCompactionUpdate.safeParse(u);
-      return unwrapParsed(su, r);
+      return unwrapParsed(su, r, onDrop);
     }
     case 'compaction_summary_chunk':
       // Known v2 frame feeding a summary the transcript does not paint; drop
@@ -162,35 +203,35 @@ export function parseSessionUpdate(u: Record<string, unknown> | undefined | null
       return null;
     case 'state_update': {
       const r = zStateUpdate.safeParse(u);
-      return unwrapParsed(su, r);
+      return unwrapParsed(su, r, onDrop);
     }
     case 'user_message_chunk': {
       const r = zUserMessageChunk.safeParse(u);
-      return unwrapParsed(su, r);
+      return unwrapParsed(su, r, onDrop);
     }
     case 'config_option_update': {
       const r = zConfigOptionUpdate.safeParse(u);
-      return unwrapParsed(su, r);
+      return unwrapParsed(su, r, onDrop);
     }
     case 'available_commands_update': {
       const r = zAvailableCommandsUpdate.safeParse(u);
-      return unwrapParsed(su, r);
+      return unwrapParsed(su, r, onDrop);
     }
     case 'usage_update': {
       const r = zUsageUpdate.safeParse(u);
-      return unwrapParsed(su, r);
+      return unwrapParsed(su, r, onDrop);
     }
     case 'current_mode_update': {
       const r = zCurrentModeUpdate.safeParse(u);
-      return unwrapParsed(su, r);
+      return unwrapParsed(su, r, onDrop);
     }
     case 'current_model_update': {
       const r = zCurrentModelUpdate.safeParse(u);
-      return unwrapParsed(su, r);
+      return unwrapParsed(su, r, onDrop);
     }
     case 'session_info_update': {
       const r = zSessionInfoUpdate.safeParse(u);
-      return unwrapParsed(su, r);
+      return unwrapParsed(su, r, onDrop);
     }
     default:
       // Agents emit kinds outside the ACP contract (e.g. opencode's
@@ -199,6 +240,7 @@ export function parseSessionUpdate(u: Record<string, unknown> | undefined | null
         warnedUnknownUpdateKinds.add(su);
         console.warn(`[co-ober] dropping unknown session update kind: ${su}`);
       }
+      onDrop?.(su);
       return null;
   }
 }
@@ -212,7 +254,10 @@ export function mergeAvailableCommands(commands: AvailableCommand[]): AvailableC
     const name = command.name.trim();
     if (!name || seen.has(name)) continue;
     seen.add(name);
-    merged.push({ ...command });
+    const hint = command.argumentHint ?? command.input?.hint;
+    // `input` is the wire's home for the hint; the merged entry carries the
+    // field every menu reads instead, so nothing downstream sees the raw pair.
+    merged.push({ name, description: command.description ?? '', ...(hint ? { argumentHint: hint } : {}) });
   }
 
   if (!seen.has('compact')) {
@@ -403,6 +448,8 @@ export class AcpClient implements OpencodeClient {
   onClose?: () => void;
   onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
   onPermissionUnreadable?: (summary: string) => void;
+  /** An inbound frame could not be drawn; the conversation it belongs to says so. */
+  onProtocolDrift?: (sessionId: string | null, kind: string) => void;
   /** Agent reported an outstanding elicitation resolved elsewhere. */
   onElicitationComplete?: (elicitationId: string) => void;
   onReconnect?: () => Promise<void>;
@@ -507,6 +554,7 @@ export class AcpClient implements OpencodeClient {
       // Exact-match dispatch: accept both the spec and legacy wire names.
       transport.onNotification('session/update', onSessionUpdate);
       transport.onNotification('sessionUpdate', onSessionUpdate);
+      transport.onUnknownNotification = (method) => this.reportDrift(null, method);
       transport.onNotification('elicitation/complete', (params: unknown) => {
         // The agent answered its own pending elicitation (e.g. in another
         // client); retire the matching banner so it never sits there unclicked.
@@ -774,8 +822,9 @@ export class AcpClient implements OpencodeClient {
   private dispatchSessionUpdate(params: unknown): void {
     const p = params as Record<string, unknown> | undefined;
     const sid = typeof p?.sessionId === 'string' ? p.sessionId : null;
-    const update = this.parseUpdate(p?.update as Record<string, unknown> | undefined);
+    const update = this.parseUpdate(p?.update as Record<string, unknown> | undefined, (kind) => this.reportDrift(sid, kind));
     if (!update) return;
+    this.fillTerminalContent(update);
     if (update.sessionUpdate === 'usage_update' && typeof process.env.DEBUG_CO_OBER !== 'undefined') {
       // Usage updates are frequent in long sessions; only log when debug is enabled.
       console.debug('[co-ober] usage_update:', JSON.stringify(update));
@@ -789,6 +838,7 @@ export class AcpClient implements OpencodeClient {
           this.warnedAmbiguousNoSid = true;
           console.warn('[co-ober] dropping session update without sessionId: several delivery targets are live');
         }
+        this.reportDrift(this.sessionId_, 'session update without a sessionId');
         return;
       }
       target = candidates[0] ?? null;
@@ -935,6 +985,7 @@ export class AcpClient implements OpencodeClient {
     this.onReconnectFailed = handlers.onReconnectFailed ?? undefined;
     this.onPermissionRequest = handlers.onPermissionRequest ?? undefined;
     this.onPermissionUnreadable = handlers.onPermissionUnreadable ?? undefined;
+    this.onProtocolDrift = handlers.onProtocolDrift ?? undefined;
     this.onElicitationComplete = handlers.onElicitationComplete ?? undefined;
     if (this.requestHandler) {
       if (handlers.onPermissionRequest) {
@@ -1072,8 +1123,33 @@ export class AcpClient implements OpencodeClient {
     }
   }
 
-  private parseUpdate(u: Record<string, unknown> | undefined | null): SessionUpdate | null {
-    return parseSessionUpdate(u);
+  private parseUpdate(u: Record<string, unknown> | undefined | null, onDrop?: DropReporter): SessionUpdate | null {
+    return parseSessionUpdate(u, onDrop);
+  }
+
+  /**
+   * Read a hosted terminal into the text item the transcript can paint. The
+   * agent only names the process; the bytes live here, in this client.
+   */
+  private fillTerminalContent(update: SessionUpdate): void {
+    if (update.sessionUpdate !== 'tool_call' && update.sessionUpdate !== 'tool_call_update') return;
+    const items = update.content;
+    if (!items?.some((item) => item.type === 'terminal')) return;
+    const handler = this.requestHandler;
+    if (!handler) return;
+    update.content = items.map((item) =>
+      item.type === 'terminal' ? terminalContentFrom(handler.readTerminal(item.terminalId)) : item,
+    );
+  }
+
+  /**
+   * A frame that never reaches the transcript is invisible protocol drift. The
+   * console warns once per kind; the tab counts every one. A frame with no
+   * session of its own is blamed on the session this client mainly serves,
+   * which is the same attribution the rest of the client already uses.
+   */
+  private reportDrift(sid: string | null, kind: string): void {
+    this.onProtocolDrift?.(sid ?? this.sessionId_, kind);
   }
 
   private async requestWithFallback(

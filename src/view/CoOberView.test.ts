@@ -695,6 +695,19 @@ describe('CoOberView tab panels', () => {
       expect(lines()).toBe(2);
     });
 
+    it('counts the frames it could not draw on one line of its own', async () => {
+      const view = await openView(createPlugin({ client: createClient() }));
+      const panel = panelEls(view)[0];
+      const note = Reflect.get(view, 'controller') as { noteProtocolDrift: (id: string | null) => void };
+
+      note.noteProtocolDrift(null);
+      note.noteProtocolDrift(null);
+      note.noteProtocolDrift(null);
+
+      expect(panel.textContent?.match(/could not draw/g)).toHaveLength(1);
+      expect(panel.textContent).toContain('could not draw 3 update frame');
+    });
+
     it('only reports write outcomes while the panel is open', async () => {
       const plugin = createPlugin({ client: createClient() });
       const view = await openView(plugin);

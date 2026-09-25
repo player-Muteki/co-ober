@@ -152,6 +152,7 @@ const zh: Locale = {
     compacted: '— 智能体已压缩上下文 —',
     compactionFailed: '上下文压缩失败',
     unsupportedContent: '[{type} 内容——此处无法展示]',
+    droppedFrames: 'Co-Ober 未能绘制来自该 Agent 的 {count} 个更新帧——对话记录可能缺少部分回复。',
   },
 
   error: {
@@ -242,6 +243,9 @@ const zh: Locale = {
     moreMatches: '... 另有 {count} 条匹配',
     moreLines: '... 另有 {count} 行',
     fileDeleted: '文件已删除',
+    terminalGone: '该终端已不可用。',
+    outputTrimmed: '…… 较早的输出已被裁剪 ……',
+    terminated: '被 {signal} 终止',
   },
 
   toolKind: {

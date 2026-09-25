@@ -29,6 +29,11 @@ export class AcpJsonRpcTransport {
   private readline: Interface | null = null;
   private nextId = 1;
   private disposed = false;
+  /**
+   * A notification nobody registered for is a frame that never reaches the
+   * transcript at all — the client may report each one as drift.
+   */
+  onUnknownNotification?: (method: string) => void;
 
   constructor(
     private readonly streams: JsonRpcMessageStreams,
@@ -223,11 +228,14 @@ export class AcpJsonRpcTransport {
             console.error('[co-ober] notification handler failed:', error);
           }
         }
-      } else if (!method.startsWith('$/') && !warnedUnknownNotifications.has(method)) {
+      } else if (!method.startsWith('$/')) {
         // $/-prefixed messages are ignorable by JSON-RPC/LSP convention;
         // anything else we silently drop is protocol drift and should be visible.
-        warnedUnknownNotifications.add(method);
-        console.warn(`[co-ober] dropping unknown notification: ${method}`);
+        if (!warnedUnknownNotifications.has(method)) {
+          warnedUnknownNotifications.add(method);
+          console.warn(`[co-ober] dropping unknown notification: ${method}`);
+        }
+        this.onUnknownNotification?.(method);
       }
     } else if (hasMethod && id !== undefined) {
       const handler = this.requestHandlers.get(msg.method as string);

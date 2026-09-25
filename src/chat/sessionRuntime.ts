@@ -32,6 +32,11 @@ export class SessionRuntime {
   /** Set when a drained turn lost the race for a stream slot and re-queued. */
   capacityParked = false;
   /**
+   * Update frames this tab's agent emitted that the transcript could not draw.
+   * Counted per tab, because the frames that got lost belong to one conversation.
+   */
+  droppedFrames = 0;
+  /**
    * The /btw scratch thread this tab forked, if any. It is owned here rather
    * than by the view or the controller: a fork outliving the tab that asked
    * for it leaks a live session on the agent side.
