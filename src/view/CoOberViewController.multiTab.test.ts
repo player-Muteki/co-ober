@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { CoOberViewController } from './CoOberViewController';
 import type { ControllerCallbacks, ControllerDeps, TabPanel } from './CoOberViewController';
 import type { SessionRuntime } from '../chat/sessionRuntime';
@@ -14,7 +14,7 @@ import {
 } from '../constants';
 import { AcpStreamCapacityError } from '../client/AcpErrors';
 import { commandRegistry } from '../commands/registry';
-import type { AcpResponse, NormalizedUpdate, PromptPart } from '../types';
+import type { AcpResponse, AvailableCommand, NormalizedUpdate, PromptPart } from '../types';
 
 vi.mock('../opencode/NativeSessionReader', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../opencode/NativeSessionReader')>();
@@ -965,5 +965,88 @@ describe('CoOberViewController — one tab’s teardown stays inside that tab (0
       expect(sentTexts[0]).not.toContain('still in the composer');
       expect(sentTexts[1]).toContain('still in the composer');
     });
+  });
+});
+
+describe('CoOberViewController — the slash menu speaks for the tab in view (0.3.0 stage 3)', () => {
+  let h: Harness;
+  const cmdA: AvailableCommand[] = [{ name: 'cmdA', description: 'from A' }];
+  const cmdB: AvailableCommand[] = [{ name: 'cmdB', description: 'from B' }];
+  let chunkCb: Record<string, (u: NormalizedUpdate) => void>;
+
+  beforeEach(() => {
+    h = createHarness();
+    chunkCb = {};
+    const client = createMockClient({
+      sendMessage: vi.fn((sid: string, _parts: unknown, cb: (u: NormalizedUpdate) => void) => {
+        chunkCb[sid] = cb;
+        return new Promise<AcpResponse>(() => {});
+      }),
+      getSessionSnapshotFor: vi.fn((sid: string) => ({
+        configOptions: [],
+        availableCommands: sid === 'ses-a' ? cmdA : sid === 'ses-b' ? cmdB : [],
+        availableModels: [],
+        availableModes: [],
+        currentModelId: null,
+        currentModeId: null,
+      })),
+    });
+    (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+    (h.deps.sessionStore.get as ReturnType<typeof vi.fn>).mockImplementation((id: string) =>
+      id === 'ses-a'
+        ? { sessionId: 'ses-a', messages: [{ role: 'user', content: 'q', type: 'text', timestamp: 1 }], updatedAt: 1 }
+        : { messages: [], updatedAt: 0 },
+    );
+    commandRegistry.updateAcpCommands([]);
+  });
+
+  afterEach(() => {
+    commandRegistry.updateAcpCommands([]);
+  });
+
+  async function startTurn(sessionId: string) {
+    h.controller.state.sessionId = sessionId;
+    void h.controller.send(`question ${sessionId}`, []);
+    await tick();
+    expect(rtOf(h, h.controller.activeTabId()).busy).toBe(true);
+  }
+
+  it('does not let a background tab rewrite the command list', async () => {
+    await startTurn('ses-a');
+    chunkCb['ses-a']({ kind: 'commands', commands: cmdA });
+    expect(commandRegistry.find('cmdA')).toBeDefined();
+
+    await h.controller.switchSession('ses-b');
+    const tabB = h.controller.activeTabId();
+    await startTurn('ses-b');
+    chunkCb['ses-b']({ kind: 'commands', commands: cmdB });
+    expect(commandRegistry.find('cmdB')).toBeDefined();
+
+    // Tab A comes forward: its own list is projected, tab B's is not.
+    await h.controller.switchSession('ses-a');
+    expect(commandRegistry.find('cmdA')).toBeDefined();
+    expect(commandRegistry.find('cmdB')).toBeUndefined();
+
+    // And a late report from the now-background tab must not overwrite it.
+    chunkCb['ses-b']({ kind: 'commands', commands: cmdB });
+    expect(commandRegistry.find('cmdB')).toBeUndefined();
+    expect(commandRegistry.find('cmdA')).toBeDefined();
+    // The background tab did not lose its own list either.
+    expect(rtOf(h, tabB).state.availableCommands).toEqual(cmdB);
+
+    await h.controller.switchSession('ses-b');
+    expect(commandRegistry.find('cmdB')).toBeDefined();
+    expect(commandRegistry.find('cmdA')).toBeUndefined();
+  });
+
+  it('projects an empty list for a tab whose session reports no commands', async () => {
+    await startTurn('ses-a');
+    chunkCb['ses-a']({ kind: 'commands', commands: cmdA });
+    expect(commandRegistry.find('cmdA')).toBeDefined();
+
+    // A brand-new tab has no session to ask, so the menu must not keep the
+    // previous tab's commands.
+    await h.controller.newSession(true);
+    expect(commandRegistry.find('cmdA')).toBeUndefined();
   });
 });

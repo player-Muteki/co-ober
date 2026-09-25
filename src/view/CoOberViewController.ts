@@ -200,7 +200,12 @@ export class CoOberViewController {
       onConfigUpdate: (opts) => this.applyConfigOptions(opts, rt),
       onModeUpdate: (modeId, modes) => this.applyModeUpdate(modeId, modes, rt),
       onModelsUpdate: (modelId, models) => this.applyModelUpdate(modelId, models, rt),
-      onCommandsUpdate: (commands) => commandRegistry.updateAcpCommands(commands),
+      onCommandsUpdate: (commands) => {
+        // The slash menu is one shared surface; only the tab in view speaks
+        // through it. A background tab's list stays in its own state and is
+        // re-projected when that tab comes forward (loadToolbarOptions).
+        if (rt === this.activeRuntime) commandRegistry.updateAcpCommands(commands);
+      },
       onUsageUpdate: () => {
         if (rt === this.activeRuntime) this.deps.updateContextMeter(rt.state.usage);
       },
@@ -2162,6 +2167,9 @@ export class CoOberViewController {
     // attach button is only offered when an image could actually be sent.
     const caps = c.getAgentCapabilities?.();
     this.deps.toolbar.setImageAttachEnabled(caps?.promptCapabilities?.image !== false);
+    // The slash menu is a shared surface too: activating a tab, reconnecting or
+    // switching sessions all re-project its own command list onto it.
+    commandRegistry.updateAcpCommands(rt.state.availableCommands);
   }
 
   applyConfigOptions(opts: SessionConfigOption[], rt: SessionRuntime = this.activeRuntime): void {
