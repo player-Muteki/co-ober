@@ -55,7 +55,7 @@ import {
 } from './acpSchemas';
 import { z } from 'zod';
 
-export const CLIENT_VERSION = '0.1.40';
+export const CLIENT_VERSION = '0.2.0';
 
 /** Tail length of the agent stderr snapshot attached to a close error. */
 const STDERR_SNAPSHOT_CHARS = 800;

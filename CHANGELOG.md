@@ -1,3 +1,19 @@
+## 0.2.0 - 2026-09-25
+
+### Added
+- **Multiple conversations side by side**: open conversations live in a numbered tab strip under the header — click, arrow key or Alt+1..9 to move between them, "+" for a fresh one, × to close. Looking away from a generating conversation never cancels it: its badge pulses while it works and marks a reply that landed while the tab was hidden.
+- **Real concurrent generation**: every tab owns its transcript state, stream controller and queue, so up to four conversations can stream at once. A turn that finds no free slot waits in its own tab's queue and drains the moment budget frees up instead of failing.
+- **The strip survives a restart**: tabs come back with the conversation that was in front, and each one reads its transcript back only when you actually look at it. A new *Max Open Tabs* setting (2–12, default 6) bounds the strip, and past the limit the plugin says so out loud rather than quietly refusing.
+
+### Changed
+- **Stop and /clear stay local**: stopping a generation or clearing the screen affects only the conversation in view, while disconnecting the agent tears down every open tab at once.
+- **Permission prompts name their origin**: a request from a conversation in the background says which tab it came from and switches there on click.
+- **Session actions gained tab semantics**: `/new` and the session dropdown focus or open a tab instead of replacing what is on screen, a fork always lands in its own tab, and deleting a session closes exactly that tab.
+
+### Fixed
+- **Interleaved sessions no longer weld together**: per-session message normalizers and metadata maps mean two sessions that happen to reuse a message id accumulate separately, and loading a session in the background can no longer overwrite the model and mode shown in front.
+- **Ambiguous frames are no longer guessed**: an update without a session id is delivered only when exactly one target could own it, and dropped with a single warning otherwise.
+
 ## 0.1.40 - 2026-09-25
 
 ### Added
