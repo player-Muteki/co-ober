@@ -7,6 +7,19 @@ import type { SerializedSessionState } from './session';
  */
 export const PLUGIN_DATA_SCHEMA_VERSION = 1;
 
+/**
+ * Raised when data.json carries a schemaVersion newer than this build
+ * understands. Loading it anyway and re-saving would stamp the old version
+ * and silently destroy fields only the newer plugin wrote — the caller must
+ * set the file aside instead.
+ */
+export class PluginDataTooNewError extends Error {
+  constructor(public readonly foundVersion: number) {
+    super(`data.json schema version ${foundVersion} is newer than this build supports (${PLUGIN_DATA_SCHEMA_VERSION})`);
+    this.name = 'PluginDataTooNewError';
+  }
+}
+
 const MESSAGE_ROLES = new Set(['user', 'assistant', 'system']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {

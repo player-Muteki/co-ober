@@ -292,6 +292,7 @@ const en = {
     binaryNotFound: 'Could not find "{cmd}" — install OpenCode or set its full path in Settings',
     dataLoadFailed: 'Could not read saved chat data; starting with defaults. The unreadable file was kept as {file}',
     dataLoadFailedNoBackup: 'Could not read saved chat data or set the unreadable file aside; starting with defaults',
+    dataLoadTooNew: 'Saved chat data came from a newer Co-Ober version (schema {version}); it was kept as {file} and defaults were loaded',
     saveFailed: 'Co-Ober failed to save chat data — recent changes may be lost',
   },
 

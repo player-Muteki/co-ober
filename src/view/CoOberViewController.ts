@@ -761,19 +761,41 @@ export class CoOberViewController {
     void client.cancel(sideId).catch((e) => console.warn('[co-ober] side chat cancel:', e));
   }
 
-  async resumeSession(sessionId: string): Promise<void> {    const client = this.deps.runtime.getClient();
+  async resumeSession(sessionId: string): Promise<void> {
+    const client = this.deps.runtime.getClient();
     if (!client) return;
-    const collector = new SessionReplayCollector();
-    await client.resumeSession(sessionId, this.getVaultCwd(), (u) => collector.handle(u));
+    // Mirror switchSession: cancel the in-flight turn first (cancel targets
+    // state.sessionId), then swap the screen — a resumed transcript must
+    // replace what is on screen, not just the store behind it.
+    await this.cancelActiveGeneration();
     this.state.sessionId = sessionId;
     this.deps.sessionStore.getOrCreate(sessionId);
-    this.deps.sessionStore.setActive(sessionId);
-    await this.adoptReplay(sessionId, collector.finish());
-    await this.deps.sessionStore.save();
-    await this.refreshNativeUsage(sessionId);
-    const session = this.deps.sessionStore.get(sessionId);
-    if (session) await this.enrichMessagesFromNative(session);
+    this.callbacks.onClearUI();
+    this.resetConversationView();
+    const collector = new SessionReplayCollector();
+    try {
+      await this.sessionMutex.runExclusive(async () => {
+        await client.resumeSession(sessionId, this.getVaultCwd(), (u) => collector.handle(u));
+      });
+      await this.adoptReplay(sessionId, collector.finish());
+    } catch (e) {
+      console.error('[co-ober] session resume:', e);
+      this.deps.renderer.addError(e instanceof Error ? e.message : String(e));
+    }
+    await this.restoreSession();
+    // The transcript swap cleared state usage (it belonged to the outgoing
+    // session); hand refreshNativeUsage the resumed session's own currency
+    // hint from its enriched rows so it can't flatly fall back to USD.
+    const costCurrencyFromMessages = (this.deps.sessionStore.get(sessionId)?.messages ?? [])
+      .map((m) => m.usage?.costCurrency)
+      .find((c): c is string => typeof c === 'string' && c.length > 0);
+    await this.refreshNativeUsage(sessionId, costCurrencyFromMessages);
     await this.refreshNativePlan(sessionId);
+    this.deps.sessionStore.setActive(sessionId);
+    await this.deps.sessionStore.save();
+    this.loadToolbarOptions();
+    this.callbacks.onShowWelcome(this.deps.runtime.getClient() !== null);
+    this.callbacks.onAutoRefActiveFile();
   }
 
   // ── Rewind (regenerate / edit-and-resend) ──
@@ -875,6 +897,7 @@ export class CoOberViewController {
     // Claim the busy flag synchronously, before any await: two Enter
     // presses in the same tick must not both pass send()'s busy check.
     const currentGen = ++this.genId;
+    this.streamCtrl.beginTurn();
     this.busy = true;
     this.state.isStreaming = true;
     this.deps.input.setStreaming(true);
@@ -1052,6 +1075,7 @@ export class CoOberViewController {
         inputTokens: usage.inputTokens || undefined,
         outputTokens: usage.outputTokens || undefined,
         cost: usage.cost?.amount,
+        costCurrency: usage.cost?.currency,
       };
       void this.deps.sessionStore.save();
       return;
@@ -1062,7 +1086,7 @@ export class CoOberViewController {
    * Pull authoritative cost/token totals for a session from the OpenCode
    * database. Silently no-ops when the database is unavailable.
    */
-  private async refreshNativeUsage(sessionId: string): Promise<void> {
+  private async refreshNativeUsage(sessionId: string, currencyHint?: string): Promise<void> {
     const usage = await readNativeSessionUsage(sessionId);
     if (!usage || this.state.sessionId !== sessionId) return;
     this.state.usage = {
@@ -1071,8 +1095,9 @@ export class CoOberViewController {
       outputTokens: usage.outputTokens,
       thoughtTokens: usage.reasoningTokens || undefined,
       // The native DB has no currency column; keep whatever currency the
-      // agent's own usage frames reported before falling back to USD.
-      cost: { amount: usage.cost, currency: this.state.usage?.cost?.currency ?? 'USD' },
+      // agent's own usage frames (or the resumed transcript's rows) reported
+      // before falling back to USD.
+      cost: { amount: usage.cost, currency: currencyHint ?? this.state.usage?.cost?.currency ?? 'USD' },
       contextWindow: this.state.usage?.contextWindow,
       contextTokens: usage.contextTokens,
     };
@@ -1314,6 +1339,10 @@ export class CoOberViewController {
     } catch (e) {
       console.error('[co-ober] cancel:', e);
     }
+    // Buffered pending/in_progress tool calls belonged to the interrupted
+    // turn: render them terminal now so they neither vanish nor ghost into
+    // the next turn (its finally is skipped by the genId bump above).
+    this.streamCtrl.finalizeBufferedToolCalls();
     // Append "Interrupted" indicator to the current assistant response
     this.deps.renderer.appendInterruptIndicator();
     this.deps.renderer.flushTextRender().catch(() => {});

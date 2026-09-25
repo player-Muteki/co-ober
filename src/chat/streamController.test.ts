@@ -710,4 +710,58 @@ describe('StreamController', () => {
     // dispose's own flush is the only save; the late message schedules none.
     expect(deps.sessionStore.save).toHaveBeenCalledOnce();
   });
+
+  it('lands chunk updates on the right message after prune rewrites the array', () => {
+    const session: { messages: Array<Record<string, unknown>>; updatedAt: number } = { messages: [], updatedAt: 0 };
+    deps.sessionStore.get.mockReturnValue(session);
+    for (let i = 0; i < 3; i++) {
+      session.messages.push({ role: 'user', content: `q${i}`, type: 'text', timestamp: i });
+    }
+
+    controller.handleChunk({
+      kind: 'message_chunk', role: 'agent', messageId: 'msg-1', chunkText: 'A', accumulatedText: 'A',
+    });
+    const assistant = session.messages[3];
+
+    // Prune rewrites session.messages (marker inserted, head dropped):
+    // every cached numeric index shifts by one from here on.
+    session.messages = [
+      { role: 'system', content: '[2 earlier messages truncated]', type: 'text', timestamp: 0 },
+      ...session.messages.slice(2),
+    ];
+
+    controller.handleChunk({
+      kind: 'message_chunk', role: 'agent', messageId: 'msg-1', chunkText: 'B', accumulatedText: 'AB',
+    });
+
+    expect(assistant.content).toBe('AB');
+    expect(session.messages.filter((m) => m.content === 'AB')).toHaveLength(1);
+    expect(session.messages[1].content).toBe('q2');
+  });
+
+  it('beginTurn keeps tool calls from an interrupted turn out of the next message', () => {
+    const session: { messages: Array<Record<string, unknown>>; updatedAt: number } = { messages: [], updatedAt: 0 };
+    deps.sessionStore.get.mockReturnValue(session);
+
+    controller.handleChunk({
+      kind: 'message_chunk', role: 'agent', messageId: 'msg-1', chunkText: 'A', accumulatedText: 'A',
+    });
+    // Pending when the user hit Stop: genId bumped, the finally-block
+    // finalize never ran, so the buffer still carries the ghost.
+    controller.handleChunk({
+      kind: 'tool_call_snapshot', toolCallId: 'call-ghost', title: 'Search', toolKind: 'search',
+      status: 'pending', rawInput: {}, contents: [],
+    });
+
+    controller.beginTurn();
+
+    controller.handleChunk({
+      kind: 'message_chunk', role: 'agent', messageId: 'msg-2', chunkText: 'B', accumulatedText: 'B',
+    });
+
+    expect(deps.renderer.addToolCall).not.toHaveBeenCalled();
+    const second = session.messages[1];
+    const blocks = (second.contentBlocks ?? []) as Array<Record<string, unknown>>;
+    expect(blocks.every((b) => b.type !== 'tool_use')).toBe(true);
+  });
 });

@@ -1096,6 +1096,31 @@ describe('CoOberViewController', () => {
       expect(controller.isBusy()).toBe(false);
       expect(controller.state.isStreaming).toBe(false);
     });
+
+    it('renders buffered tool calls terminal instead of leaking them into the next turn', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      const addToolCall = vi.fn();
+      const updateToolCall = vi.fn();
+      // StreamController captured the renderer at construction; swap its copy.
+      const streamCtrl = Reflect.get(controller, 'streamCtrl') as {
+        deps: { renderer: unknown };
+        handleChunk: (u: unknown) => void;
+      };
+      streamCtrl.deps.renderer = { ...deps.renderer, addToolCall, updateToolCall };
+      controller.state.sessionId = 'test-session';
+      Reflect.set(controller, 'busy', true);
+      controller.state.isStreaming = true;
+      streamCtrl.handleChunk({
+        kind: 'tool_call_snapshot', toolCallId: 'call-ghost', title: 'Search', toolKind: 'search',
+        status: 'pending', rawInput: {}, contents: [],
+      });
+
+      await controller.stopGeneration();
+
+      expect(addToolCall).toHaveBeenCalledWith('call-ghost', 'Search', 'search', {}, undefined);
+      expect(updateToolCall).toHaveBeenCalledWith('call-ghost', 'failed');
+    });
   });
 
   describe('switchSession', () => {
@@ -1223,6 +1248,21 @@ describe('CoOberViewController', () => {
       expect(deps.sessionStore.setActive).toHaveBeenCalledWith('paused-session');
     });
 
+    it('cancels the outgoing turn and swaps the screen before restoring', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (controller.state as unknown as { sessionId: string }).sessionId = 'old-session';
+      Reflect.set(controller, 'busy', true);
+
+      await controller.resumeSession('paused-session');
+
+      // Cancel must target the session that was running, before repointing.
+      expect(client.cancel).toHaveBeenCalledWith('old-session');
+      // The resumed transcript replaces what is on screen, not just the store.
+      expect(callbacks.onClearUI).toHaveBeenCalled();
+      expect(controller.getSessionId()).toBe('paused-session');
+    });
+
     it('refreshes native usage after resuming', async () => {
       const client = createMockClient();
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
@@ -1246,10 +1286,24 @@ describe('CoOberViewController', () => {
     it('keeps the agent-reported currency when native usage refreshes', async () => {
       const client = createMockClient();
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
-      (controller.state as unknown as { usage: unknown }).usage = {
-        totalTokens: 3,
-        cost: { amount: 0.2, currency: 'EUR' },
-      };
+      // The swap clears carried-over state; the currency hint must come from
+      // the resumed session's own persisted usage rows, not the outgoing view.
+      deps.sessionStore = {
+        ...deps.sessionStore,
+        get: vi.fn().mockReturnValue({
+          sessionId: 'paused-session',
+          messages: [
+            {
+              role: 'assistant',
+              content: 'answer',
+              type: 'text',
+              timestamp: 1,
+              usage: { totalTokens: 3, cost: 0.2, costCurrency: 'EUR' },
+            },
+          ],
+          updatedAt: 1,
+        }),
+      } as unknown as ControllerDeps['sessionStore'];
       (readNativeSessionUsage as ReturnType<typeof vi.fn>).mockResolvedValue({
         cost: 1.5,
         inputTokens: 10,

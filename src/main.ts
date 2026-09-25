@@ -12,7 +12,7 @@ import { getVaultPath } from './utils/vault';
 import { setLocale, t } from './i18n/index';
 import { Mutex } from './utils/mutex';
 import { SessionRepository } from './chat/session';
-import { migratePluginDataSessions, readSchemaVersion, PLUGIN_DATA_SCHEMA_VERSION } from './chat/pluginDataMigration';
+import { migratePluginDataSessions, readSchemaVersion, PLUGIN_DATA_SCHEMA_VERSION, PluginDataTooNewError } from './chat/pluginDataMigration';
 import { SAVE_NOTICE_THROTTLE_MS } from './constants';
 
 export default class CoOberPlugin extends Plugin {
@@ -39,16 +39,22 @@ export default class CoOberPlugin extends Plugin {
     try {
       await this.loadPluginData();
     } catch (e) {
-      // A corrupted data.json must not brick the plugin: fall back to defaults
-      // and keep the unreadable file aside so the data is not silently lost.
+      // A corrupted or newer-than-supported data.json must not brick the
+      // plugin: fall back to defaults and keep the file aside so the data
+      // is not silently lost or downgraded.
       console.error('[co-ober] failed to load plugin data:', e);
-      const backupPath = await this.backupUnreadableData();
+      const tooNew = e instanceof PluginDataTooNewError;
+      const backupPath = await this.backupUnreadableData(tooNew ? 'newer' : 'corrupt');
       this.settings = { ...DEFAULT_SETTINGS };
       this.sessionStore.hydrate([], null);
       new Notice(
-        backupPath
-          ? t().notice.dataLoadFailed.replace('{file}', backupPath)
-          : t().notice.dataLoadFailedNoBackup,
+        backupPath && tooNew
+          ? t().notice.dataLoadTooNew
+              .replace('{version}', String((e as PluginDataTooNewError).foundVersion))
+              .replace('{file}', backupPath)
+          : backupPath
+            ? t().notice.dataLoadFailed.replace('{file}', backupPath)
+            : t().notice.dataLoadFailedNoBackup,
       );
     }
     setLocale(this.settings.language);
@@ -82,6 +88,11 @@ export default class CoOberPlugin extends Plugin {
     const saved: unknown = await super.loadData();
     if (!saved) return null;
 
+    // A file written by a newer schema must never be migrated-and-restamped:
+    // it goes through the load-failure path so it can be set aside intact.
+    const storedVersion = readSchemaVersion(saved);
+    if (storedVersion > PLUGIN_DATA_SCHEMA_VERSION) throw new PluginDataTooNewError(storedVersion);
+
     const hasPluginData =
       typeof saved === 'object' &&
       saved !== null &&
@@ -93,7 +104,7 @@ export default class CoOberPlugin extends Plugin {
       const settings = { ...DEFAULT_SETTINGS, ...(data.settings ?? {}) };
       // The autoConnect toggle did nothing before 0.1.34, so a stored false in
       // pre-schema data is the old default, not a choice: keep auto-connect.
-      if (readSchemaVersion(saved) < 1 && settings.autoConnect === false) settings.autoConnect = true;
+      if (storedVersion < 1 && settings.autoConnect === false) settings.autoConnect = true;
       return {
         schemaVersion: PLUGIN_DATA_SCHEMA_VERSION,
         settings,
@@ -145,9 +156,9 @@ export default class CoOberPlugin extends Plugin {
     }
   }
 
-  private async backupUnreadableData(): Promise<string | null> {
+  private async backupUnreadableData(kind: 'corrupt' | 'newer' = 'corrupt'): Promise<string | null> {
     const dataPath = `${this.app.vault.configDir}/plugins/${this.manifest.id}/data.json`;
-    const backupPath = `${dataPath.slice(0, -'.json'.length)}.corrupt-${Date.now()}.json`;
+    const backupPath = `${dataPath.slice(0, -'.json'.length)}.${kind}-${Date.now()}.json`;
     try {
       const adapter = this.app.vault.adapter;
       if (!(await adapter.exists(dataPath))) return null;
@@ -257,6 +268,14 @@ export default class CoOberPlugin extends Plugin {
 
   private async connectClient(): Promise<boolean> {
     this.resolveClientWaiters(false);
+    // A live client must be torn down before replacement: dropping the
+    // reference alone leaves its `opencode acp` subprocess, transport and
+    // reconnect timers running as orphans.
+    const stale = this.client;
+    if (stale) {
+      this.client = null;
+      await stale.disconnect().catch(() => {});
+    }
     try {
       const acp = new AcpClient(this.settings.opencodePath, getVaultPath(this.app), this.createVaultIo());
       await acp.connect();

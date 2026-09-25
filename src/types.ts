@@ -341,6 +341,8 @@ export interface SerializedMessage {
 
 export interface MessageUsage {
   cost?: number;
+  /** ISO currency the agent attached to cost; the native DB has none. */
+  costCurrency?: string;
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;

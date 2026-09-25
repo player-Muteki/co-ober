@@ -19,6 +19,7 @@ import type {
   ContentBlock,
 } from '../types';
 import type { ChatState } from './chatState';
+import type { SerializedMessage } from '../types';
 import type { ChatRenderer } from '../view/renderer';
 import type { SyncEngine } from '../sync/engine';
 import type { SyncContext } from '../sync/templates';
@@ -43,7 +44,10 @@ export interface StreamControllerDeps {
 export class StreamController {
   private deps: StreamControllerDeps;
   private syncedToolCalls = new Set<string>();
-  private assistantMessageIndex = new Map<string, number>();
+  // Live message objects keyed per `sessionId:messageId:type`. Object
+  // references (not array indices) so a mid-stream prune — which rewrites
+  // session.messages — cannot redirect updates onto the wrong message.
+  private assistantMessages = new Map<string, SerializedMessage>();
   private saveTimer: number | null = null;
   private activeSave: Promise<void> | null = null;
   private disposed = false;
@@ -258,13 +262,25 @@ export class StreamController {
   reset(): void {
     this.finalizeBufferedToolCalls();
     this.syncedToolCalls.clear();
-    this.assistantMessageIndex.clear();
+    this.assistantMessages.clear();
     this.pendingToolBuffer = [];
     this.currentContentBlocks = [];
     this.toolBlocks.clear();
     this.unsupportedChunks.clear();
     this.persistedImages.clear();
     this.deps.state.resetStreamingState();
+  }
+
+  /**
+   * New turn in the same session: drop the previous turn's block bookkeeping
+   * so stale tool calls from an interrupted turn (Stop skips the finally-block
+   * finalize) can't leak into the next assistant message. Message references
+   * stay — the next turn always carries a fresh messageId.
+   */
+  beginTurn(): void {
+    this.pendingToolBuffer = [];
+    this.currentContentBlocks = [];
+    this.toolBlocks.clear();
   }
 
   /**
@@ -313,9 +329,9 @@ export class StreamController {
     if (!sessionId) return;
 
     const key = `${sessionId}:${messageId}:${type}`;
-    const index = this.assistantMessageIndex.get(key);
+    const tracked = this.assistantMessages.get(key);
 
-    if (index === undefined) {
+    if (!tracked) {
       this.deps.sessionStore.getOrCreate(sessionId);
       const session = this.deps.sessionStore.get(sessionId);
       if (!session) return;
@@ -334,36 +350,35 @@ export class StreamController {
         if (cb.type === 'tool_use') contentBlocks.push(cb);
       }
 
-      session.messages.push({
+      const message: SerializedMessage = {
         role: 'assistant',
         content: accumulatedText,
         type,
         contentBlocks: contentBlocks.length > 0 ? contentBlocks : undefined,
         timestamp: Date.now(),
-      });
-      this.assistantMessageIndex.set(key, session.messages.length - 1);
+      };
+      session.messages.push(message);
+      this.assistantMessages.set(key, message);
       session.updatedAt = Date.now();
     } else {
       const session = this.deps.sessionStore.get(sessionId);
       if (!session) return;
-      const msg = session.messages[index];
-      if (msg) {
-        msg.content = accumulatedText;
-        // Update contentBlocks text
-        if (msg.contentBlocks) {
-          for (const block of msg.contentBlocks) {
-            if (block.type === type && block.text !== undefined) {
-              block.text = accumulatedText;
-            }
+      const msg = tracked;
+      msg.content = accumulatedText;
+      // Update contentBlocks text
+      if (msg.contentBlocks) {
+        for (const block of msg.contentBlocks) {
+          if (block.type === type && block.text !== undefined) {
+            block.text = accumulatedText;
           }
-        } else {
-          msg.contentBlocks = [];
         }
-        // Tool calls can flush after this message was created; keep it in sync
-        for (const cb of this.currentContentBlocks) {
-          if (cb.type === 'tool_use' && !msg.contentBlocks.includes(cb)) {
-            msg.contentBlocks.push(cb);
-          }
+      } else {
+        msg.contentBlocks = [];
+      }
+      // Tool calls can flush after this message was created; keep it in sync
+      for (const cb of this.currentContentBlocks) {
+        if (cb.type === 'tool_use' && !msg.contentBlocks.includes(cb)) {
+          msg.contentBlocks.push(cb);
         }
       }
       session.updatedAt = Date.now();

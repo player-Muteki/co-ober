@@ -226,6 +226,29 @@ describe('CoOberPlugin corrupted data recovery', () => {
     expect(Notice.messages.filter((m) => m.includes('failed to save'))).toHaveLength(1);
     saveSpy.mockRestore();
   });
+
+  it('sets aside a data.json written by a newer schema instead of restamping it', async () => {
+    Notice.messages.length = 0;
+    const superLoad = vi.spyOn(Plugin.prototype, 'loadData').mockResolvedValue({
+      schemaVersion: 5,
+      settings: {},
+      sessions: [],
+      activeSessionId: null,
+    });
+    const { plugin, rename } = createLoadPlugin(() =>
+      (CoOberPlugin.prototype as unknown as { loadData: () => Promise<unknown> }).loadData.call(plugin),
+    );
+
+    await plugin.onload();
+
+    expect(rename).toHaveBeenCalledWith(
+      '.obsidian/plugins/co-ober/data.json',
+      expect.stringMatching(/^\.obsidian\/plugins\/co-ober\/data\.newer-\d+\.json$/),
+    );
+    expect(plugin.sessionStore.hydrate).toHaveBeenCalledWith([], null);
+    expect(Notice.messages.some((m) => m.includes('newer Co-Ober version') && m.includes('schema 5'))).toBe(true);
+    superLoad.mockRestore();
+  });
 });
 
 function createLeaf(onDetach?: () => void) {
@@ -291,6 +314,21 @@ describe('CoOberPlugin connect failure messaging', () => {
     expect(ok).toBe(false);
     expect(Notice.messages.some((m) => m.includes('Could not find'))).toBe(false);
     expect(Notice.messages.some((m) => m.includes('Failed to connect'))).toBe(true);
+    errSpy.mockRestore();
+  });
+
+  it('disconnects a live client before replacing it', async () => {
+    Notice.messages.length = 0;
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const plugin = createConnectPlugin('/nonexistent/co-ober-stale-xyz');
+    const disconnect = vi.fn().mockResolvedValue(undefined);
+    plugin.client = { disconnect } as unknown as CoOberPlugin['client'];
+
+    const ok = await connectClientOf(plugin)();
+
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(ok).toBe(false);
+    expect(plugin.client).toBeNull();
     errSpy.mockRestore();
   });
 });
