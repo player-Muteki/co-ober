@@ -2361,6 +2361,23 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
       expect(resolve).toHaveBeenCalledTimes(2);
     });
 
+    it('survives /clear: the cache is keyed by path, not by transcript', async () => {
+      controller.state.sessionId = 'local-1';
+      const resolve = deps.resolver.resolveNote as ReturnType<typeof vi.fn>;
+      resolve.mockResolvedValue({ name: 'a', content: 'body' });
+      const ref = noteRef('a.md');
+      await controller.buildParts('q', [ref]);
+      expect(resolve).toHaveBeenCalledTimes(1);
+
+      // Clearing one tab's screen says nothing about the file on disk; wiping
+      // the cache here made every later reference read the note again.
+      await commandRegistry.find('clear')!.run('');
+
+      resolve.mockClear();
+      await controller.buildParts('q', [ref]);
+      expect(resolve).not.toHaveBeenCalled();
+    });
+
     it('evicts the least recently used entry beyond the cache cap', async () => {
       controller.state.sessionId = 'local-1';
       const resolve = deps.resolver.resolveNote as ReturnType<typeof vi.fn>;

@@ -14,7 +14,13 @@ export class SessionRuntime {
   busy = false;
   genId = 0;
   sendStartTime = 0;
-  promptQueue: Array<{ text: string; refs: ContextRef[] }> = [];
+  /**
+   * Prompts waiting for this tab's turn. `painted` marks one whose user bubble
+   * and persisted message already exist (it was already sent once), and
+   * `images` carries the parts captured then — a re-parked turn must neither
+   * draw nor eat anything twice.
+   */
+  promptQueue: Array<{ text: string; refs: ContextRef[]; painted?: boolean; images?: PromptPart[] }> = [];
   /** Turn content captured for a user-initiated retry (see retryTurn). */
   pendingRetry: { text: string; imageParts: PromptPart[] } | null = null;
   /** Transcript has been painted into this tab's panel (lazy-restore marker). */

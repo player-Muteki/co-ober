@@ -138,8 +138,8 @@ export interface AgentCallConfig {
   onAfterResponse?: (response: AcpResponse | undefined) => Promise<void>;
   onFinally?: () => void;
   retryFn?: (text: string, refs?: ContextRef[]) => Promise<void>;
-  /** Turn originated from the queue; a full stream budget re-queues it. */
-  fromQueue?: boolean;
+  /** A drained turn replays the image parts it carried, not the live chips. */
+  capturedImageParts?: PromptPart[];
 }
 
 export class CoOberViewController {
@@ -272,6 +272,8 @@ export class CoOberViewController {
       }
     }
     const wasActive = rt === this.activeRuntime;
+    // Prompts waiting in a closed tab are gone; say so like every other drop.
+    this.dropQueuedPrompts(rt);
     this.runtimes.delete(tabId);
     this.deps.disposeTabPanel?.(tabId);
     await rt.streamCtrl.dispose();
@@ -466,12 +468,12 @@ export class CoOberViewController {
       source: 'builtin',
       run: async () => {
         const rt = this.activeRuntime;
-        await this.cancelActiveGeneration();
-        rt.busy = false;
-        ++rt.genId;
-        this.noteContentCache.clear();
+        // Cancel while the turn is still marked busy, then hand the tab to the
+        // one reset path: a cleared tab must drop its stream controller, its
+        // painted markers and its queue, or stale frames keep landing on it.
+        await this.cancelActiveGeneration(rt);
         rt.state.clear();
-        rt.renderer.clear();
+        this.resetRuntimeView(rt);
         this.callbacks.onShowWelcome(true);
       },
     });
@@ -1388,9 +1390,10 @@ export class CoOberViewController {
     const savedRetry = rt.pendingRetry && rt.pendingRetry.text === text ? rt.pendingRetry : null;
     rt.pendingRetry = null;
     // Composer chips belong to whichever tab is on screen; a background tab
-    // turn can only carry its own retry payload.
-    const imageParts = savedRetry ? savedRetry.imageParts : active() ? this.callbacks.getPendingImageParts() : [];
-    if (!savedRetry && active()) this.callbacks.onClearPendingImageChips();
+    // turn can only carry its own retry payload or its own re-parked capture.
+    const imageParts =
+      savedRetry?.imageParts ?? config.capturedImageParts ?? (active() ? this.callbacks.getPendingImageParts() : []);
+    if (!savedRetry && config.capturedImageParts === undefined && active()) this.callbacks.onClearPendingImageChips();
     const images = imageParts
       .filter((p) => p.type === 'image' && typeof p.mimeType === 'string' && typeof p.data === 'string')
       .map((p) => ({ mimeType: p.mimeType as string, data: p.data as string }));
@@ -1445,10 +1448,12 @@ export class CoOberViewController {
         console.warn('[co-ober] turn error swallowed while disconnected:', e);
         return;
       }
-      if (e instanceof AcpStreamCapacityError && config.fromQueue) {
-        // Shared stream budget is full: park the head until the next release
-        // instead of failing the turn the queue was waiting for.
-        rt.promptQueue.unshift({ text, refs });
+      if (e instanceof AcpStreamCapacityError && config.addUserMessage !== false) {
+        // The shared budget is raced between send()'s pre-check and sendMessage,
+        // where another tab can claim the last slot first. Any conversational
+        // turn that loses re-queues intact — its bubble and images are already
+        // committed to this attempt — instead of failing on a race.
+        rt.promptQueue.unshift({ text, refs, painted: true, images: imageParts });
         rt.capacityParked = true;
         if (active()) this.updateQueueIndicator(rt);
         return;
@@ -1720,7 +1725,7 @@ export class CoOberViewController {
     text: string,
     refs: ContextRef[],
     rt: SessionRuntime = this.activeRuntime,
-    opts: { fromQueue?: boolean } = {},
+    opts: { paintedHead?: boolean; imagesHead?: PromptPart[] } = {},
   ): Promise<void> {
     if (rt.busy) {
       rt.promptQueue.push({ text, refs });
@@ -1760,7 +1765,11 @@ export class CoOberViewController {
       refs,
       {
         buildPartsWithRefs: refs,
-        fromQueue: opts.fromQueue,
+        // A drained turn already drew and stored its user message; replaying
+        // either would double the bubble.
+        addUserMessage: opts.paintedHead ? false : undefined,
+        saveMessage: opts.paintedHead ? false : undefined,
+        capturedImageParts: opts.imagesHead,
         retryFn: (t, r) => this.send(t, r ?? refs, rt),
         onFinally: () => {
           if (rt.state.usage) {
@@ -1811,17 +1820,25 @@ export class CoOberViewController {
       // next release tick.
       if (!this.streamSlotsFree(this.deps.runtime.getClient())) break;
       const head = rt.promptQueue.shift()!;
+      const headPainted = !!head.painted;
       let text = head.text;
       // Consecutive plain prompts pile up while the agent is busy; merge them
-      // into one turn so the agent sees the follow-ups as a single message.
-      if (isPlainPrompt(head)) {
-        while (rt.promptQueue.length > 0 && isPlainPrompt(rt.promptQueue[0])) {
+      // into one turn so the agent sees the follow-ups as a single message. A
+      // turn that is already on screen must not swallow one that is not (its
+      // bubble would vanish), and a turn carrying its own images stays alone.
+      if (isPlainPrompt(head) && !head.images) {
+        while (
+          rt.promptQueue.length > 0 &&
+          isPlainPrompt(rt.promptQueue[0]) &&
+          !rt.promptQueue[0].images &&
+          !!rt.promptQueue[0].painted === headPainted
+        ) {
           text += `\n\n${rt.promptQueue.shift()!.text}`;
         }
       }
       if (this.isActiveTab(rt)) this.updateQueueIndicator(rt);
       try {
-        await this.send(text, head.refs, rt, { fromQueue: true });
+        await this.send(text, head.refs, rt, { paintedHead: headPainted, imagesHead: head.images });
       } catch (e) {
         // One failing queued command must not strand the rest of the queue.
         console.error('[co-ober] queued prompt failed:', e);
@@ -1921,7 +1938,7 @@ export class CoOberViewController {
     }
   }
 
-  /** Discarding queued prompts (session reset, view close) must never be silent. */
+  /** Discarding queued prompts (session reset, tab close, view close) must never be silent. */
   private dropQueuedPrompts(rt: SessionRuntime): void {
     if (rt.promptQueue.length === 0) return;
     new Notice(t().queue.dropped.replace('{count}', String(rt.promptQueue.length)));

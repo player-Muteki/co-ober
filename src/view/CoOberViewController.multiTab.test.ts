@@ -13,7 +13,8 @@ import {
   DEFAULT_OPEN_TABS,
 } from '../constants';
 import { AcpStreamCapacityError } from '../client/AcpErrors';
-import type { AcpResponse, NormalizedUpdate } from '../types';
+import { commandRegistry } from '../commands/registry';
+import type { AcpResponse, NormalizedUpdate, PromptPart } from '../types';
 
 vi.mock('../opencode/NativeSessionReader', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../opencode/NativeSessionReader')>();
@@ -753,5 +754,216 @@ describe('CoOberViewController — tab strip and shells (0.2.0 stage 3)', () => 
     finish({ stopReason: 'end_turn' } as AcpResponse);
     await running;
     expect(onTabsChanged.mock.calls.length).toBeGreaterThan(afterStart);
+  });
+});
+
+describe('CoOberViewController — one tab’s teardown stays inside that tab (0.3.0 stage 2)', () => {
+  let h: Harness;
+
+  beforeEach(() => {
+    h = createHarness();
+    commandRegistry.updateAcpCommands([]);
+    Notice.messages.length = 0;
+  });
+
+  /** A client whose turns never finish, so a tab stays busy on demand. */
+  function hangingClient(): ReturnType<typeof createMockClient> {
+    const client = createMockClient({
+      sendMessage: vi.fn().mockImplementation(() => new Promise<AcpResponse>(() => {})),
+    });
+    (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+    return client;
+  }
+
+  describe('/clear', () => {
+    it('hands its own tab to the one reset path the restore uses', async () => {
+      const chunkCb: Array<(u: NormalizedUpdate) => void> = [];
+      const client = createMockClient({
+        sendMessage: vi.fn((_sid: string, _parts: unknown, cb: (u: NormalizedUpdate) => void) => {
+          chunkCb.push(cb);
+          return new Promise<AcpResponse>(() => {});
+        }),
+      });
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      h.controller.state.sessionId = 'ses-a';
+      const rt = rtOf(h, h.controller.activeTabId());
+      const reset = vi.spyOn(rt.streamCtrl, 'reset');
+      void h.controller.send('question A', []);
+      await tick();
+      await h.controller.send('follow-up', []);
+      expect(rt.promptQueue.map((e) => e.text)).toEqual(['follow-up']);
+      rt.painted = true;
+      rt.needsRestore = true;
+
+      await commandRegistry.find('clear')!.run('');
+
+      expect(reset).toHaveBeenCalledTimes(1);
+      expect(rt.promptQueue).toHaveLength(0);
+      expect(Notice.messages).toContain(t().queue.dropped.replace('{count}', '1'));
+      expect(rt.painted).toBe(false);
+      expect(rt.needsRestore).toBe(false);
+      expect(rt.busy).toBe(false);
+      expect(rt.renderer.clear).toHaveBeenCalledTimes(1);
+      // Clearing the transcript is not leaving the session.
+      expect(rt.state.sessionId).toBe('ses-a');
+      expect(h.callbacks.onShowWelcome).toHaveBeenCalledWith(true);
+
+      // The turn still in flight belongs to a dead generation: its frames must
+      // not repaint the cleared panel.
+      chunkCb[0]({
+        kind: 'message_chunk',
+        role: 'agent',
+        messageId: 'm1',
+        chunkText: 'ghost',
+        accumulatedText: 'ghost',
+      });
+      expect(rt.renderer.appendText).not.toHaveBeenCalled();
+    });
+
+    it('takes down only the tab in view', async () => {
+      hangingClient();
+      h.controller.state.sessionId = 'ses-a';
+      const tabA = h.controller.activeTabId();
+      void h.controller.send('question A', []);
+      await tick();
+      await h.controller.switchSession('ses-b');
+      const tabB = h.controller.activeTabId();
+      void h.controller.send('question B', []);
+      await tick();
+      await h.controller.switchSession('ses-a');
+
+      await commandRegistry.find('clear')!.run('');
+
+      expect(rtOf(h, tabA).busy).toBe(false);
+      expect(rtOf(h, tabB).busy).toBe(true);
+      expect(rtOf(h, tabB).renderer.clear).not.toHaveBeenCalled();
+      expect(rtOf(h, tabB).state.sessionId).toBe('ses-b');
+    });
+  });
+
+  describe('closeTab', () => {
+    async function openBusyTabWithQueue(bgSession: string) {
+      hangingClient();
+      h.controller.state.sessionId = 'ses-a';
+      const tabA = h.controller.activeTabId();
+      void h.controller.send('question A', []);
+      await tick();
+      await h.controller.send('queued on A', []);
+      await h.controller.switchSession(bgSession);
+      const tabB = h.controller.activeTabId();
+      void h.controller.send('question B', []);
+      await tick();
+      await h.controller.send('queued on B', []);
+      return { tabA, tabB };
+    }
+
+    it('announces the prompts it throws away', async () => {
+      const { tabA, tabB } = await openBusyTabWithQueue('ses-b');
+      Notice.messages.length = 0;
+
+      await h.controller.closeTab(tabB);
+
+      expect(Notice.messages).toContain(t().queue.dropped.replace('{count}', '1'));
+      // The surviving tab keeps its own waiting turns.
+      expect(rtOf(h, tabA).promptQueue.map((e) => e.text)).toEqual(['queued on A']);
+    });
+
+    it('stays quiet when the closed tab had nothing waiting', async () => {
+      const client = hangingClient();
+      h.controller.state.sessionId = 'ses-a';
+      const tabA = h.controller.activeTabId();
+      void h.controller.send('question A', []);
+      await tick();
+      await h.controller.switchSession('ses-b');
+      const tabB = h.controller.activeTabId();
+      Notice.messages.length = 0;
+
+      await h.controller.closeTab(tabB);
+
+      expect(Notice.messages).not.toContain(t().queue.dropped.replace('{count}', '1'));
+      // An idle tab is torn down without touching the turn still running elsewhere.
+      expect(client.cancel).not.toHaveBeenCalled();
+      expect(rtOf(h, tabA).busy).toBe(true);
+    });
+  });
+
+  describe('a contested stream slot', () => {
+    it('parks a send that lost the race, with its bubble and images committed', async () => {
+      const count = { value: MAX_CONCURRENT_STREAMS - 1 };
+      const images: PromptPart[] = [{ type: 'image', mimeType: 'image/png', data: 'QUJD' }];
+      const sendMessage = vi.fn().mockResolvedValue({ stopReason: 'end_turn' });
+      sendMessage.mockImplementationOnce(() => {
+        // The other tab claimed the last slot between the pre-check and here.
+        count.value = MAX_CONCURRENT_STREAMS;
+        return Promise.reject(new AcpStreamCapacityError(MAX_CONCURRENT_STREAMS));
+      });
+      const client = createMockClient({ activeStreamCount: vi.fn(() => count.value), sendMessage });
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      h.callbacks.getPendingImageParts = () => images;
+      h.controller.state.sessionId = 'ses-a';
+      const rt = rtOf(h, h.controller.activeTabId());
+
+      await h.controller.send('contested', []);
+
+      expect(rt.promptQueue).toHaveLength(1);
+      expect(rt.promptQueue[0]).toMatchObject({ text: 'contested', painted: true, images });
+      // Already drawn once: re-painting it on the replay would double the bubble.
+      expect(rt.renderer.addUserMessage).toHaveBeenCalledTimes(1);
+      expect(rt.renderer.addError).not.toHaveBeenCalled();
+      expect(rt.busy).toBe(false);
+
+      count.value = MAX_CONCURRENT_STREAMS - 1;
+      (Reflect.get(h.controller, 'tryDrainAnyQueue') as () => void).call(h.controller);
+      await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(2));
+
+      expect(rt.promptQueue).toHaveLength(0);
+      expect(rt.renderer.addUserMessage).toHaveBeenCalledTimes(1);
+      expect(rt.renderer.addError).not.toHaveBeenCalled();
+      // The parked turn replays the image it carried, not the live composer.
+      const replayedParts = sendMessage.mock.calls[1][1] as PromptPart[];
+      expect(replayedParts).toContainEqual(images[0]);
+    });
+
+    it('keeps a turn a tool path queued on the error lane', async () => {
+      const client = createMockClient({
+        activeStreamCount: vi.fn(() => MAX_CONCURRENT_STREAMS - 1),
+        sendMessage: vi.fn().mockRejectedValue(new AcpStreamCapacityError(MAX_CONCURRENT_STREAMS)),
+      });
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      h.controller.state.sessionId = 'ses-a';
+      const rt = rtOf(h, h.controller.activeTabId());
+
+      // sendTextToAgent turns must not re-enter send()'s slash parser, so they
+      // keep reporting instead of queueing.
+      await (Reflect.get(h.controller, 'sendTextToAgent') as (t: string) => Promise<void>).call(
+        h.controller,
+        '/compact',
+      );
+
+      expect(rt.promptQueue).toHaveLength(0);
+      expect(rt.renderer.addError).toHaveBeenCalledTimes(1);
+    });
+
+    it('drains a painted head and an unpainted tail as two turns', async () => {
+      const sendMessage = vi.fn().mockResolvedValue({ stopReason: 'end_turn' });
+      const client = createMockClient({ sendMessage });
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      h.controller.state.sessionId = 'ses-a';
+      const rt = rtOf(h, h.controller.activeTabId());
+      rt.promptQueue.push({ text: 'already on screen', refs: [], painted: true });
+      rt.promptQueue.push({ text: 'still in the composer', refs: [] });
+
+      (Reflect.get(h.controller, 'tryDrainAnyQueue') as () => void).call(h.controller);
+      await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(2));
+
+      const painted = h.renderers.get(h.controller.activeTabId())!.addUserMessage.mock.calls.map((c) => c[0]);
+      expect(painted).toEqual(['still in the composer']);
+      const sentTexts = sendMessage.mock.calls.map((c) =>
+        (c[1] as PromptPart[]).map((p) => p.text ?? '').join('\n'),
+      );
+      expect(sentTexts[0]).toContain('already on screen');
+      expect(sentTexts[0]).not.toContain('still in the composer');
+      expect(sentTexts[1]).toContain('still in the composer');
+    });
   });
 });
