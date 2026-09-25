@@ -378,6 +378,9 @@ function createPlugin(
       currentModeId: null,
     })),
     getAgentCapabilities: vi.fn(() => capabilities),
+    setFsCapabilityMode: vi.fn(),
+    setTerminalCapabilityMode: vi.fn(),
+    idleTimeoutMs: 300000,
   };
   return {
     app: {
@@ -419,5 +422,62 @@ describe('CoOberSettingsTab default effort options', () => {
       'xhigh',
       'max',
     ]);
+  });
+});
+
+describe('CoOberSettingsTab live capability push', () => {
+  function findTextSettingInput(tab: CoOberSettingsTab, name: string): HTMLInputElement {
+    const input = [...tab.containerEl.querySelectorAll('input')]
+      .find((el) => el.type !== 'checkbox' && el.closest('.setting-item')?.textContent?.includes(name));
+    expect(input).toBeDefined();
+    return input as HTMLInputElement;
+  }
+
+  async function changeInput(input: HTMLInputElement, value: string): Promise<void> {
+    input.value = value;
+    input.dispatchEvent(new Event('change'));
+    await flushPromises();
+  }
+
+  it('pushes maxNoteSize to the connected client so the cached handler limit updates', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+    const client = plugin.getClient()!;
+
+    await changeInput(findTextSettingInput(tab, 'Max Note Reference Size'), '4096');
+
+    expect(plugin.settings.maxNoteSize).toBe(4096);
+    expect(client.setFsCapabilityMode).toHaveBeenCalledWith('enabled', 4096);
+  });
+
+  it('pushes terminal timeout and max output live', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+    const client = plugin.getClient()!;
+
+    await changeInput(findTextSettingInput(tab, 'Command Timeout (ms)'), '5000');
+    expect(client.setTerminalCapabilityMode).toHaveBeenCalledWith('enabled', 5000, 100000);
+
+    await changeInput(findTextSettingInput(tab, 'Max Output Size (bytes)'), '2048');
+    expect(client.setTerminalCapabilityMode).toHaveBeenCalledWith('enabled', 5000, 2048);
+  });
+
+  it('passes an idle timeout of 0 through as disabled', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+    const client = plugin.getClient()!;
+
+    await changeInput(findTextSettingInput(tab, 'Idle Timeout (ms)'), '45000');
+    expect(client.idleTimeoutMs).toBe(45000);
+
+    await changeInput(findTextSettingInput(tab, 'Idle Timeout (ms)'), '0');
+    expect(plugin.settings.idleTimeoutMs).toBe(0);
+    expect(client.idleTimeoutMs).toBe(0);
   });
 });

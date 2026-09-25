@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { ChatRenderer, formatMessageUsage, contextPercentage } from './renderer';
+import { ChatRenderer, formatMessageUsage, currencySymbol, contextPercentage } from './renderer';
 import { closeImagePreview } from './imagePreview';
 import { installObsidianDomHelpers } from '../test/domHelpers';
 import { setLocale } from '../i18n/index';
@@ -247,8 +247,26 @@ describe('ChatRenderer', () => {
     it('formats token deltas and cost', () => {
       expect(formatMessageUsage({ inputTokens: 100, outputTokens: 20, cost: 0.001 })).toBe('↑100 · ↓20 · $0.0010');
       expect(formatMessageUsage({ inputTokens: 100, outputTokens: 20, cost: 0 })).toBe('↑100 · ↓20');
-      expect(formatMessageUsage({ totalTokens: 500 })).toBe('500 tok');
+      expect(formatMessageUsage({ totalTokens: 500 })).toBe('500 tokens');
       expect(formatMessageUsage({})).toBe('');
+    });
+
+    it('renders cost with the currency symbol for known codes', () => {
+      expect(formatMessageUsage({ cost: 1.5, costCurrency: 'EUR' })).toBe('€1.5000');
+      expect(formatMessageUsage({ cost: 2, costCurrency: 'CNY' })).toBe('¥2.0000');
+      expect(formatMessageUsage({ cost: 2, costCurrency: 'JPY' })).toBe('¥2.0000');
+      expect(formatMessageUsage({ cost: 2, costCurrency: 'GBP' })).toBe('£2.0000');
+      expect(formatMessageUsage({ cost: 2, costCurrency: 'USD' })).toBe('$2.0000');
+    });
+
+    it('falls back to the raw currency code for unknown currencies', () => {
+      expect(formatMessageUsage({ cost: 0.5, costCurrency: 'BTC' })).toBe('BTC 0.5000');
+    });
+
+    it('maps currency symbols via currencySymbol', () => {
+      expect(currencySymbol()).toBe('$');
+      expect(currencySymbol('EUR')).toBe('€');
+      expect(currencySymbol('ZZZ')).toBe('ZZZ ');
     });
   });
 

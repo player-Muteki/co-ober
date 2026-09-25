@@ -29,9 +29,30 @@ export function formatMessageUsage(usage: MessageUsage): string {
   const parts: string[] = [];
   if (usage.inputTokens) parts.push(`↑${usage.inputTokens}`);
   if (usage.outputTokens) parts.push(`↓${usage.outputTokens}`);
-  if (!parts.length && usage.totalTokens) parts.push(`${usage.totalTokens} tok`);
-  if (usage.cost && usage.cost > 0) parts.push(`$${usage.cost.toFixed(4)}`);
+  if (!parts.length && usage.totalTokens) parts.push(`${usage.totalTokens} ${t().usage.tokensUnit}`);
+  if (usage.cost && usage.cost > 0) parts.push(`${currencySymbol(usage.costCurrency)}${usage.cost.toFixed(4)}`);
   return parts.join(' · ');
+}
+
+/**
+ * Glyph for a currency code; unknown codes render as "CODE " so a non-USD
+ * amount is never misread as dollars.
+ */
+export function currencySymbol(currency?: string): string {
+  switch (currency) {
+    case 'CNY':
+    case 'JPY':
+      return '¥';
+    case 'EUR':
+      return '€';
+    case 'GBP':
+      return '£';
+    case 'USD':
+    case undefined:
+      return '$';
+    default:
+      return `${currency} `;
+  }
 }
 
 /**
@@ -785,7 +806,7 @@ export class ChatRenderer {
     if (rate !== null) parts.push(`${rate.toFixed(1)} tok/s`);
     const pct = contextPercentage(usage);
     if (pct !== null) parts.push(`${pct}%`);
-    if (usage.cost?.amount) parts.push(`$${usage.cost.amount.toFixed(4)}`);
+    if (usage.cost?.amount) parts.push(`${currencySymbol(usage.cost.currency)}${usage.cost.amount.toFixed(4)}`);
     el.textContent = parts.join(' · ');
     this.usageEls.set(el, usage);
     el.title = this.formatUsageTitle(usage);

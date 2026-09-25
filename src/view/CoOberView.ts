@@ -776,11 +776,11 @@ export class CoOberView extends ItemView {
       // Use the command registry (builtins + ACP synced + file commands)
       const all = commandRegistry.getAll();
       const badgeLabel: Record<string, string> = {
-        builtin: 'Builtin',
-        acp: 'ACP',
-        file: 'Custom',
-        mcp: 'MCP',
-        skill: 'Skill',
+        builtin: t().badge.builtin,
+        acp: t().badge.acp,
+        file: t().badge.custom,
+        mcp: t().badge.mcp,
+        skill: t().badge.skill,
       };
       for (const cmd of all) {
         allItems.push({

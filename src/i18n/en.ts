@@ -48,6 +48,7 @@ const en = {
     nativeSessionMissing: 'This OpenCode session no longer exists (it may have been deleted from OpenCode).',
     runtimeSessionLost: 'The agent no longer holds this session (it may have restarted). Local history is kept; your next message starts a fresh agent session.',
     syncUnsupported: 'This agent supports neither session/load nor session/resume, so the stored session cannot be re-attached. Your next message will start in a fresh agent session.',
+    truncated: '[{count} earlier messages truncated]',
   },
 
   reconnect: {
@@ -162,6 +163,7 @@ const en = {
     one: '⌙ 1 message queued',
     many: '⌙ {count} messages queued',
     remove: 'Remove from queue',
+    dropped: '{count} queued prompt(s) were discarded',
   },
 
   export: {
@@ -182,6 +184,8 @@ const en = {
     thought: 'Thought',
     showAll: 'Show all ›',
     extendedAria: 'Extended thinking',
+    elapsed: '{seconds}s',
+    elapsedFor: 'for {seconds}s',
   },
 
   diff: {
@@ -247,7 +251,9 @@ const en = {
   },
   badge: {
     builtin: 'Builtin',
+    acp: 'ACP',
     custom: 'Custom',
+    mcp: 'MCP',
     skill: 'Skill',
   },
   slashCategory: {

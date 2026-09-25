@@ -39,6 +39,14 @@ export interface ThinkingState {
 
 const DOT_CHARS = ['·', '··', '···'];
 
+function thinkingElapsed(seconds: number): string {
+  return t().thinking.elapsed.replace('{seconds}', String(seconds));
+}
+
+function thinkingDuration(seconds: number): string {
+  return t().thinking.elapsedFor.replace('{seconds}', String(seconds));
+}
+
 /**
  * Truncate text to a max number of lines, returning truncated version + original.
  */
@@ -65,7 +73,7 @@ export function renderLiveThinkingBlock(
   header.setAttribute('tabindex', '0');
 
   const labelEl = header.createSpan({ cls: 'co-ober-thinking-label', text: t().thinking.header });
-  const timerEl = header.createSpan({ cls: 'co-ober-thinking-timer', text: '0s' });
+  const timerEl = header.createSpan({ cls: 'co-ober-thinking-timer', text: thinkingElapsed(0) });
   const dotEl = header.createSpan({ cls: 'co-ober-thinking-dot', text: '···' });
 
   const body = wrapper.createDiv({ cls: 'co-ober-thinking-body' });
@@ -90,7 +98,7 @@ export function renderLiveThinkingBlock(
   // Live timer: update every second
   state.timerInterval = setInterval(() => {
     const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
-    state.timerEl.textContent = `${elapsed}s`;
+    state.timerEl.textContent = thinkingElapsed(elapsed);
   }, THINKING_TIMER_INTERVAL_MS);
 
   // Dot animation: cycle every 500ms
@@ -192,7 +200,7 @@ export function finalizeThinkingBlock(state: ThinkingState): number {
 
   const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
   state.labelEl.textContent = t().thinking.thought;
-  state.timerEl.textContent = `for ${elapsed}s`;
+  state.timerEl.textContent = thinkingDuration(elapsed);
 
   // Remove dot indicator
   const dot = state.header.querySelector('.co-ober-thinking-dot');
@@ -224,9 +232,7 @@ export function renderStoredThinkingBlock(
   header.setAttribute('tabindex', '0');
 
   const label = durationSeconds ? t().thinking.thought : t().thinking.header;
-  const durationText = durationSeconds
-    ? `for ${durationSeconds}s`
-    : '';
+  const durationText = durationSeconds ? thinkingDuration(durationSeconds) : '';
   header.createSpan({ cls: 'co-ober-thinking-label', text: label });
   if (durationText) {
     header.createSpan({ cls: 'co-ober-thinking-timer', text: durationText });

@@ -13,6 +13,7 @@ import type {
 } from '../types';
 import { setLocale, t } from '../i18n/index';
 import zhLocale from '../i18n/zh';
+import { Notice } from '../test/obsidianMock';
 import { commandRegistry } from '../commands/registry';
 import { AcpSessionMissingError, AcpProcessExitError } from '../client/AcpErrors';
 import {
@@ -1848,6 +1849,23 @@ describe('CoOberViewController', () => {
       expect(callbacks.onClearChips).toHaveBeenCalled();
       expect(callbacks.onClearPendingImageChips).toHaveBeenCalled();
       expect(Reflect.get(controller, 'promptQueue')).toHaveLength(0);
+    });
+
+    it('notifies when queued prompts are discarded', () => {
+      Notice.messages.length = 0;
+      Reflect.get(controller, 'promptQueue').push({ text: 'a', refs: [] }, { text: 'b', refs: [] });
+
+      controller.resetConversationView();
+
+      expect(Notice.messages.some((m) => m === t().queue.dropped.replace('{count}', '2'))).toBe(true);
+    });
+
+    it('stays silent when there is nothing queued', () => {
+      Notice.messages.length = 0;
+
+      controller.resetConversationView();
+
+      expect(Notice.messages.some((m) => m.includes(t().queue.dropped.replace('{count}', '0')))).toBe(false);
     });
   });
 

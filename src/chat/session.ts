@@ -196,7 +196,7 @@ export class SessionRepository implements SessionStore {
           ...session.messages.slice(0, firstCount),
           {
             role: 'system',
-            content: `[${truncatedCount} earlier messages truncated]`,
+            content: t().session.truncated.replace('{count}', String(truncatedCount)),
             type: 'text',
             timestamp: session.messages[firstCount]?.timestamp ?? now,
           },

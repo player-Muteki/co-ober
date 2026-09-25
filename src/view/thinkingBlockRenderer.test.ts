@@ -67,6 +67,19 @@ describe('thinkingBlockRenderer', () => {
       cleanupThinkingBlock(state);
     });
 
+    it('renders timer text from the active locale', () => {
+      setLocale('zh');
+      try {
+        const state = renderLiveThinkingBlock(container);
+        expect(state.timerEl.textContent).toBe('0秒');
+        vi.advanceTimersByTime(1000);
+        expect(state.timerEl.textContent).toBe('1秒');
+        cleanupThinkingBlock(state);
+      } finally {
+        setLocale('en');
+      }
+    });
+
     it('stays collapsed while streaming content', () => {
       const state = renderLiveThinkingBlock(container);
       appendThinkingContent(state, 'reasoning...');

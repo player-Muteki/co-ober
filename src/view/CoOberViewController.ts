@@ -45,6 +45,7 @@ import {
   type NativeMessageStat,
   type NativeTurnStat,
 } from '../opencode/NativeSessionReader';
+import { Notice } from 'obsidian';
 import { commandRegistry } from '../commands/registry';
 import { parseSlashCommand } from '../commands/executor';
 import { NOTECACHE_MAX_SIZE } from '../constants';
@@ -343,6 +344,7 @@ export class CoOberViewController {
   async dispose(): Promise<void> {
     this.unsubscribeLocale?.();
     this.unsubscribeLocale = null;
+    this.dropQueuedPrompts();
     this.endSideChat();
     await this.streamCtrl.dispose();
     this.noteContentCache.clear();
@@ -1408,6 +1410,14 @@ export class CoOberViewController {
     }
   }
 
+  /** Discarding queued prompts (session reset, view close) must never be silent. */
+  private dropQueuedPrompts(): void {
+    if (this.promptQueue.length === 0) return;
+    new Notice(t().queue.dropped.replace('{count}', String(this.promptQueue.length)));
+    this.promptQueue = [];
+    this.updateQueueIndicator();
+  }
+
   /** Number of prompts waiting for the current turn to finish (tests / UI hooks). */
   queuedCount(): number {
     return this.promptQueue.length;
@@ -1683,8 +1693,7 @@ export class CoOberViewController {
     this.deps.renderer.clear();
     this.streamCtrl.reset();
     ++this.genId;
-    this.promptQueue = [];
-    this.updateQueueIndicator();
+    this.dropQueuedPrompts();
     this.busy = false;
     this.state.isStreaming = false;
     this.state.usage = null;

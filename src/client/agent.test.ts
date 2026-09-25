@@ -1,11 +1,18 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { AgentRuntime } from './agent';
+import { AcpTimeoutError } from './AcpErrors';
 import type { AcpClient } from './acp';
 import type { PermissionRequest, PermissionOption } from '../types';
 
 describe('AgentRuntime', () => {
   let mockAcp: AcpClient;
   let runtime: AgentRuntime;
+
+  const createRequest = (options: Array<{ optionId: string; kind: string }>): PermissionRequest => ({
+    sessionId: 'session-1',
+    toolCall: { toolCallId: 'call-1', kind: 'edit', status: 'pending', title: 'Edit', rawInput: {}, locations: [] },
+    options: options as PermissionOption[],
+  });
 
   beforeEach(() => {
     mockAcp = {
@@ -149,12 +156,6 @@ describe('AgentRuntime', () => {
   });
 
   describe('requestPermission', () => {
-    const createRequest = (options: Array<{ optionId: string; kind: string }>): PermissionRequest => ({
-      sessionId: 'session-1',
-      toolCall: { toolCallId: 'call-1', kind: 'edit', status: 'pending', title: 'Edit', rawInput: {}, locations: [] },
-      options: options as PermissionOption[],
-    });
-
     it('yolo mode: returns allow_always option', async () => {
       runtime.permissionMode = 'yolo';
       const req = createRequest([
@@ -291,18 +292,36 @@ describe('AgentRuntime', () => {
   });
 
   describe('setClientHandlers', () => {
-    it('sets handlers on acp', () => {
+    it('sets handlers on acp and wraps the permission handler with a hold counter', async () => {
       const onClose = vi.fn();
       const onReconnect = vi.fn();
       const onReconnectFailed = vi.fn();
-      const onPermissionRequest = vi.fn();
+      const onPermissionRequest = vi.fn().mockResolvedValue('allow_once');
 
       runtime.setClientHandlers({ onClose, onReconnect, onReconnectFailed, onPermissionRequest });
 
       expect(mockAcp.onClose).toBe(onClose);
       expect(mockAcp.onReconnect).toBe(onReconnect);
       expect(mockAcp.onReconnectFailed).toBe(onReconnectFailed);
-      expect(mockAcp.onPermissionRequest).toBe(onPermissionRequest);
+
+      const wrapper = mockAcp.onPermissionRequest as unknown as (req: PermissionRequest) => Promise<string>;
+      expect(typeof wrapper).toBe('function');
+      const req = createRequest([]);
+      const pending = wrapper(req);
+      expect(Reflect.get(runtime, 'permissionHolds')).toBe(1);
+      await expect(pending).resolves.toBe('allow_once');
+      expect(onPermissionRequest).toHaveBeenCalledWith(req);
+      expect(Reflect.get(runtime, 'permissionHolds')).toBe(0);
+    });
+
+    it('restores the hold counter when the permission handler throws', async () => {
+      runtime.setClientHandlers({
+        onPermissionRequest: vi.fn().mockRejectedValue(new Error('boom')),
+      });
+
+      const wrapper = mockAcp.onPermissionRequest as unknown as (req: PermissionRequest) => Promise<string>;
+      await expect(wrapper(createRequest([]))).rejects.toThrow('boom');
+      expect(Reflect.get(runtime, 'permissionHolds')).toBe(0);
     });
 
     it('sets default permission handler when not provided', () => {
@@ -340,6 +359,56 @@ describe('AgentRuntime', () => {
       expect(mockAcp.cancel).toHaveBeenCalledWith('session-1');
       vi.useRealTimers();
       await promise.catch(() => {});
+    });
+
+    it('defers the idle timeout while a permission request is pending', async () => {
+      vi.useFakeTimers();
+      mockAcp.sendMessage = vi.fn().mockImplementation(() => new Promise(() => {}));
+      mockAcp.cancel = vi.fn().mockResolvedValue(undefined);
+      runtime.idleTimeoutMs = 10_000;
+      let resolvePermission: (value: string) => void = () => {};
+      runtime.setClientHandlers({
+        onPermissionRequest: () => new Promise<string>((resolve) => { resolvePermission = resolve; }),
+      });
+      const wrapper = mockAcp.onPermissionRequest as unknown as (req: PermissionRequest) => Promise<string>;
+
+      const promise = runtime.sendMessage('session-1', [{ type: 'text', text: 'Hello' }], vi.fn());
+      // The timer fires inside advanceTimersByTimeAsync, before the rejects
+      // assertion below can attach a handler; pre-attach one to keep it handled.
+      promise.catch(() => {});
+      const pendingPermission = wrapper(createRequest([]));
+
+      // Three full windows pass with the banner open — none may kill the turn.
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(mockAcp.cancel).not.toHaveBeenCalled();
+
+      resolvePermission('allow_once');
+      await pendingPermission;
+
+      // After the release, one more full window and the turn times out.
+      await vi.advanceTimersByTimeAsync(10_001);
+      await expect(promise).rejects.toBeInstanceOf(AcpTimeoutError);
+      expect(mockAcp.cancel).toHaveBeenCalledWith('session-1');
+      vi.useRealTimers();
+      await promise.catch(() => {});
+    });
+
+    it('idleTimeoutMs <= 0 disables the timeout entirely', async () => {
+      vi.useFakeTimers();
+      mockAcp.sendMessage = vi.fn().mockImplementation(() => new Promise(() => {}));
+      mockAcp.cancel = vi.fn().mockResolvedValue(undefined);
+      runtime.idleTimeoutMs = 0;
+
+      const promise = runtime.sendMessage('session-1', [{ type: 'text', text: 'Hello' }], vi.fn());
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+      expect(mockAcp.cancel).not.toHaveBeenCalled();
+
+      const outcome = await Promise.race([
+        promise.then(() => 'resolved', () => 'rejected'),
+        Promise.resolve('pending'),
+      ]);
+      expect(outcome).toBe('pending');
+      vi.useRealTimers();
     });
   });
 });

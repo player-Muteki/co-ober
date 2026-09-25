@@ -211,7 +211,14 @@ export class CoOberSettingsTab extends PluginSettingTab {
         .setPlaceholder('8000')
         .onChange(async (v) => {
           const n = parseInt(v, 10);
-          if (!isNaN(n) && n > 0) { s.maxNoteSize = n; await this.save(); new Notice(locale().settings.notes.saved); }
+          if (!isNaN(n) && n > 0) {
+            s.maxNoteSize = n;
+            await this.save();
+            new Notice(locale().settings.notes.saved);
+            // Live push: the connected handler caches maxBytes at set time.
+            const client = this.plugin.getClient();
+            if (client) applyPermissionTier(client, s.permissionMode, s);
+          }
         }));
 
     // ── Custom Agents & Skills ──
@@ -491,6 +498,8 @@ export class CoOberSettingsTab extends PluginSettingTab {
           if (!isNaN(n) && n > 0) {
             s.terminalTimeoutMs = n;
             await this.save();
+            const client = this.plugin.getClient();
+            if (client) applyPermissionTier(client, s.permissionMode, s);
           }
         }));
 
@@ -504,6 +513,8 @@ export class CoOberSettingsTab extends PluginSettingTab {
           if (!isNaN(n) && n > 0) {
             s.terminalMaxOutputBytes = n;
             await this.save();
+            const client = this.plugin.getClient();
+            if (client) applyPermissionTier(client, s.permissionMode, s);
           }
         }));
 
@@ -521,7 +532,8 @@ export class CoOberSettingsTab extends PluginSettingTab {
             await this.save();
             const client = this.plugin.getClient();
             if (client) {
-              client.idleTimeoutMs = n || 300000;
+              // 0 means "no idle timeout" — pass it through honestly.
+              client.idleTimeoutMs = n;
             }
           }
         }));
