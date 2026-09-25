@@ -1,7 +1,7 @@
 import { ItemView, Notice, WorkspaceLeaf, TFile, setIcon } from 'obsidian';
 import type CoOberPlugin from '../main';
 import { VIEW_TYPE } from '../types';
-import type { ContextRef, PromptPart } from '../types';
+import type { ContextRef, PromptPart, StoredDraft } from '../types';
 import { t } from '../i18n/index';
 import {
   SCROLL_NEAR_BOTTOM_THRESHOLD,
@@ -63,6 +63,22 @@ interface ComposerDraft {
   images: ImageEntry[];
 }
 
+/**
+ * The storable half of a draft: text plus note references (their bodies are
+ * re-read from the vault at send). An empty box stores nothing; staged images
+ * are counted so the restore can say what it left behind.
+ */
+function storedDraft(draft: ComposerDraft): StoredDraft | undefined {
+  const refs = draft.refs.map(({ id, type, name, path }) => ({ id, type, name, path }));
+  const manual = [...draft.manualRefs];
+  if (!draft.text.trim() && refs.length === 0 && draft.images.length === 0) return undefined;
+  const stored: StoredDraft = { text: draft.text };
+  if (refs.length > 0) stored.refs = refs;
+  if (manual.length > 0) stored.manual = manual;
+  if (draft.images.length > 0) stored.images = draft.images.length;
+  return stored;
+}
+
 export class CoOberView extends ItemView {
   private static clipIdCounter = 0;
   private tabStackEl!: HTMLDivElement;
@@ -100,6 +116,9 @@ export class CoOberView extends ItemView {
   private headerTitleEl: HTMLDivElement | null = null;
   private newSessionBtnEl: HTMLButtonElement | null = null;
   private controller!: CoOberViewController;
+  private readonly handlePersistenceOutcome = (failed: boolean): void => {
+    this.reportPersistence(failed);
+  };
 
   // Context arc meter (in header)
   private meterEl!: HTMLDivElement;
@@ -343,9 +362,14 @@ export class CoOberView extends ItemView {
       onOpenSideChat: (ask, question, tabId) => this.showSideChat(ask, question, tabId),
       onCloseSideChat: (tabId) => this.sideChatPanels.get(tabId)?.close(),
       onTabsChanged: () => this.refreshTabBar(),
+      onCollectDrafts: () => this.collectDrafts(),
+      onRestoreDrafts: (drafts) => this.installDrafts(drafts),
     };
 
     this.controller = new CoOberViewController(deps, callbacks);
+    // Only this view's tabs should hear about the shared write, and only while
+    // it is open: a detached view would paint into panels that are gone.
+    this.plugin.onPersistenceOutcome = this.handlePersistenceOutcome;
     // The controller constructor opened the first tab panel and set the
     // active-panel aliases; the welcome view follows the active panel.
     this.welcomeView.reparent(this.messagesEl);
@@ -486,10 +510,26 @@ export class CoOberView extends ItemView {
     this.input.textareaEl.addEventListener('paste', this.pasteHandler);
   }
 
+  /** Pass the plugin's write outcome on to the tabs that would show it. */
+  reportPersistence(failed: boolean): void {
+    this.controller?.reportPersistence(failed);
+  }
+
   override async onClose(): Promise<void> {
+    if (this.plugin.onPersistenceOutcome === this.handlePersistenceOutcome) {
+      this.plugin.onPersistenceOutcome = null;
+    }
     if (this.fileCommandSource) {
       commandRegistry.unregisterSource(this.fileCommandSource);
       this.fileCommandSource = null;
+    }
+    // Last chance to keep what was typed: the tab on screen still holds its
+    // draft in the textarea, and dispose below takes the panels with it.
+    this.controller?.persistTabShell();
+    try {
+      await this.sessionStore.save();
+    } catch {
+      // Closing the panel must not fail over a write; unload retries.
     }
     await this.controller?.cancelAllStreams();
     await this.controller?.dispose();
@@ -648,6 +688,44 @@ export class CoOberView extends ItemView {
     this.lastAutoRefId = draft?.lastAutoRefId ?? null;
     this.pendingImageParts = draft ? [...draft.images] : [];
     this.rebuildChips();
+  }
+
+  /**
+   * Composer text for every open tab. Only the tab on screen lives in the
+   * textarea, so it is folded into its own entry before the sweep.
+   */
+  private collectDrafts(): Record<string, StoredDraft | undefined> {
+    const active = this.controller?.activeTabId();
+    if (active) this.saveDraft(active);
+    const collected: Record<string, StoredDraft | undefined> = {};
+    for (const [tabId, draft] of this.drafts) {
+      const stored = storedDraft(draft);
+      if (stored) collected[tabId] = stored;
+    }
+    return collected;
+  }
+
+  /**
+   * Yesterday's unsent messages, memoized per tab. The tab in front is painted
+   * immediately; a background tab gets its text when it is next looked at.
+   */
+  private installDrafts(drafts: Record<string, StoredDraft>): void {
+    let droppedImages = 0;
+    for (const [tabId, stored] of Object.entries(drafts)) {
+      droppedImages += stored.images ?? 0;
+      this.drafts.set(tabId, {
+        text: stored.text,
+        refs: (stored.refs ?? []).map((ref) => ({ ...ref })),
+        manualRefs: new Set(stored.manual ?? []),
+        lastAutoRefId: null,
+        images: [],
+      });
+    }
+    if (droppedImages > 0) {
+      new Notice(t().draft.imagesDropped.replace('{count}', String(droppedImages)));
+    }
+    const active = this.controller?.activeTabId();
+    if (active && drafts[active]) this.restoreDraft(active);
   }
 
   /** Re-renders both chip kinds for the restored draft; entries keep their identity. */

@@ -49,6 +49,7 @@ describe('StreamController', () => {
       onModelsUpdate: vi.fn(),
       onCommandsUpdate: vi.fn(),
       onSyncFailure: vi.fn(),
+      onPersistFailure: vi.fn(),
     };
     controller = new StreamController(deps);
     vi.useFakeTimers();
@@ -685,6 +686,8 @@ describe('StreamController', () => {
     await vi.runAllTimersAsync();
 
     expect(errorSpy).toHaveBeenCalledWith('[co-ober] save session:', error);
+    // Logging it is not enough: the tab has to find out its transcript is missing.
+    expect(deps.onPersistFailure).toHaveBeenCalledOnce();
     errorSpy.mockRestore();
   });
 

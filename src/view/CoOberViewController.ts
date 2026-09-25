@@ -10,7 +10,7 @@ import type {
   SerializedSession,
   UsageInfo,
 } from '../types';
-import type { CoOberSettings, TabShell } from '../types';
+import type { CoOberSettings, StoredDraft, TabShell } from '../types';
 import type { OpencodeClient } from '../client';
 import { SessionReplayCollector } from '../client/sessionReplay';
 import { t, onLocaleChange } from '../i18n/index';
@@ -81,6 +81,10 @@ export interface ControllerCallbacks {
   onCloseSideChat?(tabId: string): void;
   /** The tab strip changed shape or state; the bar should re-render. */
   onTabsChanged?(): void;
+  /** Unsent composer text per open tab, keyed by live tab id. */
+  onCollectDrafts?(): Record<string, StoredDraft | undefined>;
+  /** Hand the stored drafts back, re-keyed to the tabs that were just opened. */
+  onRestoreDrafts?(drafts: Record<string, StoredDraft>): void;
 }
 
 /** One badge of the tab strip. */
@@ -148,6 +152,7 @@ export class CoOberViewController {
   private runtimes = new Map<string, SessionRuntime>();
   private activeRuntime!: SessionRuntime;
   private tabSeq = 0;
+  private persistFailed = false;
   private unsubscribeLocale: (() => void) | null = null;
   queueIndicatorEl: HTMLDivElement | null = null;
 
@@ -210,6 +215,7 @@ export class CoOberViewController {
         if (rt === this.activeRuntime) this.deps.updateContextMeter(rt.state.usage);
       },
       onSyncFailure: (message) => rt.renderer.addError(message),
+      onPersistFailure: () => this.reportPersistence(true),
     });
     this.runtimes.set(tabId, rt);
     return rt;
@@ -389,6 +395,12 @@ export class CoOberViewController {
     }
     const front = (activeTabId ? byShellTabId.get(activeTabId) : undefined) ?? adopted;
     if (front !== adopted) this.activateRuntime(front);
+    const drafts: Record<string, StoredDraft> = {};
+    for (const shell of shells) {
+      const rt = shell.draft ? byShellTabId.get(shell.tabId) : undefined;
+      if (rt) drafts[rt.tabId] = shell.draft!;
+    }
+    if (Object.keys(drafts).length > 0) this.callbacks.onRestoreDrafts?.(drafts);
     this.notifyTabsChanged();
     this.persistTabShell();
   }
@@ -397,13 +409,32 @@ export class CoOberViewController {
     this.callbacks.onTabsChanged?.();
   }
 
-  /** Which conversations sit in which tabs, for the next restart. */
-  private persistTabShell(): void {
-    const shells: TabShell[] = this.listTabIds().map((tabId) => ({
-      tabId,
-      sessionId: this.runtimes.get(tabId)?.sessionId ?? null,
-    }));
+  /** Which conversations — and which half-typed messages — sit in which tabs. */
+  persistTabShell(): void {
+    const drafts = this.callbacks.onCollectDrafts?.() ?? {};
+    const shells: TabShell[] = this.listTabIds().map((tabId) => {
+      const shell: TabShell = {
+        tabId,
+        sessionId: this.runtimes.get(tabId)?.sessionId ?? null,
+      };
+      const draft = drafts[tabId];
+      if (draft) shell.draft = draft;
+      return shell;
+    });
     this.deps.sessionStore.setTabShell(shells, this.activeRuntime.tabId);
+  }
+
+  /**
+   * A failed write to data.json loses every tab at once, so every tab says so —
+   * once per streak. The plugin owns the streak because it owns the write; a
+   * swallowed error that never reaches the caller would otherwise leave the
+   * transcripts looking saved.
+   */
+  reportPersistence(failed: boolean): void {
+    if (failed === this.persistFailed) return;
+    this.persistFailed = failed;
+    if (!failed) return;
+    for (const rt of this.runtimes.values()) rt.renderer.addSystemMessage(t().session.notSaved);
   }
 
   /** Cancel every in-flight stream (view close); tabs' queues are not restored. */

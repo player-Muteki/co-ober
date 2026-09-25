@@ -284,6 +284,24 @@ describe('CoOberPlugin corrupted data recovery', () => {
     saveSpy.mockRestore();
   });
 
+  it('tells the open conversation whether its transcript reached the disk', async () => {
+    const outcome = vi.fn();
+    const plugin = new CoOberPlugin({} as never, {} as never);
+    plugin.settings = { ...DEFAULT_SETTINGS };
+    plugin.onPersistenceOutcome = outcome;
+    const saveSpy = vi.spyOn(Plugin.prototype, 'saveData');
+
+    saveSpy.mockRejectedValueOnce(new Error('disk full'));
+    await plugin.savePluginData();
+    expect(outcome).toHaveBeenLastCalledWith(true);
+
+    // The plugin reports every outcome; the tabs decide how often to say so.
+    saveSpy.mockResolvedValueOnce(undefined);
+    await plugin.savePluginData();
+    expect(outcome).toHaveBeenLastCalledWith(false);
+    saveSpy.mockRestore();
+  });
+
   it('hides the sticky alarm once a later save succeeds', async () => {
     Notice.messages.length = 0;
     Notice.hidden.length = 0;

@@ -60,6 +60,7 @@ const zh: Locale = {
     runtimeSessionLost: 'Agent 端已不再持有该会话（可能已重启）。本地历史仍会保留；下一条消息将开启新的 Agent 会话。',
     syncUnsupported: '该 Agent 既不支持 session/load 也不支持 session/resume，无法重新挂载已存储的会话。下一条消息将在新的 Agent 会话中发送。',
     syncFailed: '无法恢复 Agent 会话',
+    notSaved: 'Co-Ober 未能把这段对话写入磁盘 — 在下一次保存成功之前，它只存在于这个窗口里。',
     truncated: '[前面 {count} 条消息已省略]',
     imagePurged: '[为节省空间已移除存储的图片]',
   },
@@ -125,6 +126,10 @@ const zh: Locale = {
     switchTo: '切换到标签 {index}',
     streaming: '生成中',
     dangling: '该对话已不再保存，标签为空。',
+  },
+
+  draft: {
+    imagesDropped: '恢复的草稿中有 {count} 张待发送图片未被保留 — 图片不会写入磁盘。',
   },
 
   elicitation: {

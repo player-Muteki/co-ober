@@ -14,7 +14,7 @@ import {
 } from '../constants';
 import { AcpStreamCapacityError } from '../client/AcpErrors';
 import { commandRegistry } from '../commands/registry';
-import type { AcpResponse, AvailableCommand, NormalizedUpdate, PromptPart } from '../types';
+import type { AcpResponse, AvailableCommand, NormalizedUpdate, PromptPart, StoredDraft, TabShell } from '../types';
 
 vi.mock('../opencode/NativeSessionReader', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../opencode/NativeSessionReader')>();
@@ -1208,5 +1208,105 @@ describe('CoOberViewController — a thread and a command belong to one tab (0.2
       expect(client.setModel).not.toHaveBeenCalled();
       expect(rtOf(h, front).renderer.addSystemMessage).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('CoOberViewController — what survives a restart (0.2.2 stage 2)', () => {
+  let h: Harness;
+
+  beforeEach(() => {
+    h = createHarness();
+    vi.spyOn(h.controller, 'restoreSession').mockResolvedValue(undefined);
+  });
+
+  /** The shells the store was last asked to keep, plus the front tab they name. */
+  function lastShell(): { shells: TabShell[]; activeTabId: string | null } {
+    const call = (h.deps.sessionStore.setTabShell as ReturnType<typeof vi.fn>).mock.calls.at(-1);
+    if (!call) throw new Error('setTabShell was never called');
+    return { shells: call[0] as TabShell[], activeTabId: call[1] as string | null };
+  }
+
+  function twoTabs(draftsFor: (tabA: string, tabB: string) => Record<string, StoredDraft | undefined> = () => ({})) {
+    h.controller.restoreTabShells(
+      [{ tabId: 'tab-1', sessionId: 'ses-a' }, { tabId: 'tab-2', sessionId: 'ses-b' }],
+      'tab-1',
+    );
+    const [tabA, tabB] = h.controller.listTabIds();
+    h.callbacks.onCollectDrafts = vi.fn(() => draftsFor(tabA, tabB));
+    h.controller.persistTabShell();
+    return { tabA, tabB, ...lastShell() };
+  }
+
+  it('carries each tab\'s unsent message in its own shell', () => {
+    const { tabA, tabB, shells } = twoTabs((a) => ({ [a]: { text: 'half-typed' } }));
+
+    expect(shells.find((s) => s.tabId === tabA)!.draft).toEqual({ text: 'half-typed' });
+    expect(shells.find((s) => s.tabId === tabB)!.draft).toBeUndefined();
+  });
+
+  it('writes no draft field for a tab whose composer was empty', () => {
+    const { tabA, shells } = twoTabs();
+
+    expect('draft' in shells.find((s) => s.tabId === tabA)!).toBe(false);
+  });
+
+  it('keeps the tab order and front tab that the drafts were typed into', () => {
+    const { tabA, tabB, activeTabId, shells } = twoTabs();
+
+    expect(shells.map((s) => s.tabId)).toEqual([tabA, tabB]);
+    expect(activeTabId).toBe(tabA);
+  });
+
+  it('hands stored drafts back under the live tab ids, not the stored ones', () => {
+    const restored = vi.fn();
+    h.callbacks.onRestoreDrafts = restored;
+
+    h.controller.restoreTabShells(
+      [
+        { tabId: 'tab-1', sessionId: 'ses-a', draft: { text: 'first half' } },
+        { tabId: 'tab-2', sessionId: 'ses-b', draft: { text: 'second half', images: 2 } },
+      ],
+      'tab-2',
+    );
+
+    const live = h.controller.listTabIds();
+    expect(restored).toHaveBeenCalledOnce();
+    const [drafts] = restored.mock.calls[0] as [Record<string, StoredDraft>];
+    expect(Object.keys(drafts).sort()).toEqual([...live].sort());
+    expect(drafts[h.controller.activeTabId()].text).toBe('second half');
+  });
+
+  it('says nothing when no stored tab had a draft', () => {
+    const restored = vi.fn();
+    h.callbacks.onRestoreDrafts = restored;
+
+    h.controller.restoreTabShells([{ tabId: 'tab-1', sessionId: 'ses-a' }], 'tab-1');
+
+    expect(restored).not.toHaveBeenCalled();
+  });
+
+  it('marks every open tab once per failing streak when the write does not land', () => {
+    h.controller.restoreTabShells(
+      [{ tabId: 'tab-1', sessionId: 'ses-a' }, { tabId: 'tab-2', sessionId: 'ses-b' }],
+      'tab-1',
+    );
+    const renderers = [...h.renderers.values()];
+    expect(renderers.length).toBe(2);
+    const before = renderers.map((r) => r.addSystemMessage.mock.calls.length);
+
+    h.controller.reportPersistence(true);
+    h.controller.reportPersistence(true);
+    for (const [i, r] of renderers.entries()) {
+      expect(r.addSystemMessage).toHaveBeenCalledTimes(before[i] + 1);
+      expect(r.addSystemMessage).toHaveBeenLastCalledWith(t().session.notSaved);
+    }
+
+    // A later good write re-arms the line, so the next failure speaks again.
+    h.controller.reportPersistence(false);
+    h.controller.reportPersistence(true);
+    for (const [i, r] of renderers.entries()) {
+      expect(r.addSystemMessage).toHaveBeenCalledTimes(before[i] + 2);
+    }
+    expect(h.controller.reportPersistence(false)).toBeUndefined();
   });
 });

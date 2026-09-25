@@ -39,6 +39,8 @@ export interface StreamControllerDeps {
   onCommandsUpdate?: (commands: AvailableCommand[]) => void;
   onUsageUpdate?: () => void;
   onSyncFailure?: (message: string) => void;
+  /** A transcript write failed; the tab says so instead of looking saved. */
+  onPersistFailure?: () => void;
 }
 
 export class StreamController {
@@ -479,6 +481,8 @@ export class StreamController {
   private persist(): Promise<void> {
     const save = this.deps.sessionStore.save().catch((error: unknown) => {
       console.error('[co-ober] save session:', error);
+      // The reply is on screen either way; say that it did not reach the disk.
+      this.deps.onPersistFailure?.();
     });
     this.activeSave = save;
     void save.finally(() => {

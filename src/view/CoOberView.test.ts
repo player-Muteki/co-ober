@@ -3,10 +3,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { CoOberView } from './CoOberView';
 import { CoOberViewController } from './CoOberViewController';
 import type { ControllerCallbacks, ControllerDeps } from './CoOberViewController';
-import { setLocale } from '../i18n/index';
+import { setLocale, t } from '../i18n/index';
 import { installObsidianDomHelpers } from '../test/domHelpers';
 import { Notice } from '../test/obsidianMock';
 import type CoOberPlugin from '../main';
+import type { StoredDraft } from '../types';
 import { SessionRepository } from '../chat/session';
 
 installObsidianDomHelpers();
@@ -615,6 +616,95 @@ describe('CoOberView tab panels', () => {
 
     controller.switchToTab(controller.listTabIds()[1]);
     await vi.waitFor(() => expect(panelEls(view)[1].textContent).toContain('hidden B'));
+  });
+
+  describe('a restart keeps what was never sent (0.2.2 stage 2)', () => {
+    function storedDraftView(drafts: Array<StoredDraft | undefined>) {
+      const plugin = createPlugin({ client: createClient() });
+      plugin.sessionStore.hydrate([
+        {
+          sessionId: 'ses-a', title: 'A', createdAt: 1, updatedAt: 1,
+          messages: [{ role: 'user', content: 'A transcript', type: 'text', timestamp: 1 }],
+        },
+        {
+          sessionId: 'ses-b', title: 'B', createdAt: 1, updatedAt: 1,
+          messages: [{ role: 'user', content: 'B transcript', type: 'text', timestamp: 1 }],
+        },
+      ], 'ses-a');
+      plugin.sessionStore.hydrateTabShell(
+        [
+          { tabId: 'tab-1', sessionId: 'ses-a', ...(drafts[0] ? { draft: drafts[0] } : {}) },
+          { tabId: 'tab-2', sessionId: 'ses-b', ...(drafts[1] ? { draft: drafts[1] } : {}) },
+        ],
+        'tab-1',
+      );
+      return plugin;
+    }
+
+    function textarea(view: CoOberView): HTMLTextAreaElement {
+      return (Reflect.get(view, 'input') as { textareaEl: HTMLTextAreaElement }).textareaEl;
+    }
+
+    it('puts each unsent message back into the tab it was typed in', async () => {
+      const view = await openView(storedDraftView([
+        { text: 'half-typed A', refs: [{ id: 'note-a.md', type: 'note', name: 'note-a', path: 'note-a.md' }], manual: ['note-a.md'] },
+        { text: 'half-typed B' },
+      ]));
+      const controller = Reflect.get(view, 'controller') as CoOberViewController;
+
+      expect(textarea(view).value).toBe('half-typed A');
+      const chips = view.contentEl.querySelectorAll('.co-ober-chip[data-ref-id]');
+      expect(chips.length).toBe(1);
+      expect(chips[0].textContent).toContain('note-a');
+
+      controller.switchToTab(controller.listTabIds()[1]);
+      await vi.waitFor(() => expect(textarea(view).value).toBe('half-typed B'));
+    });
+
+    it('keeps the text typed in the front tab when the panel closes', async () => {
+      const plugin = createPlugin({ client: createClient() });
+      const view = await openView(plugin);
+
+      textarea(view).value = 'typed, never sent';
+      await view.onClose();
+
+      expect(plugin.sessionStore.tabShell().openTabs[0].draft).toEqual({ text: 'typed, never sent' });
+    });
+
+    it('says what it left behind when a draft carried images', async () => {
+      Notice.messages.length = 0;
+      const view = await openView(storedDraftView([{ text: 'look at this', images: 2 }]));
+
+      expect(Notice.messages).toContain(t().draft.imagesDropped.replace('{count}', '2'));
+      expect(textarea(view).value).toBe('look at this');
+      expect(view.contentEl.querySelectorAll('.co-ober-chip[data-kind="image"]').length).toBe(0);
+    });
+
+    it('writes a lost save into the transcript once per streak', async () => {
+      const view = await openView(createPlugin({ client: createClient() }));
+      const panel = panelEls(view)[0];
+      const lines = () => (panel.textContent?.match(/could not write this conversation/g) ?? []).length;
+
+      view.reportPersistence(true);
+      view.reportPersistence(true);
+      expect(lines()).toBe(1);
+
+      // A good write re-arms the notice, so a later failure is not silenced.
+      view.reportPersistence(false);
+      view.reportPersistence(true);
+      expect(lines()).toBe(2);
+    });
+
+    it('only reports write outcomes while the panel is open', async () => {
+      const plugin = createPlugin({ client: createClient() });
+      const view = await openView(plugin);
+      const outcome = plugin.onPersistenceOutcome;
+      expect(typeof outcome).toBe('function');
+
+      await view.onClose();
+
+      expect(plugin.onPersistenceOutcome).toBeNull();
+    });
   });
 });
 

@@ -25,6 +25,12 @@ export default class CoOberPlugin extends Plugin {
   settings: CoOberSettings = DEFAULT_SETTINGS;
   client: AgentRuntime | null = null;
   readonly sessionStore = new SessionRepository(() => this.savePluginData());
+  /**
+   * The open chat view subscribes to each write's outcome. One data.json save
+   * carries every conversation, so a failure is each tab's news — the throttled
+   * Notice below only says the disk is bad, not which transcript is at risk.
+   */
+  onPersistenceOutcome: ((failed: boolean) => void) | null = null;
   private clientReadyResolvers: Array<(ready: boolean) => void> = [];
   private _clientReady = false;
   private connecting: Promise<boolean> | null = null;
@@ -168,6 +174,7 @@ export default class CoOberPlugin extends Plugin {
       // the next failure notify immediately.
       this.lastSaveNoticeAt = 0;
       this.dismissSaveAlarm();
+      this.onPersistenceOutcome?.(false);
     } catch (e) {
       // Every save call site except unload is fire-and-forget; surface failures
       // here (throttled) instead of losing chat data silently. The Notice is
@@ -179,6 +186,7 @@ export default class CoOberPlugin extends Plugin {
         this.lastSaveNoticeAt = now;
         this.saveAlarm = new Notice(t().notice.saveFailed, 0);
       }
+      this.onPersistenceOutcome?.(true);
     }
   }
 

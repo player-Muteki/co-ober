@@ -394,6 +394,21 @@ export interface PluginData {
 export interface TabShell {
   tabId: string;
   sessionId: string | null;
+  /** Unsent composer state. Absent means the box was empty. */
+  draft?: StoredDraft;
+}
+
+/**
+ * What the composer held when the app last closed. A note reference is stored
+ * without its body — the text is re-read from the vault when the draft is sent.
+ * Staged images are counted rather than stored: base64 would dwarf the
+ * transcript in data.json, so the restore says what it left out.
+ */
+export interface StoredDraft {
+  text: string;
+  refs?: Array<Pick<ContextRef, 'id' | 'type' | 'name' | 'path'>>;
+  manual?: string[];
+  images?: number;
 }
 
 export interface CoOberSettings {

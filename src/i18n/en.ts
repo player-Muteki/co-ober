@@ -58,6 +58,7 @@ const en = {
     runtimeSessionLost: 'The agent no longer holds this session (it may have restarted). Local history is kept; your next message starts a fresh agent session.',
     syncUnsupported: 'This agent supports neither session/load nor session/resume, so the stored session cannot be re-attached. Your next message will start in a fresh agent session.',
     syncFailed: 'Could not resume the agent session',
+    notSaved: 'Co-Ober could not write this conversation to disk — it only exists in this window until the next successful save.',
     truncated: '[{count} earlier messages truncated]',
     imagePurged: '[stored images were removed to free space]',
   },
@@ -123,6 +124,10 @@ const en = {
     switchTo: 'Switch to tab {index}',
     streaming: 'generating',
     dangling: 'This conversation is no longer stored, so the tab is empty.',
+  },
+
+  draft: {
+    imagesDropped: '{count} staged image(s) were not kept with the restored drafts — images are never saved to disk.',
   },
 
   elicitation: {
