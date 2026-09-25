@@ -122,6 +122,8 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): MockDeps {
       list: vi.fn(() => []),
       append: vi.fn(),
       rename: vi.fn(() => true),
+      setTabShell: vi.fn(),
+      tabShell: vi.fn(() => ({ openTabs: [], activeTabId: null })),
       sessions: new Map(),
       activeId: null,
     } as unknown as ControllerDeps['sessionStore'],

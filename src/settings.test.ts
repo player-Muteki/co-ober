@@ -513,4 +513,34 @@ describe('CoOberSettingsTab live capability push', () => {
       locale().settings.invalidNumber.replace('{min}', '1').replace('{max}', '3650'),
     );
   });
+
+  it('stores the tab cap and re-renders the open tab strips', async () => {
+    setLocale('en');
+    const view = { refreshLocale: vi.fn(), refreshTabBar: vi.fn() };
+    const plugin = createPlugin(view);
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+
+    await changeInput(findTextSettingInput(tab, 'Max Open Tabs'), '4');
+
+    expect(plugin.settings.maxOpenTabs).toBe(4);
+    expect(plugin.savePluginData).toHaveBeenCalled();
+    expect(view.refreshTabBar).toHaveBeenCalled();
+  });
+
+  it('keeps a tab cap inside 2-12', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+    const before = plugin.settings.maxOpenTabs;
+    Notice.messages.length = 0;
+
+    await changeInput(findTextSettingInput(tab, 'Max Open Tabs'), '99');
+
+    expect(plugin.settings.maxOpenTabs).toBe(before);
+    expect(Notice.messages).toContain(
+      locale().settings.invalidNumber.replace('{min}', '2').replace('{max}', '12'),
+    );
+  });
 });

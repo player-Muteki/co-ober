@@ -188,6 +188,8 @@ describe('SessionRepository', () => {
     expect(repository.snapshot()).toEqual({
       sessions: [session],
       activeSessionId: 's1',
+      openTabs: [],
+      activeTabId: null,
     });
   });
 
@@ -421,5 +423,73 @@ describe('stored image budget', () => {
     repository.prune({ maxMessages: 200, retentionDays: 30 });
 
     expect(repository.get('s1')!.messages[0].contentBlocks).toBeUndefined();
+  });
+});
+
+describe('SessionRepository tab shells', () => {
+  it('starts with an empty strip and reports a copy', () => {
+    const { repository } = createRepository();
+
+    const shell = repository.tabShell();
+
+    expect(shell).toEqual({ openTabs: [], activeTabId: null });
+    shell.openTabs.push({ tabId: 'tab-1', sessionId: 's1' });
+    expect(repository.tabShell().openTabs).toEqual([]);
+  });
+
+  it('stores the shell set with the front tab', () => {
+    const { repository } = createRepository();
+
+    repository.setTabShell([{ tabId: 'tab-1', sessionId: 's1' }, { tabId: 'tab-2', sessionId: null }], 'tab-2');
+
+    expect(repository.tabShell()).toEqual({
+      openTabs: [
+        { tabId: 'tab-1', sessionId: 's1' },
+        { tabId: 'tab-2', sessionId: null },
+      ],
+      activeTabId: 'tab-2',
+    });
+    expect(repository.snapshot().activeTabId).toBe('tab-2');
+  });
+
+  it('hydrates a shell without mutating the stored rows', () => {
+    const { repository } = createRepository();
+    const shells = [{ tabId: 'tab-1', sessionId: 's1' }];
+
+    repository.hydrateTabShell(shells, 'tab-1');
+    shells[0].sessionId = 'elsewhere';
+
+    expect(repository.tabShell().openTabs).toEqual([{ tabId: 'tab-1', sessionId: 's1' }]);
+  });
+
+  it('treats a missing shell as an empty strip', () => {
+    const { repository } = createRepository();
+    repository.setTabShell([{ tabId: 'tab-1', sessionId: 's1' }], 'tab-1');
+
+    repository.hydrateTabShell(undefined, undefined);
+
+    expect(repository.tabShell()).toEqual({ openTabs: [], activeTabId: null });
+  });
+
+  it('clears the strip when sessions are rehydrated', () => {
+    const { repository } = createRepository();
+    repository.setTabShell([{ tabId: 'tab-1', sessionId: 's1' }], 'tab-1');
+
+    repository.hydrate([createSession('s1')], 's1');
+
+    expect(repository.tabShell().openTabs).toEqual([]);
+  });
+
+  it('follows a rekeyed session so its tab keeps pointing at it', () => {
+    const { repository } = createRepository();
+    repository.hydrate([createSession('tmp-1')], 'tmp-1');
+    repository.setTabShell([{ tabId: 'tab-1', sessionId: 'tmp-1' }, { tabId: 'tab-2', sessionId: 'other' }], 'tab-1');
+
+    repository.rekey('tmp-1', 'real-1');
+
+    expect(repository.tabShell().openTabs).toEqual([
+      { tabId: 'tab-1', sessionId: 'real-1' },
+      { tabId: 'tab-2', sessionId: 'other' },
+    ]);
   });
 });

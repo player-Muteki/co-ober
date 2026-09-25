@@ -154,6 +154,47 @@ describe('CoOberPlugin.loadData autoConnect migration', () => {
   });
 });
 
+describe('CoOberPlugin.loadData tab shells', () => {
+  const session = { sessionId: 's1', title: 'T', createdAt: 1, updatedAt: 2, messages: [] };
+
+  it('gives a pre-tab conversation a single tab', async () => {
+    const loadSpy = vi.spyOn(Plugin.prototype, 'loadData').mockResolvedValue({
+      schemaVersion: 1,
+      settings: {},
+      sessions: [session],
+      activeSessionId: 's1',
+    });
+    const plugin = new CoOberPlugin({} as never, {} as never);
+
+    const data = await plugin.loadData();
+
+    expect(data?.openTabs).toEqual([{ tabId: 'tab-1', sessionId: 's1' }]);
+    expect(data?.activeTabId).toBeNull();
+    loadSpy.mockRestore();
+  });
+
+  it('drops a tab whose conversation is gone and the front pointer with it', async () => {
+    const loadSpy = vi.spyOn(Plugin.prototype, 'loadData').mockResolvedValue({
+      schemaVersion: 2,
+      settings: {},
+      sessions: [session],
+      activeSessionId: 's1',
+      openTabs: [
+        { tabId: 'tab-1', sessionId: 's1' },
+        { tabId: 'tab-2', sessionId: 'gone' },
+      ],
+      activeTabId: 'tab-2',
+    });
+    const plugin = new CoOberPlugin({} as never, {} as never);
+
+    const data = await plugin.loadData();
+
+    expect(data?.openTabs).toEqual([{ tabId: 'tab-1', sessionId: 's1' }]);
+    expect(data?.activeTabId).toBeNull();
+    loadSpy.mockRestore();
+  });
+});
+
 describe('CoOberPlugin corrupted data recovery', () => {
   function createLoadPlugin(loadData: () => Promise<unknown>) {
     const rename = vi.fn().mockResolvedValue(undefined);

@@ -4,8 +4,14 @@ import { CoOberViewController } from './CoOberViewController';
 import type { ControllerCallbacks, ControllerDeps, TabPanel } from './CoOberViewController';
 import type { SessionRuntime } from '../chat/sessionRuntime';
 import { installObsidianDomHelpers } from '../test/domHelpers';
-import { setLocale } from '../i18n/index';
-import { MAX_CONCURRENT_STREAMS } from '../constants';
+import { setLocale, t } from '../i18n/index';
+import { Notice } from '../test/obsidianMock';
+import {
+  MAX_CONCURRENT_STREAMS,
+  MIN_OPEN_TABS,
+  MAX_OPEN_TABS,
+  DEFAULT_OPEN_TABS,
+} from '../constants';
 import { AcpStreamCapacityError } from '../client/AcpErrors';
 import type { AcpResponse, NormalizedUpdate } from '../types';
 
@@ -89,6 +95,8 @@ function createHarness(): Harness {
       list: vi.fn(() => []),
       append: vi.fn(),
       rename: vi.fn(() => true),
+      setTabShell: vi.fn(),
+      tabShell: vi.fn(() => ({ openTabs: [], activeTabId: null })),
       sessions: new Map(),
       activeId: null,
     },
@@ -143,6 +151,7 @@ function createHarness(): Harness {
     onAutoRefActiveFile: vi.fn(),
     onOpenSideChat: vi.fn(),
     onCloseSideChat: vi.fn(),
+    onTabsChanged: vi.fn(),
   } as unknown as ControllerCallbacks;
 
   const controller = new CoOberViewController(deps, callbacks);
@@ -518,5 +527,231 @@ describe('CoOberViewController — multi-tab runtimes (0.2.0 stage 2)', () => {
       const show = h.deps.permissionBanner.show as unknown as ReturnType<typeof vi.fn>;
       expect(show.mock.calls[0][1]).toBeUndefined();
     });
+  });
+});
+
+describe('CoOberViewController — tab strip and shells (0.2.0 stage 3)', () => {
+  let h: Harness;
+
+  beforeEach(() => {
+    h = createHarness();
+    Notice.messages.length = 0;
+    (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(createMockClient());
+    // Painting runs the full transcript pipeline; these tests assert *when* it
+    // happens, so the body is stubbed and the call is what is observed.
+    vi.spyOn(h.controller, 'restoreSession').mockResolvedValue(undefined);
+  });
+
+  /** Stored transcripts, so badge titles and adoptability are realistic. */
+  function withStored(transcripts: Record<string, number>, titles: Record<string, string> = {}) {
+    (h.deps.sessionStore.get as ReturnType<typeof vi.fn>).mockImplementation((id: string) => {
+      if (!(id in transcripts)) return undefined;
+      return {
+        sessionId: id,
+        title: titles[id],
+        messages: Array.from({ length: transcripts[id] }, (_unused, i) => ({
+          role: 'user', content: `q${i}`, type: 'text', timestamp: 1,
+        })),
+        updatedAt: 1,
+      };
+    });
+  }
+
+  function setCap(max: number | undefined) {
+    (h.deps.runtime.settings as { maxOpenTabs?: number }).maxOpenTabs = max;
+  }
+
+  it('opens every restored shell as a panel but paints only the one in front', () => {
+    withStored({ 'ses-a': 1, 'ses-b': 1 });
+    h.controller.restoreTabShells(
+      [{ tabId: 'tab-1', sessionId: 'ses-a' }, { tabId: 'tab-2', sessionId: 'ses-b' }],
+      'tab-2',
+    );
+
+    expect(h.controller.listTabIds()).toEqual(['tab-1', 'tab-2']);
+    expect(h.controller.activeTabId()).toBe('tab-2');
+    const paint = h.controller.restoreSession as unknown as ReturnType<typeof vi.fn>;
+    expect(paint).toHaveBeenCalledTimes(1);
+    expect((paint.mock.calls[0][0] as SessionRuntime).sessionId).toBe('ses-b');
+  });
+
+  it('paints a background shell on the first look, and never a second time', () => {
+    withStored({ 'ses-a': 1, 'ses-b': 1 });
+    h.controller.restoreTabShells(
+      [{ tabId: 'tab-1', sessionId: 'ses-a' }, { tabId: 'tab-2', sessionId: 'ses-b' }],
+      'tab-2',
+    );
+    const paint = h.controller.restoreSession as unknown as ReturnType<typeof vi.fn>;
+    expect(paint).toHaveBeenCalledTimes(1);
+
+    h.controller.switchToTab('tab-1');
+    expect(paint).toHaveBeenCalledTimes(2);
+    expect((paint.mock.calls[1][0] as SessionRuntime).sessionId).toBe('ses-a');
+
+    h.controller.switchToTab('tab-2');
+    h.controller.switchToTab('tab-1');
+    expect(paint).toHaveBeenCalledTimes(2);
+  });
+
+  it('hydrates the front tab once through restoreActiveTab', async () => {
+    withStored({ 'ses-a': 1 });
+    h.controller.restoreTabShells([{ tabId: 'tab-1', sessionId: 'ses-a' }], 'tab-1');
+    const paint = h.controller.restoreSession as unknown as ReturnType<typeof vi.fn>;
+    expect(paint).not.toHaveBeenCalled();
+
+    await h.controller.restoreActiveTab();
+    await h.controller.restoreActiveTab();
+    expect(paint).toHaveBeenCalledTimes(1);
+    expect(rtOf(h, 'tab-1').needsRestore).toBe(false);
+  });
+
+  it('tells the user why a pruned conversation left an empty tab', async () => {
+    withStored({});
+    h.controller.restoreTabShells([{ tabId: 'tab-1', sessionId: 'ses-gone' }], 'tab-1');
+    await h.controller.restoreActiveTab();
+
+    expect(h.renderers.get('tab-1')?.addSystemMessage).toHaveBeenCalledWith(t().tabs.dangling);
+    expect(h.controller.restoreSession as unknown as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+  });
+
+  it('records which conversation sits in which tab, and re-records on close', async () => {
+    withStored({ 'ses-a': 1, 'ses-b': 1 });
+    const setTabShell = h.deps.sessionStore.setTabShell as unknown as ReturnType<typeof vi.fn>;
+    h.controller.restoreTabShells(
+      [{ tabId: 'tab-1', sessionId: 'ses-a' }, { tabId: 'tab-2', sessionId: 'ses-b' }],
+      'tab-1',
+    );
+
+    expect(setTabShell).toHaveBeenLastCalledWith(
+      [{ tabId: 'tab-1', sessionId: 'ses-a' }, { tabId: 'tab-2', sessionId: 'ses-b' }],
+      'tab-1',
+    );
+
+    await h.controller.closeTab('tab-2');
+    expect(setTabShell).toHaveBeenLastCalledWith([{ tabId: 'tab-1', sessionId: 'ses-a' }], 'tab-1');
+  });
+
+  it('labels each badge with its conversation and current activity', () => {
+    withStored({ 'ses-a': 1, 'ses-b': 1 }, { 'ses-a': 'Note A' });
+    h.controller.restoreTabShells(
+      [{ tabId: 'tab-1', sessionId: 'ses-a' }, { tabId: 'tab-2', sessionId: 'ses-b' }],
+      'tab-2',
+    );
+    rtOf(h, 'tab-1').busy = true;
+    rtOf(h, 'tab-1').unread = true;
+    rtOf(h, 'tab-2').promptQueue.push({ text: 'next', refs: [] });
+
+    const badges = h.controller.tabDescriptors();
+    expect(badges.map((b) => b.title)).toEqual(['Note A', t().tabs.untitled]);
+    expect(badges.map((b) => b.streaming)).toEqual([true, false]);
+    expect(badges.map((b) => b.unread)).toEqual([true, false]);
+    expect(badges.map((b) => b.queued)).toEqual([false, true]);
+    expect(badges.map((b) => b.active)).toEqual([false, true]);
+    expect(badges.map((b) => b.index)).toEqual([0, 1]);
+  });
+
+  it('clears the unread mark as soon as the tab comes forward', () => {
+    withStored({ 'ses-a': 1, 'ses-b': 1 });
+    h.controller.restoreTabShells(
+      [{ tabId: 'tab-1', sessionId: 'ses-a' }, { tabId: 'tab-2', sessionId: 'ses-b' }],
+      'tab-2',
+    );
+    rtOf(h, 'tab-1').unread = true;
+
+    h.controller.switchToTab('tab-1');
+
+    expect(rtOf(h, 'tab-1').unread).toBe(false);
+    expect(h.controller.tabDescriptors()[0].unread).toBe(false);
+  });
+
+  it('keeps an out-of-range tab cap usable', () => {
+    setCap(99);
+    expect(h.controller.maxOpenTabs()).toBe(MAX_OPEN_TABS);
+    setCap(0);
+    expect(h.controller.maxOpenTabs()).toBe(MIN_OPEN_TABS);
+    setCap(undefined);
+    expect(h.controller.maxOpenTabs()).toBe(DEFAULT_OPEN_TABS);
+    expect(h.controller.canOpenTab()).toBe(true);
+  });
+
+  describe('a full strip refuses to add a tab, and says so', () => {
+    let client: ReturnType<typeof createMockClient>;
+
+    beforeEach(() => {
+      setCap(2);
+      withStored({ 'ses-a': 1, 'ses-b': 1 });
+      client = createMockClient();
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      h.controller.restoreTabShells(
+        [{ tabId: 'tab-1', sessionId: 'ses-a' }, { tabId: 'tab-2', sessionId: 'ses-b' }],
+        'tab-2',
+      );
+      client.createSession.mockClear();
+      client.loadSession.mockClear();
+      client.forkSession.mockClear();
+      client.resumeSession.mockClear();
+    });
+
+    const limitNotice = t().tabs.limitReached.replace('{max}', '2');
+
+    it('blocks the strip\'s "+" button', async () => {
+      await h.controller.newSession(true);
+      expect(h.controller.listTabIds()).toHaveLength(2);
+      expect(client.createSession).not.toHaveBeenCalled();
+      expect(Notice.messages).toContain(limitNotice);
+    });
+
+    it('blocks a session switch that would need a new tab', async () => {
+      await h.controller.switchSession('ses-c');
+      expect(h.controller.listTabIds()).toHaveLength(2);
+      expect(client.loadSession).not.toHaveBeenCalled();
+      expect(Notice.messages).toContain(limitNotice);
+    });
+
+    it('blocks a fork rather than replacing what is on screen', async () => {
+      await h.controller.forkSession('ses-a');
+      expect(client.forkSession).not.toHaveBeenCalled();
+      expect(Notice.messages).toContain(limitNotice);
+    });
+
+    it('blocks a resumed session that has no tab yet', async () => {
+      await h.controller.resumeSession('ses-c');
+      expect(client.resumeSession).not.toHaveBeenCalled();
+      expect(Notice.messages).toContain(limitNotice);
+    });
+
+    it('still lets /new reuse an idle tab, and a freed slot opens one', async () => {
+      Notice.messages.length = 0;
+      withStored({ 'ses-a': 1, 'ses-b': 0 });
+      await h.controller.newSession();
+      expect(client.createSession).toHaveBeenCalledTimes(1);
+      expect(h.controller.listTabIds()).toHaveLength(2);
+      expect(Notice.messages).not.toContain(limitNotice);
+
+      await h.controller.closeTab('tab-1');
+      expect(h.controller.canOpenTab()).toBe(true);
+    });
+  });
+
+  it('refreshes the strip when a turn claims and when it releases a slot', async () => {
+    withStored({ 'ses-a': 1 });
+    h.controller.state.sessionId = 'ses-a';
+    let finish: (r: AcpResponse) => void = () => {};
+    const client = createMockClient({
+      sendMessage: vi.fn(() => new Promise<AcpResponse>((resolve) => { finish = resolve; })),
+    });
+    (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+    const onTabsChanged = vi.fn();
+    h.callbacks.onTabsChanged = onTabsChanged;
+
+    const running = h.controller.send('hi', []);
+    await tick();
+    expect(rtOf(h, h.controller.activeTabId()).busy).toBe(true);
+    expect(onTabsChanged.mock.calls.length).toBeGreaterThan(0);
+    const afterStart = onTabsChanged.mock.calls.length;
+
+    finish({ stopReason: 'end_turn' } as AcpResponse);
+    await running;
+    expect(onTabsChanged.mock.calls.length).toBeGreaterThan(afterStart);
   });
 });

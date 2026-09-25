@@ -1,4 +1,4 @@
-import type { SessionMeta, SerializedMessage, SerializedSession } from '../types';
+import type { SessionMeta, SerializedMessage, SerializedSession, TabShell } from '../types';
 import { t } from '../i18n/index';
 import { MS_PER_DAY, STORED_IMAGE_BUDGET_BYTES } from '../constants';
 
@@ -11,6 +11,9 @@ export interface SessionStore {
   setActive(id: string): void;
   rename(id: string, title: string): boolean;
   setPinned(id: string, pinned: boolean): boolean;
+  tabShell(): { openTabs: TabShell[]; activeTabId: string | null };
+  hydrateTabShell(openTabs: TabShell[] | undefined, activeTabId: string | null | undefined): void;
+  setTabShell(openTabs: TabShell[], activeTabId: string | null): void;
   list(): SessionMeta[];
   save(): Promise<void>;
   remove(id: string): void;
@@ -19,6 +22,8 @@ export interface SessionStore {
 export interface SerializedSessionState {
   sessions: SerializedSession[];
   activeSessionId: string | null;
+  openTabs?: TabShell[];
+  activeTabId?: string | null;
 }
 
 export interface SessionPruneOptions {
@@ -69,11 +74,28 @@ function restoreMessageBlocks(msg: SerializedMessage): SerializedMessage {
 export class SessionRepository implements SessionStore {
   private readonly sessions = new Map<string, SerializedSession>();
   private activeSessionId: string | null = null;
+  private openTabs: TabShell[] = [];
+  private activeTabId: string | null = null;
 
   constructor(private readonly persist: () => Promise<void>) {}
 
   get activeId(): string | null {
     return this.activeSessionId;
+  }
+
+  /** Which conversations were open side by side, and which one was in front. */
+  tabShell(): { openTabs: TabShell[]; activeTabId: string | null } {
+    return { openTabs: this.openTabs.map((tab) => ({ ...tab })), activeTabId: this.activeTabId };
+  }
+
+  hydrateTabShell(openTabs: TabShell[] | undefined, activeTabId: string | null | undefined): void {
+    this.openTabs = (openTabs ?? []).map((tab) => ({ ...tab }));
+    this.activeTabId = activeTabId ?? null;
+  }
+
+  setTabShell(openTabs: TabShell[], activeTabId: string | null): void {
+    this.openTabs = openTabs.map((tab) => ({ ...tab }));
+    this.activeTabId = activeTabId;
   }
 
   hydrate(sessions: SerializedSession[], activeSessionId: string | null): void {
@@ -82,12 +104,18 @@ export class SessionRepository implements SessionStore {
       this.sessions.set(session.sessionId, session);
     }
     this.activeSessionId = activeSessionId;
+    // The tab strip belongs to the same snapshot; a hydrate that left stale
+    // shells behind would reopen tabs for sessions this set does not contain.
+    this.openTabs = [];
+    this.activeTabId = null;
   }
 
   snapshot(): SerializedSessionState {
     return {
       sessions: elideRedundantTextBlocks([...this.sessions.values()]),
       activeSessionId: this.activeSessionId,
+      openTabs: this.openTabs.map((tab) => ({ ...tab })),
+      activeTabId: this.activeTabId,
     };
   }
 
@@ -130,6 +158,9 @@ export class SessionRepository implements SessionStore {
     session.opencodeSessionId = newId;
     this.sessions.set(newId, session);
     if (this.activeSessionId === oldId) this.activeSessionId = newId;
+    for (const tab of this.openTabs) {
+      if (tab.sessionId === oldId) tab.sessionId = newId;
+    }
   }
 
   setActive(id: string): void {

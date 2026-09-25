@@ -12,7 +12,13 @@ import { getVaultPath } from './utils/vault';
 import { setLocale, t } from './i18n/index';
 import { Mutex } from './utils/mutex';
 import { SessionRepository } from './chat/session';
-import { migratePluginDataSessions, readSchemaVersion, PLUGIN_DATA_SCHEMA_VERSION, PluginDataTooNewError } from './chat/pluginDataMigration';
+import {
+  migratePluginDataSessions,
+  migratePluginDataTabs,
+  readSchemaVersion,
+  PLUGIN_DATA_SCHEMA_VERSION,
+  PluginDataTooNewError,
+} from './chat/pluginDataMigration';
 import { SAVE_NOTICE_THROTTLE_MS } from './constants';
 
 export default class CoOberPlugin extends Plugin {
@@ -101,6 +107,8 @@ export default class CoOberPlugin extends Plugin {
     if (hasPluginData) {
       const data = saved as Partial<PluginData>;
       const restored = migratePluginDataSessions(data.sessions, data.activeSessionId);
+      const surviving = new Set(restored.sessions.map((session) => session.sessionId));
+      const tabs = migratePluginDataTabs(data.openTabs, data.activeTabId, surviving, restored.activeSessionId);
       const settings = { ...DEFAULT_SETTINGS, ...(data.settings ?? {}) };
       // The autoConnect toggle did nothing before 0.1.34, so a stored false in
       // pre-schema data is the old default, not a choice: keep auto-connect.
@@ -110,6 +118,8 @@ export default class CoOberPlugin extends Plugin {
         settings,
         sessions: restored.sessions,
         activeSessionId: restored.activeSessionId,
+        openTabs: tabs.openTabs,
+        activeTabId: tabs.activeTabId,
       };
     }
 
@@ -117,6 +127,8 @@ export default class CoOberPlugin extends Plugin {
       settings: { ...DEFAULT_SETTINGS, ...(saved as Partial<CoOberSettings>) },
       sessions: [],
       activeSessionId: null,
+      openTabs: [],
+      activeTabId: null,
     };
   }
 
@@ -193,6 +205,7 @@ export default class CoOberPlugin extends Plugin {
 
     this.settings = { ...DEFAULT_SETTINGS, ...(pluginData.settings ?? {}) };
     this.sessionStore.hydrate(pluginData.sessions ?? [], pluginData.activeSessionId ?? null);
+    this.sessionStore.hydrateTabShell(pluginData.openTabs, pluginData.activeTabId);
   }
 
   // ── Client ──

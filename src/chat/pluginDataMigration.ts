@@ -1,11 +1,13 @@
-import type { SerializedMessage, SerializedSession } from '../types';
+import type { SerializedMessage, SerializedSession, TabShell } from '../types';
 import type { SerializedSessionState } from './session';
+import { MAX_OPEN_TABS } from '../constants';
 
 /**
  * Schema version stamped on data.json. Older releases persisted no version
- * (read as 0) and flow through the v0→v1 migration on load.
+ * (read as 0) and flow through the v0→v1 migration on load. v2 adds the open
+ * tab shells; a v1 file synthesizes the single tab its active session held.
  */
-export const PLUGIN_DATA_SCHEMA_VERSION = 1;
+export const PLUGIN_DATA_SCHEMA_VERSION = 2;
 
 /**
  * Raised when data.json carries a schemaVersion newer than this build
@@ -67,4 +69,43 @@ export function migratePluginDataSessions(sessions: unknown, activeSessionId: un
   const surviving = new Set(list.map((s) => s.sessionId));
   const active = typeof activeSessionId === 'string' && surviving.has(activeSessionId) ? activeSessionId : null;
   return { sessions: list, activeSessionId: active };
+}
+
+export interface TabShellState {
+  openTabs: TabShell[];
+  activeTabId: string | null;
+}
+
+/**
+ * v1→v2: the persisted tabs are the tab strip's shape, so a damaged entry is
+ * dropped rather than hydrated — a tab pointing at a session that no longer
+ * exists would open as an empty panel the user cannot explain. With no stored
+ * tabs (or a pre-v2 file) the active session becomes the single tab.
+ */
+export function migratePluginDataTabs(
+  openTabs: unknown,
+  activeTabId: unknown,
+  survivingSessionIds: Set<string>,
+  fallbackActiveSessionId: string | null,
+): TabShellState {
+  const list: TabShell[] = [];
+  const seen = new Set<string>();
+  if (Array.isArray(openTabs)) {
+    for (const value of openTabs) {
+      if (list.length >= MAX_OPEN_TABS) break;
+      if (!isRecord(value) || typeof value.tabId !== 'string' || value.tabId.length === 0) continue;
+      if (seen.has(value.tabId)) continue;
+      const sessionId = value.sessionId;
+      if (sessionId !== null && typeof sessionId !== 'string') continue;
+      if (typeof sessionId === 'string' && !survivingSessionIds.has(sessionId)) continue;
+      seen.add(value.tabId);
+      list.push({ tabId: value.tabId, sessionId: sessionId ?? null });
+    }
+  } else if (fallbackActiveSessionId) {
+    list.push({ tabId: 'tab-1', sessionId: fallbackActiveSessionId });
+  }
+
+  const active =
+    typeof activeTabId === 'string' && list.some((tab) => tab.tabId === activeTabId) ? activeTabId : null;
+  return { openTabs: list, activeTabId: active };
 }

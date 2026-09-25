@@ -19,6 +19,8 @@ export class SessionRuntime {
   pendingRetry: { text: string; imageParts: PromptPart[] } | null = null;
   /** Transcript has been painted into this tab's panel (lazy-restore marker). */
   painted = false;
+  /** Rebuilt from a saved shell: its transcript is painted on first view. */
+  needsRestore = false;
   /** A turn completed while this tab was hidden. */
   unread = false;
   /** Set when a drained turn lost the race for a stream slot and re-queued. */

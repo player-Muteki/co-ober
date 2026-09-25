@@ -113,6 +113,20 @@ const zh: Locale = {
     originTab: '来自标签 {index} 的请求——点击切换',
   },
 
+  tabs: {
+    tray: '打开的对话',
+    untitled: '新对话',
+    close: '关闭标签 {index}',
+    closeStreaming: '再次点击将停止生成并关闭该标签',
+    new: '新建标签',
+    limitReached: '最多同时打开 {max} 个标签，请先关闭一个',
+    waitingSlot: '标签 {index} 正在等待生成通道',
+    unread: '标签 {index} 在隐藏时完成了回复',
+    switchTo: '切换到标签 {index}',
+    streaming: '生成中',
+    dangling: '该对话已不再保存，标签为空。',
+  },
+
   elicitation: {
     title: 'Agent 正在请求输入',
     accept: '允许',
@@ -540,6 +554,8 @@ const zh: Locale = {
       maxMessagesDesc: '会话超过此限制时自动截断（默认 200）',
       retentionDays: '会话保留天数',
       retentionDaysDesc: '删除超过此天数的不活跃会话；置顶与当前会话不会被删除（默认 30）',
+      maxOpenTabs: '最多打开标签数',
+      maxOpenTabsDesc: '同时以标签形式打开的对话数量（2-12，默认 6）',
     },
     fsCapability: {
       heading: '文件系统访问',

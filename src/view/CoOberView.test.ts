@@ -419,6 +419,82 @@ describe('CoOberView tab panels', () => {
     expect(Reflect.get(view, 'messagesEl')).toBe(panels[1]);
     expect(controller.listTabIds().length).toBe(2);
   });
+
+  it('numbers every open tab in the strip and marks the one in view', async () => {
+    const client = createClient();
+    const view = await openView(createPlugin({ client }));
+    const controller = Reflect.get(view, 'controller') as CoOberViewController;
+    expect(texts(view, '.co-ober-tab-number')).toEqual(['1']);
+
+    (controller.runtimeForTab(controller.activeTabId()) as { busy: boolean }).busy = true;
+    await controller.switchSession('ses-b', 'local');
+
+    const badges = [...view.contentEl.querySelectorAll('.co-ober-tab-bar [role="tab"]')] as HTMLElement[];
+    expect(texts(view, '.co-ober-tab-number')).toEqual(['1', '2']);
+    expect(badges.map((b) => b.classList.contains('is-active'))).toEqual([false, true]);
+    expect(badges[0].classList.contains('is-streaming')).toBe(true);
+    expect(badges[0].querySelector('.co-ober-tab-pulse')).not.toBeNull();
+    expect(badges[1].getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('switches on a badge click and opens a tab from the plus button', async () => {
+    const client = createClient();
+    const view = await openView(createPlugin({ client }));
+    const controller = Reflect.get(view, 'controller') as CoOberViewController;
+    const tabA = controller.activeTabId();
+    (controller.runtimeForTab(tabA) as { busy: boolean }).busy = true;
+    await controller.switchSession('ses-b', 'local');
+    const newSession = vi.spyOn(controller, 'newSession').mockResolvedValue(undefined);
+
+    (view.contentEl.querySelector('.co-ober-tab-bar [role="tab"]') as HTMLElement).click();
+    expect(controller.activeTabId()).toBe(tabA);
+
+    click(view, '.co-ober-tab-new');
+    expect(newSession).toHaveBeenCalledWith(true);
+  });
+
+  it('disables the plus button once the strip holds as many tabs as allowed', async () => {
+    const client = createClient();
+    const view = await openView(createPlugin({ client, settings: { maxOpenTabs: 2 } }));
+    const controller = Reflect.get(view, 'controller') as CoOberViewController;
+    expect((view.contentEl.querySelector('.co-ober-tab-new') as HTMLButtonElement).disabled).toBe(false);
+
+    (controller.runtimeForTab(controller.activeTabId()) as { busy: boolean }).busy = true;
+    await controller.switchSession('ses-b', 'local');
+
+    const add = view.contentEl.querySelector('.co-ober-tab-new') as HTMLButtonElement;
+    expect(add.disabled).toBe(true);
+    expect(add.getAttribute('title')).toContain('2');
+  });
+
+  it('rebuilds the saved strip with only the front transcript painted', async () => {
+    const plugin = createPlugin({ client: createClient() });
+    plugin.sessionStore.hydrate([
+      {
+        sessionId: 'ses-a', title: 'A', createdAt: 1, updatedAt: 1,
+        messages: [{ role: 'user', content: 'front of A', type: 'text', timestamp: 1 }],
+      },
+      {
+        sessionId: 'ses-b', title: 'B', createdAt: 1, updatedAt: 1,
+        messages: [{ role: 'user', content: 'hidden B', type: 'text', timestamp: 1 }],
+      },
+    ], 'ses-a');
+    plugin.sessionStore.hydrateTabShell(
+      [{ tabId: 'tab-1', sessionId: 'ses-a' }, { tabId: 'tab-2', sessionId: 'ses-b' }],
+      'tab-1',
+    );
+
+    const view = await openView(plugin);
+    const controller = Reflect.get(view, 'controller') as CoOberViewController;
+    const panels = panelEls(view);
+    expect(panels.length).toBe(2);
+    expect(panels[0].textContent).toContain('front of A');
+    expect(panels[1].textContent).not.toContain('hidden B');
+    expect(texts(view, '.co-ober-tab-number')).toEqual(['1', '2']);
+
+    controller.switchToTab(controller.listTabIds()[1]);
+    await vi.waitFor(() => expect(panelEls(view)[1].textContent).toContain('hidden B'));
+  });
 });
 
 function createView(plugin = createPlugin()): CoOberView {

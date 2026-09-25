@@ -111,6 +111,20 @@ const en = {
     originTab: 'Request from tab {index} — click to switch',
   },
 
+  tabs: {
+    tray: 'Open conversations',
+    untitled: 'New conversation',
+    close: 'Close tab {index}',
+    closeStreaming: 'Click again to stop this tab and close it',
+    new: 'Open a new tab',
+    limitReached: 'Only {max} tabs can be open at once — close one first',
+    waitingSlot: 'tab {index} is waiting for a stream slot',
+    unread: 'tab {index} finished while hidden',
+    switchTo: 'Switch to tab {index}',
+    streaming: 'generating',
+    dangling: 'This conversation is no longer stored, so the tab is empty.',
+  },
+
   elicitation: {
     title: 'The agent is asking for input',
     accept: 'Allow',
@@ -538,6 +552,8 @@ const en = {
       maxMessagesDesc: 'Truncate sessions when they exceed this limit (default 200)',
       retentionDays: 'Session Retention Days',
       retentionDaysDesc: 'Delete inactive sessions older than this; pinned and the current session are never deleted (default 30)',
+      maxOpenTabs: 'Max Open Tabs',
+      maxOpenTabsDesc: 'How many conversations can be open in tabs at once (2-12, default 6)',
     },
     fsCapability: {
       heading: 'File System Access',

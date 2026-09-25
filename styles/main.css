@@ -54,6 +54,131 @@
   background: var(--background-modifier-hover);
 }
 
+/* Tab strip — numbered badges, one per open conversation */
+.co-ober-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  overflow-x: auto;
+}
+
+.co-ober-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 2px 4px 2px 6px;
+  border-radius: var(--radius-s);
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+
+.co-ober-tab:hover {
+  background: var(--background-modifier-border-hover);
+}
+
+.co-ober-tab:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+.co-ober-tab.is-active {
+  background: var(--interactive-hover);
+  color: var(--text-normal);
+  box-shadow: inset 0 0 0 1px var(--interactive-accent);
+}
+
+.co-ober-tab-number {
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.co-ober-tab-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  animation: co-ober-tab-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes co-ober-tab-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* A finished-but-unseen tab: a static ring instead of a beating dot */
+.co-ober-tab.is-unread .co-ober-tab-number {
+  color: var(--text-normal);
+  font-weight: var(--font-bold);
+}
+
+.co-ober-tab.is-unread {
+  box-shadow: inset 0 0 0 1px var(--text-accent);
+}
+
+.co-ober-tab-close {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 0 2px;
+  line-height: 1;
+  font-size: var(--font-ui-small);
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.co-ober-tab-close:hover {
+  color: var(--text-normal);
+  background: transparent;
+}
+
+.co-ober-tab-close.is-confirm {
+  color: var(--text-normal);
+  background: var(--background-modifier-error-hover);
+  border-radius: var(--radius-s);
+}
+
+.co-ober-tab-new {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 0 6px;
+  line-height: 1;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.co-ober-tab-new:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.co-ober-tab-new.is-disabled,
+.co-ober-tab-new:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .co-ober-tab-pulse {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 /* Tab stack — one message panel per open conversation; only the active shows */
 .co-ober-tab-stack {
   position: relative;

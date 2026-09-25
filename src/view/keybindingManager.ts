@@ -2,6 +2,8 @@ export interface KeybindingCallbacks {
 	onNewSession: () => void;
 	onClearScreen: () => void;
 	onCopyLastMessage: () => void;
+	/** Alt+1..9 focuses that tab of the strip; switches never cancel a stream. */
+	onSwitchTab?: (index: number) => void;
 }
 
 export class KeybindingManager {
@@ -35,6 +37,12 @@ export class KeybindingManager {
 				e.preventDefault();
 				this.callbacks.onCopyLastMessage();
 				return;
+			}
+
+			// Alt + 1..9 → Focus that tab of the strip
+			if (e.altKey && !isMod && e.key >= '1' && e.key <= '9') {
+				e.preventDefault();
+				this.callbacks.onSwitchTab?.(Number(e.key) - 1);
 			}
 		};
 		this.containerEl.addEventListener('keydown', this.globalKeyHandler);

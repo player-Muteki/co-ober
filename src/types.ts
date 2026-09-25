@@ -382,6 +382,18 @@ export interface PluginData {
   settings: CoOberSettings;
   sessions: SerializedSession[];
   activeSessionId: string | null;
+  /** Tab shells (schema v2): which conversations were open side by side. */
+  openTabs?: TabShell[];
+  activeTabId?: string | null;
+}
+
+/**
+ * One open tab as stored on disk. `tabId` is only a positional key — live tab
+ * ids are minted by the controller, so restore re-keys them.
+ */
+export interface TabShell {
+  tabId: string;
+  sessionId: string | null;
 }
 
 export interface CoOberSettings {
@@ -404,6 +416,7 @@ export interface CoOberSettings {
 	autoScrollEnabled?: boolean;
 	maxSessionMessages?: number;
 	sessionRetentionDays?: number;
+	maxOpenTabs?: number;
 	fsCapability?: FsCapabilityMode;
 	terminalCapability?: TerminalCapabilityMode;
 	terminalTimeoutMs?: number;
@@ -435,6 +448,7 @@ export const DEFAULT_SETTINGS: CoOberSettings = {
 	autoScrollEnabled: true,
 	maxSessionMessages: 200,
 	sessionRetentionDays: 30,
+	maxOpenTabs: 6,
 	fsCapability: 'enabled',
 	terminalCapability: 'enabled',
 	terminalTimeoutMs: 30000,

@@ -30,6 +30,7 @@ import { InlineEditPanel } from './inlineEditPanel';
 import { SideChatPanel, type SideChatAsk } from './sideChatPanel';
 import { WelcomeView } from './welcomeView';
 import { KeybindingManager } from './keybindingManager';
+import { TabBar } from './tabBar';
 import { CoOberViewController } from './CoOberViewController';
 import type { ControllerCallbacks, ControllerDeps, TabPanel } from './CoOberViewController';
 
@@ -64,6 +65,7 @@ interface ComposerDraft {
 export class CoOberView extends ItemView {
   private static clipIdCounter = 0;
   private tabStackEl!: HTMLDivElement;
+  private tabBar: TabBar | null = null;
   // Aliases for the active tab's panel — kept in sync on every tab switch.
   private messagesEl!: HTMLDivElement;
   private renderer!: ChatRenderer;
@@ -207,6 +209,13 @@ export class CoOberView extends ItemView {
     this.sessionButtonEl.setAttribute('aria-label', t().header.sessionHistory);
     this.sessionButtonEl.title = t().header.sessionHistory;
 
+    // ── Tab strip (one badge per open conversation) ──
+    this.tabBar = new TabBar(el, {
+      onSelect: (tabId) => this.controller?.switchToTab(tabId),
+      onClose: (tabId) => void this.controller?.closeTab(tabId),
+      onNew: () => void this.controller?.newSession(true),
+    });
+
     // ── Tab stack (message panels live here, one per open conversation) ──
     this.tabStackEl = el.createDiv({ cls: 'co-ober-tab-stack' });
     this.permissionBanner = new PermissionBanner(this.tabStackEl);
@@ -331,6 +340,7 @@ export class CoOberView extends ItemView {
       },
       onOpenSideChat: (ask, question) => this.showSideChat(ask, question),
       onCloseSideChat: () => this.sideChatPanel?.close(),
+      onTabsChanged: () => this.refreshTabBar(),
     };
 
     this.controller = new CoOberViewController(deps, callbacks);
@@ -341,10 +351,16 @@ export class CoOberView extends ItemView {
     // Store queue indicator reference on controller
     this.controller.queueIndicatorEl = queueIndicatorEl;
 
-    // Restore session ID into controller state
-    if (savedSessionId) {
-      this.controller.state.sessionId = savedSessionId;
-    }
+    // Rebuild yesterday's strip: tabs become panels first, the stored front
+    // tab comes forward, and only it reads its transcript back (see
+    // restoreActiveTab). A pre-tab session survives as a single shell.
+    const shell = this.sessionStore.tabShell();
+    const shells = shell.openTabs.length > 0
+      ? shell.openTabs
+      : savedSessionId
+        ? [{ tabId: 'tab-restored', sessionId: savedSessionId }]
+        : [];
+    this.controller.restoreTabShells(shells, shell.activeTabId);
     this.controller.state.autoScrollEnabled = this.plugin.settings.autoScrollEnabled ?? true;
 
     // Session dropdown
@@ -410,8 +426,9 @@ export class CoOberView extends ItemView {
       this.showReconnectBtn();
     }
 
-    // Restore previous messages if any
-    await this.controller.restoreSession();
+    // Paint the conversation in front (and only that one) back onto its panel.
+    await this.controller.restoreActiveTab();
+    this.refreshTabBar();
 
     // Load toolbar options when an ACP client is already available.
     this.controller.loadToolbarOptions();
@@ -432,6 +449,7 @@ export class CoOberView extends ItemView {
       onNewSession: () => void this.newSession(),
       onClearScreen: () => void this.clearScreen(),
       onCopyLastMessage: () => this.controller.copyLastAssistantMessage(),
+      onSwitchTab: (index) => this.controller.switchToTabByIndex(index),
     });
     this.keybindingMgr.register();
 
@@ -482,6 +500,8 @@ export class CoOberView extends ItemView {
     this.sideChatPanel?.close();
     this.sideChatPanel = null;
     for (const tabId of [...this.panels.keys()]) this.disposeTabPanel(tabId);
+    this.tabBar?.dispose();
+    this.tabBar = null;
     this.closeSessionDropdown();
     this.closeAutocomplete();
     this.keybindingMgr?.unregister();
@@ -515,6 +535,13 @@ export class CoOberView extends ItemView {
   }
 
   // ── Tab panels ──
+
+  /** Repaint the strip from the controller's live tab list. */
+  refreshTabBar(): void {
+    const controller = this.controller;
+    if (!controller || !this.tabBar) return;
+    this.tabBar.render(controller.tabDescriptors(), controller.maxOpenTabs());
+  }
 
   /** Builds one conversation surface; the controller calls this per runtime. */
   private createTabPanel(tabId: string): TabPanel {

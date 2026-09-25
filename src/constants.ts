@@ -38,3 +38,7 @@ export const MAX_TRACKED_ASSISTANT_MESSAGES = 500;
 export const MAX_CONCURRENT_STREAMS = 4;
 /** Idle per-session normalizers kept alive before LRU eviction. */
 export const MAX_SESSION_NORMALIZERS = 32;
+/** Bounds of the maxOpenTabs setting; the persisted shell is trimmed to the upper bound. */
+export const MIN_OPEN_TABS = 2;
+export const MAX_OPEN_TABS = 12;
+export const DEFAULT_OPEN_TABS = 6;

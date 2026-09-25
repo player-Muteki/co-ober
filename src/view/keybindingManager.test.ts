@@ -11,6 +11,7 @@ describe('KeybindingManager', () => {
     onNewSession: ReturnType<typeof vi.fn>;
     onClearScreen: ReturnType<typeof vi.fn>;
     onCopyLastMessage: ReturnType<typeof vi.fn>;
+    onSwitchTab: ReturnType<typeof vi.fn>;
   };
   let manager: KeybindingManager;
 
@@ -21,6 +22,7 @@ describe('KeybindingManager', () => {
       onNewSession: vi.fn() as any,
       onClearScreen: vi.fn() as any,
       onCopyLastMessage: vi.fn() as any,
+      onSwitchTab: vi.fn() as any,
     };
     manager = new KeybindingManager(container, callbacks as any);
   });
@@ -94,6 +96,31 @@ describe('KeybindingManager', () => {
       const preventSpy = vi.spyOn(event, 'preventDefault');
       container.dispatchEvent(event);
       expect(preventSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('Alt+digit focuses a tab of the strip', () => {
+    function press(key: string, init: KeyboardEventInit = {}) {
+      const event = new KeyboardEvent('keydown', { key, altKey: true, ...init });
+      const preventSpy = vi.spyOn(event, 'preventDefault');
+      container.dispatchEvent(event);
+      return preventSpy;
+    }
+
+    it('maps the digit onto the zero-based tab position', () => {
+      manager.register();
+      press('1');
+      press('9');
+      expect(callbacks.onSwitchTab.mock.calls.map((c) => c[0])).toEqual([0, 8]);
+    });
+
+    it('keeps the browser shortcut to itself', () => {
+      manager.register();
+      expect(press('3', { ctrlKey: true })).not.toHaveBeenCalled();
+      expect(press('3', { metaKey: true })).not.toHaveBeenCalled();
+      expect(press('0')).not.toHaveBeenCalled();
+      expect(press('3', { altKey: false })).not.toHaveBeenCalled();
+      expect(callbacks.onSwitchTab).not.toHaveBeenCalled();
     });
   });
 

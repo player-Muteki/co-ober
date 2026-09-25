@@ -10,7 +10,7 @@ import type {
   SerializedSession,
   UsageInfo,
 } from '../types';
-import type { CoOberSettings } from '../types';
+import type { CoOberSettings, TabShell } from '../types';
 import type { OpencodeClient } from '../client';
 import { SessionReplayCollector } from '../client/sessionReplay';
 import { t, onLocaleChange } from '../i18n/index';
@@ -50,7 +50,13 @@ import {
 import { Notice } from 'obsidian';
 import { commandRegistry } from '../commands/registry';
 import { parseSlashCommand } from '../commands/executor';
-import { NOTECACHE_MAX_SIZE, MAX_CONCURRENT_STREAMS } from '../constants';
+import {
+  NOTECACHE_MAX_SIZE,
+  MAX_CONCURRENT_STREAMS,
+  MIN_OPEN_TABS,
+  MAX_OPEN_TABS,
+  DEFAULT_OPEN_TABS,
+} from '../constants';
 
 export interface ControllerCallbacks {
   onShowWelcome(connected: boolean): void;
@@ -72,6 +78,19 @@ export interface ControllerCallbacks {
   onOpenSideChat?(ask: SideChatAsk, question: string): void;
   /** Hide the side-chat panel (main session was switched or reset). */
   onCloseSideChat?(): void;
+  /** The tab strip changed shape or state; the bar should re-render. */
+  onTabsChanged?(): void;
+}
+
+/** One badge of the tab strip. */
+export interface TabDescriptor {
+  tabId: string;
+  index: number;
+  title: string;
+  streaming: boolean;
+  queued: boolean;
+  unread: boolean;
+  active: boolean;
 }
 
 export interface ControllerRuntime {
@@ -226,6 +245,11 @@ export class CoOberViewController {
     if (rt.sessionId) this.deps.sessionStore.setActive(rt.sessionId);
     this.loadToolbarOptions();
     this.updateQueueIndicator();
+    // A tab restored from disk is only painted once the user actually looks
+    // at it; until then its panel stays empty and cheap.
+    void this.ensurePainted(rt);
+    this.notifyTabsChanged();
+    this.persistTabShell();
   }
 
   /** Close one tab: cancels only its own stream, disposes only its panel. */
@@ -261,6 +285,103 @@ export class CoOberViewController {
         this.callbacks.onAutoRefActiveFile();
       }
     }
+    this.notifyTabsChanged();
+    this.persistTabShell();
+  }
+
+  // ── Tab strip ──
+
+  /** What each badge of the strip shows, in strip order. */
+  tabDescriptors(): TabDescriptor[] {
+    return this.listTabIds().map((tabId, index) => {
+      const rt = this.runtimes.get(tabId) as SessionRuntime;
+      const title = rt.sessionId ? this.deps.sessionStore.get(rt.sessionId)?.title : undefined;
+      return {
+        tabId,
+        index,
+        title: title?.trim() ? title : t().tabs.untitled,
+        streaming: rt.busy,
+        queued: rt.promptQueue.length > 0,
+        unread: rt.unread,
+        active: rt === this.activeRuntime,
+      };
+    });
+  }
+
+  maxOpenTabs(): number {
+    const raw = this.deps.runtime.settings.maxOpenTabs ?? DEFAULT_OPEN_TABS;
+    return Math.min(MAX_OPEN_TABS, Math.max(MIN_OPEN_TABS, Math.trunc(raw)));
+  }
+
+  canOpenTab(): boolean {
+    return this.runtimes.size < this.maxOpenTabs();
+  }
+
+  /** True when no tab can be opened; a full strip says so instead of failing quietly. */
+  private tabLimitReached(): boolean {
+    if (this.canOpenTab()) return false;
+    new Notice(t().tabs.limitReached.replace('{max}', String(this.maxOpenTabs())));
+    return true;
+  }
+
+  switchToTabByIndex(index: number): void {
+    const tabId = this.listTabIds()[index];
+    if (tabId) this.switchToTab(tabId);
+  }
+
+  /** Paint a restored tab's stored transcript the first time the user looks at it. */
+  async ensurePainted(rt: SessionRuntime): Promise<void> {
+    if (!rt.needsRestore || rt.painted) return;
+    rt.needsRestore = false;
+    if (!rt.sessionId) return;
+    if (!this.deps.sessionStore.get(rt.sessionId)) {
+      // Retention pruned the conversation the tab pointed at; an empty panel
+      // with no explanation reads like a bug.
+      rt.renderer.addSystemMessage(t().tabs.dangling);
+      return;
+    }
+    await this.restoreSession(rt);
+  }
+
+  /** Startup hook: the tab in front gets its transcript immediately. */
+  restoreActiveTab(): Promise<void> {
+    return this.ensurePainted(this.activeRuntime);
+  }
+
+  /**
+   * Rebuild yesterday's strip. Every shell opens as a panel first, so ordering
+   * is stable, and only then does the stored front tab come forward — a tab
+   * that is not in front stays unpainted until it is clicked.
+   */
+  restoreTabShells(shells: TabShell[], activeTabId: string | null): void {
+    if (shells.length === 0) return;
+    const byShellTabId = new Map<string, SessionRuntime>();
+    const adopted = this.activeRuntime;
+    adopted.sessionId = shells[0].sessionId;
+    adopted.needsRestore = true;
+    byShellTabId.set(shells[0].tabId, adopted);
+    for (const shell of shells.slice(1)) {
+      const rt = this.openRuntime(shell.sessionId);
+      rt.needsRestore = true;
+      byShellTabId.set(shell.tabId, rt);
+    }
+    const front = (activeTabId ? byShellTabId.get(activeTabId) : undefined) ?? adopted;
+    if (front !== adopted) this.activateRuntime(front);
+    this.notifyTabsChanged();
+    this.persistTabShell();
+  }
+
+  private notifyTabsChanged(): void {
+    this.callbacks.onTabsChanged?.();
+  }
+
+  /** Which conversations sit in which tabs, for the next restart. */
+  private persistTabShell(): void {
+    const shells: TabShell[] = this.listTabIds().map((tabId) => ({
+      tabId,
+      sessionId: this.runtimes.get(tabId)?.sessionId ?? null,
+    }));
+    this.deps.sessionStore.setTabShell(shells, this.activeRuntime.tabId);
   }
 
   /** Cancel every in-flight stream (view close); tabs' queues are not restored. */
@@ -776,7 +897,11 @@ export class CoOberViewController {
     return (session?.messages.length ?? 0) === 0;
   }
 
-  async newSession(): Promise<void> {
+  /**
+   * `/new` may reuse the current tab; the strip's "+" (`forceNewTab`) always
+   * opens another one so the conversation in view is never replaced.
+   */
+  async newSession(forceNewTab = false): Promise<void> {
     await this.deps.sessionStore.save();
     const connected = await this.ensureClientConnected();
     if (!connected) return;
@@ -784,7 +909,8 @@ export class CoOberViewController {
     if (!c) return;
 
     // A streaming tab is never stolen: /new opens a fresh tab beside it.
-    const adopt = this.canAdoptActiveTab();
+    const adopt = !forceNewTab && this.canAdoptActiveTab();
+    if (!adopt && this.tabLimitReached()) return;
     const rt = adopt ? this.activeRuntime : this.openRuntime(null);
     if (!adopt) this.activateRuntime(rt);
     else this.resetRuntimeView(rt);
@@ -805,6 +931,10 @@ export class CoOberViewController {
         this.callbacks.onShowWelcome(this.deps.runtime.getClient() !== null);
         this.callbacks.onAutoRefActiveFile();
       }
+      // The badge tooltip and the restored shell both key off the session id,
+      // which only exists now that the create succeeded.
+      this.notifyTabsChanged();
+      this.persistTabShell();
     } catch (e) {
       console.error('[co-ober] newSession:', e);
       rt.renderer.addError(e instanceof Error ? e.message : String(e));
@@ -893,6 +1023,7 @@ export class CoOberViewController {
     // Otherwise the current tab is repurposed when it has nothing to lose,
     // and a background-streaming tab keeps its screen by opening a new one.
     const adopt = this.canAdoptActiveTab();
+    if (!adopt && this.tabLimitReached()) return;
     const rt = adopt ? this.activeRuntime : this.openRuntime(sessionId);
     if (adopt) this.resetRuntimeView(rt);
     else this.activateRuntime(rt);
@@ -922,6 +1053,8 @@ export class CoOberViewController {
       this.callbacks.onShowWelcome(this.deps.runtime.getClient() !== null);
       this.callbacks.onAutoRefActiveFile();
     }
+    this.notifyTabsChanged();
+    this.persistTabShell();
   }
 
   async deleteSession(sessionId: string): Promise<void> {
@@ -938,6 +1071,9 @@ export class CoOberViewController {
   async forkSession(sessionId: string): Promise<void> {
     const client = this.deps.runtime.getClient();
     if (!client) return;
+    // A fork always lands in its own tab, so a full strip refuses the fork
+    // rather than silently replacing what is on screen.
+    if (this.tabLimitReached()) return;
     try {
       const source = this.deps.sessionStore.get(sessionId);
       const forkedId = await client.forkSession(sessionId, this.getVaultCwd());
@@ -959,6 +1095,8 @@ export class CoOberViewController {
       await this.restoreSession(rt);
       this.loadToolbarOptions();
       this.callbacks.onShowWelcome(true);
+      this.notifyTabsChanged();
+      this.persistTabShell();
     } catch (e) {
       console.error('[co-ober] fork session:', e);
       this.renderer.addError(e instanceof Error ? e.message : String(e));
@@ -1040,6 +1178,7 @@ export class CoOberViewController {
       return;
     }
     const adopt = this.canAdoptActiveTab();
+    if (!adopt && this.tabLimitReached()) return;
     const rt = adopt ? this.activeRuntime : this.openRuntime(sessionId);
     if (adopt) this.resetRuntimeView(rt);
     else this.activateRuntime(rt);
@@ -1066,6 +1205,8 @@ export class CoOberViewController {
     await this.refreshNativePlan(sessionId, rt);
     if (this.isActiveTab(rt)) this.deps.sessionStore.setActive(sessionId);
     await this.deps.sessionStore.save();
+    this.notifyTabsChanged();
+    this.persistTabShell();
     this.loadToolbarOptions();
     if (this.isActiveTab(rt)) {
       this.callbacks.onShowWelcome(this.deps.runtime.getClient() !== null);
@@ -1197,6 +1338,7 @@ export class CoOberViewController {
       this.deps.toolbar.setSending(true);
       this.callbacks.onHideWelcome();
     }
+    this.notifyTabsChanged();
     rt.sendStartTime = Date.now();
     const releaseBusy = (): void => {
       rt.busy = false;
@@ -1205,6 +1347,7 @@ export class CoOberViewController {
         this.deps.input.setStreaming(false);
         this.deps.toolbar.setSending(false);
       }
+      this.notifyTabsChanged();
     };
 
     let sessionId: string | null;
@@ -1346,6 +1489,7 @@ export class CoOberViewController {
           // A turn completed out of sight: flag the tab until it is viewed.
           rt.unread = true;
         }
+        this.notifyTabsChanged();
         config.onFinally?.();
         // Shared budget freed — any tab's parked head can now start.
         void this.tryDrainAnyQueue();
@@ -2071,6 +2215,9 @@ export class CoOberViewController {
     rt.streamCtrl.reset();
     ++rt.genId;
     rt.painted = false;
+    // The adopter paints this panel itself; a pending lazy restore must not
+    // replay an old transcript into it afterwards.
+    rt.needsRestore = false;
     this.dropQueuedPrompts(rt);
     rt.busy = false;
     rt.state.isStreaming = false;

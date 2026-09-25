@@ -7,6 +7,7 @@ import { setLocale, t as locale } from './i18n/index';
 import { CLIENT_VERSION } from './client/acp';
 import { applyPermissionTier } from './client/permissionTier';
 import { resolveCommandPath } from './utils/commandResolution';
+import { MIN_OPEN_TABS, MAX_OPEN_TABS, DEFAULT_OPEN_TABS } from './constants';
 
 import { addCustomAgentBlock, addCustomSkillBlock, addCommonModelToggle, addMcpServerBlock, addSyncRuleBlock, renameCustomAgent, renameCustomSkill } from './settings/settingBlocks';
 
@@ -30,6 +31,7 @@ function parseBoundedInt(raw: string, min: number, max: number): number | null {
 
 interface LocaleAwareView {
   refreshLocale?: () => void;
+  refreshTabBar?: () => void;
 }
 
 interface DiagnosticResult {
@@ -450,6 +452,23 @@ export class CoOberSettingsTab extends PluginSettingTab {
           if (n === null) return;
           s.sessionRetentionDays = n;
           await this.save();
+        }));
+
+    new Setting(containerEl)
+      .setName(labels.sessionLimits.maxOpenTabs)
+      .setDesc(labels.sessionLimits.maxOpenTabsDesc)
+      .addText((t) => t.setValue(String(s.maxOpenTabs ?? DEFAULT_OPEN_TABS))
+        .setPlaceholder(String(DEFAULT_OPEN_TABS))
+        .onChange(async (v) => {
+          const n = parseBoundedInt(v, MIN_OPEN_TABS, MAX_OPEN_TABS);
+          if (n === null) return;
+          s.maxOpenTabs = n;
+          await this.save();
+          // The strip's disabled "+" and its tooltip follow the new limit now,
+          // not at the next tab change.
+          for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
+            (leaf.view as LocaleAwareView).refreshTabBar?.();
+          }
         }));
 
     // ── File System Capability ──
