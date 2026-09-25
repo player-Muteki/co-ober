@@ -237,6 +237,8 @@ export interface TerminalCreateParams {
 
 export interface TerminalOutputResult {
 	output: string;
+	/** ACP requires the flag even when nothing was trimmed away. */
+	truncated?: boolean;
 	exitStatus?: { exitCode: number | null; signal: string | null };
 	error?: string;
 }
@@ -249,6 +251,8 @@ export interface TerminalInstance {
 	pid: number | null;
 	status: 'running' | 'exited' | 'killed';
 	output: string;
+	/** Set once ring-trimming has discarded earlier output. */
+	outputTruncated?: boolean;
 	exitCode: number | null;
 	signal: string | null;
 	createdAt: number;

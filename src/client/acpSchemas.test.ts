@@ -427,4 +427,47 @@ describe('permissive chunk content and plan entries', () => {
       expect(r.data.entries[1]).toEqual({ content: 'two', status: 'pending', priority: 'medium' });
     }
   });
+
+  it('tolerates explicit-null optional tool fields and an unknown kind', () => {
+    const r = zToolCall.safeParse({
+      sessionUpdate: 'tool_call',
+      toolCallId: 't1',
+      title: 'x',
+      status: null,
+      rawInput: null,
+      locations: null,
+      content: null,
+      kind: 'browser_automation',
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.status).toBeUndefined();
+      expect(r.data.rawInput).toBeUndefined();
+      expect(r.data.locations).toBeUndefined();
+      expect(r.data.content).toBeUndefined();
+      expect(r.data.kind).toBe('other');
+    }
+  });
+
+  it('degrades an unrecognized tool_call content element instead of dropping the frame', () => {
+    const r = zToolCallUpdate.safeParse({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 't1',
+      content: [{ type: 'audit_blob', blob: 42 }],
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.content).toHaveLength(1);
+      expect(r.data.content?.[0]).toEqual({ type: 'content', content: { type: 'text', text: '' } });
+    }
+  });
+
+  it('keeps a config frame alive when one option carries a malformed list', () => {
+    const r = zConfigOptionUpdate.safeParse({
+      sessionUpdate: 'config_option_update',
+      configOptions: [{ id: 'model', name: 'Model', type: 'select', currentValue: 'm1', options: 'nope' }],
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.configOptions[0].options).toEqual([]);
+  });
 });

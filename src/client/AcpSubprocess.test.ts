@@ -106,8 +106,22 @@ describe('AcpSubprocess', () => {
     subprocess.onClose(closeListener);
     subprocess.start();
 
-    mockProc.emit('exit', 0, null);
+    mockProc.emit('close', 0, null);
     expect(closeListener).toHaveBeenCalledWith(undefined);
+  });
+
+  it('teardown waits for close: a bare exit does not notify (stdout may still hold frames)', () => {
+    const subprocess = new AcpSubprocess(launchSpec);
+    const closeListener = vi.fn();
+
+    subprocess.onClose(closeListener);
+    subprocess.start();
+
+    mockProc.emit('exit', 0, null);
+    expect(closeListener).not.toHaveBeenCalled();
+
+    mockProc.emit('close', 0, null);
+    expect(closeListener).toHaveBeenCalledTimes(1);
   });
 
   it('onClose() listener receives exit error on non-zero exit', () => {
@@ -117,7 +131,7 @@ describe('AcpSubprocess', () => {
     subprocess.onClose(closeListener);
     subprocess.start();
 
-    mockProc.emit('exit', 1, null);
+    mockProc.emit('close', 1, null);
     expect(closeListener).toHaveBeenCalledTimes(1);
     const errorArg = closeListener.mock.calls[0][0];
     expect(errorArg).toBeInstanceOf(AcpProcessExitError);
@@ -131,7 +145,7 @@ describe('AcpSubprocess', () => {
     subprocess.onClose(closeListener);
     subprocess.start();
 
-    mockProc.emit('exit', null, 'SIGKILL');
+    mockProc.emit('close', null, 'SIGKILL');
     const errorArg = closeListener.mock.calls[0][0];
     expect(errorArg).toBeInstanceOf(AcpProcessExitError);
     expect(errorArg.message).toBe('ACP process exited (code=null, signal=SIGKILL)');
@@ -145,7 +159,7 @@ describe('AcpSubprocess', () => {
     subprocess.start();
 
     unsubscribe();
-    mockProc.emit('exit', 0, null);
+    mockProc.emit('close', 0, null);
 
     expect(closeListener).not.toHaveBeenCalled();
   });
@@ -231,7 +245,7 @@ describe('AcpSubprocess', () => {
 
     // emit exit to trigger notifyClose
     expect(() => {
-      mockProc.emit('exit', 0, null);
+      mockProc.emit('close', 0, null);
     }).not.toThrow();
 
     expect(badListener).toHaveBeenCalled();

@@ -8,13 +8,21 @@ import { ACP_SERVER_REQUEST_ALIASES } from './AcpMethodNames';
 import { zToolKind } from './acpSchemas';
 import { t } from '../i18n/index';
 
+// One dropped option is survivable; losing the whole request because a
+// single field is malformed means the user never sees a prompt that was
+// perfectly answerable. Strings degrade to '', bad options are dropped.
+const zPermissionOption = z.object({
+  optionId: z.string(),
+  kind: z.string(),
+  name: z.string(),
+});
 const zPermissionParams = z
   .object({
-    sessionId: z.string(),
+    sessionId: z.string().catch(''),
     toolCall: z
       .object({
         toolCallId: z.string().optional(),
-        title: z.string(),
+        title: z.string().catch(''),
         status: z.string().optional(),
         rawInput: z.record(z.string(), z.unknown()).optional(),
         // An agent-minted kind we do not know must not cost the user the
@@ -26,14 +34,18 @@ const zPermissionParams = z
     // Permission-option kinds are an open set in practice (agents mint their
     // own); a strict enum here would fail the whole request and auto-cancel a
     // prompt the user never got to see. Accept any string and let the caller
-    // match on the four known kinds for auto-decisions.
-    options: z.array(
-      z.object({
-        optionId: z.string(),
-        kind: z.string(),
-        name: z.string(),
-      }),
-    ),
+    // match on the four known kinds for auto-decisions. A missing or
+    // non-array options list degrades to empty; individual malformed options
+    // are dropped rather than poisoning the array.
+    options: z
+      .array(z.unknown())
+      .catch([])
+      .transform((list) =>
+        list.flatMap((o) => {
+          const r = zPermissionOption.safeParse(o);
+          return r.success ? [r.data] : [];
+        }),
+      ),
   })
   .passthrough();
 
@@ -203,6 +215,16 @@ export class AcpRequestHandler {
       options: parsed.data.options,
     };
 
+    // A prompt with nothing to click never resolves: the banner would sit
+    // there while the idle timer re-arms forever. Cancel it on the wire and
+    // tell the user, rather than hanging the turn.
+    if (req.options.length === 0) {
+      const summary = 'permission request carries no selectable options';
+      console.error('[co-ober] unactionable permission request, cancelling it:', summary);
+      this.onPermissionUnreadable?.(summary);
+      return Promise.resolve({ outcome: { outcome: 'cancelled' } });
+    }
+
     const handler = this.onPermissionRequest ?? ((r: PermissionRequest) => this.requestPermission(r));
     // Only report 'selected' when the agent actually offered that option id:
     // our fallbacks (dismissed banner, synthesized reject_once) must not
@@ -287,29 +309,40 @@ export class AcpRequestHandler {
   }
 
   private handleReadTextFile(params: Record<string, unknown>): Promise<unknown> {
+    // ACP's read result carries only `content`: an in-band {content:'',error}
+    // would read back at the agent as a valid empty file, so failures must
+    // travel as JSON-RPC errors (the transport maps throws to -32000).
     if (this.fsCapabilityMode === 'disabled' || !this.fsDelegate) {
-      return Promise.resolve({ content: '', error: 'File system access is disabled' });
+      return Promise.reject(new Error('File system access is disabled'));
     }
 
     const parsed = zFsPathParam.safeParse(params);
     if (!parsed.success) {
-      return Promise.resolve({ content: '', error: 'Missing required parameter: path' });
+      return Promise.reject(new Error('Missing required parameter: path'));
     }
 
-    return Promise.resolve(this.fsDelegate.readTextFile(parsed.data.path));
+    return Promise.resolve(this.fsDelegate.readTextFile(parsed.data.path)).then((res) => {
+      if (res.error) throw new Error(res.error);
+      return { content: res.content };
+    });
   }
 
   private handleWriteTextFile(params: Record<string, unknown>): Promise<unknown> {
+    // Same in-band trap as reads: {success:false} on an empty-result method
+    // is indistinguishable from success at the agent.
     if (this.fsCapabilityMode !== 'enabled' || !this.fsDelegate) {
-      return Promise.resolve({ success: false, error: 'File system write access is disabled' });
+      return Promise.reject(new Error('File system write access is disabled'));
     }
 
     const parsed = zFsWriteParam.safeParse(params);
     if (!parsed.success) {
-      return Promise.resolve({ success: false, error: 'Missing required parameter: path or content' });
+      return Promise.reject(new Error('Missing required parameter: path or content'));
     }
 
-    return Promise.resolve(this.fsDelegate.writeTextFile(parsed.data.path, parsed.data.content));
+    return Promise.resolve(this.fsDelegate.writeTextFile(parsed.data.path, parsed.data.content)).then((res) => {
+      if (res.error || !res.success) throw new Error(res.error ?? 'Write failed');
+      return { success: true };
+    });
   }
 
   private handleTerminalCreate(params: Record<string, unknown>): Promise<unknown> {
@@ -354,7 +387,12 @@ export class AcpRequestHandler {
       return Promise.resolve({ error: 'Missing required parameter: terminalId' });
     }
 
-    return Promise.resolve(this.terminalManager.output(parsed.data.terminalId));
+    return Promise.resolve(this.terminalManager.output(parsed.data.terminalId)).then((res) => {
+      // terminal/output's result is {output, truncated}; an in-band error
+      // would be read as "the command printed nothing".
+      if (res.error) throw new Error(res.error);
+      return { output: res.output, truncated: res.truncated ?? false };
+    });
   }
 
   private handleTerminalKill(params: Record<string, unknown>): Promise<unknown> {

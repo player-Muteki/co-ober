@@ -36,7 +36,10 @@ export class AcpSubprocess {
       this.stderrBuffer = `${this.stderrBuffer}${text}`.slice(-STDERR_BUFFER_LIMIT);
     });
     proc.on('error', (error) => this.notifyClose(error));
-    proc.on('exit', (code, signal) => {
+    // Tear down on 'close', not 'exit': exit fires while stdout may still
+    // hold buffered frames, and tearing down then drops the agent's last
+    // responses. 'close' means both pipes have drained.
+    proc.on('close', (code, signal) => {
       const exitError = code === 0 && signal === null ? undefined : new AcpProcessExitError(code, signal);
       this.notifyClose(exitError);
     });

@@ -7,12 +7,20 @@ export const zToolKind = z.enum(['read', 'edit', 'delete', 'move', 'search', 'ex
 // Agents mint tool kinds ahead of the enum; an unknown kind must degrade to
 // 'other', not cost us the whole tool frame.
 export const zToolKindLenient = zToolKind.catch('other');
-const zToolCallContent = z.union([
-  z.object({ type: z.literal('content'), content: z.object({ type: z.literal('text'), text: z.string() }) }),
-  z.object({ type: z.literal('content'), content: z.object({ type: z.literal('image'), mimeType: z.string(), data: z.string() }) }),
-  z.object({ type: z.literal('diff'), path: z.string(), oldText: z.string().optional(), newText: z.string().optional() }),
-  z.object({ type: z.literal('terminal'), terminalId: z.string() }),
-]);
+// Agents send explicit nulls where `.optional()` only forgives omission;
+// a null on a peripheral field must degrade to absent, not cost the frame.
+const zOpt = <T extends z.ZodTypeAny>(schema: T) => schema.nullish().transform((v) => v ?? undefined);
+// A content element we cannot render (resource_link, malformed terminal…)
+// must not drop the whole tool frame; it degrades to an empty text item so
+// the unsupported-content path surfaces it instead.
+const zToolCallContent = z
+  .union([
+    z.object({ type: z.literal('content'), content: z.object({ type: z.literal('text'), text: z.string() }) }),
+    z.object({ type: z.literal('content'), content: z.object({ type: z.literal('image'), mimeType: z.string(), data: z.string() }) }),
+    z.object({ type: z.literal('diff'), path: z.string(), oldText: z.string().optional(), newText: z.string().optional() }),
+    z.object({ type: z.literal('terminal'), terminalId: z.string() }),
+  ])
+  .catch({ type: 'content' as const, content: { type: 'text' as const, text: '' } });
 const zLocation = z.object({ path: z.string() });
 // Agents define config options beyond the three we render (and grow them
 // ahead of the spec); the rigid id/category/type enums once cost us the whole
@@ -24,7 +32,9 @@ const zConfigOption = z.object({
   category: z.string().optional(),
   type: z.string(),
   currentValue: z.string().catch(''),
-  options: z.array(z.object({ value: z.string(), name: z.string(), description: z.string().optional() })),
+  // Boolean-toggle options legitimately carry no choices; a missing or
+  // malformed options array must not drop the whole config frame.
+  options: z.array(z.object({ value: z.string(), name: z.string(), description: z.string().optional() })).catch([]),
 });
 const zModeOption = z.object({ id: z.string(), name: z.string(), description: z.string().optional() });
 const zModelOption = z.object({ modelId: z.string(), name: z.string() });
@@ -70,10 +80,10 @@ export const zToolCall = z.object({
   // the human-readable title. null and omission both mean "no name".
   name: z.string().nullish().transform((n) => n ?? undefined),
   kind: zToolKindLenient.optional(),
-  status: z.string().optional(),
-  rawInput: z.record(z.string(), z.unknown()).optional(),
-  locations: z.array(zLocation).optional(),
-  content: z.array(zToolCallContent).optional(),
+  status: zOpt(z.string()),
+  rawInput: zOpt(z.record(z.string(), z.unknown())),
+  locations: zOpt(z.array(zLocation)),
+  content: zOpt(z.array(zToolCallContent)),
 });
 export const zToolCallUpdate = z.object({
   sessionUpdate: z.literal('tool_call_update'),
@@ -81,14 +91,14 @@ export const zToolCallUpdate = z.object({
   // A patch frame may omit status or carry one outside the four we render
   // (agents mint 'cancelled' before the enum catches up). Be as permissive as
   // zToolCall's status: never let a terminal-looking patch drop.
-  status: z.string().optional(),
+  status: zOpt(z.string()),
   kind: zToolKindLenient.optional(),
   title: z.string().optional(),
   name: z.string().nullish().transform((n) => n ?? undefined),
-  rawInput: z.record(z.string(), z.unknown()).optional(),
-  rawOutput: z.record(z.string(), z.unknown()).optional(),
-  content: z.array(zToolCallContent).optional(),
-  locations: z.array(zLocation).optional(),
+  rawInput: zOpt(z.record(z.string(), z.unknown())),
+  rawOutput: zOpt(z.record(z.string(), z.unknown())),
+  content: zOpt(z.array(zToolCallContent)),
+  locations: zOpt(z.array(zLocation)),
 });
 export const zPlan = z.object({
   sessionUpdate: z.literal('plan'),
@@ -121,12 +131,12 @@ export const zAvailableCommandsUpdate = z.object({
 export const zCurrentModeUpdate = z.object({
   sessionUpdate: z.literal('current_mode_update'),
   currentModeId: z.string().optional(),
-  availableModes: z.array(zModeOption).optional(),
+  availableModes: zOpt(z.array(zModeOption)),
 });
 export const zCurrentModelUpdate = z.object({
   sessionUpdate: z.literal('current_model_update'),
   currentModelId: z.string().optional(),
-  availableModels: z.array(zModelOption).optional(),
+  availableModels: zOpt(z.array(zModelOption)),
 });
 export const zSessionInfoUpdate = z.object({
   sessionUpdate: z.literal('session_info_update'),
@@ -197,7 +207,7 @@ export const zStateUpdate = z.object({
   sessionUpdate: z.literal('state_update'),
   state: z.string(),
   stopReason: z.string().nullish().transform((s) => s ?? undefined),
-  usage: z.record(z.string(), z.unknown()).optional(),
+  usage: zOpt(z.record(z.string(), z.unknown())),
 });
 
 export const zSessionUpdate = z.discriminatedUnion('sessionUpdate', [

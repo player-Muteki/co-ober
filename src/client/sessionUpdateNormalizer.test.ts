@@ -494,4 +494,30 @@ describe('SessionUpdateNormalizer state_update', () => {
     expect(normalizer.normalize({ sessionUpdate: 'state_update', state: 'requires_action' })).toBeNull();
     expect(normalizer.normalize({ sessionUpdate: 'state_update', state: 'idle', stopReason: 'end_turn' })).toBeNull();
   });
+
+  it('maps an agent-minted cancelled status to failed, not a false completion', () => {
+    const norm = normalizer.normalize({
+      sessionUpdate: 'tool_call',
+      toolCallId: 't-1',
+      title: 'Run command',
+      status: 'cancelled',
+    });
+    expect((norm as { status?: string }).status).toBe('failed');
+  });
+
+  it('degrades an unknown status to in_progress on snapshot and patch', () => {
+    const snap = normalizer.normalize({
+      sessionUpdate: 'tool_call',
+      toolCallId: 't-2',
+      title: 'Edit',
+      status: 'paused_by_policy',
+    });
+    expect((snap as { status?: string }).status).toBe('in_progress');
+    const patch = normalizer.normalize({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 't-2',
+      status: 'aborted',
+    });
+    expect((patch as { status?: string }).status).toBe('failed');
+  });
 });

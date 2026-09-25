@@ -116,11 +116,12 @@ export class TerminalManager {
 	output(terminalId: string): TerminalOutputResult {
 		const instance = this.terminals.get(terminalId);
 		if (!instance) {
-			return { output: '', error: `Terminal not found: ${terminalId}` };
+			return { output: '', truncated: false, error: `Terminal not found: ${terminalId}` };
 		}
 
 		return {
 			output: instance.output,
+			truncated: instance.outputTruncated === true,
 			exitStatus: instance.status !== 'running'
 				? { exitCode: instance.exitCode, signal: instance.signal }
 				: undefined,
@@ -251,6 +252,7 @@ export class TerminalManager {
 			const maxBytes = this.maxOutputBytes;
 			if (term.output.length + text.length > maxBytes) {
 				term.output = term.output.slice(-Math.floor(maxBytes * 0.75)) + text;
+				term.outputTruncated = true;
 			} else {
 				term.output += text;
 			}
@@ -264,6 +266,7 @@ export class TerminalManager {
 			const maxBytes = this.maxOutputBytes;
 			if (term.output.length + text.length > maxBytes) {
 				term.output = term.output.slice(-Math.floor(maxBytes * 0.75)) + text;
+				term.outputTruncated = true;
 			} else {
 				term.output += text;
 			}

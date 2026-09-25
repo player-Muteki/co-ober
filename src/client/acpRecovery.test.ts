@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => {
   class FakeTransport {
     static instances: FakeTransport[] = [];
     notifications = new Map<string, (params: unknown) => void>();
+    sentNotifications: Array<{ method: string; params: unknown }> = [];
     requests: Array<{ method: string; params: unknown }> = [];
     disposed = false;
     deferred!: { promise: Promise<unknown>; resolve: (v: unknown) => void; reject: (e: unknown) => void };
@@ -61,6 +62,10 @@ const mocks = vi.hoisted(() => {
     request(method: string, params?: unknown): Promise<unknown> {
       this.requests.push({ method, params });
       return this.deferred.promise;
+    }
+
+    notify(method: string, params?: unknown): void {
+      this.sentNotifications.push({ method, params });
     }
 
     dispose(): void {
@@ -263,14 +268,36 @@ describe('AcpClient generation fencing', () => {
       await expect(p).resolves.toMatchObject({ stopReason: 'some_new_reason' });
     });
 
-    it('still rejects a response missing the stop reason', async () => {
+    it('a response missing the stop reason falls back to end_turn instead of discarding usage', async () => {
       FakeSubprocess.instances.length = 0;
       FakeTransport.instances.length = 0;
       const { client, transport } = await connectedClient();
       const p = client.sendMessage('ses-1', [{ type: 'text', text: 'hi' }], () => {});
       await tick();
       transport.deferred.resolve({ usage: { totalTokens: 1, inputTokens: 1, outputTokens: 0 } });
-      await expect(p).rejects.toThrow(/Invalid ACP response format/);
+      // Rejecting the whole response over one missing field also threw away
+      // its usage; the catch keeps the turn accountable with a neutral badge.
+      await expect(p).resolves.toMatchObject({ stopReason: 'end_turn', usage: { totalTokens: 1 } });
+    });
+  });
+
+  describe('initialize handshake', () => {
+    it('closes with notifications/initialized and tolerates a newer protocolVersion', async () => {
+      FakeSubprocess.instances.length = 0;
+      FakeTransport.instances.length = 0;
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const client = new AcpClient('opencode', '/vault');
+      const connecting = client.connect();
+      await tick();
+      FakeTransport.instances[0].deferred.resolve({ protocolVersion: 2, agentCapabilities: {} });
+      await connecting;
+
+      expect(client.isConnected()).toBe(true);
+      const sent = FakeTransport.instances[0].sentNotifications.map((n) => n.method);
+      expect(sent).toContain('notifications/initialized');
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('protocolVersion 2'));
+      warn.mockRestore();
+      await client.disconnect().catch(() => {});
     });
   });
 

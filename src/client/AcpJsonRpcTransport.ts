@@ -46,6 +46,11 @@ export class AcpJsonRpcTransport {
       crlfDelay: Infinity,
     });
     this.readline.on('line', (line) => this.handleLine(line));
+    // A stream error (EPIPE from the agent dying mid-read) would otherwise
+    // leave pending requests hanging until their timeouts.
+    (this.readline as unknown as NodeJS.EventEmitter).on('error', (err: unknown) => {
+      this.dispose(err instanceof Error ? err : new AcpTransportError('JSON-RPC input errored'));
+    });
     this.readline.on('close', () => {
       if (!this.disposed) this.dispose(new AcpTransportError('JSON-RPC input closed'));
     });
@@ -142,9 +147,9 @@ export class AcpJsonRpcTransport {
 
   private handleLine(line: string): void {
     if (!line.trim()) return;
-    let parsed: Record<string, unknown>;
+    let parsed: unknown;
     try {
-      parsed = JSON.parse(line) as Record<string, unknown>;
+      parsed = JSON.parse(line);
     } catch {
       // A corrupted frame would silently hang the matching request until the
       // timeout; surface the first few anomalies so the cause is visible.
@@ -155,15 +160,28 @@ export class AcpJsonRpcTransport {
       return;
     }
 
+    // JSON-RPC batch frames: iterating the array is the only way the second
+    // and later messages get answered instead of silently dropped.
+    if (Array.isArray(parsed)) {
+      for (const item of parsed) this.dispatchMessage(item);
+      return;
+    }
+    this.dispatchMessage(parsed);
+  }
+
+  private dispatchMessage(parsed: unknown): void {
+    if (typeof parsed !== 'object' || parsed === null) return;
+    const msg = parsed as Record<string, unknown>;
+
     // JSON-RPC ids are number OR string: a string-id server request that
     // falls through to the notification branch is never answered, and the
     // agent blocks waiting for its reply.
-    const id = typeof parsed.id === 'number' || typeof parsed.id === 'string' ? parsed.id : undefined;
+    const id = typeof msg.id === 'number' || typeof msg.id === 'string' ? msg.id : undefined;
     // `result: null` and `error: null` are valid responses; an undefined
     // check would drop them and hang the matching request until the timeout.
-    const hasResult = 'result' in parsed;
-    const hasError = 'error' in parsed;
-    const hasMethod = typeof parsed.method === 'string';
+    const hasResult = 'result' in msg;
+    const hasError = 'error' in msg;
+    const hasMethod = typeof msg.method === 'string';
 
     if (id !== undefined && hasResult) {
       const entry = this.pending.get(typeof id === 'number' ? id : Number(id));
@@ -171,7 +189,7 @@ export class AcpJsonRpcTransport {
       if (entry) {
         if (entry.timeout) window.clearTimeout(entry.timeout);
         if (entry.abortHandler) entry.abortHandler();
-        entry.resolve(parsed.result);
+        entry.resolve(msg.result);
       }
     } else if (id !== undefined && hasError) {
       const entry = this.pending.get(typeof id === 'number' ? id : Number(id));
@@ -179,7 +197,7 @@ export class AcpJsonRpcTransport {
       if (entry) {
         if (entry.timeout) window.clearTimeout(entry.timeout);
         if (entry.abortHandler) entry.abortHandler();
-        const errObj = parsed.error as { code?: number; message?: string; data?: unknown };
+        const errObj = msg.error as { code?: number; message?: string; data?: unknown };
         // Some agents carry the only human-readable text in error.data;
         // without it the message stays "Unknown error" for both the console
         // and any consumer that reads Error.message.
@@ -189,12 +207,12 @@ export class AcpJsonRpcTransport {
         );
       }
     } else if (hasMethod && id === undefined) {
-      const method = parsed.method as string;
+      const method = msg.method as string;
       const handlers = this.notificationHandlers.get(method);
       if (handlers) {
         for (const handler of handlers) {
           try {
-            Promise.resolve(handler((parsed as { params?: unknown }).params)).catch((error: unknown) =>
+            Promise.resolve(handler((msg as { params?: unknown }).params)).catch((error: unknown) =>
               console.error('[co-ober] notification handler failed:', error),
             );
           } catch (error) {
@@ -208,9 +226,9 @@ export class AcpJsonRpcTransport {
         console.warn(`[co-ober] dropping unknown notification: ${method}`);
       }
     } else if (hasMethod && id !== undefined) {
-      const handler = this.requestHandlers.get(parsed.method as string);
+      const handler = this.requestHandlers.get(msg.method as string);
       if (handler) {
-        handler((parsed as { params?: unknown }).params)
+        handler((msg as { params?: unknown }).params)
           .then((result) => this.send({ jsonrpc: '2.0', id, result }))
           .catch((err: unknown) => {
             const message = err instanceof Error ? err.message : String(err);
@@ -222,7 +240,7 @@ export class AcpJsonRpcTransport {
         this.send({
           jsonrpc: '2.0',
           id,
-          error: { code: -32601, message: `Method not found: ${parsed.method as string}` },
+          error: { code: -32601, message: `Method not found: ${msg.method as string}` },
         });
       }
     }

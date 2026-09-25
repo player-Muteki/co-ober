@@ -66,6 +66,23 @@ export interface AcpSessionMeta {
 
 /** Kinds already reported as unknown; each logs once per client lifetime. */
 const warnedUnknownUpdateKinds = new Set<string>();
+/** Kinds already reported as validation-rejected; each logs once per lifetime. */
+const warnedRejectedKinds = new Set<string>();
+
+/**
+ * Known update kinds that fail validation were invisible drops — protocol
+ * drift never surfaced. Log the first offending issue once per kind, then
+ * drop the frame as before.
+ */
+function unwrapParsed<T>(su: string, r: { success: true; data: T } | { success: false; error: { issues: { path: readonly unknown[]; message: string }[] } }): T | null {
+  if (r.success) return r.data;
+  if (!warnedRejectedKinds.has(su)) {
+    warnedRejectedKinds.add(su);
+    const issue = r.error.issues[0];
+    console.warn(`[co-ober] ${su} frame rejected: ${issue ? `${issue.path.map(String).join('.') || '(root)'} — ${issue.message}` : 'invalid'}`);
+  }
+  return null;
+}
 
 /** Parse a JSON-RPC update into a strongly typed SessionUpdate */
 export function parseSessionUpdate(u: Record<string, unknown> | undefined | null): SessionUpdate | null {
@@ -74,29 +91,37 @@ export function parseSessionUpdate(u: Record<string, unknown> | undefined | null
   switch (su) {
     case 'agent_message_chunk': {
       const r = zAgentMessageChunk.safeParse(u);
-      return r.success ? r.data : null;
+      return unwrapParsed(su, r);
     }
     case 'agent_thought_chunk': {
       const r = zAgentThoughtChunk.safeParse(u);
-      return r.success ? r.data : null;
+      return unwrapParsed(su, r);
     }
     case 'tool_call': {
       const r = zToolCall.safeParse(u);
-      return r.success ? r.data : null;
+      return unwrapParsed(su, r);
     }
     case 'tool_call_update': {
       const r = zToolCallUpdate.safeParse(u);
-      return r.success ? r.data : null;
+      return unwrapParsed(su, r);
     }
     case 'plan': {
       const r = zPlan.safeParse(u);
-      return r.success ? r.data : null;
+      return unwrapParsed(su, r);
     }
     case 'plan_update': {
       // v2: coerce the item-based envelope onto the v1 plan shape; reserved
       // non-items content variants stay unrendered.
       const r = zPlanUpdate.safeParse(u);
-      if (!r.success || r.data.plan.type !== 'items' || !Array.isArray(r.data.plan.entries)) return null;
+      if (!r.success) return unwrapParsed(su, r);
+      if (r.data.plan.type !== 'items' || !Array.isArray(r.data.plan.entries)) {
+        const key = `plan_update:${r.data.plan.type}`;
+        if (!warnedRejectedKinds.has(key)) {
+          warnedRejectedKinds.add(key);
+          console.warn(`[co-ober] plan_update with content type '${r.data.plan.type}' has no renderable items; dropping`);
+        }
+        return null;
+      }
       return { sessionUpdate: 'plan', entries: r.data.plan.entries };
     }
     case 'plan_removed': {
@@ -119,7 +144,7 @@ export function parseSessionUpdate(u: Record<string, unknown> | undefined | null
     }
     case 'compaction_update': {
       const r = zCompactionUpdate.safeParse(u);
-      return r.success ? r.data : null;
+      return unwrapParsed(su, r);
     }
     case 'compaction_summary_chunk':
       // Known v2 frame feeding a summary the transcript does not paint; drop
@@ -127,35 +152,35 @@ export function parseSessionUpdate(u: Record<string, unknown> | undefined | null
       return null;
     case 'state_update': {
       const r = zStateUpdate.safeParse(u);
-      return r.success ? r.data : null;
+      return unwrapParsed(su, r);
     }
     case 'user_message_chunk': {
       const r = zUserMessageChunk.safeParse(u);
-      return r.success ? r.data : null;
+      return unwrapParsed(su, r);
     }
     case 'config_option_update': {
       const r = zConfigOptionUpdate.safeParse(u);
-      return r.success ? r.data : null;
+      return unwrapParsed(su, r);
     }
     case 'available_commands_update': {
       const r = zAvailableCommandsUpdate.safeParse(u);
-      return r.success ? r.data : null;
+      return unwrapParsed(su, r);
     }
     case 'usage_update': {
       const r = zUsageUpdate.safeParse(u);
-      return r.success ? r.data : null;
+      return unwrapParsed(su, r);
     }
     case 'current_mode_update': {
       const r = zCurrentModeUpdate.safeParse(u);
-      return r.success ? r.data : null;
+      return unwrapParsed(su, r);
     }
     case 'current_model_update': {
       const r = zCurrentModelUpdate.safeParse(u);
-      return r.success ? r.data : null;
+      return unwrapParsed(su, r);
     }
     case 'session_info_update': {
       const r = zSessionInfoUpdate.safeParse(u);
-      return r.success ? r.data : null;
+      return unwrapParsed(su, r);
     }
     default:
       // Agents emit kinds outside the ACP contract (e.g. opencode's
@@ -486,9 +511,18 @@ export class AcpClient implements OpencodeClient {
         throw new Error(t().acp.superseded);
       }
       const initResult = z
-        .object({ agentCapabilities: z.unknown().optional(), authMethods: z.unknown().optional() })
+        .object({
+          protocolVersion: z.number().optional(),
+          agentCapabilities: z.unknown().optional(),
+          authMethods: z.unknown().optional(),
+        })
         .safeParse(response);
       if (initResult.success) {
+        if (initResult.data.protocolVersion !== undefined && initResult.data.protocolVersion !== 1) {
+          // A later-speaking agent still answers the v1 subset we implement;
+          // failing the handshake over the number alone would make it unusable.
+          console.warn(`[co-ober] agent negotiated ACP protocolVersion ${initResult.data.protocolVersion}, client speaks v1`);
+        }
         this.agentCapabilities = normalizeAgentCapabilities(initResult.data.agentCapabilities);
         // Some agents advertise authMethods at the top level of the initialize
         // result rather than nested under agentCapabilities.
@@ -503,6 +537,10 @@ export class AcpClient implements OpencodeClient {
       this.authAttempted = false;
       this.methodCache.clear();
       this.connected = true;
+      // ACP's handshake closes with the client acknowledging initialize.
+      // Some agents gate every later request on receiving it; unknown
+      // notifications are ignorable on the wire, so this is safe to send.
+      transport.notify('notifications/initialized', {});
     } catch (error) {
       const failure = launchError ?? (error instanceof Error ? error : new Error(String(error)));
       if (this.kernelGeneration === generation) {
@@ -729,19 +767,21 @@ export class AcpClient implements OpencodeClient {
     const zAcpResponse = z.object({
       // stopReason must stay permissive: agents add new reasons ahead of the
       // schema, and rejecting the whole response would discard its usage too.
-      // Genuinely unknown values surface as a fallback badge in the controller.
-      stopReason: z.string(),
+      // Missing or null must also degrade — a completed turn must not be
+      // reported as an invalidResponse failure.
+      stopReason: z.string().catch('end_turn'),
       usage: z
         .object({
-          totalTokens: z.number(),
-          inputTokens: z.number(),
-          outputTokens: z.number(),
-          thoughtTokens: z.number().optional(),
-          cachedReadTokens: z.number().optional(),
-          cachedWriteTokens: z.number().optional(),
+          totalTokens: z.number().catch(0),
+          inputTokens: z.number().catch(0),
+          outputTokens: z.number().catch(0),
+          thoughtTokens: z.number().optional().catch(undefined),
+          cachedReadTokens: z.number().optional().catch(undefined),
+          cachedWriteTokens: z.number().optional().catch(undefined),
         })
-        .optional(),
-      _meta: z.record(z.string(), z.unknown()).optional(),
+        .optional()
+        .catch(undefined),
+      _meta: z.record(z.string(), z.unknown()).nullish().transform((m) => m ?? undefined),
     });
     return this.requestWithFallback('prompt', { sessionId: id, prompt: parts }, 0, signal)
       .then((res) => {

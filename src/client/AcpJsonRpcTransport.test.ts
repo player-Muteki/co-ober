@@ -401,4 +401,42 @@ describe('AcpJsonRpcTransport', () => {
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
   });
+
+  it('answers every request inside a JSON-RPC batch frame', async () => {
+    transport.start();
+    transport.onRequest('batch/echo', (params) => Promise.resolve({ echo: params }));
+
+    let sent = '';
+    output.on('data', (chunk) => {
+      sent += chunk.toString();
+    });
+
+    input.write(
+      JSON.stringify([
+        { jsonrpc: '2.0', id: 11, method: 'batch/echo', params: { n: 1 } },
+        { jsonrpc: '2.0', id: 12, method: 'batch/echo', params: { n: 2 } },
+      ]) + '\n',
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(sent).toContain('"id":11');
+    expect(sent).toContain('"id":12');
+  });
+
+  it('resolves every response carried by a batch frame', async () => {
+    transport.start();
+    const p1 = transport.request<number>('a');
+    const p2 = transport.request<number>('b');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    input.write(
+      JSON.stringify([
+        { jsonrpc: '2.0', id: 1, result: 10 },
+        { jsonrpc: '2.0', id: 2, result: 20 },
+      ]) + '\n',
+    );
+
+    await expect(p1).resolves.toBe(10);
+    await expect(p2).resolves.toBe(20);
+  });
 });

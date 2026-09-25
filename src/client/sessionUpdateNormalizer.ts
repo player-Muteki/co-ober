@@ -6,6 +6,22 @@ const MAX_ACCUMULATED_MESSAGES = 200;
 const MAX_TOOL_CALLS = 100;
 const MAX_COMPACTIONS = 50;
 
+export type ToolCallStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+
+const TOOL_STATUSES: readonly string[] = ['pending', 'in_progress', 'completed', 'failed'];
+
+/**
+ * Agents mint statuses ahead of the four we render ('cancelled' is the
+ * common one). Abort-shaped statuses map to failed so they badge terminally;
+ * anything else unknown degrades to in_progress so it never fakes completion.
+ */
+export function normalizeToolStatus(status: string | undefined | null, fallback: ToolCallStatus): ToolCallStatus {
+  if (status === undefined || status === null) return fallback;
+  if (TOOL_STATUSES.includes(status)) return status as ToolCallStatus;
+  if (status === 'cancelled' || status === 'canceled' || status === 'aborted' || status === 'rejected') return 'failed';
+  return 'in_progress';
+}
+
 export class SessionUpdateNormalizer {
   private readonly accumulatedMessages = new Map<string, { role: 'user' | 'agent' | 'thought'; text: string }>();
   private readonly toolCalls = new Map<string, Extract<NormalizedUpdate, { kind: 'tool_call_snapshot' }>>();
@@ -87,7 +103,7 @@ export class SessionUpdateNormalizer {
           title: raw.title,
           toolName: raw.name,
           toolKind: raw.kind ?? 'other',
-          status: (raw.status as 'pending' | 'in_progress' | 'completed' | 'failed') ?? 'pending',
+          status: normalizeToolStatus(raw.status, 'pending'),
           rawInput: raw.rawInput,
           locations: raw.locations,
           contents: raw.content ? [...raw.content] : [],
@@ -108,7 +124,7 @@ export class SessionUpdateNormalizer {
             title: raw.title ?? raw.toolCallId,
             toolName: raw.name,
             toolKind: raw.kind ?? 'other',
-            status: (raw.status as 'pending' | 'in_progress' | 'completed' | 'failed') ?? 'completed',
+            status: normalizeToolStatus(raw.status, 'completed'),
             contents: raw.content ? [...raw.content] : [],
           };
           this.toolCalls.set(raw.toolCallId, existing);
@@ -117,7 +133,7 @@ export class SessionUpdateNormalizer {
           existing.contents = existing.contents.concat(raw.content);
         }
 
-        if (raw.status) existing.status = raw.status as 'pending' | 'in_progress' | 'completed' | 'failed';
+        if (raw.status) existing.status = normalizeToolStatus(raw.status, existing.status);
         if (raw.title) existing.title = raw.title;
         if (raw.name) existing.toolName = raw.name;
         if (raw.kind) existing.toolKind = raw.kind;
