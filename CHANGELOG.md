@@ -1,3 +1,19 @@
+## 0.1.40 - 2026-09-25
+
+### Added
+- **Keyboard-reachable controls**: previously hover-only actions — user message buttons, session item actions, code and text copy buttons — now also reveal on keyboard focus, and every session action button carries a title plus accessible name in both enabled and disabled states, including the delete confirmation cycle and the inline rename input.
+
+### Changed
+- **Stop is immediate**: `session/cancel` is sent as fire-and-forget notifications across every agent method alias, so pressing Stop no longer waits up to 30 s on a response frame that never arrives.
+- **Session load keeps pace with replay**: `session/load` runs on an idle deadline instead of a fixed timeout — a session whose replay keeps streaming stays open, a stalled one fails after 30 s.
+- **Localized collapsible and tool chrome**: expand/collapse aria-labels follow the active language through a new `data-i18n-toggle` relabel pass, write/edit tool badges show the localized kind and pick their icon from the raw tool kind, and the side-chat panel relabels its chrome live.
+- **Honest process exit errors**: a dead agent process reports its real exit code and appends a tail of captured stderr to the surfaced failure, and shutdown resolves after the SIGKILL grace even when the `close` event never arrives.
+
+### Fixed
+- **First-connect permissions reach the handler**: the dispatcher is resolved live per request, so permission prompts can no longer be silently auto-rejected by a stale by-value capture.
+- **No painting into the wrong session**: superseded turns abort right after session resolution, mid-render message tails get a second render pass, and the jump-to-latest button revives after a transcript clear.
+- **No listener or waiter leaks**: timed-out JSON-RPC requests detach their abort listener, and concurrent terminal `waitForExit` callers join one shared waiter instead of orphaning the previous one.
+
 ## 0.1.39 - 2026-09-25
 
 ### Added
