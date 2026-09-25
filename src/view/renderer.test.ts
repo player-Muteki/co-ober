@@ -999,5 +999,17 @@ describe('ChatRenderer', () => {
       expect(scroll).toHaveBeenCalledTimes(1);
       scroll.mockRestore();
     });
+
+    it('keeps the reading position of a tab the reader had scrolled up in', () => {
+      const scrolledUp = new ChatRenderer(container, app, () => false);
+      scrolledUp.setActive(false);
+      const scroll = vi.spyOn(scrolledUp, 'forceScrollToBottom');
+
+      scrolledUp.setActive(true);
+
+      expect(scroll).not.toHaveBeenCalled();
+      scroll.mockRestore();
+      scrolledUp.dispose();
+    });
   });
 });

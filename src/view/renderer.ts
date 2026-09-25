@@ -143,7 +143,9 @@ export class ChatRenderer {
   /**
    * Gate rendering for a hidden tab. Inactive: text/thinking/tool markdown
    * passes are deferred (DOM appends still happen). On reactivation the
-   * deferred passes run once and the panel is scrolled to the bottom.
+   * deferred passes run once, and the panel jumps to the bottom only when
+   * this tab's auto-scroll is on — a reader who scrolled up keeps the place
+   * they left.
    */
   setActive(active: boolean): void {
     if (this.isActive === active) return;
@@ -162,7 +164,7 @@ export class ChatRenderer {
       this.scheduleThinkingRender();
     }
     if (this.deferredToolIds.size > 0) this.flushAllToolRenders();
-    this.forceScrollToBottom();
+    if (this.shouldAutoScroll()) this.forceScrollToBottom();
   }
 
   clear(): void {

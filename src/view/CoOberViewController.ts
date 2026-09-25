@@ -190,6 +190,7 @@ export class CoOberViewController {
     const renderer = this.deps.createTabPanel?.(tabId)?.renderer ?? this.deps.renderer;
     if (!renderer) throw new Error('CoOberViewController requires createTabPanel or a renderer dep');
     const rt = new SessionRuntime(tabId, sessionId, renderer);
+    rt.state.autoScrollEnabled = this.deps.runtime.settings.autoScrollEnabled ?? true;
     rt.streamCtrl = new StreamController({
       state: rt.state,
       renderer: rt.renderer,

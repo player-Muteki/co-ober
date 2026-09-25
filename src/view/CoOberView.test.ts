@@ -375,6 +375,127 @@ describe('CoOberView tab panels', () => {
     expect(input.textareaEl.value).toBe('draft for B');
   });
 
+  /** A real second tab with its own runtime: the active one must be busy to be skipped. */
+  async function openSecondTab(view: CoOberView): Promise<{ tabA: string; tabB: string }> {
+    const controller = Reflect.get(view, 'controller') as CoOberViewController;
+    const tabA = controller.activeTabId();
+    (controller.runtimeForTab(tabA) as { busy: boolean }).busy = true;
+    await controller.switchSession('ses-b', 'local');
+    return { tabA, tabB: controller.activeTabId() };
+  }
+
+  function stageImage(view: CoOberView, name: string, mimeType: string): Promise<void> {
+    vi.spyOn(globalThis, 'FileReader').mockImplementation(
+      function (this: any) {
+        this.onload = null;
+        this.result = null;
+        this.readAsDataURL = vi.fn(() => {
+          this.result = `data:${mimeType};base64,QUJD`;
+          setTimeout(() => {
+            if (this.onload) this.onload({ target: this });
+          }, 0);
+        });
+      } as any,
+    );
+    const dragDrop = Reflect.get(view, 'dragDropManager') as { handleFiles: (files: File[]) => Promise<void> };
+    return dragDrop.handleFiles([new File(['x'], name, { type: mimeType })]);
+  }
+
+  const imageChips = (view: CoOberView): HTMLElement[] =>
+    [...view.contentEl.querySelectorAll('.co-ober-chip[data-kind="image"]')] as HTMLElement[];
+  const liveImages = (view: CoOberView): Array<{ part: { mimeType: string }; name: string }> =>
+    Reflect.get(view, 'pendingImageParts') as Array<{ part: { mimeType: string }; name: string }>;
+
+  it('leaves a staged image in the tab that staged it', async () => {
+    const view = await openView(createPlugin({ client: createClient() }));
+    await stageImage(view, 'shot.png', 'image/png');
+    expect(imageChips(view)).toHaveLength(1);
+
+    // Opening the second tab moves the shared composer onto its (empty) draft.
+    const { tabA } = await openSecondTab(view);
+    const controller = Reflect.get(view, 'controller') as CoOberViewController;
+    expect(imageChips(view)).toHaveLength(0);
+    expect(liveImages(view)).toEqual([]);
+
+    controller.switchToTab(tabA);
+    const chips = imageChips(view);
+    expect(chips).toHaveLength(1);
+    expect(chips[0].textContent).toContain('shot.png');
+    expect(liveImages(view).map((e) => e.part.mimeType)).toEqual(['image/png']);
+  });
+
+  it('removes a restored image chip by entry identity', async () => {
+    const view = await openView(createPlugin({ client: createClient() }));
+    await stageImage(view, 'shot.png', 'image/png');
+    const { tabA, tabB } = await openSecondTab(view);
+    const controller = Reflect.get(view, 'controller') as CoOberViewController;
+    controller.switchToTab(tabA);
+    imageChips(view)[0].click();
+
+    expect(imageChips(view)).toHaveLength(0);
+    expect(liveImages(view)).toEqual([]);
+
+    // The removal belongs to tab A's draft, not to whichever tab is on screen.
+    controller.switchToTab(tabB);
+    controller.switchToTab(tabA);
+    expect(imageChips(view)).toHaveLength(0);
+    expect(liveImages(view)).toEqual([]);
+  });
+
+  it('brings the jump-to-latest button back for a tab scrolled up in', async () => {
+    const view = await openView(createPlugin({ client: createClient() }));
+    const { tabA, tabB } = await openSecondTab(view);
+    const controller = Reflect.get(view, 'controller') as CoOberViewController;
+    const [firstEl, secondEl] = panelEls(view);
+    // Reading position belongs to tab A only.
+    (controller.runtimeForTab(tabA) as { state: { autoScrollEnabled: boolean } }).state.autoScrollEnabled = false;
+
+    controller.switchToTab(tabA);
+    expect(firstEl.querySelector('.co-ober-new-messages-btn')).not.toBeNull();
+
+    controller.switchToTab(tabB);
+    expect(firstEl.querySelector('.co-ober-new-messages-btn')).toBeNull();
+    expect(secondEl.querySelector('.co-ober-new-messages-btn')).toBeNull();
+  });
+
+  it('applies the auto-scroll setting to every tab and to tabs opened later', async () => {
+    const plugin = createPlugin({ client: createClient(), settings: { autoScrollEnabled: false } });
+    const view = await openView(plugin);
+    const controller = Reflect.get(view, 'controller') as CoOberViewController;
+    expect(controller.runtimeForTab(controller.activeTabId())?.state.autoScrollEnabled).toBe(false);
+
+    const { tabB } = await openSecondTab(view);
+    expect(controller.runtimeForTab(tabB)?.state.autoScrollEnabled).toBe(false);
+
+    // The settings row persists first, then re-applies to the open surfaces.
+    plugin.settings.autoScrollEnabled = true;
+    view.setAutoScrollEnabled(true);
+    expect(controller.listTabIds().every((id) => controller.runtimeForTab(id)?.state.autoScrollEnabled)).toBe(true);
+
+    (controller.runtimeForTab(tabB) as { busy: boolean }).busy = true;
+    await controller.switchSession('ses-c', 'local');
+    const newest = controller.activeTabId();
+    expect(newest).not.toBe(tabB);
+    expect(controller.runtimeForTab(newest)?.state.autoScrollEnabled).toBe(true);
+  });
+
+  it('retires a tab jump button once auto-scroll is turned back on', async () => {
+    const plugin = createPlugin({ client: createClient() });
+    const view = await openView(plugin);
+    const controller = Reflect.get(view, 'controller') as CoOberViewController;
+    const tabA = controller.activeTabId();
+    const rt = controller.runtimeForTab(tabA) as { state: { autoScrollEnabled: boolean } };
+    rt.state.autoScrollEnabled = false;
+    callPrivate(view, 'showNewMessagesBtn', tabA);
+    expect(panelEls(view)[0].querySelector('.co-ober-new-messages-btn')).not.toBeNull();
+
+    plugin.settings.autoScrollEnabled = true;
+    view.setAutoScrollEnabled(true);
+
+    expect(rt.state.autoScrollEnabled).toBe(true);
+    expect(panelEls(view)[0].querySelector('.co-ober-new-messages-btn')).toBeNull();
+  });
+
   it('drops the panel element, jump button and draft when the tab is disposed', async () => {
     const view = await openView();
     const tabA = activeTabId(view);

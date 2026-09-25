@@ -54,12 +54,13 @@ interface ImageEntry {
   size: number;
 }
 
-/** Per-tab composer memory: the draft text and its note-ref chips. */
+/** Per-tab composer memory: the draft text with its note and image chips. */
 interface ComposerDraft {
   text: string;
   refs: ContextRef[];
   manualRefs: Set<string>;
   lastAutoRefId: string | null;
+  images: ImageEntry[];
 }
 
 export class CoOberView extends ItemView {
@@ -361,7 +362,6 @@ export class CoOberView extends ItemView {
         ? [{ tabId: 'tab-restored', sessionId: savedSessionId }]
         : [];
     this.controller.restoreTabShells(shells, shell.activeTabId);
-    this.controller.state.autoScrollEnabled = this.plugin.settings.autoScrollEnabled ?? true;
 
     // Session dropdown
     this.newSessionBtnEl.onclick = () => this.newSession();
@@ -616,6 +616,11 @@ export class CoOberView extends ItemView {
     if (next.el.children.length === 0) {
       this.welcomeView.show(this.plugin.getClient() !== null);
     }
+    // The outgoing tab's button is hidden on switch; a tab the reader scrolled
+    // up in must come back offering the jump to latest — and only after the
+    // emptiness check, since the button is a panel child too.
+    const incoming = this.controller?.runtimeForTab(tabId);
+    if (incoming && !incoming.state.autoScrollEnabled) this.showNewMessagesBtn(tabId);
   }
 
   private saveDraft(tabId: string): void {
@@ -624,6 +629,7 @@ export class CoOberView extends ItemView {
       refs: [...this.currentRefs],
       manualRefs: new Set(this.manualRefs),
       lastAutoRefId: this.lastAutoRefId,
+      images: [...this.pendingImageParts],
     });
   }
 
@@ -633,13 +639,17 @@ export class CoOberView extends ItemView {
     this.currentRefs = draft ? [...draft.refs] : [];
     this.manualRefs = draft ? new Set(draft.manualRefs) : new Set();
     this.lastAutoRefId = draft?.lastAutoRefId ?? null;
+    this.pendingImageParts = draft ? [...draft.images] : [];
     this.rebuildChips();
   }
 
-  /** Re-renders the note chips for the restored draft; image chips persist. */
+  /** Re-renders both chip kinds for the restored draft; entries keep their identity. */
   private rebuildChips(): void {
-    this.contextChipsEl.querySelectorAll('.co-ober-chip[data-ref-id]').forEach((el) => el.remove());
+    this.contextChipsEl
+      .querySelectorAll('.co-ober-chip[data-ref-id], .co-ober-chip[data-kind="image"]')
+      .forEach((el) => el.remove());
     for (const ref of this.currentRefs) this.createNoteChip(ref);
+    for (const entry of this.pendingImageParts) this.createImageChip(entry);
   }
 
   private createImageChip(entry: ImageEntry): void {
@@ -686,8 +696,15 @@ export class CoOberView extends ItemView {
   }
 
   setAutoScrollEnabled(enabled: boolean): void {
-    this.controller.state.autoScrollEnabled = enabled;
-    if (enabled) this.hideNewMessagesBtn();
+    const controller = this.controller;
+    if (!controller) return;
+    // Auto-scroll describes the surface, not one conversation: every open tab
+    // follows the setting, and tabs opened later seed from it.
+    for (const tabId of controller.listTabIds()) {
+      const rt = controller.runtimeForTab(tabId);
+      if (rt) rt.state.autoScrollEnabled = enabled;
+      if (enabled) this.hideNewMessagesBtn(tabId);
+    }
   }
 
   refreshLocale(): void {
