@@ -56,8 +56,11 @@ describe('querySqliteJson', () => {
 	});
 
 	it('falls back to the sqlite3 CLI when no node executable works', async () => {
+		// The spawn layer may resolve `sqlite3` to a full path when the CLI is
+		// installed, so match on the basename to stay machine-independent.
+		const isSqlite3 = (command: unknown) => String(command).split(/[\\/]/).pop() === 'sqlite3';
 		const spawn = vi.fn().mockImplementation((command: string) => {
-			if (command === 'sqlite3') return fakeChild('[{"id":3}]');
+			if (isSqlite3(command)) return fakeChild('[{"id":3}]');
 			return fakeChild('', 1);
 		});
 		const rows = await querySqliteJson('/db.sqlite', 'select 3', {
@@ -68,7 +71,7 @@ describe('querySqliteJson', () => {
 			platform: 'linux',
 		});
 		expect(rows).toEqual([{ id: 3 }]);
-		const sqliteCall = spawn.mock.calls.find((call) => call[0] === 'sqlite3');
+		const sqliteCall = spawn.mock.calls.find((call) => isSqlite3(call[0]));
 		expect(sqliteCall?.[1]).toEqual(['-json', '/db.sqlite', 'select 3']);
 	});
 
