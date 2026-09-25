@@ -1001,12 +1001,44 @@ describe('CoOberViewController', () => {
       (client.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({ stopReason: 'tool_calls' });
       await controller.send('wait', []);
       expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().stopReason.toolCalls);
+      // The badge is also persisted as a system line so it survives a reload.
+      expect(deps.sessionStore.append).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ role: 'system', content: t().stopReason.toolCalls }),
+      );
 
       // User-initiated cancellations stay silent.
       const sysCalls = (deps.renderer.addSystemMessage as ReturnType<typeof vi.fn>).mock.calls.length;
       (client.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({ stopReason: 'cancelled' });
       await controller.send('done', []);
       expect(deps.renderer.addSystemMessage).toHaveBeenCalledTimes(sysCalls);
+    });
+
+    it('stamps the finished turn usage onto the newest unclaimed assistant message', async () => {
+      const session: {
+        messages: Array<{ role: string; content: string; type: string; timestamp: number; usage?: unknown }>;
+        updatedAt: number;
+      } = {
+        messages: [
+          { role: 'user', content: 'q', type: 'text', timestamp: 1 },
+          { role: 'assistant', content: 'a1', type: 'thinking', timestamp: 2 },
+          { role: 'assistant', content: 'a2', type: 'text', timestamp: 3 },
+        ],
+        updatedAt: 0,
+      };
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue(session);
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      await controller.send('q', []);
+
+      // The thinking row is skipped; the answer footer carries the token totals.
+      expect(session.messages[2]).toMatchObject({
+        usage: { totalTokens: 10, inputTokens: 5, outputTokens: 5 },
+      });
+      expect(session.messages[1].usage).toBeUndefined();
+      expect(deps.sessionStore.save).toHaveBeenCalled();
     });
 
     it('gates the post-turn native plan refresh on streamed plan freshness', async () => {

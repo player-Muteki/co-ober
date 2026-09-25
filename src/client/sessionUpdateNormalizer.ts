@@ -1,16 +1,22 @@
 import type { SessionUpdate, NormalizedUpdate, ChunkContent } from '../types';
 import { safeClone } from '../utils/clone';
+import { t } from '../i18n/index';
 
 const MAX_ACCUMULATED_MESSAGES = 200;
 const MAX_TOOL_CALLS = 100;
+const MAX_COMPACTIONS = 50;
 
 export class SessionUpdateNormalizer {
   private readonly accumulatedMessages = new Map<string, { role: 'user' | 'agent' | 'thought'; text: string }>();
   private readonly toolCalls = new Map<string, Extract<NormalizedUpdate, { kind: 'tool_call_snapshot' }>>();
+  // v2-alpha compactions are upserts keyed by compactionId: the boundary is
+  // pinned at the first frame and must not be re-emitted by later patches.
+  private readonly startedCompactions = new Set<string>();
 
   reset(): void {
     this.accumulatedMessages.clear();
     this.toolCalls.clear();
+    this.startedCompactions.clear();
   }
 
   /** Evict the oldest entries when the map exceeds the given limit. */
@@ -19,6 +25,14 @@ export class SessionUpdateNormalizer {
     const keysToDelete = [...map.keys()].slice(0, map.size - maxEntries);
     for (const key of keysToDelete) {
       map.delete(key);
+    }
+  }
+
+  private trimSet(set: Set<string>, maxEntries: number): void {
+    if (set.size <= maxEntries) return;
+    const toDelete = [...set].slice(0, set.size - maxEntries);
+    for (const key of toDelete) {
+      set.delete(key);
     }
   }
 
@@ -144,10 +158,40 @@ export class SessionUpdateNormalizer {
         };
       case 'notice_update':
         return { kind: 'notice', level: raw.level, message: raw.message };
-      case 'compaction_update':
+      case 'compaction_update': {
+        if (!raw.compactionId) return { kind: 'compaction', summary: raw.summary };
+        if (raw.status === 'failed') {
+          return { kind: 'notice', level: 'error', message: raw.error ?? t().stream.compactionFailed };
+        }
+        if (raw.status === 'cancelled') return null;
+        if (this.startedCompactions.has(raw.compactionId)) {
+          this.startedCompactions.delete(raw.compactionId);
+          return null;
+        }
+        this.startedCompactions.add(raw.compactionId);
+        this.trimSet(this.startedCompactions, MAX_COMPACTIONS);
         return { kind: 'compaction', summary: raw.summary };
+      }
+      case 'state_update': {
+        // Only the idle end-of-turn token usage adds anything the response path
+        // does not already deliver; running/requires_action need no visual state
+        // and the stop reason is surfaced from the sendMessage response.
+        const usage = raw.usage;
+        if (raw.state !== 'idle' || !usage) return null;
+        return {
+          kind: 'usage',
+          totalTokens: asNumber(usage.totalTokens),
+          inputTokens: asNumber(usage.inputTokens),
+          outputTokens: asNumber(usage.outputTokens),
+          thoughtTokens: asNumber(usage.thoughtTokens),
+          used: asNumber(usage.used),
+          size: asNumber(usage.size),
+        };
+      }
       default:
         return null;
     }
   }
 }
+
+const asNumber = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined);

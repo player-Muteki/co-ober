@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SessionUpdateNormalizer } from './sessionUpdateNormalizer';
 import type { SessionUpdate } from '../types';
+import { setLocale, t } from '../i18n/index';
+
+setLocale('en');
 
 describe('SessionUpdateNormalizer', () => {
   let normalizer: SessionUpdateNormalizer;
@@ -374,5 +377,85 @@ describe('SessionUpdateNormalizer notice, compaction and tool name', () => {
   it('rebuilds a missing snapshot with the name from the update', () => {
     const upd = normalizer.normalize({ sessionUpdate: 'tool_call_update', toolCallId: 'tc9', status: 'completed', name: 'grep' });
     expect(upd).toEqual(expect.objectContaining({ toolName: 'grep', title: 'tc9' }));
+  });
+});
+
+describe('SessionUpdateNormalizer v2 compaction state machine', () => {
+  let normalizer: SessionUpdateNormalizer;
+
+  beforeEach(() => {
+    normalizer = new SessionUpdateNormalizer();
+  });
+
+  it('pins one boundary at the in_progress frame and suppresses the completion patch', () => {
+    expect(normalizer.normalize({ sessionUpdate: 'compaction_update', compactionId: 'c-1', status: 'in_progress' })).toEqual({
+      kind: 'compaction',
+      summary: undefined,
+    });
+    expect(normalizer.normalize({ sessionUpdate: 'compaction_update', compactionId: 'c-1', status: 'completed' })).toBeNull();
+  });
+
+  it('pins a completed-only frame when no in_progress preceded it', () => {
+    expect(normalizer.normalize({ sessionUpdate: 'compaction_update', compactionId: 'c-2', status: 'completed' })).toEqual({
+      kind: 'compaction',
+      summary: undefined,
+    });
+  });
+
+  it('surfaces a failed compaction as an error notice and drops cancellations silently', () => {
+    normalizer.normalize({ sessionUpdate: 'compaction_update', compactionId: 'c-3', status: 'in_progress' });
+    expect(normalizer.normalize({ sessionUpdate: 'compaction_update', compactionId: 'c-3', status: 'failed', error: 'boom' })).toEqual({
+      kind: 'notice',
+      level: 'error',
+      message: 'boom',
+    });
+    normalizer.normalize({ sessionUpdate: 'compaction_update', compactionId: 'c-4', status: 'in_progress' });
+    expect(normalizer.normalize({ sessionUpdate: 'compaction_update', compactionId: 'c-4', status: 'cancelled' })).toBeNull();
+  });
+
+  it('falls back to the localized failure message when the frame carries no error text', () => {
+    const norm = normalizer.normalize({ sessionUpdate: 'compaction_update', compactionId: 'c-5', status: 'failed' });
+    expect(norm).toEqual({ kind: 'notice', level: 'error', message: t().stream.compactionFailed });
+  });
+
+  it('reset() forgets pending compaction ids so a new stream re-pins', () => {
+    normalizer.normalize({ sessionUpdate: 'compaction_update', compactionId: 'c-6', status: 'in_progress' });
+    normalizer.reset();
+    expect(normalizer.normalize({ sessionUpdate: 'compaction_update', compactionId: 'c-6', status: 'completed' })).toEqual({
+      kind: 'compaction',
+      summary: undefined,
+    });
+  });
+});
+
+describe('SessionUpdateNormalizer state_update', () => {
+  let normalizer: SessionUpdateNormalizer;
+
+  beforeEach(() => {
+    normalizer = new SessionUpdateNormalizer();
+  });
+
+  it('maps the idle end-of-turn usage onto a usage update, dropping non-numbers', () => {
+    const norm = normalizer.normalize({
+      sessionUpdate: 'state_update',
+      state: 'idle',
+      stopReason: 'end_turn',
+      usage: { totalTokens: 30, inputTokens: 20, outputTokens: 10, used: 30, size: 'huge' },
+    });
+    expect(norm).toEqual({
+      kind: 'usage',
+      totalTokens: 30,
+      inputTokens: 20,
+      outputTokens: 10,
+      thoughtTokens: undefined,
+      used: 30,
+      size: undefined,
+    });
+  });
+
+  it('ignores running/requires_action and idle frames without usage', () => {
+    expect(normalizer.normalize({ sessionUpdate: 'state_update', state: 'running' })).toBeNull();
+    expect(normalizer.normalize({ sessionUpdate: 'state_update', state: 'requires_action' })).toBeNull();
+    expect(normalizer.normalize({ sessionUpdate: 'state_update', state: 'idle', stopReason: 'end_turn' })).toBeNull();
   });
 });

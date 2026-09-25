@@ -41,7 +41,9 @@ import {
   zSessionInfoUpdate,
   zUsageUpdate,
   zNoticeUpdate,
+  zNotice,
   zCompactionUpdate,
+  zStateUpdate,
 } from './acpSchemas';
 import { z } from 'zod';
 
@@ -100,8 +102,25 @@ export function parseSessionUpdate(u: Record<string, unknown> | undefined | null
       const r = zNoticeUpdate.safeParse(u);
       return r.success && r.data.message ? r.data : null;
     }
+    case 'notice': {
+      // Official v2-alpha spelling; fold severity/title/description onto the
+      // internal notice_update shape so every consumer keeps one representation.
+      const r = zNotice.safeParse(u);
+      if (!r.success) return null;
+      const message = [r.data.title, r.data.description].filter(Boolean).join(' — ');
+      if (!message) return null;
+      return { sessionUpdate: 'notice_update', level: r.data.severity, message };
+    }
     case 'compaction_update': {
       const r = zCompactionUpdate.safeParse(u);
+      return r.success ? r.data : null;
+    }
+    case 'compaction_summary_chunk':
+      // Known v2 frame feeding a summary the transcript does not paint; drop
+      // it here so it stays out of the unknown-kind warning, emitting nothing.
+      return null;
+    case 'state_update': {
+      const r = zStateUpdate.safeParse(u);
       return r.success ? r.data : null;
     }
     case 'user_message_chunk': {

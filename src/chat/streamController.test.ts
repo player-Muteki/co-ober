@@ -84,7 +84,7 @@ describe('StreamController', () => {
     expect(session.messages[0].content).toBe('Hello world');
   });
 
-  it('renders an image chunk through appendAssistantImage without touching the transcript', () => {
+  it('renders an image chunk through appendAssistantImage and persists it as an image block', () => {
     const session = { messages: [], updatedAt: 0 };
     deps.sessionStore.get.mockReturnValue(session);
 
@@ -100,6 +100,46 @@ describe('StreamController', () => {
     expect(deps.renderer.appendAssistantImage).toHaveBeenCalledWith('image/png', 'AAA');
     expect(deps.renderer.appendText).not.toHaveBeenCalled();
     expect(session.messages).toHaveLength(0);
+    expect(deps.sessionStore.append).toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({
+        role: 'assistant',
+        contentBlocks: [{ type: 'image', mimeType: 'image/png', data: 'AAA' }],
+      }),
+    );
+  });
+
+  it('dedupes a redelivered image frame so the base64 blob is stored once', () => {
+    const frame = {
+      kind: 'message_chunk' as const,
+      role: 'agent' as const,
+      messageId: 'msg-dup',
+      chunkText: '',
+      accumulatedText: '',
+      content: { type: 'image', mimeType: 'image/png', data: 'REPELLED-BLOB' },
+    };
+    controller.handleChunk(frame);
+    controller.handleChunk(frame);
+    const imageAppends = deps.sessionStore.append.mock.calls.filter((call: unknown[]) => {
+      const blocks = (call[1] as { contentBlocks?: Array<{ type?: string }> }).contentBlocks;
+      return Array.isArray(blocks) && blocks[0]?.type === 'image';
+    });
+    expect(imageAppends).toHaveLength(1);
+  });
+
+  it('persistSystemNote writes a system-role line and schedules a save', () => {
+    controller.persistSystemNote('— Turn stopped: tool_calls —');
+    expect(deps.sessionStore.append).toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({ role: 'system', content: '— Turn stopped: tool_calls —', type: 'text' }),
+    );
+    expect(deps.sessionStore.getOrCreate).toHaveBeenCalledWith('session-1');
+  });
+
+  it('persistSystemNote is a no-op without a session id', () => {
+    deps.getSessionId.mockReturnValueOnce(null);
+    controller.persistSystemNote('orphan');
+    expect(deps.sessionStore.append).not.toHaveBeenCalled();
   });
 
   it('persists a visible placeholder once per message and type for non-image, non-text chunks', () => {

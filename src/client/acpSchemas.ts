@@ -139,9 +139,48 @@ export const zNoticeUpdate = z.object({
   level: z.string().catch('info'),
   message: z.preprocess((v) => (typeof v === 'string' ? v : typeof (v as { text?: unknown })?.text === 'string' ? (v as { text: string }).text : ''), z.string().catch('')),
 });
+// Official v2-alpha notice frame (feature unstable_session_notices):
+// `notice{severity,title,description}`. Coerced onto the internal shape.
+export const zNotice = z.object({
+  sessionUpdate: z.literal('notice'),
+  severity: z.string().catch('info'),
+  title: z.string().catch(''),
+  description: z.string().optional(),
+});
+// v1-era RFD shape (summary is a plain string) and the official v2-alpha
+// shape (compactionId + status + ContentBlock[] summary) share this frame
+// name; accept both. The summary is flattened to text here because the
+// transcript only paints the boundary marker.
+const flattenSummary = (v: unknown): string | undefined => {
+  if (typeof v === 'string') return v;
+  if (Array.isArray(v)) {
+    const text = v
+      .map((b) => ((b as { type?: string; text?: unknown })?.type === 'text' ? String((b as { text: unknown }).text ?? '') : ''))
+      .filter(Boolean)
+      .join('\n');
+    return text || undefined;
+  }
+  return undefined;
+};
 export const zCompactionUpdate = z.object({
   sessionUpdate: z.literal('compaction_update'),
-  summary: z.string().optional(),
+  compactionId: z.string().optional(),
+  status: z.string().optional(),
+  summary: z.preprocess(flattenSummary, z.string().optional().catch(undefined)),
+  error: z.string().optional(),
+});
+export const zCompactionSummaryChunk = z.object({
+  sessionUpdate: z.literal('compaction_summary_chunk'),
+  compactionId: z.string(),
+  content: zChunkContent,
+});
+// v2-alpha turn-lifecycle frame: running/idle/requires_action, with the idle
+// transition optionally carrying the end-turn stop reason and token usage.
+export const zStateUpdate = z.object({
+  sessionUpdate: z.literal('state_update'),
+  state: z.string(),
+  stopReason: z.string().nullish().transform((s) => s ?? undefined),
+  usage: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const zSessionUpdate = z.discriminatedUnion('sessionUpdate', [
@@ -159,5 +198,8 @@ export const zSessionUpdate = z.discriminatedUnion('sessionUpdate', [
   zSessionInfoUpdate,
   zUsageUpdate,
   zNoticeUpdate,
+  zNotice,
   zCompactionUpdate,
+  zCompactionSummaryChunk,
+  zStateUpdate,
 ]);

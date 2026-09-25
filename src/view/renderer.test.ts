@@ -158,6 +158,26 @@ describe('ChatRenderer', () => {
       expect(wrap.querySelector('.co-ober-text-block')).not.toBeNull();
     });
 
+    it('renders a persisted image block inline like the live paint', () => {
+      const wrap = document.createElement('div');
+      renderer.renderStructuredMessage(
+        {
+          role: 'assistant',
+          content: '',
+          type: 'text',
+          timestamp: 1,
+          contentBlocks: [
+            { type: 'image', mimeType: 'image/png', data: 'AAA=' },
+            { type: 'image', mimeType: '', data: 'BBB=' },
+          ],
+        },
+        wrap,
+      );
+      const imgs = wrap.querySelectorAll('.co-ober-assistant-image');
+      expect(imgs.length).toBe(1);
+      expect(imgs[0].getAttribute('src')).toBe('data:image/png;base64,AAA=');
+    });
+
     it('renders a native usage footer alongside duration', () => {
       const wrap = document.createElement('div');
       renderer.renderStructuredMessage(

@@ -110,6 +110,7 @@ const en = {
     noticeWarning: 'Warning',
     noticeError: 'Alert',
     compacted: '— Context compacted by the agent —',
+    compactionFailed: 'Context compaction failed',
     unsupportedContent: '[{type} content — cannot be shown here]',
   },
 

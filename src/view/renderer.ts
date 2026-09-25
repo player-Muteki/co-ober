@@ -897,6 +897,18 @@ export class ChatRenderer {
         break;
       }
 
+      case 'image': {
+        // Mirrors appendAssistantImage's live paint so a restored transcript
+        // shows the same inline image.
+        if (!block.mimeType || !block.data) break;
+        const imgBody = parentEl.createDiv({ cls: 'co-ober-msg-body' });
+        imgBody.createEl('img', {
+          cls: 'co-ober-assistant-image',
+          attr: { src: `data:${block.mimeType};base64,${block.data}`, alt: block.mimeType },
+        });
+        break;
+      }
+
       case 'tool_use': {
         // tool_use blocks reference existing tool calls already rendered live.
         if (block.toolCallId) {

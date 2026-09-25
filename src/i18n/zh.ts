@@ -112,6 +112,7 @@ const zh: Locale = {
     noticeWarning: '警告',
     noticeError: '注意',
     compacted: '— 智能体已压缩上下文 —',
+    compactionFailed: '上下文压缩失败',
     unsupportedContent: '[{type} 内容——此处无法展示]',
   },
 

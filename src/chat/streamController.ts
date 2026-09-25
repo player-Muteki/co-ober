@@ -66,6 +66,9 @@ export class StreamController {
   }> = [];
   // Frames already surfaced as a persisted placeholder, keyed messageId:type.
   private unsupportedChunks = new Set<string>();
+  // Agent images already written to the transcript, keyed per payload, so a
+  // redelivered frame cannot duplicate the (heavy) base64 in data.json.
+  private persistedImages = new Set<string>();
 
   constructor(deps: StreamControllerDeps) {
     this.deps = deps;
@@ -100,6 +103,7 @@ export class StreamController {
           renderer.finalizeCurrentThinking();
           if (ch.content?.type === 'image' && ch.content.mimeType && ch.content.data) {
             renderer.appendAssistantImage(ch.content.mimeType, ch.content.data);
+            this.persistAssistantImage(ch.messageId, ch.content.mimeType, ch.content.data);
           } else if (!ch.content) {
             renderer.appendText(ch.chunkText, ch.messageId);
             this.saveAssistantChunk(ch.messageId, ch.accumulatedText, 'text');
@@ -259,6 +263,7 @@ export class StreamController {
     this.currentContentBlocks = [];
     this.toolBlocks.clear();
     this.unsupportedChunks.clear();
+    this.persistedImages.clear();
     this.deps.state.resetStreamingState();
   }
 
@@ -379,6 +384,36 @@ export class StreamController {
     const note = t().stream.unsupportedContent.replace('{type}', type);
     this.deps.renderer.addSystemMessage(note);
     this.saveMessage('assistant', note, 'text');
+  }
+
+  /**
+   * Agent images are painted live by appendAssistantImage; this writes the
+   * same image into the transcript as an image content block so a restored
+   * session still shows it. Deduped by payload so a redelivered frame cannot
+   * double-store the base64 blob.
+   */
+  private persistAssistantImage(messageId: string, mimeType: string, data: string): void {
+    const key = `${messageId}:${mimeType}:${data.length}:${data.slice(-16)}`;
+    if (this.persistedImages.has(key)) return;
+    this.persistedImages.add(key);
+    this.saveMessage('assistant', '', 'text', [{ type: 'image', mimeType, data }]);
+  }
+
+  /**
+   * Persist a rendered system line (e.g. a stop-reason badge) so it survives
+   * a reload instead of evaporating with the live DOM. The caller renders.
+   */
+  persistSystemNote(text: string): void {
+    const sessionId = this.deps.getSessionId();
+    if (!sessionId) return;
+    this.deps.sessionStore.getOrCreate(sessionId);
+    this.deps.sessionStore.append(sessionId, {
+      role: 'system',
+      content: text,
+      type: 'text',
+      timestamp: Date.now(),
+    });
+    this.scheduleSave();
   }
 
   saveMessage(

@@ -1012,18 +1012,50 @@ export class CoOberViewController {
    */
   private surfaceStopReason(response: AcpResponse | undefined): void {
     const reason = response?.stopReason;
+    // Lines are also persisted (like the compaction boundary) so the badge
+    // survives a reload instead of evaporating with the live DOM.
+    const note = (text: string, asError: boolean): void => {
+      if (asError) this.deps.renderer.addError(text);
+      else this.deps.renderer.addSystemMessage(text);
+      this.streamCtrl.persistSystemNote(text);
+    };
     if (reason === 'refusal') {
-      this.deps.renderer.addError(t().stopReason.refusal);
+      note(t().stopReason.refusal, true);
     } else if (reason === 'max_tokens') {
-      this.deps.renderer.addSystemMessage(t().stopReason.maxTokens);
+      note(t().stopReason.maxTokens, false);
     } else if (reason === 'max_turn_requests') {
-      this.deps.renderer.addSystemMessage(t().stopReason.maxTurnRequests);
+      note(t().stopReason.maxTurnRequests, false);
     } else if (reason === 'tool_calls') {
       // The turn ended awaiting tool results the client was to supply — the
       // answer is truncated even though nothing errored.
-      this.deps.renderer.addSystemMessage(t().stopReason.toolCalls);
+      note(t().stopReason.toolCalls, false);
     }
     // 'cancelled' / 'interrupted' are user-initiated; no banner needed.
+  }
+
+  /**
+   * Stamp the just-finished turn's token totals onto the newest assistant
+   * message that has no usage yet, so the footer survives a reload. Native
+   * OpenCode sessions get authoritative numbers from the database on restore;
+   * this covers the ACP-response path (and seeds the footer before enrichment).
+   */
+  private persistTurnUsage(usage: UsageInfo): void {
+    const sessionId = this.state.sessionId;
+    if (!sessionId) return;
+    const session = this.deps.sessionStore.get(sessionId);
+    if (!session) return;
+    for (let i = session.messages.length - 1; i >= 0; i--) {
+      const msg = session.messages[i];
+      if (msg.role !== 'assistant' || msg.type === 'thinking' || msg.usage) continue;
+      msg.usage = {
+        totalTokens: usage.totalTokens || undefined,
+        inputTokens: usage.inputTokens || undefined,
+        outputTokens: usage.outputTokens || undefined,
+        cost: usage.cost?.amount,
+      };
+      void this.deps.sessionStore.save();
+      return;
+    }
   }
 
   /**
@@ -1215,6 +1247,7 @@ export class CoOberViewController {
             modelId: this.state.currentModelId ?? undefined,
             elapsedMs: Date.now() - this.sendStartTime,
           });
+          this.persistTurnUsage(this.state.usage);
         }
         if (inlineEdit && this.deps.inlineEditPanel.pendingState === inlineEdit) {
           const session = this.deps.sessionStore.get(this.state.sessionId ?? '');

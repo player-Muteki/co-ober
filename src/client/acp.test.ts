@@ -217,6 +217,66 @@ describe('parseSessionUpdate', () => {
     });
   });
 
+  it('folds the official v2 notice frame onto the internal notice_update shape', () => {
+    expect(
+      parseSessionUpdate({ sessionUpdate: 'notice', severity: 'warning', title: 'Rate limited', description: 'slow down' }),
+    ).toEqual({ sessionUpdate: 'notice_update', level: 'warning', message: 'Rate limited — slow down' });
+    expect(parseSessionUpdate({ sessionUpdate: 'notice', title: 'Only a title' })).toEqual({
+      sessionUpdate: 'notice_update',
+      level: 'info',
+      message: 'Only a title',
+    });
+    expect(parseSessionUpdate({ sessionUpdate: 'notice', severity: 42, title: 'x' })).toEqual({
+      sessionUpdate: 'notice_update',
+      level: 'info',
+      message: 'x',
+    });
+    expect(parseSessionUpdate({ sessionUpdate: 'notice', title: '' })).toBeNull();
+    expect(parseSessionUpdate({ sessionUpdate: 'notice' })).toBeNull();
+  });
+
+  it('parses the v2 compaction frame with id, status and a ContentBlock summary', () => {
+    const v2 = parseSessionUpdate({
+      sessionUpdate: 'compaction_update',
+      compactionId: 'c-1',
+      status: 'in_progress',
+      summary: [
+        { type: 'text', text: 'folded' },
+        { type: 'image', mimeType: 'image/png', data: 'AAA' },
+        { type: 'text', text: 'away' },
+      ],
+    });
+    expect(v2).toEqual({ sessionUpdate: 'compaction_update', compactionId: 'c-1', status: 'in_progress', summary: 'folded\naway' });
+    expect(parseSessionUpdate({ sessionUpdate: 'compaction_update', compactionId: 'c', status: 'failed', error: 'boom' })).toEqual({
+      sessionUpdate: 'compaction_update',
+      compactionId: 'c',
+      status: 'failed',
+      error: 'boom',
+    });
+  });
+
+  it('drops compaction_summary_chunk silently (known frame, unpainted summary)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(
+      parseSessionUpdate({ sessionUpdate: 'compaction_summary_chunk', compactionId: 'c-1', content: { type: 'text', text: 'partial' } }),
+    ).toBeNull();
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('parses v2 state_update frames', () => {
+    expect(parseSessionUpdate({ sessionUpdate: 'state_update', state: 'idle', stopReason: 'end_turn' })).toEqual({
+      sessionUpdate: 'state_update',
+      state: 'idle',
+      stopReason: 'end_turn',
+    });
+    expect(parseSessionUpdate({ sessionUpdate: 'state_update', state: 'running' })).toEqual({
+      sessionUpdate: 'state_update',
+      state: 'running',
+    });
+    expect(parseSessionUpdate({ sessionUpdate: 'state_update' })).toBeNull();
+  });
+
   it('keeps the stable tool_call name and initial content', () => {
     const result = parseSessionUpdate({
       sessionUpdate: 'tool_call',

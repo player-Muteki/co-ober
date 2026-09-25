@@ -138,8 +138,11 @@ export type SessionUpdate =
   | { sessionUpdate: 'usage_update'; used?: number; size?: number; totalTokens?: number; inputTokens?: number; outputTokens?: number; thoughtTokens?: number; cost?: { amount: number; currency: string } }
   // Extension updates not in the v1 contract yet (notice RFD #2004,
   // compaction RFD #2002): parsed permissively so they render instead of dropping.
+  // The official v2-alpha spellings (`notice{severity,title,description}`,
+  // compaction frames keyed by compactionId) are coerced onto these internal shapes.
   | { sessionUpdate: 'notice_update'; level: string; message: string }
-  | { sessionUpdate: 'compaction_update'; summary?: string };
+  | { sessionUpdate: 'compaction_update'; compactionId?: string; status?: string; summary?: string; error?: string }
+  | { sessionUpdate: 'state_update'; state: string; stopReason?: string; usage?: Record<string, unknown> };
 
 export type NormalizedUpdate =
   | { kind: 'message_chunk'; role: 'user' | 'agent' | 'thought'; messageId: string; chunkText: string; accumulatedText: string; content?: ChunkContent }
@@ -246,13 +249,16 @@ export interface TerminalInstance {
 
 // === Structured Content Types (Phase 1) ===
 
-export type ContentBlockType = 'text' | 'thinking' | 'tool_use' | 'context_compacted' | 'subagent';
+export type ContentBlockType = 'text' | 'thinking' | 'tool_use' | 'context_compacted' | 'subagent' | 'image';
 
 /** A single block within an assistant message, rendered in order. */
 export interface ContentBlock {
   type: ContentBlockType;
   /** Text content for text/thinking blocks */
   text?: string;
+  /** MIME type + base64 payload for image blocks streamed by the agent */
+  mimeType?: string;
+  data?: string;
   /** References the tool call id for tool_use blocks */
   toolCallId?: string;
   /** Snapshot of the tool title, so restored history can re-render the call */
