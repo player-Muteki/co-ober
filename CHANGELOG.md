@@ -1,3 +1,20 @@
+## 0.2.2 - 2026-09-25
+
+Everything here is on our side of the wire: each tab is made to speak only for itself, and a conversation is made to say what it could not do.
+
+### Added
+- **Composer drafts survive a restart**: the text you were typing and the note references inside it come back in the tab that holds them. Images are the exception — a restart never brings their bytes back — so a draft that carried them says how many it left behind instead of quietly returning half a message.
+- **Terminal cards show their output**: when the agent asks Co-Ober to host a terminal, the frame that follows reads that process back and paints its output, what was trimmed from it and how it ended — by a signal, or by a nonzero exit — where the card used to say the content was unsupported.
+- **A conversation that did not reach the disk says so**: when saving a transcript fails, the tab it belongs to marks the failure once per streak, so you know what a restart would lose rather than assuming the words were kept.
+
+### Changed
+- **Every tab speaks for itself**: the `/btw` scratch thread belongs to the tab that forked it, so closing that tab releases the session instead of leaving it live on the agent side; resetting a background tab no longer tears down the thread on screen, and switching tabs hides a thread rather than closing it.
+- **A slash command runs where it was admitted**: a command drained out of a queue can no longer switch another tab's model, clear another tab's transcript or greet the user with another tab's welcome screen — and a command whose tab has gone runs nowhere at all.
+- **The agent's own input hints reach the slash menu**: the hint an agent attaches to its command now surfaces as its argument hint instead of being stripped while the frame was parsed.
+
+### Fixed
+- **Frames that could not be drawn are counted where they were lost**: malformed, unrenderable and unrouted update frames now add a line in their own tab saying how many frames of this conversation Co-Ober failed to render, and the count clears with the transcript it belongs to.
+
 ## 0.2.1 - 2026-09-25
 
 No new capabilities — this release levels the ground that 0.2.0's tabs stood on, so moving between conversations stops costing you anything.
