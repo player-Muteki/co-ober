@@ -2413,6 +2413,30 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
       };
     }
 
+    it('drops a turn whose session creation was superseded by a session switch', async () => {
+      const gate = deferred<string>();
+      const sendMessage = vi.fn().mockResolvedValue({ stopReason: 'end_turn' });
+      const client = createMockClient({
+        createSession: vi.fn(() => gate.promise),
+        sendMessage,
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      controller.state.sessionId = null;
+      const addUser = vi.fn();
+      (deps.renderer as unknown as { addUserMessage: ReturnType<typeof vi.fn> }).addUserMessage = addUser;
+
+      const sending = controller.send('question', []);
+      await new Promise((r) => setTimeout(r, 0));
+      // switchSession / resetConversationView bump the generation; the
+      // continuation must not paint or persist into the new session.
+      Reflect.set(controller, 'genId', (Reflect.get(controller, 'genId') as number) + 1);
+      gate.resolve('agent-session-1');
+      await sending;
+
+      expect(addUser).not.toHaveBeenCalled();
+      expect(sendMessage).not.toHaveBeenCalled();
+    });
+
     it('restoreSession bails when the session switches while enriching', async () => {
       controller.state.sessionId = 'test';
       (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue(restorableSession());

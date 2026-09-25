@@ -532,7 +532,10 @@ export class CoOberView extends ItemView {
   }
 
   private showNewMessagesBtn(): void {
-    if (this.newMessagesBtn) return;
+    // renderer.clear() detaches the button along with the message wraps;
+    // an isConnected check lets it come back instead of leaking as a
+    // dangling reference that suppresses the button forever.
+    if (this.newMessagesBtn?.isConnected) return;
     const btn = this.messagesEl.createEl('button', {
       cls: 'co-ober-new-messages-btn',
     });

@@ -482,6 +482,7 @@ export class ChatRenderer {
   private async executeTextRender(): Promise<void> {
     if (this.isTextRenderRunning) return;
     this.isTextRenderRunning = true;
+    const textLengthAtStart = this.currentAssistantText.length;
 
     try {
       if (this.currentAssistantEl && this.currentAssistantText) {
@@ -515,12 +516,17 @@ export class ChatRenderer {
     }
 
     // If more text arrived during render, schedule another pass
+    const grewDuringPass = this.currentAssistantText.length > textLengthAtStart;
     if (this.currentAssistantEl && this.resolveTextRender) {
       const resolve = this.resolveTextRender;
       this.textRenderPromise = null;
       this.resolveTextRender = null;
       resolve();
     }
+    // Chunks that landed mid-await had no frame queued (scheduleTextRender
+    // skips while a pass runs) and the promise above belonged to them —
+    // without this reschedule their text never paints until the next chunk.
+    if (grewDuringPass) void this.scheduleTextRender();
   }
 
   cancelTextRender(): void {

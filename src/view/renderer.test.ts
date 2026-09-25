@@ -504,6 +504,26 @@ describe('ChatRenderer', () => {
       rafSpy.mockRestore();
       selectionSpy.mockRestore();
     });
+
+    it('re-runs the pass when text arrives while markdown rendering awaits', async () => {
+      const spy = await renderSpy();
+      const texts: string[] = [];
+      spy.mockImplementation(async (_app: unknown, text: string) => {
+        texts.push(text);
+        if (texts.length === 1) renderer.appendText(' tail');
+        return undefined;
+      });
+
+      renderer.appendText('head');
+      await runTextRender();
+      expect(texts[texts.length - 1]).toBe('head');
+      await renderer.flushTextRender();
+
+      // The mid-render chunk must not be stranded: a second pass carries it.
+      expect(texts.length).toBe(2);
+      expect(texts[1]).toBe('head tail');
+      spy.mockReset();
+    });
   });
 
   describe('showUsage throughput', () => {

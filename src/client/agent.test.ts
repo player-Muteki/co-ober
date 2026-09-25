@@ -41,6 +41,17 @@ describe('AgentRuntime', () => {
       onClose: undefined,
       onReconnect: undefined,
       onPermissionRequest: undefined,
+      // Mirrors AcpClient.setClientHandlers field assignment so the
+      // runtime's delegation (which also syncs the live request handler)
+      // stays observable here.
+      setClientHandlers: vi.fn((h: any) => {
+        mockAcp.onClose = h.onClose ?? undefined;
+        mockAcp.onReconnect = h.onReconnect ?? undefined;
+        mockAcp.onReconnectFailed = h.onReconnectFailed ?? undefined;
+        mockAcp.onElicitationComplete = h.onElicitationComplete ?? undefined;
+        mockAcp.onPermissionUnreadable = h.onPermissionUnreadable ?? undefined;
+        mockAcp.onPermissionRequest = h.onPermissionRequest ?? undefined;
+      }),
     } as any;
     runtime = new AgentRuntime(mockAcp);
   });
@@ -302,6 +313,16 @@ describe('AgentRuntime', () => {
 
       runtime.setClientHandlers({ onClose, onReconnect, onReconnectFailed, onPermissionRequest });
 
+      // Must delegate to AcpClient.setClientHandlers, the only path that
+      // syncs the live AcpRequestHandler built during connect().
+      expect(mockAcp.setClientHandlers).toHaveBeenCalledWith(
+        expect.objectContaining({
+          onClose,
+          onReconnect,
+          onReconnectFailed,
+          onPermissionRequest: expect.any(Function),
+        }),
+      );
       expect(mockAcp.onClose).toBe(onClose);
       expect(mockAcp.onReconnect).toBe(onReconnect);
       expect(mockAcp.onReconnectFailed).toBe(onReconnectFailed);

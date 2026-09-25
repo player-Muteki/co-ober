@@ -244,6 +244,27 @@ describe('CoOberView icon button a11y', () => {
   });
 });
 
+describe('CoOberView new-messages button revival', () => {
+  it('recreates the jump button after it was detached together with the transcript', async () => {
+    setLocale('en');
+    const view = createView(createPlugin());
+    await view.onOpen();
+    const show = () => (Reflect.get(view, 'showNewMessagesBtn') as () => void).call(view);
+
+    show();
+    const first = view.contentEl.querySelector('.co-ober-new-messages-btn');
+    expect(first).not.toBeNull();
+
+    // renderer.clear() empties the message host, taking the button with it;
+    // the stale field must not suppress the button forever after that.
+    (Reflect.get(view, 'messagesEl') as HTMLElement).empty();
+    show();
+    const second = view.contentEl.querySelector('.co-ober-new-messages-btn');
+    expect(second).not.toBeNull();
+    expect(second).not.toBe(first);
+  });
+});
+
 function createView(plugin = createPlugin()): CoOberView {
   const view = new CoOberView({} as never, plugin);
   Reflect.set(view, 'registerEvent', vi.fn());

@@ -90,22 +90,25 @@ export class AgentRuntime implements OpencodeClient {
   }
 
   setClientHandlers(handlers: ClientHandlers): void {
-    this.acp.onClose = handlers.onClose ?? undefined;
-    this.acp.onReconnect = handlers.onReconnect ?? undefined;
-    this.acp.onReconnectFailed = handlers.onReconnectFailed ?? undefined;
-    this.acp.onElicitationComplete = handlers.onElicitationComplete ?? undefined;
     const permissionHandler =
       handlers.onPermissionRequest ?? ((req: PermissionRequest): Promise<string> => this.requestPermission(req));
     // Hold the idle timer for however long the permission (or its banner) is
     // outstanding, so slow human decisions never kill the turn.
-    this.acp.onPermissionRequest = async (req) => {
-      this.permissionHolds += 1;
-      try {
-        return await permissionHandler(req);
-      } finally {
-        this.permissionHolds -= 1;
-      }
-    };
+    // Must go through AcpClient.setClientHandlers: the AcpRequestHandler is
+    // constructed during connect(), which on first load happens before this
+    // method — assigning the AcpClient field alone never reached the live
+    // request handler, so first-connect permission frames silently rejected.
+    this.acp.setClientHandlers({
+      ...handlers,
+      onPermissionRequest: async (req) => {
+        this.permissionHolds += 1;
+        try {
+          return await permissionHandler(req);
+        } finally {
+          this.permissionHolds -= 1;
+        }
+      },
+    });
   }
 
   cancel(id: string): Promise<void> { return this.acp.cancel(id); }

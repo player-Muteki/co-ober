@@ -971,6 +971,13 @@ export class CoOberViewController {
       config.onFinally?.();
       return;
     }
+    // A session switch or reset during successful session creation bumps
+    // genId; this continuation must not touch the view or the (now
+    // different) session's store — the winner owns state from here on.
+    // Runs after the failure branch above: a failed connect also bumps
+    // genId (handleDisconnect), and that turn must still release busy and
+    // drain the queue.
+    if (this.genId !== currentGen) return;
 
     this.deps.input.setStreaming(true);
     this.deps.toolbar.setSending(true);

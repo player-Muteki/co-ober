@@ -37,6 +37,7 @@ const mocks = vi.hoisted(() => {
     notifications = new Map<string, (params: unknown) => void>();
     sentNotifications: Array<{ method: string; params: unknown }> = [];
     requests: Array<{ method: string; params: unknown }> = [];
+    serverRequests = new Map<string, (params: unknown) => Promise<unknown>>();
     disposed = false;
     deferred!: { promise: Promise<unknown>; resolve: (v: unknown) => void; reject: (e: unknown) => void };
 
@@ -57,7 +58,9 @@ const mocks = vi.hoisted(() => {
       this.notifications.set(method, cb);
     }
 
-    onRequest(_method: string, _cb: unknown): void {}
+    onRequest(method: string, cb: (params: unknown) => Promise<unknown>): void {
+      this.serverRequests.set(method, cb);
+    }
 
     request(method: string, params?: unknown): Promise<unknown> {
       this.requests.push({ method, params });
@@ -416,6 +419,53 @@ describe('AcpClient generation fencing', () => {
       };
       await client.listSessions('/vault');
       expect(calls).toBe(10);
+    });
+  });
+});
+
+describe('permission handler wiring', () => {
+  beforeEach(() => {
+    FakeSubprocess.instances.length = 0;
+    FakeTransport.instances.length = 0;
+  });
+
+  const permissionParams = {
+    sessionId: 'ses_1',
+    toolCall: { toolCallId: 'tc1', title: 'edit file', kind: 'edit', status: 'pending' },
+    options: [
+      { optionId: 'allow_once', kind: 'allow_once', name: 'Allow once' },
+      { optionId: 'reject_once', kind: 'reject_once', name: 'Reject once' },
+    ],
+  };
+
+  async function connectedClient() {
+    const client = new AcpClient('opencode', '/vault');
+    const connecting = client.connect();
+    await tick();
+    const transport = FakeTransport.instances[0];
+    transport.deferred.resolve({ agentCapabilities: {} });
+    await connecting;
+    return { client, transport };
+  }
+
+  it('routes permission frames to a handler bound after the first connect', async () => {
+    const { client, transport } = await connectedClient();
+    const handler = vi.fn(async () => 'allow_once');
+    client.setClientHandlers({ onPermissionRequest: handler });
+
+    const onPermission = transport.serverRequests.get('session/request_permission');
+    expect(onPermission).toBeDefined();
+    await expect(onPermission!(permissionParams)).resolves.toEqual({
+      outcome: { outcome: 'selected', optionId: 'allow_once' },
+    });
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the built-in reject fallback when no handler was ever bound', async () => {
+    const { transport } = await connectedClient();
+    const onPermission = transport.serverRequests.get('session/request_permission')!;
+    await expect(onPermission(permissionParams)).resolves.toEqual({
+      outcome: { outcome: 'selected', optionId: 'reject_once' },
     });
   });
 });
