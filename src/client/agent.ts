@@ -83,6 +83,7 @@ export class AgentRuntime implements OpencodeClient {
     this.acp.onReconnect = handlers.onReconnect ?? undefined;
     this.acp.onReconnectFailed = handlers.onReconnectFailed ?? undefined;
     this.acp.onPermissionRequest = handlers.onPermissionRequest ?? ((req) => this.requestPermission(req));
+    this.acp.onElicitationComplete = handlers.onElicitationComplete ?? undefined;
   }
 
   cancel(id: string): Promise<void> { return this.acp.cancel(id); }

@@ -158,7 +158,10 @@ export type NormalizedUpdate =
   | { kind: 'compaction'; summary?: string };
 
 export interface AcpResponse {
-  stopReason: 'end_turn' | 'max_tokens' | 'max_turn_requests' | 'tool_calls' | 'interrupted' | 'refusal' | 'cancelled';
+  // Agents mint new stop reasons ahead of the ACP enum; the client parses any
+  // string and handles the known ones (end_turn, max_tokens, max_turn_requests,
+  // tool_calls, interrupted, refusal, cancelled), badging unknown ones verbatim.
+  stopReason: string;
   usage?: {
     totalTokens: number;
     inputTokens: number;

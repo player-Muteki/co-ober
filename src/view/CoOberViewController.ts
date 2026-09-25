@@ -422,6 +422,9 @@ export class CoOberViewController {
       onPermissionUnreadable: () => {
         this.deps.renderer.addError(t().permission.unreadable);
       },
+      onElicitationComplete: (elicitationId) => {
+        this.deps.permissionBanner.resolveExternally(elicitationId);
+      },
       onPermissionRequest: async (req) =>
         client.permissionMode === 'safe'
           ? this.deps.permissionBanner.show(req)
@@ -1052,6 +1055,10 @@ export class CoOberViewController {
       // The turn ended awaiting tool results the client was to supply — the
       // answer is truncated even though nothing errored.
       note(t().stopReason.toolCalls, false);
+    } else if (reason && reason !== 'end_turn' && reason !== 'cancelled' && reason !== 'interrupted') {
+      // Outside the known enum: better a verbatim badge than a silent turn
+      // that looks like it completed normally.
+      note(t().stopReason.unknown.replace('{reason}', reason), false);
     }
     // 'cancelled' / 'interrupted' are user-initiated; no banner needed.
   }

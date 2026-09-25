@@ -13,6 +13,7 @@ import {
   zSessionInfoUpdate,
   zUsageUpdate,
   zPlanUpdate,
+  zPlanRemoved,
   zSessionUpdate,
 } from './acpSchemas';
 
@@ -299,6 +300,16 @@ describe('acpSchemas', () => {
     });
   });
 
+  describe('zPlanRemoved', () => {
+    it('accepts the bare v2 removal frame', () => {
+      expect(zPlanRemoved.safeParse({ sessionUpdate: 'plan_removed' }).success).toBe(true);
+    });
+
+    it('rejects other sessionUpdate values', () => {
+      expect(zPlanRemoved.safeParse({ sessionUpdate: 'plan' }).success).toBe(false);
+    });
+  });
+
   describe('zSessionUpdate (discriminated union)', () => {
     it('validates agent_message_chunk variant', () => {
       const r = zSessionUpdate.safeParse({ sessionUpdate: 'agent_message_chunk', messageId: 'm1', content: validTextContent });
@@ -317,6 +328,11 @@ describe('acpSchemas', () => {
 
     it('validates plan_update variant', () => {
       const r = zSessionUpdate.safeParse({ sessionUpdate: 'plan_update', plan: { type: 'items', entries: [] } });
+      expect(r.success).toBe(true);
+    });
+
+    it('validates plan_removed variant', () => {
+      const r = zSessionUpdate.safeParse({ sessionUpdate: 'plan_removed' });
       expect(r.success).toBe(true);
     });
 

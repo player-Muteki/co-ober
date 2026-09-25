@@ -32,6 +32,30 @@ describe('AcpJsonRpcTransport', () => {
     expect(handlerCalled).toBe(true);
   });
 
+  it('warns once per unknown notification method', async () => {
+    transport.start();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    for (let i = 0; i < 2; i++) {
+      input.write(JSON.stringify({ jsonrpc: '2.0', method: 'co-ober-test/unknown-note' }) + '\n');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    expect(warn.mock.calls.filter((call) => String(call[0]).includes('co-ober-test/unknown-note'))).toHaveLength(1);
+    warn.mockRestore();
+  });
+
+  it('stays silent on $-prefixed notifications, ignorable by JSON-RPC convention', async () => {
+    transport.start();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    input.write(JSON.stringify({ jsonrpc: '2.0', method: '$/cancelRequest' }) + '\n');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it('request() sends JSON-RPC message and resolves on response', async () => {
     transport.start();
 

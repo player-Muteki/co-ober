@@ -24,6 +24,8 @@ export interface ClientHandlers {
   onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
   /** Called when an inbound permission request fails schema validation and had to be cancelled. */
   onPermissionUnreadable?: (summary: string) => void;
+  /** The agent reported an outstanding elicitation was resolved outside this client. */
+  onElicitationComplete?: (elicitationId: string) => void;
 }
 
 export interface OpencodeClient {

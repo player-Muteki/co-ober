@@ -183,6 +183,10 @@ describe('parseSessionUpdate', () => {
     expect(parseSessionUpdate({ sessionUpdate: 'plan_update', plan: { type: 'removal' } })).toBeNull();
   });
 
+  it('should coerce v2 plan_removed into an empty plan that clears the panel', () => {
+    expect(parseSessionUpdate({ sessionUpdate: 'plan_removed' })).toEqual({ sessionUpdate: 'plan', entries: [] });
+  });
+
   it('should parse session_info_update carrying configOptions', () => {
     const result = parseSessionUpdate({
       sessionUpdate: 'session_info_update',

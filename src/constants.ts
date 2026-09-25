@@ -1,4 +1,5 @@
 export const ACP_LIST_SESSIONS_LIMIT = 100;
+export const ACP_LIST_SESSIONS_MAX_PAGES = 10;
 export const ACP_RECONNECT_BACKOFF_BASE_MS = 2000;
 export const MS_PER_DAY = 24 * 60 * 60 * 1000;
 export const SCROLL_NEAR_BOTTOM_THRESHOLD = 50;

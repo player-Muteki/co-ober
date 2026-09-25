@@ -75,6 +75,7 @@ vi.mock('./AcpSubprocess', () => ({ AcpSubprocess: mocks.FakeSubprocess }));
 vi.mock('./AcpJsonRpcTransport', () => ({ AcpJsonRpcTransport: mocks.FakeTransport }));
 
 import { AcpClient } from './acp';
+import type { NormalizedUpdate } from '../types';
 
 const { FakeSubprocess, FakeTransport } = mocks;
 
@@ -250,14 +251,144 @@ describe('AcpClient generation fencing', () => {
       }
     });
 
-    it('rejects an unknown stopReason instead of passing it through', async () => {
+    it('passes an unknown stopReason through instead of failing the whole response', async () => {
       FakeSubprocess.instances.length = 0;
       FakeTransport.instances.length = 0;
       const { client, transport } = await connectedClient();
       const p = client.sendMessage('ses-1', [{ type: 'text', text: 'hi' }], () => {});
       await tick();
-      transport.deferred.resolve({ stopReason: 'some_new_reason' });
+      transport.deferred.resolve({ stopReason: 'some_new_reason', usage: { totalTokens: 5, inputTokens: 2, outputTokens: 3 } });
+      // Rejecting the response would discard its usage as collateral damage;
+      // the controller badges unknown reasons instead.
+      await expect(p).resolves.toMatchObject({ stopReason: 'some_new_reason' });
+    });
+
+    it('still rejects a response missing the stop reason', async () => {
+      FakeSubprocess.instances.length = 0;
+      FakeTransport.instances.length = 0;
+      const { client, transport } = await connectedClient();
+      const p = client.sendMessage('ses-1', [{ type: 'text', text: 'hi' }], () => {});
+      await tick();
+      transport.deferred.resolve({ usage: { totalTokens: 1, inputTokens: 1, outputTokens: 0 } });
       await expect(p).rejects.toThrow(/Invalid ACP response format/);
+    });
+  });
+
+  describe('elicitation/complete notification', () => {
+    it('routes the elicitation id to onElicitationComplete and ignores malformed frames', async () => {
+      const client = new AcpClient('opencode', '/vault');
+      const connecting = client.connect();
+      await tick();
+      FakeTransport.instances[0].deferred.resolve({});
+      await connecting;
+
+      const seen: string[] = [];
+      client.onElicitationComplete = (id) => seen.push(id);
+      const notify = FakeTransport.instances[0].notifications.get('elicitation/complete');
+      expect(notify).toBeDefined();
+
+      notify!({ elicitationId: 'e1' });
+      notify!({ elicitationId: 42 });
+      notify!(undefined);
+      expect(seen).toEqual(['e1']);
+
+      await client.disconnect();
+    });
+  });
+
+  describe('normalizer reset guard', () => {
+    it('keeps an active stream accumulation when a session resumes mid-flight', async () => {
+      const client = new AcpClient('opencode', '/vault');
+      const connecting = client.connect();
+      await tick();
+      FakeTransport.instances[0].deferred.resolve({});
+      await connecting;
+      const transport = FakeTransport.instances[0];
+      let resolve!: (v: unknown) => void;
+      let reject!: (e: unknown) => void;
+      const promise = new Promise<unknown>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      transport.deferred = { promise, resolve, reject };
+      const notify = transport.notifications.get('session/update')!;
+
+      const chunks: NormalizedUpdate[] = [];
+      const first = client.sendMessage('ses-1', [{ type: 'text', text: 'go' }], (u) => chunks.push(u));
+      await tick();
+      notify({
+        sessionId: 'ses-1',
+        update: { sessionUpdate: 'agent_message_chunk', messageId: 'm1', content: { type: 'text', text: 'A' } },
+      });
+
+      const resume = client.resumeSession('ses-2');
+      await tick();
+      notify({
+        sessionId: 'ses-1',
+        update: { sessionUpdate: 'agent_message_chunk', messageId: 'm1', content: { type: 'text', text: 'B' } },
+      });
+
+      expect(
+        chunks.map((c) => (c.kind === 'message_chunk' ? c.accumulatedText : null)),
+      ).toEqual(['A', 'AB']);
+
+      transport.deferred.resolve({ stopReason: 'end_turn' });
+      await Promise.all([first, resume]);
+      await client.disconnect();
+    });
+  });
+
+  describe('listSessions pagination', () => {
+    async function pagingClient(pages: unknown[]): Promise<{ client: AcpClient; calls: Array<{ params: unknown }> }> {
+      const client = new AcpClient('opencode', '/vault');
+      const connecting = client.connect();
+      await tick();
+      FakeTransport.instances[0].deferred.resolve({});
+      await connecting;
+      const transport = FakeTransport.instances[0];
+      const calls: Array<{ params: unknown }> = [];
+      let page = 0;
+      transport.request = (method: string, params?: unknown): Promise<unknown> => {
+        transport.requests.push({ method, params });
+        calls.push({ params });
+        return Promise.resolve(pages[Math.min(page++, pages.length - 1)]);
+      };
+      return { client, calls };
+    }
+
+    it('follows nextCursor across pages', async () => {
+      const { client, calls } = await pagingClient([
+        { sessions: [{ sessionId: 'a' }], nextCursor: 'c1' },
+        { sessions: [{ sessionId: 'b' }], nextCursor: null },
+      ]);
+      const metas = await client.listSessions('/vault');
+      expect(metas.map((m) => m.sessionId)).toEqual(['a', 'b']);
+      expect((calls[0].params as Record<string, unknown>).cursor).toBeUndefined();
+      expect((calls[1].params as Record<string, unknown>).cursor).toBe('c1');
+    });
+
+    it('stops looping when the agent repeats a cursor', async () => {
+      const { client, calls } = await pagingClient([{ sessions: [], nextCursor: 'x' }]);
+      await client.listSessions('/vault');
+      expect(calls).toHaveLength(2);
+    });
+
+    it('caps the number of pages even against a cursor that keeps changing', async () => {
+      let n = 0;
+      const client = new AcpClient('opencode', '/vault');
+      const connecting = client.connect();
+      await tick();
+      FakeTransport.instances[0].deferred.resolve({});
+      await connecting;
+      const transport = FakeTransport.instances[0];
+      let calls = 0;
+      transport.request = (method: string, params?: unknown): Promise<unknown> => {
+        transport.requests.push({ method, params });
+        calls += 1;
+        return Promise.resolve({ sessions: [], nextCursor: `c${n++}` });
+      };
+      await client.listSessions('/vault');
+      expect(calls).toBe(10);
     });
   });
 });

@@ -89,7 +89,7 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): ControllerDeps
       pendingState: null,
       showDiffFromResponse: noop,
     } as unknown as ControllerDeps['inlineEditPanel'],
-    permissionBanner: { dismiss: noop, show: vi.fn() } as unknown as ControllerDeps['permissionBanner'],
+    permissionBanner: { dismiss: noop, show: vi.fn(), resolveExternally: vi.fn() } as unknown as ControllerDeps['permissionBanner'],
     mention: {
       clear: noop,
       listAllNotes: vi.fn(() => []),
@@ -1007,7 +1007,14 @@ describe('CoOberViewController', () => {
         expect.objectContaining({ role: 'system', content: t().stopReason.toolCalls }),
       );
 
-      // User-initiated cancellations stay silent.
+      // An unknown stop reason is badged verbatim rather than looking like a
+      // normal completion.
+      (client.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({ stopReason: 'token_budget_exceeded' });
+      await controller.send('weird', []);
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(
+        t().stopReason.unknown.replace('{reason}', 'token_budget_exceeded'),
+      );
+
       const sysCalls = (deps.renderer.addSystemMessage as ReturnType<typeof vi.fn>).mock.calls.length;
       (client.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({ stopReason: 'cancelled' });
       await controller.send('done', []);
@@ -1067,6 +1074,17 @@ describe('CoOberViewController', () => {
       handlers.onPermissionUnreadable('options: required');
 
       expect(deps.renderer.addError).toHaveBeenCalledWith(t().permission.unreadable);
+    });
+
+    it('retires the matching elicitation banner when the agent reports completion', () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      controller.bindClientHandlers();
+      const handlers = (client.setClientHandlers as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
+      handlers.onElicitationComplete('e1');
+
+      expect(deps.permissionBanner.resolveExternally).toHaveBeenCalledWith('e1');
     });
   });
 

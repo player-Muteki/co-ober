@@ -1,4 +1,4 @@
-import { ACP_LIST_SESSIONS_LIMIT, ACP_RECONNECT_BACKOFF_BASE_MS } from '../constants';
+import { ACP_LIST_SESSIONS_LIMIT, ACP_LIST_SESSIONS_MAX_PAGES, ACP_RECONNECT_BACKOFF_BASE_MS } from '../constants';
 import { getSpawnInfo } from '../utils/commandResolution';
 import { AcpSubprocess, type AcpSubprocessLaunchSpec } from './AcpSubprocess';
 
@@ -34,6 +34,7 @@ import {
   zToolCallUpdate,
   zPlan,
   zPlanUpdate,
+  zPlanRemoved,
   zConfigOptionUpdate,
   zAvailableCommandsUpdate,
   zCurrentModeUpdate,
@@ -97,6 +98,11 @@ export function parseSessionUpdate(u: Record<string, unknown> | undefined | null
       const r = zPlanUpdate.safeParse(u);
       if (!r.success || r.data.plan.type !== 'items' || !Array.isArray(r.data.plan.entries)) return null;
       return { sessionUpdate: 'plan', entries: r.data.plan.entries };
+    }
+    case 'plan_removed': {
+      // v2 signals plan completion by removal; an empty plan clears the panel.
+      const r = zPlanRemoved.safeParse(u);
+      return r.success ? { sessionUpdate: 'plan', entries: [] } : null;
     }
     case 'notice_update': {
       const r = zNoticeUpdate.safeParse(u);
@@ -358,6 +364,8 @@ export class AcpClient implements OpencodeClient {
   onClose?: () => void;
   onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
   onPermissionUnreadable?: (summary: string) => void;
+  /** Agent reported an outstanding elicitation resolved elsewhere. */
+  onElicitationComplete?: (elicitationId: string) => void;
   onReconnect?: () => Promise<void>;
   onReconnectFailed?: () => void;
   private reconnectAttempts = 0;
@@ -460,6 +468,14 @@ export class AcpClient implements OpencodeClient {
       // Exact-match dispatch: accept both the spec and legacy wire names.
       transport.onNotification('session/update', onSessionUpdate);
       transport.onNotification('sessionUpdate', onSessionUpdate);
+      transport.onNotification('elicitation/complete', (params: unknown) => {
+        // The agent answered its own pending elicitation (e.g. in another
+        // client); retire the matching banner so it never sits there unclicked.
+        if (this.transport !== transport) return;
+        const p = params as Record<string, unknown> | undefined;
+        const id = typeof p?.elicitationId === 'string' ? p.elicitationId : null;
+        if (id) this.onElicitationComplete?.(id);
+      });
 
       const response = await this.requestWithFallback('initialize', {
         protocolVersion: 1,
@@ -564,7 +580,9 @@ export class AcpClient implements OpencodeClient {
     mcpServers: McpServerConfig[] = [],
     onReplayUpdate?: (u: NormalizedUpdate) => void,
   ): Promise<void> {
-    this.normalizer.reset();
+    // A replay reset while another session streams would wipe its
+    // accumulated text — same guard as sendMessage.
+    if (this.activeStreams.size === 0) this.normalizer.reset();
     this.replayHandler = onReplayUpdate ?? null;
     this.replaySessionId = id;
     try {
@@ -585,14 +603,31 @@ export class AcpClient implements OpencodeClient {
   }
 
   async listSessions(cwd?: string): Promise<SessionMeta[]> {
-    const r = await this.requestWithFallback('listSessions', {
-      cwd: this.resolveCwd(cwd),
-      limit: ACP_LIST_SESSIONS_LIMIT,
-    });
-    const parsed = z
-      .object({ sessions: z.array(z.object({ sessionId: z.string() }).passthrough()).optional() })
-      .safeParse(r);
-    return parsed.success ? (parsed.data.sessions as SessionMeta[]) : [];
+    // session/list is cursor-paginated: agents with more than one page of
+    // history would otherwise hide everything past the first limit.
+    const collected: SessionMeta[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < ACP_LIST_SESSIONS_MAX_PAGES; page++) {
+      const r = await this.requestWithFallback('listSessions', {
+        cwd: this.resolveCwd(cwd),
+        limit: ACP_LIST_SESSIONS_LIMIT,
+        ...(cursor ? { cursor } : {}),
+      });
+      const parsed = z
+        .object({
+          sessions: z.array(z.object({ sessionId: z.string() }).passthrough()).optional(),
+          nextCursor: z.string().nullish().transform((c) => c ?? undefined),
+        })
+        .safeParse(r);
+      if (!parsed.success) break;
+      collected.push(...((parsed.data.sessions as SessionMeta[]) ?? []));
+      const next = parsed.data.nextCursor;
+      // A repeated cursor means the agent is not actually advancing; stop
+      // rather than loop on the same page.
+      if (!next || next === cursor) break;
+      cursor = next;
+    }
+    return collected;
   }
 
   async forkSession(id: string, cwd?: string): Promise<string> {
@@ -603,7 +638,7 @@ export class AcpClient implements OpencodeClient {
   }
 
   async resumeSession(id: string, cwd?: string, onReplayUpdate?: (u: NormalizedUpdate) => void): Promise<void> {
-    this.normalizer.reset();
+    if (this.activeStreams.size === 0) this.normalizer.reset();
     this.replayHandler = onReplayUpdate ?? null;
     this.replaySessionId = id;
     try {
@@ -692,15 +727,10 @@ export class AcpClient implements OpencodeClient {
     // Use 0 timeout to disable transport-level timeout for streaming
     // The idle timeout in AgentRuntime handles cancellation
     const zAcpResponse = z.object({
-      stopReason: z.enum([
-        'end_turn',
-        'max_tokens',
-        'max_turn_requests',
-        'tool_calls',
-        'interrupted',
-        'refusal',
-        'cancelled',
-      ]),
+      // stopReason must stay permissive: agents add new reasons ahead of the
+      // schema, and rejecting the whole response would discard its usage too.
+      // Genuinely unknown values surface as a fallback badge in the controller.
+      stopReason: z.string(),
       usage: z
         .object({
           totalTokens: z.number(),
@@ -788,6 +818,7 @@ export class AcpClient implements OpencodeClient {
     this.onReconnectFailed = handlers.onReconnectFailed ?? undefined;
     this.onPermissionRequest = handlers.onPermissionRequest ?? undefined;
     this.onPermissionUnreadable = handlers.onPermissionUnreadable ?? undefined;
+    this.onElicitationComplete = handlers.onElicitationComplete ?? undefined;
     if (this.requestHandler) {
       if (handlers.onPermissionRequest) {
         this.requestHandler.onPermissionRequest = handlers.onPermissionRequest;

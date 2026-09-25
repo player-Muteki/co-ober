@@ -24,7 +24,7 @@ const ACP_METHOD_CANDIDATES: Record<AcpLogicalMethod, readonly string[]> = {
   setMode: ['session/set_mode', 'setSessionMode'],
   setConfigOption: ['session/set_config_option', 'setSessionConfigOption'],
   closeSession: ['session/close', 'closeSession'],
-  forkSession: ['session/unstable_fork', 'forkSession'],
+  forkSession: ['session/fork', 'session/unstable_fork', 'forkSession'],
   resumeSession: ['session/resume', 'resumeSession'],
   setModel: ['session/set_model', 'setSessionModel'],
 } as const;

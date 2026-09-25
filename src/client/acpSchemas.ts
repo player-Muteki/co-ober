@@ -81,9 +81,10 @@ export const zPlan = z.object({
   sessionUpdate: z.literal('plan'),
   entries: z.array(zEntry),
 });
-// ACP v2 replaces the flattened `plan` with an item-based `plan_update` whose
-// content is a tagged union (`items` today; other variants are reserved for
-// future ACP and must be ignored, not fail the frame). Only `items` renders.
+// Official v2 retires the flattened `plan` for an item-based `plan_update`
+// whose content is a tagged union (`items` today; `file`/markdown variants are
+// reserved for future ACP and must be ignored, not fail the frame). Only
+// `items` renders. `plan_removed` is its counterpart: an empty-plan signal.
 export const zPlanUpdate = z.object({
   sessionUpdate: z.literal('plan_update'),
   plan: z.object({
@@ -92,6 +93,9 @@ export const zPlanUpdate = z.object({
     planId: z.string().optional(),
     entries: z.array(zEntry).optional(),
   }),
+});
+export const zPlanRemoved = z.object({
+  sessionUpdate: z.literal('plan_removed'),
 });
 export const zConfigOptionUpdate = z.object({
   sessionUpdate: z.literal('config_option_update'),
@@ -191,6 +195,7 @@ export const zSessionUpdate = z.discriminatedUnion('sessionUpdate', [
   zToolCallUpdate,
   zPlan,
   zPlanUpdate,
+  zPlanRemoved,
   zConfigOptionUpdate,
   zAvailableCommandsUpdate,
   zCurrentModeUpdate,

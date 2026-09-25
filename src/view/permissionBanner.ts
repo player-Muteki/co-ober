@@ -135,4 +135,25 @@ export class PermissionBanner {
   dismiss(): void {
     this.settlePending();
   }
+
+  /**
+   * The agent reported a pending request (e.g. an elicitation) as resolved
+   * outside this client, so retiring the banner must not leave the promise
+   * hanging: settle it with the request's reject option. Ids that do not match
+   * a visible or queued banner are ignored.
+   */
+  resolveExternally(toolCallId: string): void {
+    const rejectValue = (req: PermissionRequest): string =>
+      req.options.find((o) => o.kind === 'reject_once' || o.kind === 'reject_always')?.optionId ?? 'reject_once';
+    if (this.currentReq && this.currentReq.req.toolCall.toolCallId === toolCallId) {
+      const pending = this.currentReq;
+      this.showNext();
+      pending.resolve(rejectValue(pending.req));
+      return;
+    }
+    const index = this.queue.findIndex((entry) => entry.req.toolCall.toolCallId === toolCallId);
+    if (index < 0) return;
+    const [pending] = this.queue.splice(index, 1);
+    pending.resolve(rejectValue(pending.req));
+  }
 }

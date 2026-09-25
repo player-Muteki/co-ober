@@ -19,6 +19,9 @@ export interface JsonRpcMessageStreams {
   output: NodeJS.WritableStream;
 }
 
+/** Notification methods already reported as unrouted; each logs once per process. */
+const warnedUnknownNotifications = new Set<string>();
+
 export class AcpJsonRpcTransport {
   private readonly pending = new Map<number, PendingRequest>();
   private readonly notificationHandlers = new Map<string, Set<NotificationHandler>>();
@@ -177,7 +180,8 @@ export class AcpJsonRpcTransport {
         );
       }
     } else if (hasMethod && id === undefined) {
-      const handlers = this.notificationHandlers.get(parsed.method as string);
+      const method = parsed.method as string;
+      const handlers = this.notificationHandlers.get(method);
       if (handlers) {
         for (const handler of handlers) {
           try {
@@ -188,6 +192,11 @@ export class AcpJsonRpcTransport {
             console.error('[co-ober] notification handler failed:', error);
           }
         }
+      } else if (!method.startsWith('$/') && !warnedUnknownNotifications.has(method)) {
+        // $/-prefixed messages are ignorable by JSON-RPC/LSP convention;
+        // anything else we silently drop is protocol drift and should be visible.
+        warnedUnknownNotifications.add(method);
+        console.warn(`[co-ober] dropping unknown notification: ${method}`);
       }
     } else if (hasMethod && id !== undefined) {
       const handler = this.requestHandlers.get(parsed.method as string);

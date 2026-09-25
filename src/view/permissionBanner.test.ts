@@ -184,8 +184,7 @@ describe('PermissionBanner', () => {
     expect(container.querySelector('.co-ober-permission-banner')).toBeNull();
   });
 
-  it('shows exactly one banner while requests queue', async () => {
-    const container = document.createElement('div');
+  it('shows exactly one banner while requests queue', async () => {    const container = document.createElement('div');
     const banner = new PermissionBanner(container);
 
     const req1 = banner.show({
@@ -215,5 +214,76 @@ describe('PermissionBanner', () => {
     expect(nextBanner?.querySelector('.perm-title')?.textContent).toContain('New req');
     (nextBanner?.querySelector('button') as HTMLButtonElement).click();
     expect(await req2).toBe('ok2');
+  });
+
+  describe('resolveExternally', () => {
+    const req = (id: string, title: string) => ({
+      id: `req-${id}`,
+      message: title,
+      toolCall: { toolCallId: id, status: 'pending', rawInput: {}, title, kind: 'other', locations: [] },
+      options: [
+        { optionId: 'accept', name: 'Accept', kind: 'accept' },
+        { optionId: 'decline', name: 'Decline', kind: 'reject_once' },
+      ],
+    });
+
+    it('settles the visible banner with its reject option and promotes the queue', async () => {
+      const container = document.createElement('div');
+      const banner = new PermissionBanner(container);
+
+      const first = banner.show(req('e1', 'First?') as any);
+      const second = banner.show(req('e2', 'Second?') as any);
+
+      banner.resolveExternally('e1');
+      expect(await first).toBe('decline');
+      expect(container.querySelector('.perm-title')?.textContent).toContain('Second?');
+
+      banner.resolveExternally('e2');
+      expect(await second).toBe('decline');
+      expect(container.querySelector('.co-ober-permission-banner')).toBeNull();
+    });
+
+    it('removes a queued request without disturbing the visible one', async () => {
+      const container = document.createElement('div');
+      const banner = new PermissionBanner(container);
+
+      const first = banner.show(req('e1', 'First?') as any);
+      const queued = banner.show(req('e2', 'Second?') as any);
+
+      banner.resolveExternally('e2');
+      expect(await queued).toBe('decline');
+      expect(container.querySelector('.perm-title')?.textContent).toContain('First?');
+
+      (container.querySelector('.perm-actions button') as HTMLButtonElement).click();
+      expect(await first).toBe('accept');
+      expect(container.querySelector('.co-ober-permission-banner')).toBeNull();
+    });
+
+    it('ignores ids that match no outstanding request', async () => {
+      const container = document.createElement('div');
+      const banner = new PermissionBanner(container);
+
+      const first = banner.show(req('e1', 'First?') as any);
+      banner.resolveExternally('other-client-elicitation');
+      expect(container.querySelector('.perm-title')?.textContent).toContain('First?');
+
+      (container.querySelector('.perm-actions button') as HTMLButtonElement).click();
+      expect(await first).toBe('accept');
+    });
+
+    it('falls back to reject_once when the settled request has no reject option', async () => {
+      const container = document.createElement('div');
+      const banner = new PermissionBanner(container);
+
+      const promise = banner.show({
+        id: 'req-no-reject',
+        message: 'Allow only?',
+        toolCall: { toolCallId: 'e3', status: 'pending', rawInput: {}, title: 'Allow only?', kind: 'edit', locations: [] },
+        options: [{ optionId: 'ok', name: 'OK', kind: 'allow_once' }],
+      } as any);
+
+      banner.resolveExternally('e3');
+      expect(await promise).toBe('reject_once');
+    });
   });
 });

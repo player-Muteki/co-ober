@@ -58,6 +58,13 @@ describe('AcpMethodNames', () => {
       expect(candidates).toContain('session/set_config_option');
       expect(candidates).toContain('setSessionConfigOption');
     });
+
+    it('prefers the stabilized session/fork wire name for forkSession', () => {
+      const candidates = getAcpMethodCandidates('forkSession');
+      expect(candidates[0]).toBe('session/fork');
+      expect(candidates).toContain('session/unstable_fork');
+      expect(candidates).toContain('forkSession');
+    });
   });
 
   describe('ACP_SERVER_NOTIFICATION_ALIASES', () => {
