@@ -112,36 +112,37 @@ export class AgentRuntime implements OpencodeClient {
   abort(): void { this.acp.abort(); }
 
   async requestPermission(req: PermissionRequest): Promise<string> {
+    const findKind = (...kinds: string[]) =>
+      req.options.find((o) => kinds.includes(o.kind));
+    const rejectOption = () => findKind('reject_always', 'reject_once');
+    // Unmatched option ids are reported as cancelled on the wire (see
+    // AcpRequestHandler), so these synthesized fallbacks never fabricate a
+    // choice — and modes that mean "deny" must not fall through to an
+    // allow-shaped option just because it is first in the list.
     if (this.permissionMode === 'yolo') {
-      const allowAlways = req.options.find((o) => o.kind === 'allow_always');
-      if (allowAlways) return allowAlways.optionId;
-      return req.options[0]?.optionId ?? 'allow_once';
+      const allow = findKind('allow_always') ?? findKind('allow_once') ?? req.options.find((o) => !o.kind.startsWith('reject'));
+      return allow?.optionId ?? 'allow_once';
     }
 
     if (this.permissionMode === 'plan') {
       if (['read', 'search'].includes(req.toolCall.kind)) {
-        const allow = req.options.find((o) => o.kind === 'allow_always' || o.kind === 'allow_once');
+        const allow = findKind('allow_always', 'allow_once');
         if (allow) return allow.optionId;
       }
-      const reject = req.options.find((o) => o.kind === 'reject_always' || o.kind === 'reject_once');
-      if (reject) return reject.optionId;
-      return req.options[0]?.optionId ?? 'reject_once';
+      return rejectOption()?.optionId ?? 'reject_once';
     }
 
     // Readonly tier: non-mutating tools auto-allow, everything that could
     // change state (edit/delete/move/execute/...) auto-rejects without UI.
     if (this.permissionMode === 'readonly') {
       if (['read', 'search', 'fetch'].includes(req.toolCall.kind)) {
-        const allow = req.options.find((o) => o.kind === 'allow_always' || o.kind === 'allow_once');
+        const allow = findKind('allow_always', 'allow_once');
         if (allow) return allow.optionId;
       }
-      const reject = req.options.find((o) => o.kind === 'reject_always' || o.kind === 'reject_once');
-      if (reject) return reject.optionId;
-      return req.options[0]?.optionId ?? 'reject_once';
+      return rejectOption()?.optionId ?? 'reject_once';
     }
 
-    const reject = req.options.find((o) => o.kind === 'reject_always' || o.kind === 'reject_once');
-    return reject?.optionId ?? req.options[0]?.optionId ?? 'reject_once';
+    return rejectOption()?.optionId ?? 'reject_once';
   }
 
   getAgentCapabilities(): AgentCapabilities | null { return this.acp.getAgentCapabilities(); }

@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
-const zToolKind = z.enum(['read', 'edit', 'delete', 'move', 'search', 'execute', 'think', 'fetch', 'switch_mode', 'other']);
+// Mirrors ToolKind in types.ts; agents assign 'apply_patch' to patch edits,
+// and a kind missing from this enum would cost the whole frame or permission
+// request. Extend both lists together.
+export const zToolKind = z.enum(['read', 'edit', 'delete', 'move', 'search', 'execute', 'think', 'fetch', 'switch_mode', 'apply_patch', 'other']);
+// Agents mint tool kinds ahead of the enum; an unknown kind must degrade to
+// 'other', not cost us the whole tool frame.
+export const zToolKindLenient = zToolKind.catch('other');
 const zToolCallContent = z.union([
   z.object({ type: z.literal('content'), content: z.object({ type: z.literal('text'), text: z.string() }) }),
   z.object({ type: z.literal('content'), content: z.object({ type: z.literal('image'), mimeType: z.string(), data: z.string() }) }),
@@ -8,12 +14,16 @@ const zToolCallContent = z.union([
   z.object({ type: z.literal('terminal'), terminalId: z.string() }),
 ]);
 const zLocation = z.object({ path: z.string() });
+// Agents define config options beyond the three we render (and grow them
+// ahead of the spec); the rigid id/category/type enums once cost us the whole
+// config_option_update frame — including the model list — because one unknown
+// option rode along. Consumers look options up by id and ignore the rest.
 const zConfigOption = z.object({
-  id: z.enum(['model', 'effort', 'mode']),
+  id: z.string(),
   name: z.string(),
-  category: z.enum(['model', 'thought_level', 'mode']),
-  type: z.literal('select'),
-  currentValue: z.string(),
+  category: z.string().optional(),
+  type: z.string(),
+  currentValue: z.string().catch(''),
   options: z.array(z.object({ value: z.string(), name: z.string(), description: z.string().optional() })),
 });
 const zModeOption = z.object({ id: z.string(), name: z.string(), description: z.string().optional() });
@@ -59,7 +69,7 @@ export const zToolCall = z.object({
   // Stable since schema v1.23.0: the programmatic tool name, orthogonal to
   // the human-readable title. null and omission both mean "no name".
   name: z.string().nullish().transform((n) => n ?? undefined),
-  kind: zToolKind.optional(),
+  kind: zToolKindLenient.optional(),
   status: z.string().optional(),
   rawInput: z.record(z.string(), z.unknown()).optional(),
   locations: z.array(zLocation).optional(),
@@ -68,8 +78,11 @@ export const zToolCall = z.object({
 export const zToolCallUpdate = z.object({
   sessionUpdate: z.literal('tool_call_update'),
   toolCallId: z.string(),
-  status: z.enum(['pending', 'in_progress', 'completed', 'failed']),
-  kind: zToolKind.optional(),
+  // A patch frame may omit status or carry one outside the four we render
+  // (agents mint 'cancelled' before the enum catches up). Be as permissive as
+  // zToolCall's status: never let a terminal-looking patch drop.
+  status: z.string().optional(),
+  kind: zToolKindLenient.optional(),
   title: z.string().optional(),
   name: z.string().nullish().transform((n) => n ?? undefined),
   rawInput: z.record(z.string(), z.unknown()).optional(),

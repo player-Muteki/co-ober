@@ -32,10 +32,12 @@ export interface PromptPart {
 }
 
 export interface SessionConfigOption {
-  id: 'model' | 'effort' | 'mode';
+  // Consumers look options up by id ('model', 'effort', 'mode') and ignore
+  // the rest, so unknown ids/categories parse instead of failing the frame.
+  id: string;
   name: string;
-  category: 'model' | 'thought_level' | 'mode';
-  type: 'select';
+  category?: string;
+  type: string;
   currentValue: string;
   options: { value: string; name: string; description?: string }[];
 }
@@ -91,7 +93,9 @@ export interface AgentCapabilities {
 
 export interface PermissionOption {
   optionId: string;
-  kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
+  // Agents mint custom kinds beyond the four spec values; consumers compare
+  // against the known kinds and treat anything else as "no preference".
+  kind: string;
   name: string;
 }
 
@@ -128,7 +132,7 @@ export type SessionUpdate =
   | { sessionUpdate: 'agent_thought_chunk'; messageId: string; content: ChunkContent }
   | { sessionUpdate: 'user_message_chunk'; messageId: string; content: ChunkContent }
   | { sessionUpdate: 'tool_call'; toolCallId: string; title: string; name?: string; kind?: ToolKind; status?: string; rawInput?: Record<string, unknown>; locations?: { path: string }[]; content?: ToolCallContent[] }
-  | { sessionUpdate: 'tool_call_update'; toolCallId: string; status: 'pending' | 'in_progress' | 'completed' | 'failed'; kind?: ToolKind; title?: string; name?: string; locations?: { path: string }[]; rawInput?: Record<string, unknown>; rawOutput?: Record<string, unknown>; content?: ToolCallContent[] }
+  | { sessionUpdate: 'tool_call_update'; toolCallId: string; status?: string; kind?: ToolKind; title?: string; name?: string; locations?: { path: string }[]; rawInput?: Record<string, unknown>; rawOutput?: Record<string, unknown>; content?: ToolCallContent[] }
   | { sessionUpdate: 'plan'; entries: { content: string; status: string; priority: string }[] }
   | { sessionUpdate: 'config_option_update'; configOptions: SessionConfigOption[] }
   | { sessionUpdate: 'available_commands_update'; availableCommands: AvailableCommand[] }

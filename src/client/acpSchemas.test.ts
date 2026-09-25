@@ -75,9 +75,16 @@ describe('acpSchemas', () => {
       expect(r.success).toBe(false);
     });
 
-    it('rejects invalid kind', () => {
+    it('accepts apply_patch as a tool kind', () => {
+      const r = zToolCall.safeParse({ sessionUpdate: 'tool_call', toolCallId: 'tc1', title: 'patch', kind: 'apply_patch' });
+      expect(r.success).toBe(true);
+      if (r.success) expect(r.data.kind).toBe('apply_patch');
+    });
+
+    it('degrades an agent-minted unknown kind to other', () => {
       const r = zToolCall.safeParse({ sessionUpdate: 'tool_call', toolCallId: 'tc1', title: 'read', kind: 'invalid_kind' });
-      expect(r.success).toBe(false);
+      expect(r.success).toBe(true);
+      if (r.success) expect(r.data.kind).toBe('other');
     });
   });
 
@@ -104,13 +111,35 @@ describe('acpSchemas', () => {
       expect(r.success).toBe(true);
     });
 
-    it('rejects invalid status', () => {
+    it('accepts a status outside the rendered set', () => {
       const r = zToolCallUpdate.safeParse({
         sessionUpdate: 'tool_call_update',
         toolCallId: 'tc1',
-        status: 'cancelled' as 'completed',
+        status: 'cancelled',
       });
-      expect(r.success).toBe(false);
+      expect(r.success).toBe(true);
+      if (r.success) expect(r.data.status).toBe('cancelled');
+    });
+
+    it('accepts an update that omits status', () => {
+      const r = zToolCallUpdate.safeParse({
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'tc1',
+        content: [{ type: 'diff', path: '/f.md' }],
+      });
+      expect(r.success).toBe(true);
+      if (r.success) expect(r.data.status).toBeUndefined();
+    });
+
+    it('degrades an unknown kind on an update to other', () => {
+      const r = zToolCallUpdate.safeParse({
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'tc1',
+        status: 'completed',
+        kind: 'browser_automation',
+      });
+      expect(r.success).toBe(true);
+      if (r.success) expect(r.data.kind).toBe('other');
     });
 
     it('accepts content array with diff type', () => {
@@ -170,12 +199,20 @@ describe('acpSchemas', () => {
       expect(r.success).toBe(true);
     });
 
-    it('rejects non-select type', () => {
+    it('accepts option types beyond select, keeping the model list', () => {
       const r = zConfigOptionUpdate.safeParse({
         sessionUpdate: 'config_option_update',
-        configOptions: [{ id: 'model', name: 'M', category: 'model', type: 'checkbox', currentValue: '', options: [] }],
+        configOptions: [
+          { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: 'gpt-4', options: [{ value: 'gpt-4', name: 'GPT-4' }] },
+          { id: 'verbose', name: 'Verbose', type: 'checkbox', currentValue: true, options: [] },
+        ],
       });
-      expect(r.success).toBe(false);
+      expect(r.success).toBe(true);
+      if (r.success) {
+        expect(r.data.configOptions).toHaveLength(2);
+        expect(r.data.configOptions[0].options).toEqual([{ value: 'gpt-4', name: 'GPT-4' }]);
+        expect(r.data.configOptions[1].type).toBe('checkbox');
+      }
     });
   });
 

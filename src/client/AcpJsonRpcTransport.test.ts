@@ -233,6 +233,63 @@ describe('AcpJsonRpcTransport', () => {
     expect(responses[0]).toEqual({ jsonrpc: '2.0', id: 101, error: { code: -32000, message: 'Something went wrong' } });
   });
 
+  it('answers unregistered string-id server→client requests with -32601, echoing the string id', async () => {
+    transport.start();
+
+    let sentMsg = '';
+    output.on('data', (chunk) => {
+      sentMsg += chunk.toString();
+    });
+
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: 'srv-7', method: 'unknownMethod', params: {} }) + '\n');
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const responses = sentMsg
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l));
+    expect(responses[0]).toEqual({
+      jsonrpc: '2.0',
+      id: 'srv-7',
+      error: { code: -32601, message: 'Method not found: unknownMethod' },
+    });
+  });
+
+  it('resolves a pending request on a null result', async () => {
+    transport.start();
+
+    const p = transport.request('voidMethod');
+    let sentMsg = '';
+    output.on('data', (chunk) => {
+      sentMsg += chunk.toString();
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const reqId = JSON.parse(sentMsg.trim()).id;
+
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: reqId, result: null }) + '\n');
+
+    await expect(p).resolves.toBeNull();
+  });
+
+  it('uses error.data text when the error object carries no message', async () => {
+    transport.start();
+
+    const p = transport.request('m');
+    let sentMsg = '';
+    output.on('data', (chunk) => {
+      sentMsg += chunk.toString();
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const reqId = JSON.parse(sentMsg.trim()).id;
+
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: reqId, error: { code: -32000, data: 'session not found' } }) + '\n');
+
+    await expect(p).rejects.toThrow('session not found');
+  });
+
   it('dispose() rejects all pending requests', async () => {
     transport.start();
 

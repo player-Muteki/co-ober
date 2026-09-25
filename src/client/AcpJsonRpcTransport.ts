@@ -155,28 +155,37 @@ export class AcpJsonRpcTransport {
       return;
     }
 
-    const id = typeof parsed.id === 'number' ? parsed.id : undefined;
-    const hasResult = parsed.result !== undefined;
-    const hasError = parsed.error !== undefined;
+    // JSON-RPC ids are number OR string: a string-id server request that
+    // falls through to the notification branch is never answered, and the
+    // agent blocks waiting for its reply.
+    const id = typeof parsed.id === 'number' || typeof parsed.id === 'string' ? parsed.id : undefined;
+    // `result: null` and `error: null` are valid responses; an undefined
+    // check would drop them and hang the matching request until the timeout.
+    const hasResult = 'result' in parsed;
+    const hasError = 'error' in parsed;
     const hasMethod = typeof parsed.method === 'string';
 
     if (id !== undefined && hasResult) {
-      const entry = this.pending.get(id);
-      this.pending.delete(id);
+      const entry = this.pending.get(typeof id === 'number' ? id : Number(id));
+      this.pending.delete(typeof id === 'number' ? id : Number(id));
       if (entry) {
         if (entry.timeout) window.clearTimeout(entry.timeout);
         if (entry.abortHandler) entry.abortHandler();
         entry.resolve(parsed.result);
       }
     } else if (id !== undefined && hasError) {
-      const entry = this.pending.get(id);
-      this.pending.delete(id);
+      const entry = this.pending.get(typeof id === 'number' ? id : Number(id));
+      this.pending.delete(typeof id === 'number' ? id : Number(id));
       if (entry) {
         if (entry.timeout) window.clearTimeout(entry.timeout);
         if (entry.abortHandler) entry.abortHandler();
         const errObj = parsed.error as { code?: number; message?: string; data?: unknown };
+        // Some agents carry the only human-readable text in error.data;
+        // without it the message stays "Unknown error" for both the console
+        // and any consumer that reads Error.message.
+        const dataText = typeof errObj?.data === 'string' ? errObj.data : undefined;
         entry.reject(
-          new AcpProtocolError(errObj?.message ?? 'Unknown error', entry.method, errObj?.code, errObj?.data),
+          new AcpProtocolError(errObj?.message ?? dataText ?? 'Unknown error', entry.method, errObj?.code, errObj?.data),
         );
       }
     } else if (hasMethod && id === undefined) {

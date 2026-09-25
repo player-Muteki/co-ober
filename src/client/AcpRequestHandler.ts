@@ -3,8 +3,9 @@ import type { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
 import { FsDelegate, type VaultWriteIo } from './fsDelegate';
 import { TerminalManager, TerminalError } from './terminalManager';
 import { z } from 'zod';
-import { REQUEST_DEFAULT_TIMEOUT_MS, REQUEST_DEFAULT_MAX_OUTPUT_BYTES } from '../constants';
+import { REQUEST_DEFAULT_TIMEOUT_MS, REQUEST_DEFAULT_MAX_OUTPUT_BYTES, UNREADABLE_SUMMARY_MAX_CHARS, ELICITATION_SCHEMA_MAX_CHARS } from '../constants';
 import { ACP_SERVER_REQUEST_ALIASES } from './AcpMethodNames';
+import { zToolKind } from './acpSchemas';
 import { t } from '../i18n/index';
 
 const zPermissionParams = z
@@ -16,16 +17,20 @@ const zPermissionParams = z
         title: z.string(),
         status: z.string().optional(),
         rawInput: z.record(z.string(), z.unknown()).optional(),
-        kind: z
-          .enum(['read', 'edit', 'delete', 'move', 'search', 'execute', 'think', 'fetch', 'switch_mode', 'other'])
-          .optional(),
+        // An agent-minted kind we do not know must not cost the user the
+        // whole prompt — degrade it to 'other'.
+        kind: zToolKind.catch('other').optional(),
         locations: z.array(z.object({ path: z.string() })).optional(),
       })
       .passthrough(),
+    // Permission-option kinds are an open set in practice (agents mint their
+    // own); a strict enum here would fail the whole request and auto-cancel a
+    // prompt the user never got to see. Accept any string and let the caller
+    // match on the four known kinds for auto-decisions.
     options: z.array(
       z.object({
         optionId: z.string(),
-        kind: z.enum(['allow_once', 'allow_always', 'reject_once', 'reject_always']),
+        kind: z.string(),
         name: z.string(),
       }),
     ),
@@ -187,7 +192,7 @@ export class AcpRequestHandler {
       const summary = parsed.error.issues
         .map((issue) => `${issue.path.join('.') || '<root>'}: ${issue.message}`)
         .join('; ')
-        .slice(0, 240);
+        .slice(0, UNREADABLE_SUMMARY_MAX_CHARS);
       console.error('[co-ober] unreadable permission request, cancelling it:', summary);
       this.onPermissionUnreadable?.(summary);
       return Promise.resolve({ outcome: { outcome: 'cancelled' } });
@@ -199,17 +204,24 @@ export class AcpRequestHandler {
     };
 
     const handler = this.onPermissionRequest ?? ((r: PermissionRequest) => this.requestPermission(r));
+    // Only report 'selected' when the agent actually offered that option id:
+    // our fallbacks (dismissed banner, synthesized reject_once) must not
+    // fabricate a choice the agent never presented — an unmatched decision
+    // means "no selectable outcome", i.e. cancelled.
+    const outcomeFor = (decision: string): unknown => {
+      if (parsed.data.options.some((o) => o.optionId === decision)) {
+        return { outcome: { outcome: 'selected', optionId: decision } };
+      }
+      console.warn(`[co-ober] permission decision "${decision}" matches no offered option; reporting cancelled`);
+      return { outcome: { outcome: 'cancelled' } };
+    };
     return Promise.resolve(handler(req))
-      .then((decision: string) => ({
-        outcome: { outcome: 'selected', optionId: decision },
-      }))
+      .then(outcomeFor)
       .catch((error: unknown) => {
         // Only fall back to reject if the custom handler threw (e.g. programming error).
         // The default handler never throws.
         console.error('[co-ober] permission request handler failed, falling back to reject:', error);
-        return this.requestPermission(req).then((decision: string) => ({
-          outcome: { outcome: 'selected', optionId: decision },
-        }));
+        return Promise.resolve(this.requestPermission(req)).then(outcomeFor);
       });
   };
 
@@ -224,7 +236,7 @@ export class AcpRequestHandler {
       const summary = parsed.error.issues
         .map((issue) => `${issue.path.join('.') || '<root>'}: ${issue.message}`)
         .join('; ')
-        .slice(0, 240);
+        .slice(0, UNREADABLE_SUMMARY_MAX_CHARS);
       console.error('[co-ober] unreadable elicitation request, cancelling it:', summary);
       this.onPermissionUnreadable?.(summary);
       return Promise.resolve({ action: 'cancel' });
@@ -268,7 +280,7 @@ export class AcpRequestHandler {
   private stringifyElicitationSchema(raw: unknown): string {
     if (raw === undefined) return '';
     try {
-      return JSON.stringify(raw).slice(0, 500);
+      return JSON.stringify(raw).slice(0, ELICITATION_SCHEMA_MAX_CHARS);
     } catch {
       return '';
     }

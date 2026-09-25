@@ -453,6 +453,42 @@ describe('SessionUpdateNormalizer state_update', () => {
     });
   });
 
+  it('keeps a well-formed cost from the idle usage', () => {
+    const norm = normalizer.normalize({
+      sessionUpdate: 'state_update',
+      state: 'idle',
+      usage: { totalTokens: 30, cost: { amount: 0.02, currency: 'USD' } },
+    });
+    expect(norm).toEqual({
+      kind: 'usage',
+      totalTokens: 30,
+      inputTokens: undefined,
+      outputTokens: undefined,
+      thoughtTokens: undefined,
+      used: undefined,
+      size: undefined,
+      cost: { amount: 0.02, currency: 'USD' },
+    });
+  });
+
+  it('drops a malformed cost without losing the token counts', () => {
+    const norm = normalizer.normalize({
+      sessionUpdate: 'state_update',
+      state: 'idle',
+      usage: { totalTokens: 30, cost: { amount: 'free' } },
+    });
+    expect(norm).toEqual({
+      kind: 'usage',
+      totalTokens: 30,
+      inputTokens: undefined,
+      outputTokens: undefined,
+      thoughtTokens: undefined,
+      used: undefined,
+      size: undefined,
+      cost: undefined,
+    });
+  });
+
   it('ignores running/requires_action and idle frames without usage', () => {
     expect(normalizer.normalize({ sessionUpdate: 'state_update', state: 'running' })).toBeNull();
     expect(normalizer.normalize({ sessionUpdate: 'state_update', state: 'requires_action' })).toBeNull();

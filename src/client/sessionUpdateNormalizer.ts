@@ -117,7 +117,7 @@ export class SessionUpdateNormalizer {
           existing.contents = existing.contents.concat(raw.content);
         }
 
-        if (raw.status) existing.status = raw.status;
+        if (raw.status) existing.status = raw.status as 'pending' | 'in_progress' | 'completed' | 'failed';
         if (raw.title) existing.title = raw.title;
         if (raw.name) existing.toolName = raw.name;
         if (raw.kind) existing.toolKind = raw.kind;
@@ -186,6 +186,7 @@ export class SessionUpdateNormalizer {
           thoughtTokens: asNumber(usage.thoughtTokens),
           used: asNumber(usage.used),
           size: asNumber(usage.size),
+          cost: asCost(usage.cost),
         };
       }
       default:
@@ -195,3 +196,10 @@ export class SessionUpdateNormalizer {
 }
 
 const asNumber = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined);
+// state_update.idle carries usage as an opaque record; the cost sub-object is
+// the same {amount,currency} shape usage_update validates with zCost.
+const asCost = (v: unknown): { amount: number; currency: string } | undefined => {
+  if (!v || typeof v !== 'object') return undefined;
+  const { amount, currency } = v as { amount?: unknown; currency?: unknown };
+  return typeof amount === 'number' && typeof currency === 'string' ? { amount, currency } : undefined;
+};

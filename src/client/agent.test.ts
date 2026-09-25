@@ -167,7 +167,7 @@ describe('AgentRuntime', () => {
       expect(result).toBe('allow_always');
     });
 
-    it('yolo mode: returns first option when no allow_always', async () => {
+    it('yolo mode: prefers allow_once over a leading reject option', async () => {
       runtime.permissionMode = 'yolo';
       const req = createRequest([
         { optionId: 'reject', kind: 'reject_once' },
@@ -175,7 +175,7 @@ describe('AgentRuntime', () => {
       ]);
 
       const result = await runtime.requestPermission(req);
-      expect(result).toBe('reject');
+      expect(result).toBe('allow_once');
     });
 
     it('yolo mode: returns allow_once fallback', async () => {
@@ -250,7 +250,7 @@ describe('AgentRuntime', () => {
       }
     });
 
-    it('readonly mode: falls back to first option when no reject exists', async () => {
+    it('readonly mode: never falls back to an allow option when no reject exists', async () => {
       runtime.permissionMode = 'readonly';
       const req = createRequest([
         { optionId: 'allow', kind: 'allow_once' },
@@ -258,7 +258,9 @@ describe('AgentRuntime', () => {
       req.toolCall.kind = 'execute';
 
       const result = await runtime.requestPermission(req);
-      expect(result).toBe('allow');
+      // Synthesizing reject_once (which AcpRequestHandler turns into a
+      // cancelled outcome) is correct; selecting the only allow option is not.
+      expect(result).toBe('reject_once');
     });
 
     it('safe mode: rejects by default', async () => {
@@ -272,14 +274,14 @@ describe('AgentRuntime', () => {
       expect(result).toBe('reject');
     });
 
-    it('safe mode: returns first option when no reject', async () => {
+    it('safe mode: keeps a synthesized reject when no reject option exists', async () => {
       runtime.permissionMode = 'safe';
       const req = createRequest([
         { optionId: 'allow', kind: 'allow_once' },
       ]);
 
       const result = await runtime.requestPermission(req);
-      expect(result).toBe('allow');
+      expect(result).toBe('reject_once');
     });
 
     it('returns reject_once fallback when empty options', async () => {

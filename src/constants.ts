@@ -18,3 +18,7 @@ export const PERMISSION_SUMMARY_MAX_KEYS = 3;
 export const NOTECACHE_MAX_SIZE = 100;
 export const REQUEST_DEFAULT_TIMEOUT_MS = 30000;
 export const REQUEST_DEFAULT_MAX_OUTPUT_BYTES = 100000;
+/** Max characters of zod detail surfaced when a server request cannot be parsed. */
+export const UNREADABLE_SUMMARY_MAX_CHARS = 240;
+/** Max characters of the elicitation requestSchema JSON shown as a banner title. */
+export const ELICITATION_SCHEMA_MAX_CHARS = 500;
