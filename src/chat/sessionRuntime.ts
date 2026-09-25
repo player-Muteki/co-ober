@@ -1,0 +1,43 @@
+import { ChatState } from './chatState';
+import type { StreamController } from './streamController';
+import type { ChatRenderer } from '../view/renderer';
+import type { ContextRef, PromptPart } from '../types';
+
+/**
+ * Per-tab conversation machinery: transcript state, panel renderer and the
+ * stream plumbing for one session. Deliberately thin — turn logic lives in
+ * the controller; this only owns what must not be shared between tabs.
+ */
+export class SessionRuntime {
+  readonly state = new ChatState();
+  streamCtrl!: StreamController;
+  busy = false;
+  genId = 0;
+  sendStartTime = 0;
+  promptQueue: Array<{ text: string; refs: ContextRef[] }> = [];
+  /** Turn content captured for a user-initiated retry (see retryTurn). */
+  pendingRetry: { text: string; imageParts: PromptPart[] } | null = null;
+  /** Transcript has been painted into this tab's panel (lazy-restore marker). */
+  painted = false;
+  /** A turn completed while this tab was hidden. */
+  unread = false;
+  /** Set when a drained turn lost the race for a stream slot and re-queued. */
+  capacityParked = false;
+
+  constructor(
+    readonly tabId: string,
+    sessionId: string | null,
+    readonly renderer: ChatRenderer,
+  ) {
+    this.state.sessionId = sessionId;
+  }
+
+  /** ChatState stays the single source for the session pointer. */
+  get sessionId(): string | null {
+    return this.state.sessionId;
+  }
+
+  set sessionId(sessionId: string | null) {
+    this.state.sessionId = sessionId;
+  }
+}

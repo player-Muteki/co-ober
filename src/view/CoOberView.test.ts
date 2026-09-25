@@ -178,8 +178,8 @@ describe('CoOberView runtime session sync', () => {
     await dragDropManager.handleFiles([new File(['x'], 'a.png', { type: 'image/png' })]);
     await dragDropManager.handleFiles([new File(['x'], 'a.jpg', { type: 'image/jpeg' })]);
 
-    const parts = Reflect.get(view, 'pendingImageParts') as Array<{ mimeType: string }>;
-    expect(parts.map((p) => p.mimeType)).toEqual(['image/png', 'image/jpeg']);
+    const parts = Reflect.get(view, 'pendingImageParts') as Array<{ part: { mimeType: string } }>;
+    expect(parts.map((p) => p.part.mimeType)).toEqual(['image/png', 'image/jpeg']);
 
     const chips = (Reflect.get(view, 'contextChipsEl') as HTMLElement).querySelectorAll('[data-kind="image"]');
     expect(chips).toHaveLength(2);
@@ -187,7 +187,7 @@ describe('CoOberView runtime session sync', () => {
 
     // Object-identity removal drops the jpeg part; a data-keyed lookup would
     // have removed the first byte-identical (png) part instead.
-    expect(parts.map((p) => p.mimeType)).toEqual(['image/png']);
+    expect(parts.map((p) => p.part.mimeType)).toEqual(['image/png']);
   });
 
   it('loads restored sessions with configured MCP servers', async () => {
@@ -262,6 +262,162 @@ describe('CoOberView new-messages button revival', () => {
     const second = view.contentEl.querySelector('.co-ober-new-messages-btn');
     expect(second).not.toBeNull();
     expect(second).not.toBe(first);
+  });
+});
+
+describe('CoOberView tab panels', () => {
+  function panelEls(view: CoOberView): HTMLElement[] {
+    return [...view.contentEl.querySelectorAll('.co-ober-tab-panel')] as HTMLElement[];
+  }
+
+  function callPrivate<T>(target: object, name: string, ...args: unknown[]): T {
+    const fn = Reflect.get(target, name) as (...a: unknown[]) => T;
+    return fn.apply(target, args);
+  }
+
+  async function openView(plugin = createPlugin()): Promise<CoOberView> {
+    setLocale('en');
+    const view = createView(plugin);
+    await view.onOpen();
+    return view;
+  }
+
+  function activeTabId(view: CoOberView): string {
+    return (Reflect.get(view, 'controller') as CoOberViewController).activeTabId();
+  }
+
+  it('opens exactly one visible panel for the initial tab', async () => {
+    const view = await openView();
+    const controller = Reflect.get(view, 'controller') as CoOberViewController;
+
+    const panels = panelEls(view);
+    expect(panels.length).toBe(1);
+    expect(panels[0].classList.contains('co-ober-tab-panel-hidden')).toBe(false);
+    expect(Reflect.get(view, 'messagesEl')).toBe(panels[0]);
+    expect(controller.listTabIds().length).toBe(1);
+  });
+
+  it('creates background panels hidden until activation, each with its own renderer', async () => {
+    const view = await openView();
+    const tabA = activeTabId(view);
+    const firstEl = panelEls(view)[0];
+    const firstRenderer = Reflect.get(view, 'renderer');
+
+    const second = callPrivate<{ renderer: unknown }>(view, 'createTabPanel', 'tab-b');
+    const panels = panelEls(view);
+    expect(panels.length).toBe(2);
+    expect(panels[1].classList.contains('co-ober-tab-panel-hidden')).toBe(true);
+    expect(second.renderer).not.toBe(firstRenderer);
+    // Creating a background tab must not steal the active aliases.
+    expect(Reflect.get(view, 'messagesEl')).toBe(firstEl);
+    expect(Reflect.get(view, 'renderer')).toBe(firstRenderer);
+
+    callPrivate<void>(view, 'onActiveTabChanged', tabA, 'tab-b');
+    expect(firstEl.classList.contains('co-ober-tab-panel-hidden')).toBe(true);
+    expect(panels[1].classList.contains('co-ober-tab-panel-hidden')).toBe(false);
+    expect(Reflect.get(view, 'messagesEl')).toBe(panels[1]);
+    expect(Reflect.get(view, 'renderer')).toBe(second.renderer);
+  });
+
+  it('moves the welcome card to the newly active panel', async () => {
+    const view = await openView();
+    const tabA = activeTabId(view);
+    const [firstEl] = panelEls(view);
+    expect(firstEl.querySelector('.co-ober-welcome')).not.toBeNull();
+
+    callPrivate(view, 'createTabPanel', 'tab-b');
+    callPrivate(view, 'onActiveTabChanged', tabA, 'tab-b');
+
+    const secondEl = panelEls(view)[1];
+    expect(secondEl.querySelector('.co-ober-welcome')).not.toBeNull();
+    expect(firstEl.querySelector('.co-ober-welcome')).toBeNull();
+  });
+
+  it('keeps the welcome card off a panel that already has transcript content', async () => {
+    const view = await openView();
+    const tabA = activeTabId(view);
+    const renderer = Reflect.get(view, 'renderer') as { addUserMessage: (text: string) => void };
+    renderer.addUserMessage('already talking');
+
+    callPrivate(view, 'createTabPanel', 'tab-b');
+    callPrivate(view, 'onActiveTabChanged', tabA, 'tab-b');
+    const [firstEl, secondEl] = panelEls(view);
+    expect(secondEl.querySelector('.co-ober-welcome')).not.toBeNull();
+
+    // Returning to the populated panel leaves the transcript, no welcome.
+    callPrivate(view, 'onActiveTabChanged', 'tab-b', tabA);
+    expect(firstEl.querySelector('.co-ober-welcome')).toBeNull();
+    expect(firstEl.textContent).toContain('already talking');
+  });
+
+  it('saves and restores the composer text and note chips per tab', async () => {
+    const view = await openView();
+    const tabA = activeTabId(view);
+    const input = Reflect.get(view, 'input') as { textareaEl: HTMLTextAreaElement };
+
+    input.textareaEl.value = 'draft for A';
+    callPrivate(view, 'addChip', { id: 'note-a.md', type: 'note', name: 'note-a', path: 'note-a.md' }, 'manual');
+    expect(view.contentEl.querySelectorAll('.co-ober-chip[data-ref-id]').length).toBe(1);
+
+    callPrivate(view, 'createTabPanel', 'tab-b');
+    callPrivate(view, 'onActiveTabChanged', tabA, 'tab-b');
+    expect(input.textareaEl.value).toBe('');
+    expect(view.contentEl.querySelectorAll('.co-ober-chip[data-ref-id]').length).toBe(0);
+
+    input.textareaEl.value = 'draft for B';
+    callPrivate(view, 'onActiveTabChanged', 'tab-b', tabA);
+    expect(input.textareaEl.value).toBe('draft for A');
+    const chips = view.contentEl.querySelectorAll('.co-ober-chip[data-ref-id]');
+    expect(chips.length).toBe(1);
+    expect(chips[0].textContent).toContain('note-a');
+
+    callPrivate(view, 'onActiveTabChanged', tabA, 'tab-b');
+    expect(input.textareaEl.value).toBe('draft for B');
+  });
+
+  it('drops the panel element, jump button and draft when the tab is disposed', async () => {
+    const view = await openView();
+    const tabA = activeTabId(view);
+    const input = Reflect.get(view, 'input') as { textareaEl: HTMLTextAreaElement };
+    callPrivate(view, 'createTabPanel', 'tab-b');
+    callPrivate(view, 'onActiveTabChanged', tabA, 'tab-b');
+    input.textareaEl.value = 'lost with the tab';
+    callPrivate(view, 'showNewMessagesBtn', 'tab-b');
+    const secondEl = panelEls(view)[1];
+
+    callPrivate(view, 'disposeTabPanel', 'tab-b');
+    expect(panelEls(view).length).toBe(1);
+    expect(secondEl.isConnected).toBe(false);
+    expect((Reflect.get(view, 'drafts') as Map<string, unknown>).has('tab-b')).toBe(false);
+  });
+
+  it('cancels every stream and disposes every panel on close', async () => {
+    const view = await openView();
+    callPrivate(view, 'createTabPanel', 'tab-b');
+    expect(panelEls(view).length).toBe(2);
+
+    await view.onClose();
+    expect(panelEls(view).length).toBe(0);
+    expect((Reflect.get(view, 'panels') as Map<string, unknown>).size).toBe(0);
+  });
+
+  it('opens a second panel when the controller switches into a streaming tab', async () => {
+    const client = createClient();
+    const view = await openView(createPlugin({ client }));
+    const controller = Reflect.get(view, 'controller') as CoOberViewController;
+    const tabA = controller.activeTabId();
+    // A running turn makes the active tab un-adoptable, so the next session
+    // has to land in a fresh tab — driven entirely through the controller.
+    (controller.runtimeForTab(tabA) as { busy: boolean }).busy = true;
+
+    await controller.switchSession('ses-b', 'local');
+
+    const panels = panelEls(view);
+    expect(panels.length).toBe(2);
+    expect(panels[0].classList.contains('co-ober-tab-panel-hidden')).toBe(true);
+    expect(panels[1].classList.contains('co-ober-tab-panel-hidden')).toBe(false);
+    expect(Reflect.get(view, 'messagesEl')).toBe(panels[1]);
+    expect(controller.listTabIds().length).toBe(2);
   });
 });
 

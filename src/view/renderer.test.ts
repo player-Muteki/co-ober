@@ -930,4 +930,74 @@ describe('ChatRenderer', () => {
       }
     });
   });
+
+  describe('setActive (0.2.0 render gating)', () => {
+    async function renderSpy(): Promise<ReturnType<typeof vi.fn>> {
+      const { MarkdownRenderer } = await import('obsidian');
+      const spy = MarkdownRenderer.render as unknown as ReturnType<typeof vi.fn>;
+      spy.mockReset();
+      spy.mockResolvedValue(undefined);
+      return spy;
+    }
+
+    it('defers text renders while inactive and flushes exactly once on activation', async () => {
+      const spy = await renderSpy();
+      renderer.setActive(false);
+      renderer.appendText('hidden', 'm1');
+      await renderer.scheduleTextRender();
+      expect(spy).not.toHaveBeenCalled();
+      // DOM append still happened — the cheap lane is never gated.
+      expect(container.querySelector('.co-ober-msg.assistant')).not.toBeNull();
+
+      renderer.setActive(true);
+      // Give the async executeTextRender pass time to reach the renderer.
+      await new Promise((r) => setTimeout(r, 0));
+      expect(spy).toHaveBeenCalled();
+
+      // Activation is the flush point; a second activate must not re-render.
+      spy.mockClear();
+      renderer.setActive(true);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('flushes the newest deferred callback per tool on activation', () => {
+      renderer.setActive(false);
+      const calls: string[] = [];
+      renderer.scheduleToolRender('t1', () => calls.push('old'));
+      renderer.scheduleToolRender('t1', () => calls.push('new'));
+      renderer.scheduleToolRender('t2', () => calls.push('t2'));
+      expect(calls).toEqual([]);
+
+      const scroll = vi.spyOn(renderer, 'forceScrollToBottom');
+      renderer.setActive(true);
+      expect(calls).toEqual(['new', 't2']);
+      expect(scroll).toHaveBeenCalledTimes(1);
+      scroll.mockRestore();
+    });
+
+    it('marks thinking dirty while inactive and reschedules on activation', () => {
+      renderer.setActive(false);
+      const schedule = vi.spyOn(renderer as unknown as { scheduleThinkingRender: () => void }, 'scheduleThinkingRender');
+      renderer.scheduleThinkingRender();
+      expect(schedule).toHaveBeenCalledTimes(1);
+
+      renderer.setActive(true);
+      // setActive re-enters the gated method once the tab becomes visible.
+      expect(schedule).toHaveBeenCalledTimes(2);
+      schedule.mockRestore();
+      renderer.cancelThinkingRender();
+    });
+
+    it('is idempotent for the current state', () => {
+      const scroll = vi.spyOn(renderer, 'forceScrollToBottom');
+      renderer.setActive(true);
+      expect(scroll).not.toHaveBeenCalled();
+      renderer.setActive(false);
+      renderer.setActive(false);
+      renderer.setActive(true);
+      expect(scroll).toHaveBeenCalledTimes(1);
+      scroll.mockRestore();
+    });
+  });
 });

@@ -105,6 +105,14 @@ export class ChatRenderer {
   // Throttled thinking markdown render (RAF-based, ~16ms between frames)
   private thinkingRenderFrame: number | null = null;
 
+  // ---- Hidden-tab render gate (multi-tab concurrency) ----
+  // While inactive, expensive markdown passes are suppressed; cheap DOM
+  // appends continue and the deferred passes flush once on reactivation.
+  private isActive = true;
+  private dirtyTextRender = false;
+  private dirtyThinkingRender = false;
+  private deferredToolIds = new Set<string>();
+
   constructor(container: HTMLDivElement, app: App, shouldAutoScroll: () => boolean = () => true) {
     this.container = container;
     this.app = app;
@@ -132,10 +140,37 @@ export class ChatRenderer {
     this.container.removeEventListener('click', this.imageClickHandler);
   }
 
+  /**
+   * Gate rendering for a hidden tab. Inactive: text/thinking/tool markdown
+   * passes are deferred (DOM appends still happen). On reactivation the
+   * deferred passes run once and the panel is scrolled to the bottom.
+   */
+  setActive(active: boolean): void {
+    if (this.isActive === active) return;
+    this.isActive = active;
+    if (!active) return;
+    if (this.dirtyTextRender || this.textRenderFrame !== null) {
+      if (this.textRenderFrame !== null) {
+        window.cancelAnimationFrame(this.textRenderFrame);
+        this.textRenderFrame = null;
+      }
+      this.dirtyTextRender = false;
+      void this.executeTextRender();
+    }
+    if (this.dirtyThinkingRender) {
+      this.dirtyThinkingRender = false;
+      this.scheduleThinkingRender();
+    }
+    if (this.deferredToolIds.size > 0) this.flushAllToolRenders();
+    this.forceScrollToBottom();
+  }
+
   clear(): void {
     this.cancelTextRender();
     this.cancelThinkingRender();
     this.cancelAllToolRenders();
+    this.dirtyTextRender = false;
+    this.dirtyThinkingRender = false;
 
     this.container.empty();
     this.toolCallStates.clear();
@@ -152,7 +187,7 @@ export class ChatRenderer {
   }
 
   private scrollToBottom(): void {
-    if (!this.shouldAutoScroll()) return;
+    if (!this.isActive || !this.shouldAutoScroll()) return;
     window.requestAnimationFrame(() => {
       this.container.scrollTop = this.container.scrollHeight;
     });
@@ -428,6 +463,10 @@ export class ChatRenderer {
    * Returns a promise that resolves when the render completes.
    */
   scheduleTextRender(): Promise<void> {
+    if (!this.isActive) {
+      this.dirtyTextRender = true;
+      return Promise.resolve();
+    }
     if (!this.textRenderPromise) {
       this.textRenderPromise = new Promise(resolve => {
         this.resolveTextRender = resolve;
@@ -468,6 +507,17 @@ export class ChatRenderer {
    * Used by StreamController when content type changes (e.g., text→thinking).
    */
   async flushTextRender(): Promise<void> {
+    if (!this.isActive) {
+      // Hidden tab: release any awaiter; the render flushes on reactivation.
+      if (this.textRenderFrame !== null) {
+        window.cancelAnimationFrame(this.textRenderFrame);
+        this.textRenderFrame = null;
+        this.dirtyTextRender = true;
+      }
+      this.cancelTextRender();
+      return;
+    }
+
     if (this.textRenderFrame !== null) {
       window.cancelAnimationFrame(this.textRenderFrame);
       this.textRenderFrame = null;
@@ -637,6 +687,10 @@ export class ChatRenderer {
    * Falls back to plain text if markdown rendering fails.
    */
   scheduleThinkingRender(): void {
+    if (!this.isActive) {
+      this.dirtyThinkingRender = true;
+      return;
+    }
     if (this.thinkingRenderFrame !== null) {
       window.cancelAnimationFrame(this.thinkingRenderFrame);
     }
@@ -677,6 +731,19 @@ export class ChatRenderer {
    * Each tool has its own frame, so fast updates don't block each other.
    */
   scheduleToolRender(id: string, callback: () => void): void {
+    if (!this.isActive) {
+      // Hidden tab: park the latest callback; the newest update supersedes
+      // any earlier pending frame for the same tool.
+      const existing = this.toolRenderFrames.get(id);
+      if (existing !== undefined) {
+        window.cancelAnimationFrame(existing);
+        this.toolRenderFrames.delete(id);
+      }
+      this.pendingToolRenderCallbacks.set(id, callback);
+      this.deferredToolIds.add(id);
+      return;
+    }
+
     // Cancel any pending frame for this tool
     const existing = this.toolRenderFrames.get(id);
     if (existing !== undefined) {
@@ -717,6 +784,11 @@ export class ChatRenderer {
       }
     }
     this.toolRenderFrames.clear();
+    for (const id of this.deferredToolIds) {
+      const callback = this.pendingToolRenderCallbacks.get(id);
+      if (callback) callback();
+    }
+    this.deferredToolIds.clear();
     this.pendingToolRenderCallbacks.clear();
   }
 
@@ -725,6 +797,7 @@ export class ChatRenderer {
       window.cancelAnimationFrame(frame);
     }
     this.toolRenderFrames.clear();
+    this.deferredToolIds.clear();
     this.pendingToolRenderCallbacks.clear();
   }
 

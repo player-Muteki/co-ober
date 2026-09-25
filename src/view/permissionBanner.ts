@@ -2,16 +2,22 @@ import type { PermissionRequest } from '../types';
 import { t, onLocaleChange, lookupLocaleString } from '../i18n/index';
 import { PERMISSION_MAX_LOCATIONS, PERMISSION_SUMMARY_MAX_KEYS, PERMISSION_TRUNCATE_LENGTH } from '../constants';
 
+/** Points the banner at the tab that produced the request (multi-tab sessions). */
+export interface PermissionOrigin {
+  label: string;
+  onFocus(): void;
+}
+
 export class PermissionBanner {
   private el: HTMLDivElement | null = null;
-  private currentReq: { req: PermissionRequest; resolve: (val: string) => void } | null = null;
-  private readonly queue: Array<{ req: PermissionRequest; resolve: (val: string) => void }> = [];
+  private currentReq: { req: PermissionRequest; resolve: (val: string) => void; origin?: PermissionOrigin } | null = null;
+  private readonly queue: Array<{ req: PermissionRequest; resolve: (val: string) => void; origin?: PermissionOrigin }> = [];
   private readonly unsubscribeLocale: () => void;
 
   constructor(private containerEl: HTMLElement) {
     this.unsubscribeLocale = onLocaleChange(() => {
       if (!this.el || !this.currentReq) return;
-      this.renderBanner(this.currentReq.req);
+      this.renderBanner(this.currentReq.req, this.currentReq.origin);
     });
   }
 
@@ -20,11 +26,11 @@ export class PermissionBanner {
     this.settlePending();
   }
 
-  show(req: PermissionRequest): Promise<string> {
+  show(req: PermissionRequest, origin?: PermissionOrigin): Promise<string> {
     return new Promise((resolve) => {
       // Concurrent requests queue up behind the visible one; force-rejecting
       // the previous request would punish work that was never shown.
-      this.queue.push({ req, resolve });
+      this.queue.push({ req, resolve, origin });
       if (!this.currentReq) this.showNext();
       else this.containerEl.scrollTop = this.containerEl.scrollHeight;
     });
@@ -35,11 +41,11 @@ export class PermissionBanner {
     this.dismissInternal();
     if (!next) return;
     this.currentReq = next;
-    this.renderBanner(next.req);
+    this.renderBanner(next.req, next.origin);
     this.containerEl.scrollTop = this.containerEl.scrollHeight;
   }
 
-  private renderBanner(req: PermissionRequest): void {
+  private renderBanner(req: PermissionRequest, origin?: PermissionOrigin): void {
     if (this.el) {
       this.el.remove();
       this.el = null;
@@ -47,6 +53,19 @@ export class PermissionBanner {
 
     const banner = this.containerEl.createDiv({ cls: 'co-ober-permission-banner' });
     this.el = banner;
+
+    if (origin) {
+      const originEl = banner.createDiv({ cls: 'perm-origin', text: origin.label });
+      originEl.setAttribute('role', 'button');
+      originEl.setAttribute('tabindex', '0');
+      originEl.onclick = () => origin.onFocus();
+      originEl.onkeydown = (e: KeyboardEvent) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          origin.onFocus();
+        }
+      };
+    }
 
     // Tool kind badge
     const kind = req.toolCall.kind || 'other';

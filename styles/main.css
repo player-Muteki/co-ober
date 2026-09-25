@@ -54,10 +54,25 @@
   background: var(--background-modifier-hover);
 }
 
+/* Tab stack — one message panel per open conversation; only the active shows */
+.co-ober-tab-stack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Specificity above .co-ober-messages (which sets display:flex) */
+.co-ober-tab-stack > .co-ober-tab-panel-hidden {
+  display: none;
+}
+
 /* Messages */
 .co-ober-messages {
   flex: 1;
   overflow-y: auto;
+  min-height: 0;
   padding: 12px;
   display: flex;
   flex-direction: column;

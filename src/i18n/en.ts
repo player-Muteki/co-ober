@@ -108,6 +108,7 @@ const en = {
     rejectAlways: 'Reject Always',
     moreLocations: '+{count} more',
     unreadable: 'Permission request was unreadable and was cancelled.',
+    originTab: 'Request from tab {index} — click to switch',
   },
 
   elicitation: {

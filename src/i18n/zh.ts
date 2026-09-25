@@ -110,6 +110,7 @@ const zh: Locale = {
     rejectAlways: '总是拒绝',
     moreLocations: '另有 {count} 处',
     unreadable: '权限请求无法解析，已取消。',
+    originTab: '来自标签 {index} 的请求——点击切换',
   },
 
   elicitation: {

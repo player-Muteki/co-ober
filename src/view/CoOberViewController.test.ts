@@ -2,6 +2,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { CoOberViewController, deriveSessionTitle, normalizeEffortLabel } from './CoOberViewController';
 import type { ControllerCallbacks, ControllerDeps } from './CoOberViewController';
+import type { SessionRuntime } from '../chat/sessionRuntime';
 import { installObsidianDomHelpers } from '../test/domHelpers';
 import type {
   AcpResponse,
@@ -47,7 +48,17 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   return { promise, resolve };
 }
 
-function createMockDeps(overrides: Partial<ControllerDeps> = {}): ControllerDeps {
+/** Mock deps whose renderer is guaranteed present (the view may omit it). */
+type MockDeps = ControllerDeps & { renderer: NonNullable<ControllerDeps['renderer']> };
+
+/** The runtime behind the active tab — per-tab state lives here since 0.2.0. */
+function activeRt(c: CoOberViewController): SessionRuntime {
+  const rt = c.runtimeForTab(c.activeTabId());
+  if (!rt) throw new Error('no active runtime');
+  return rt;
+}
+
+function createMockDeps(overrides: Partial<ControllerDeps> = {}): MockDeps {
   const noop = vi.fn();
   return {
     renderer: {
@@ -68,7 +79,8 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): ControllerDeps
       setPlanEntries: noop,
       collapseTurns: vi.fn(),
       addSystemMessage: vi.fn(),
-    } as unknown as ControllerDeps['renderer'],
+      setActive: noop,
+    } as unknown as MockDeps['renderer'],
     input: {
       setStreaming: noop,
       focus: noop,
@@ -193,7 +205,7 @@ function createMockClient(overrides: Record<string, unknown> = {}) {
 }
 
 describe('CoOberViewController', () => {
-  let deps: ControllerDeps;
+  let deps: MockDeps;
   let callbacks: ReturnType<typeof createMockCallbacks>;
   let controller: CoOberViewController;
 
@@ -406,11 +418,7 @@ describe('CoOberViewController', () => {
 
     it('routes assistant messages with content blocks to renderStructuredMessage', async () => {
       const renderStructuredMessage = vi.fn();
-      deps.renderer = {
-        ...deps.renderer,
-        renderStructuredMessage,
-        appendText: vi.fn(),
-      } as unknown as ControllerDeps['renderer'];
+      Object.assign(deps.renderer, { renderStructuredMessage, appendText: vi.fn() });
       controller.state.sessionId = 'test';
       const structured = {
         role: 'assistant',
@@ -547,10 +555,7 @@ describe('CoOberViewController', () => {
 
     it('marks restored tool blocks failed from native tool errors', async () => {
       const renderStructuredMessage = vi.fn();
-      deps.renderer = {
-        ...deps.renderer,
-        renderStructuredMessage,
-      } as unknown as ControllerDeps['renderer'];
+      Object.assign(deps.renderer, { renderStructuredMessage });
       controller.state.sessionId = 'test';
       const doneBlock: ContentBlock = {
         type: 'tool_use',
@@ -585,7 +590,7 @@ describe('CoOberViewController', () => {
     it('restores the plan panel from native todos', async () => {
       controller.state.sessionId = 'test';
       const setPlanEntries = vi.fn();
-      deps.renderer = { ...deps.renderer, setPlanEntries } as unknown as ControllerDeps['renderer'];
+      Object.assign(deps.renderer, { setPlanEntries });
       (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue({
         sessionId: 'test',
         messages: [{ role: 'user', content: 'hi', type: 'text', timestamp: 1000 }],
@@ -605,7 +610,7 @@ describe('CoOberViewController', () => {
     it('leaves the plan panel untouched when native todos are empty', async () => {
       controller.state.sessionId = 'test';
       const setPlanEntries = vi.fn();
-      deps.renderer = { ...deps.renderer, setPlanEntries } as unknown as ControllerDeps['renderer'];
+      Object.assign(deps.renderer, { setPlanEntries });
       (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue({
         sessionId: 'test',
         messages: [{ role: 'user', content: 'hi', type: 'text', timestamp: 1000 }],
@@ -683,7 +688,7 @@ describe('CoOberViewController', () => {
 
       await controller.send('queued-msg', []);
 
-      const queue = Reflect.get(controller, 'promptQueue') as Array<{ text: string }>;
+      const queue = activeRt(controller).promptQueue as Array<{ text: string }>;
       expect(queue).toHaveLength(1);
       expect(queue[0].text).toBe('queued-msg');
 
@@ -748,7 +753,7 @@ describe('CoOberViewController', () => {
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
       (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
       const setPlanEntries = vi.fn();
-      deps.renderer = { ...deps.renderer, setPlanEntries } as unknown as ControllerDeps['renderer'];
+      Object.assign(deps.renderer, { setPlanEntries });
       const todos = [{ content: 'Next step', status: 'pending' }];
       (readNativeSessionTodos as ReturnType<typeof vi.fn>).mockResolvedValue(todos);
 
@@ -783,7 +788,7 @@ describe('CoOberViewController', () => {
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
       (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
       const addUserMessage = vi.fn();
-      deps.renderer = { ...deps.renderer, addUserMessage } as unknown as ControllerDeps['renderer'];
+      Object.assign(deps.renderer, { addUserMessage });
       const images = [{ mimeType: 'image/png', data: 'AAA=' }];
       callbacks.getPendingImageParts = () =>
         images.map((i) => ({ type: 'image' as const, mimeType: i.mimeType, data: i.data }));
@@ -890,7 +895,7 @@ describe('CoOberViewController', () => {
       const second = controller.send('second', []);
       await second;
 
-      const queue = Reflect.get(controller, 'promptQueue') as Array<{ text: string }>;
+      const queue = activeRt(controller).promptQueue as Array<{ text: string }>;
       expect(queue.map((q) => q.text)).toEqual(['second']);
       await vi.waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(1));
 
@@ -916,7 +921,7 @@ describe('CoOberViewController', () => {
 
       await controller.stopGeneration();
 
-      const queue = Reflect.get(controller, 'promptQueue') as Array<{ text: string }>;
+      const queue = activeRt(controller).promptQueue as Array<{ text: string }>;
       expect(queue).toHaveLength(0);
       const ta = deps.input.textareaEl as unknown as { value: string; dispatchEvent: ReturnType<typeof vi.fn> };
       expect(ta.value).toBe('queued-1\n\nqueued-2');
@@ -967,7 +972,7 @@ describe('CoOberViewController', () => {
 
       await controller.stopGeneration();
 
-      const queue = Reflect.get(controller, 'promptQueue') as Array<{ text: string; refs: unknown[] }>;
+      const queue = activeRt(controller).promptQueue as Array<{ text: string; refs: unknown[] }>;
       expect(queue.map((q) => q.text)).toEqual(['with context']);
       expect(queue[0].refs).toHaveLength(1);
       const ta = deps.input.textareaEl as unknown as { value: string };
@@ -1169,12 +1174,11 @@ describe('CoOberViewController', () => {
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
       const addToolCall = vi.fn();
       const updateToolCall = vi.fn();
-      // StreamController captured the renderer at construction; swap its copy.
+      // The mock renderer is the active runtime's renderer: patch it in place.
       const streamCtrl = Reflect.get(controller, 'streamCtrl') as {
-        deps: { renderer: unknown };
         handleChunk: (u: unknown) => void;
       };
-      streamCtrl.deps.renderer = { ...deps.renderer, addToolCall, updateToolCall };
+      Object.assign(deps.renderer, { addToolCall, updateToolCall });
       controller.state.sessionId = 'test-session';
       Reflect.set(controller, 'busy', true);
       controller.state.isStreaming = true;
@@ -1206,15 +1210,21 @@ describe('CoOberViewController', () => {
       expect(callbacks.onAutoRefActiveFile).toHaveBeenCalled();
     });
 
-    it('cancels the outgoing session before repointing state', async () => {
+    it('moves the running conversation to its own tab instead of cancelling it', async () => {
       const client = createMockClient();
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
       controller.state.sessionId = 'old-ses';
       Reflect.set(controller, 'busy', true);
+      const runningTab = controller.activeTabId();
 
       await controller.switchSession('new-ses');
 
-      expect(client.cancel).toHaveBeenCalledWith('old-ses');
+      // 0.2.0: switching never interrupts generation. A busy tab cannot be
+      // adopted, so the target session opens in a fresh tab and the running
+      // one keeps its session, its busy flag and its stream.
+      expect(client.cancel).not.toHaveBeenCalled();
+      expect(controller.runtimeForTab(runningTab)?.state.sessionId).toBe('old-ses');
+      expect(controller.runtimeForTab(runningTab)?.busy).toBe(true);
       expect(controller.getSessionId()).toBe('new-ses');
     });
 
@@ -1331,19 +1341,20 @@ describe('CoOberViewController', () => {
       expect(deps.sessionStore.setActive).toHaveBeenCalledWith('paused-session');
     });
 
-    it('cancels the outgoing turn and swaps the screen before restoring', async () => {
+    it('resumes into a fresh tab while the running tab keeps streaming', async () => {
       const client = createMockClient();
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
       (controller.state as unknown as { sessionId: string }).sessionId = 'old-session';
       Reflect.set(controller, 'busy', true);
+      const runningTab = controller.activeTabId();
 
       await controller.resumeSession('paused-session');
 
-      // Cancel must target the session that was running, before repointing.
-      expect(client.cancel).toHaveBeenCalledWith('old-session');
-      // The resumed transcript replaces what is on screen, not just the store.
-      expect(callbacks.onClearUI).toHaveBeenCalled();
+      // 0.2.0: resume never cancels the in-flight turn; it takes a new tab.
+      expect(client.cancel).not.toHaveBeenCalled();
+      expect(controller.runtimeForTab(runningTab)?.busy).toBe(true);
       expect(controller.getSessionId()).toBe('paused-session');
+      expect(client.resumeSession).toHaveBeenCalledWith('paused-session', '/vault', expect.any(Function));
     });
 
     it('refreshes native usage after resuming', async () => {
@@ -1403,7 +1414,7 @@ describe('CoOberViewController', () => {
       const client = createMockClient();
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
       const setPlanEntries = vi.fn();
-      deps.renderer = { ...deps.renderer, setPlanEntries } as unknown as ControllerDeps['renderer'];
+      Object.assign(deps.renderer, { setPlanEntries });
       const todos = [{ content: 'Keep going', status: 'in_progress' }];
       (readNativeSessionTodos as ReturnType<typeof vi.fn>).mockResolvedValue(todos);
 
@@ -1590,7 +1601,7 @@ describe('CoOberViewController', () => {
       };
       deps.sessionStore = store as unknown as ControllerDeps['sessionStore'];
       const addUserMessage = vi.fn();
-      deps.renderer = { ...deps.renderer, addUserMessage } as unknown as ControllerDeps['renderer'];
+      Object.assign(deps.renderer, { addUserMessage });
       const client = createMockClient({
         createSession: vi.fn().mockResolvedValue('fresh-ses'),
         getCurrentSessionId: vi.fn(() => 'fresh-ses'),
@@ -1902,7 +1913,7 @@ describe('CoOberViewController', () => {
     it('resets all state and calls callbacks', () => {
       controller.state.isStreaming = true;
       controller.state.usage = { totalTokens: 100, inputTokens: 50, outputTokens: 50 };
-      Reflect.get(controller, 'promptQueue').push({ text: 'pending', refs: [] });
+      activeRt(controller).promptQueue.push({ text: 'pending', refs: [] });
 
       controller.resetConversationView();
 
@@ -1912,12 +1923,12 @@ describe('CoOberViewController', () => {
       expect(callbacks.onClearUI).toHaveBeenCalled();
       expect(callbacks.onClearChips).toHaveBeenCalled();
       expect(callbacks.onClearPendingImageChips).toHaveBeenCalled();
-      expect(Reflect.get(controller, 'promptQueue')).toHaveLength(0);
+      expect(activeRt(controller).promptQueue).toHaveLength(0);
     });
 
     it('notifies when queued prompts are discarded', () => {
       Notice.messages.length = 0;
-      Reflect.get(controller, 'promptQueue').push({ text: 'a', refs: [] }, { text: 'b', refs: [] });
+      activeRt(controller).promptQueue.push({ text: 'a', refs: [] }, { text: 'b', refs: [] });
 
       controller.resetConversationView();
 
@@ -2152,7 +2163,7 @@ describe('CoOberViewController', () => {
 });
 
 describe('CoOberViewController — 0.1.31 correctness patches', () => {
-  let deps: ControllerDeps;
+  let deps: MockDeps;
   let callbacks: ReturnType<typeof createMockCallbacks>;
   let controller: CoOberViewController;
 
@@ -2221,8 +2232,7 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
       await first;
 
       expect(controller.isBusy()).toBe(false);
-      const queue = (controller as unknown as { promptQueue: unknown[] }).promptQueue;
-      expect(queue).toHaveLength(0);
+      expect(activeRt(controller).promptQueue).toHaveLength(0);
       expect(deps.runtime.getClient()).toBeNull();
     });
 
@@ -2429,7 +2439,7 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
       await new Promise((r) => setTimeout(r, 0));
       // switchSession / resetConversationView bump the generation; the
       // continuation must not paint or persist into the new session.
-      Reflect.set(controller, 'genId', (Reflect.get(controller, 'genId') as number) + 1);
+      activeRt(controller).genId++;
       gate.resolve('agent-session-1');
       await sending;
 
@@ -2459,7 +2469,7 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
       (readNativeMessageStats as ReturnType<typeof vi.fn>).mockReturnValueOnce(gate.promise);
 
       const restoring = controller.restoreSession();
-      Reflect.set(controller, 'genId', (Reflect.get(controller, 'genId') as number) + 1);
+      activeRt(controller).genId++;
       gate.resolve([]);
       await restoring;
 
@@ -2528,7 +2538,7 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
 });
 
 describe('CoOberViewController — side chat (/btw)', () => {
-  let deps: ControllerDeps;
+  let deps: MockDeps;
   let callbacks: ReturnType<typeof createMockCallbacks>;
   let controller: CoOberViewController;
   let addError: ReturnType<typeof vi.fn>;
@@ -2685,7 +2695,7 @@ describe('CoOberViewController — side chat (/btw)', () => {
 });
 
 describe('CoOberViewController — queue visualization and auto titles', () => {
-  let deps: ControllerDeps;
+  let deps: MockDeps;
   let callbacks: ReturnType<typeof createMockCallbacks>;
   let controller: CoOberViewController;
 
@@ -2786,7 +2796,9 @@ describe('CoOberViewController — queue visualization and auto titles', () => {
     expect(el.classList.contains('co-ober-visible')).toBe(true);
 
     (controller as unknown as { busy: boolean }).busy = false;
-    await (controller as unknown as { drainQueue: () => Promise<void> }).drainQueue();
+    await (controller as unknown as { drainQueue: (rt: SessionRuntime) => Promise<void> }).drainQueue(
+      activeRt(controller),
+    );
     expect(el.classList.contains('co-ober-visible')).toBe(false);
     controller.queueIndicatorEl = null;
   });

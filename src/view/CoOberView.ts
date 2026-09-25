@@ -31,18 +31,46 @@ import { SideChatPanel, type SideChatAsk } from './sideChatPanel';
 import { WelcomeView } from './welcomeView';
 import { KeybindingManager } from './keybindingManager';
 import { CoOberViewController } from './CoOberViewController';
-import type { ControllerCallbacks, ControllerDeps } from './CoOberViewController';
+import type { ControllerCallbacks, ControllerDeps, TabPanel } from './CoOberViewController';
 
 interface MarkdownFileView {
   getViewType(): string;
   file?: TFile | null;
 }
 
+/** One tab's message surface: its scroll box, renderer and scroll listener. */
+interface TabPanelRecord {
+  el: HTMLDivElement;
+  renderer: ChatRenderer;
+  onScroll: () => void;
+}
+
+/** A composer image awaiting send: the part plus what removal needs. */
+interface ImageEntry {
+  part: PromptPart;
+  data: string;
+  name: string;
+  size: number;
+}
+
+/** Per-tab composer memory: the draft text and its note-ref chips. */
+interface ComposerDraft {
+  text: string;
+  refs: ContextRef[];
+  manualRefs: Set<string>;
+  lastAutoRefId: string | null;
+}
+
 export class CoOberView extends ItemView {
   private static clipIdCounter = 0;
+  private tabStackEl!: HTMLDivElement;
+  // Aliases for the active tab's panel — kept in sync on every tab switch.
   private messagesEl!: HTMLDivElement;
-  private contextChipsEl!: HTMLDivElement;
   private renderer!: ChatRenderer;
+  private panels = new Map<string, TabPanelRecord>();
+  private newMessagesBtns = new Map<string, HTMLButtonElement | null>();
+  private drafts = new Map<string, ComposerDraft>();
+  private contextChipsEl!: HTMLDivElement;
   private input!: ChatInput;
   private toolbar!: InputToolbar;
   private inputAreaEl!: HTMLDivElement;
@@ -57,14 +85,13 @@ export class CoOberView extends ItemView {
   private manualRefs = new Set<string>();
   private reconnectBtn: HTMLButtonElement | null = null;
   private welcomeView!: WelcomeView;
-  private newMessagesBtn: HTMLButtonElement | null = null;
   private keybindingMgr!: KeybindingManager;
   private dragDropManager!: DragDropManager;
   private permissionBanner!: PermissionBanner;
   private fileCommandSource: FileCommandStorage | null = null;
   private inlineEditPanel!: InlineEditPanel;
   private sideChatPanel: SideChatPanel | null = null;
-  private pendingImageParts: PromptPart[] = [];
+  private pendingImageParts: ImageEntry[] = [];
   private lastAutoRefId: string | null = null;
   private headerTitleEl: HTMLDivElement | null = null;
   private newSessionBtnEl: HTMLButtonElement | null = null;
@@ -76,7 +103,6 @@ export class CoOberView extends ItemView {
   private meterPctEl!: HTMLSpanElement;
 
   // Event listener references for cleanup on close
-  private scrollHandler: (() => void) | null = null;
   private pasteHandler: ((e: ClipboardEvent) => void) | null = null;
   private imageFileInputEl: HTMLInputElement | null = null;
 
@@ -181,17 +207,11 @@ export class CoOberView extends ItemView {
     this.sessionButtonEl.setAttribute('aria-label', t().header.sessionHistory);
     this.sessionButtonEl.title = t().header.sessionHistory;
 
-    // ── Messages ──
-    this.messagesEl = el.createDiv({ cls: 'co-ober-messages' });
-    this.renderer = new ChatRenderer(
-      this.messagesEl,
-      this.plugin.app,
-      () => this.controller?.state.autoScrollEnabled ?? true,
-    );
-
-    this.permissionBanner = new PermissionBanner(this.messagesEl);
+    // ── Tab stack (message panels live here, one per open conversation) ──
+    this.tabStackEl = el.createDiv({ cls: 'co-ober-tab-stack' });
+    this.permissionBanner = new PermissionBanner(this.tabStackEl);
     this.inlineEditPanel = new InlineEditPanel(this.contentEl);
-    this.welcomeView = new WelcomeView(this.messagesEl, () => this.plugin.getClient()?.getAgentCapabilities() ?? null);
+    this.welcomeView = new WelcomeView(this.tabStackEl, () => this.plugin.getClient()?.getAgentCapabilities() ?? null);
 
     // ── Context chips ──
     this.contextChipsEl = el.createDiv({ cls: 'co-ober-context-chips' });
@@ -264,7 +284,6 @@ export class CoOberView extends ItemView {
 
     // ── Create controller ──
     const deps: ControllerDeps = {
-      renderer: this.renderer,
       input: this.input,
       toolbar: this.toolbar,
       inlineEditPanel: this.inlineEditPanel,
@@ -276,6 +295,9 @@ export class CoOberView extends ItemView {
       welcomeView: this.welcomeView,
       runtime: this.plugin,
       updateContextMeter: (usage) => this.updateContextMeter(usage),
+      createTabPanel: (tabId) => this.createTabPanel(tabId),
+      disposeTabPanel: (tabId) => this.disposeTabPanel(tabId),
+      onActiveTabChanged: (prevTabId, tabId) => this.onActiveTabChanged(prevTabId, tabId),
     };
 
     const savedSessionId = this.sessionStore.activeId;
@@ -294,14 +316,14 @@ export class CoOberView extends ItemView {
       onClearUI: () => {
         this.closeAutocomplete();
         this.currentRefs = [];
-        this.pendingImageParts = [];
+        this.pendingImageParts.length = 0;
         if (this.dragDropManager) this.dragDropManager.resetBytes();
         this.manualRefs.clear();
         this.lastAutoRefId = null;
         this.mention.clear();
       },
       onClearChips: () => this.contextChipsEl.empty(),
-      getPendingImageParts: () => [...this.pendingImageParts],
+      getPendingImageParts: () => this.pendingImageParts.map((e) => e.part),
       onClearPendingImageChips: () => this.clearPendingImageChips(),
       onAutoRefActiveFile: () => this.autoRefActiveFile(),
       onOpenSessions: () => {
@@ -312,14 +334,9 @@ export class CoOberView extends ItemView {
     };
 
     this.controller = new CoOberViewController(deps, callbacks);
-    this.renderer.setRewindHandlers({
-      onRegenerate: (ordinal) => {
-        void this.controller.rewindUserTurn(ordinal);
-      },
-      onEditResend: (ordinal, text) => {
-        void this.controller.rewindUserTurn(ordinal, text);
-      },
-    });
+    // The controller constructor opened the first tab panel and set the
+    // active-panel aliases; the welcome view follows the active panel.
+    this.welcomeView.reparent(this.messagesEl);
 
     // Store queue indicator reference on controller
     this.controller.queueIndicatorEl = queueIndicatorEl;
@@ -418,31 +435,19 @@ export class CoOberView extends ItemView {
     });
     this.keybindingMgr.register();
 
-    // Setup smart auto-scroll
-    this.setupSmartScroll();
-
-    // Setup drag and drop
+    // Setup drag and drop (on the tab stack: every panel is a drop target)
     this.dragDropManager = new DragDropManager(
-      this.messagesEl,
-      this.messagesEl,
+      this.tabStackEl,
+      this.tabStackEl,
       {
         onAddNoteRef: (ref) => this.addChip(ref, 'manual'),
         onAddImagePart: (data, mimeType, size, name) => {
-          // Keep the exact object identity: two chips carrying byte-identical
+          // Keep the exact entry identity: two chips carrying byte-identical
           // images must not collapse into each other on removal.
           const part: PromptPart = { type: 'image', mimeType, data };
-          this.pendingImageParts.push(part);
-          const chip = this.contextChipsEl.createDiv({
-            cls: 'co-ober-chip',
-            text: `🖼 ${name}`,
-          });
-          chip.dataset.kind = 'image';
-          chip.onclick = () => {
-            const index = this.pendingImageParts.indexOf(part);
-            if (index >= 0) this.pendingImageParts.splice(index, 1);
-            this.dragDropManager.onRemoveImagePart(data, size);
-            chip.remove();
-          };
+          const entry = { part, data, name, size };
+          this.pendingImageParts.push(entry);
+          this.createImageChip(entry);
         },
         onRemoveImagePart: (_data, _size) => {},
       },
@@ -467,7 +472,7 @@ export class CoOberView extends ItemView {
       commandRegistry.unregisterSource(this.fileCommandSource);
       this.fileCommandSource = null;
     }
-    await this.controller?.stopGeneration();
+    await this.controller?.cancelAllStreams();
     await this.controller?.dispose();
     this.input?.dispose();
     this.toolbar?.dispose();
@@ -476,7 +481,7 @@ export class CoOberView extends ItemView {
     this.inlineEditPanel?.dispose();
     this.sideChatPanel?.close();
     this.sideChatPanel = null;
-    this.renderer?.dispose();
+    for (const tabId of [...this.panels.keys()]) this.disposeTabPanel(tabId);
     this.closeSessionDropdown();
     this.closeAutocomplete();
     this.keybindingMgr?.unregister();
@@ -485,10 +490,6 @@ export class CoOberView extends ItemView {
   }
 
   private unregisterEventListeners(): void {
-    if (this.scrollHandler && this.messagesEl) {
-      this.messagesEl.removeEventListener('scroll', this.scrollHandler);
-      this.scrollHandler = null;
-    }
     if (this.dragDropManager) {
       this.dragDropManager.teardown();
     }
@@ -513,46 +514,148 @@ export class CoOberView extends ItemView {
     }
   }
 
-  // ── Smart Auto-scroll ──
+  // ── Tab panels ──
 
-  private setupSmartScroll(): void {
-    this.scrollHandler = () => {
-      const { scrollTop, clientHeight, scrollHeight } = this.messagesEl;
+  /** Builds one conversation surface; the controller calls this per runtime. */
+  private createTabPanel(tabId: string): TabPanel {
+    const panelEl = this.tabStackEl.createDiv({ cls: 'co-ober-messages co-ober-tab-panel' });
+    const renderer = new ChatRenderer(
+      panelEl,
+      this.plugin.app,
+      () => this.controller?.runtimeForTab(tabId)?.state.autoScrollEnabled ?? true,
+    );
+    renderer.setRewindHandlers({
+      onRegenerate: (ordinal) => {
+        void this.controller.rewindUserTurn(ordinal);
+      },
+      onEditResend: (ordinal, text) => {
+        void this.controller.rewindUserTurn(ordinal, text);
+      },
+    });
+    const onScroll = (): void => {
+      const rt = this.controller?.runtimeForTab(tabId);
+      if (!rt) return;
+      const { scrollTop, clientHeight, scrollHeight } = panelEl;
       const nearBottom = scrollTop + clientHeight >= scrollHeight - SCROLL_NEAR_BOTTOM_THRESHOLD;
-
-      if (!nearBottom && this.controller.state.autoScrollEnabled) {
-        this.controller.state.autoScrollEnabled = false;
-        this.showNewMessagesBtn();
-      } else if (nearBottom && !this.controller.state.autoScrollEnabled) {
-        this.controller.state.autoScrollEnabled = true;
-        this.hideNewMessagesBtn();
+      if (!nearBottom && rt.state.autoScrollEnabled) {
+        rt.state.autoScrollEnabled = false;
+        this.showNewMessagesBtn(tabId);
+      } else if (nearBottom && !rt.state.autoScrollEnabled) {
+        rt.state.autoScrollEnabled = true;
+        this.hideNewMessagesBtn(tabId);
       }
     };
-    this.messagesEl.addEventListener('scroll', this.scrollHandler);
+    panelEl.addEventListener('scroll', onScroll);
+    // The first panel opens visible (it is the active tab by construction);
+    // later panels are created backgrounded and stay hidden until activated.
+    const first = this.panels.size === 0;
+    this.panels.set(tabId, { el: panelEl, renderer, onScroll });
+    if (!first) panelEl.addClass('co-ober-tab-panel-hidden');
+    else {
+      this.messagesEl = panelEl;
+      this.renderer = renderer;
+    }
+    return { renderer };
   }
 
-  private showNewMessagesBtn(): void {
+  private disposeTabPanel(tabId: string): void {
+    const rec = this.panels.get(tabId);
+    if (!rec) return;
+    rec.el.removeEventListener('scroll', rec.onScroll);
+    rec.renderer.dispose();
+    rec.el.remove();
+    this.panels.delete(tabId);
+    this.newMessagesBtns.get(tabId)?.remove();
+    this.newMessagesBtns.delete(tabId);
+    this.drafts.delete(tabId);
+  }
+
+  private onActiveTabChanged(prevTabId: string | null, tabId: string): void {
+    const next = this.panels.get(tabId);
+    if (!next) return;
+    if (prevTabId && prevTabId !== tabId) {
+      this.saveDraft(prevTabId);
+      this.panels.get(prevTabId)?.el.addClass('co-ober-tab-panel-hidden');
+      this.hideNewMessagesBtn(prevTabId);
+    }
+    next.el.removeClass('co-ober-tab-panel-hidden');
+    this.messagesEl = next.el;
+    this.renderer = next.renderer;
+    // Hide before the emptiness check: the welcome element itself lives inside
+    // the panel, so a visible welcome would make every panel look non-empty.
+    this.welcomeView.hide();
+    this.welcomeView.reparent(next.el);
+    this.restoreDraft(tabId);
+    if (next.el.children.length === 0) {
+      this.welcomeView.show(this.plugin.getClient() !== null);
+    }
+  }
+
+  private saveDraft(tabId: string): void {
+    this.drafts.set(tabId, {
+      text: this.input.textareaEl.value,
+      refs: [...this.currentRefs],
+      manualRefs: new Set(this.manualRefs),
+      lastAutoRefId: this.lastAutoRefId,
+    });
+  }
+
+  private restoreDraft(tabId: string): void {
+    const draft = this.drafts.get(tabId);
+    this.input.textareaEl.value = draft?.text ?? '';
+    this.currentRefs = draft ? [...draft.refs] : [];
+    this.manualRefs = draft ? new Set(draft.manualRefs) : new Set();
+    this.lastAutoRefId = draft?.lastAutoRefId ?? null;
+    this.rebuildChips();
+  }
+
+  /** Re-renders the note chips for the restored draft; image chips persist. */
+  private rebuildChips(): void {
+    this.contextChipsEl.querySelectorAll('.co-ober-chip[data-ref-id]').forEach((el) => el.remove());
+    for (const ref of this.currentRefs) this.createNoteChip(ref);
+  }
+
+  private createImageChip(entry: ImageEntry): void {
+    const chip = this.contextChipsEl.createDiv({
+      cls: 'co-ober-chip',
+      text: `🖼 ${entry.name}`,
+    });
+    chip.dataset.kind = 'image';
+    chip.onclick = () => {
+      const index = this.pendingImageParts.indexOf(entry);
+      if (index >= 0) this.pendingImageParts.splice(index, 1);
+      this.dragDropManager.onRemoveImagePart(entry.data, entry.size);
+      chip.remove();
+    };
+  }
+
+  // ── Smart Auto-scroll ──
+
+  private showNewMessagesBtn(tabId: string = this.controller?.activeTabId() ?? ''): void {
+    const panel = this.panels.get(tabId);
+    if (!panel) return;
     // renderer.clear() detaches the button along with the message wraps;
     // an isConnected check lets it come back instead of leaking as a
     // dangling reference that suppresses the button forever.
-    if (this.newMessagesBtn?.isConnected) return;
-    const btn = this.messagesEl.createEl('button', {
+    if (this.newMessagesBtns.get(tabId)?.isConnected) return;
+    const btn = panel.el.createEl('button', {
       cls: 'co-ober-new-messages-btn',
     });
     setIcon(btn, 'arrow-down');
     btn.setAttribute('aria-label', t().message.jumpToLatest);
     btn.title = t().message.jumpToLatest;
     btn.onclick = () => {
-      this.controller.state.autoScrollEnabled = true;
-      this.hideNewMessagesBtn();
-      this.renderer.forceScrollToBottom();
+      const rt = this.controller?.runtimeForTab(tabId);
+      if (rt) rt.state.autoScrollEnabled = true;
+      this.hideNewMessagesBtn(tabId);
+      panel.renderer.forceScrollToBottom();
     };
-    this.newMessagesBtn = btn;
+    this.newMessagesBtns.set(tabId, btn);
   }
 
-  private hideNewMessagesBtn(): void {
-    this.newMessagesBtn?.remove();
-    this.newMessagesBtn = null;
+  private hideNewMessagesBtn(tabId: string = this.controller?.activeTabId() ?? ''): void {
+    this.newMessagesBtns.get(tabId)?.remove();
+    this.newMessagesBtns.set(tabId, null);
   }
 
   setAutoScrollEnabled(enabled: boolean): void {
@@ -570,9 +673,9 @@ export class CoOberView extends ItemView {
       this.sessionButtonEl.setAttribute('aria-label', t().header.sessionHistory);
       this.sessionButtonEl.title = t().header.sessionHistory;
     }
-    if (this.newMessagesBtn) {
-      this.newMessagesBtn.setAttribute('aria-label', t().message.jumpToLatest);
-      this.newMessagesBtn.title = t().message.jumpToLatest;
+    for (const btn of this.newMessagesBtns.values()) {
+      btn?.setAttribute('aria-label', t().message.jumpToLatest);
+      if (btn) btn.title = t().message.jumpToLatest;
     }
     if (this.reconnectBtn) {
       this.reconnectBtn.textContent = this.reconnectBtn.disabled ? t().reconnect.connecting : t().reconnect.text;
@@ -643,7 +746,7 @@ export class CoOberView extends ItemView {
   }
 
   private clearPendingImageChips(): void {
-    this.pendingImageParts = [];
+    this.pendingImageParts.length = 0;
     if (this.dragDropManager) this.dragDropManager.resetBytes();
     this.contextChipsEl.querySelectorAll('.co-ober-chip').forEach((el) => {
       if ((el as HTMLDivElement).dataset.kind === 'image') el.remove();
@@ -720,6 +823,10 @@ export class CoOberView extends ItemView {
       this.manualRefs.add(ref.id);
       if (this.lastAutoRefId === ref.id) this.lastAutoRefId = null;
     }
+    this.createNoteChip(ref);
+  }
+
+  private createNoteChip(ref: ContextRef): HTMLDivElement {
     const chip = this.contextChipsEl.createDiv({ cls: 'co-ober-chip' });
     chip.dataset.refId = ref.id;
     chip.title = ref.path;
@@ -739,6 +846,7 @@ export class CoOberView extends ItemView {
         this.removeChip(ref.id);
       }
     };
+    return chip;
   }
 
   private removeChip(id: string): void {

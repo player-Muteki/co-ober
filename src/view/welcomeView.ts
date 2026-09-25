@@ -74,4 +74,13 @@ export class WelcomeView {
 		this.unsubscribeLocale();
 		this.hide();
 	}
+
+	/**
+	 * Move the welcome host (and a visible welcome page) to another element —
+	 * used when the active tab changes and each tab owns its message panel.
+	 */
+	reparent(containerEl: HTMLElement): void {
+		this.containerEl = containerEl;
+		if (this.welcomeEl) containerEl.appendChild(this.welcomeEl);
+	}
 }
