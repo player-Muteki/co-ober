@@ -1,3 +1,27 @@
+## 0.1.37 - 2026-09-25
+
+### Added
+- **Elicitation retirement**: when the agent reports an elicitation was answered elsewhere (`elicitation/complete`), the matching permission banner retires on its own instead of waiting for a click.
+- **Unrecognized stop-reason badge**: a turn that ends with a stop reason outside the known enum still badges and notes the raw reason — agent enum drift no longer masquerades as a clean completion.
+- **Queue-drop notice**: resetting or closing a conversation with prompts still queued reports how many were discarded instead of deleting them silently.
+- **Currency-honest usage**: the usage line renders `€`/`¥`/`£` glyphs for known currencies and falls back to the raw code (`BTC 0.5000`) for unknown ones, so a non-USD cost can never be misread as dollars.
+
+### Changed
+- **Stable fork wire name**: session fork prefers the official `session/fork` method, with the unstable spellings kept only as fallbacks.
+- **Paged session listing**: `session/list` follows `nextCursor` (page-bounded) instead of assuming one response holds the whole history.
+- **Idle timeout is honest**: `0` disables it outright (the old setting silently snap-backed to 5 minutes), and while a permission banner is on screen the idle clock pauses — a slow human decision no longer kills the turn, and the full window restarts after the banner resolves.
+- **Settings take effect live**: note reference size, terminal timeout and max output size re-push capabilities to the connected client on change — no reconnect needed.
+- **Localized chrome**: the thinking timer, "Thought for Ns" duration, tool-source badges, session truncation marker and token units now follow the active language; unknown incoming notifications warn once per method instead of vanishing in silence.
+
+### Fixed
+- **Stale client disconnected before replacement**: a reconnect tears down the old client first, so its late callbacks can no longer mutate the new session's view.
+- **Retention spares the in-flight turn**: persistence during streaming is exempt from history pruning, so a long turn can no longer save a transcript that truncated away its own messages.
+- **Resume swaps the screen**: loading or resuming a session re-renders the transcript instead of layering the old conversation underneath.
+- **Stop clears its tool ghosts**: stopping a turn finalizes still-running tool-call rows instead of leaving spinners frozen in "in progress".
+- **Newer data is set aside intact**: `data.json` written by a newer plugin version is preserved under a distinct name and the plugin starts clean, instead of round-tripping data it cannot understand.
+- **Concurrent loads no longer wipe streamed text**: the update normalizer resets only when no stream is active, so loading another session mid-answer no longer corrupts the message being streamed.
+- **Official `plan_removed` honored**: the v2 plan-clearing frame now parses and empties the plan instead of surfacing as an unknown update.
+
 ## 0.1.36 - 2026-09-25
 
 ### Added
