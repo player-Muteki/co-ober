@@ -154,6 +154,9 @@ export class AgentRuntime implements OpencodeClient {
   getAvailableCommands(): Promise<AvailableCommand[]> { return this.acp.getAvailableCommands(); }
   getSessionInfo(): { sessionId?: string; title?: string; cwd?: string } | null { return this.acp.getSessionInfo(); }
   getSessionSnapshot(): SessionSnapshot { return this.acp.getSessionSnapshot(); }
+  getSessionSnapshotFor(sessionId: string): SessionSnapshot { return this.acp.getSessionSnapshotFor(sessionId); }
+  isSessionLoaded(sessionId: string): boolean { return this.acp.isSessionLoaded(sessionId); }
+  activeStreamCount(): number { return this.acp.activeStreamCount(); }
 	getCurrentSessionId(): string | undefined { return this.acp.getCurrentSessionId(); }
 	setFsCapabilityMode(mode: FsCapabilityMode, maxBytes?: number): void { this.acp.setFsCapabilityMode(mode, maxBytes); }
 	setTerminalCapabilityMode(mode: TerminalCapabilityMode, timeoutMs?: number, maxOutputBytes?: number): void {

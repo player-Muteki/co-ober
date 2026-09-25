@@ -381,6 +381,7 @@ const en = {
     invalidSessionId: 'Server did not return a valid session ID',
     invalidForkSessionId: 'Server did not return a valid session ID for fork',
     streamActive: 'A stream is already active',
+    streamCapacity: 'Up to {max} conversations can generate at the same time — wait for one to finish',
     invalidResponse: 'Invalid ACP response format',
   },
 

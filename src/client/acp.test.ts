@@ -343,8 +343,8 @@ describe('dispatchSessionUpdate v2-alpha pre-layer', () => {
       },
     });
     expect(norms.map((n) => n.kind)).toEqual(['session_info', 'config_options']);
-    expect(Reflect.get(client, 'currentModelId')).toBe('gpt-4');
-    expect(Reflect.get(client, 'sessionInfo')).toMatchObject({ title: 'Renamed' });
+    expect(client.getSessionSnapshot().currentModelId).toBe('gpt-4');
+    expect(client.getSessionInfo()).toMatchObject({ title: 'Renamed' });
   });
 
   it('keeps a plain session_info frame single-norm', () => {
@@ -927,24 +927,26 @@ describe('sendMessage flow', () => {
     await expect(client.sendMessage('s1', [], vi.fn())).rejects.toThrow(Error);
   });
 
-  it('gates client-state application to the main or replaying session', async () => {
+  it('keeps client state per session: one slot per sessionId', async () => {
     const client = new AcpClient('opencode');
     Reflect.set(client, 'transport', { request: vi.fn().mockResolvedValue({}) });
     Reflect.set(client, 'sessionId_', 's1');
-    const applySpy = vi.spyOn(client as unknown as { applySessionUpdate(u: unknown): void }, 'applySessionUpdate');
     const chunkHandler = vi.fn();
     client.sendMessage('s1', [], chunkHandler).catch(() => {});
 
-    dispatch(client, { sessionId: 'side-1', update: messageUpdate('from side chat') });
-    expect(applySpy).not.toHaveBeenCalled();
+    // A side-chat frame lands in the side-chat's slot, not the main one.
+    dispatch(client, { sessionId: 'side-1', update: { sessionUpdate: 'current_mode_update', currentModeId: 'side-mode', availableModes: [] } });
+    expect(client.getSessionSnapshot().currentModeId).toBeNull();
+    expect(client.getSessionSnapshotFor('side-1').currentModeId).toBe('side-mode');
 
-    dispatch(client, { sessionId: 's1', update: messageUpdate('mine') });
-    expect(applySpy).toHaveBeenCalledTimes(1);
+    dispatch(client, { sessionId: 's1', update: { sessionUpdate: 'current_mode_update', currentModeId: 'mine', availableModes: [] } });
+    expect(client.getSessionSnapshot().currentModeId).toBe('mine');
 
-    // During a replay the replaying session also owns client state.
+    // During a replay the replaying session owns its own slot too.
     Reflect.set(client, 'replaySessionId', 's2');
-    dispatch(client, { sessionId: 's2', update: messageUpdate('replaying') });
-    expect(applySpy).toHaveBeenCalledTimes(2);
+    dispatch(client, { sessionId: 's2', update: { sessionUpdate: 'current_model_update', currentModelId: 'replayed', availableModels: [] } });
+    expect(client.getSessionSnapshot().currentModelId).toBeNull();
+    expect(client.getSessionSnapshotFor('s2').currentModelId).toBe('replayed');
   });
 
   it('routes replay updates to the replay handler when no stream is active', async () => {

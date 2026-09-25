@@ -1,4 +1,4 @@
-import { ACP_LIST_SESSIONS_LIMIT, ACP_LIST_SESSIONS_MAX_PAGES, ACP_RECONNECT_BACKOFF_BASE_MS, ACP_LOAD_SESSION_IDLE_TIMEOUT_MS } from '../constants';
+import { ACP_LIST_SESSIONS_LIMIT, ACP_LIST_SESSIONS_MAX_PAGES, ACP_RECONNECT_BACKOFF_BASE_MS, ACP_LOAD_SESSION_IDLE_TIMEOUT_MS, MAX_CONCURRENT_STREAMS, MAX_SESSION_NORMALIZERS } from '../constants';
 import { getSpawnInfo } from '../utils/commandResolution';
 import { AcpSubprocess, type AcpSubprocessLaunchSpec } from './AcpSubprocess';
 
@@ -6,6 +6,7 @@ import { type AcpLogicalMethod, getAcpMethodCandidates } from './AcpMethodNames'
 import {
   AcpProtocolError,
   AcpSessionMissingError,
+  AcpStreamCapacityError,
   AcpTimeoutError,
   isSessionMissingError,
   isAuthRequiredError,
@@ -383,18 +384,22 @@ export class AcpClient implements OpencodeClient {
   private activeStreams = new Map<string, { handler: (update: NormalizedUpdate) => void; abort: AbortController }>();
   private replayHandler: ((update: NormalizedUpdate) => void) | null = null;
   private replaySessionId: string | null = null;
-  private normalizer = new SessionUpdateNormalizer();
+  /**
+   * One normalizer per session: two sessions minting the same messageId must
+   * not weld their accumulated text together. LRU-evicted past
+   * MAX_SESSION_NORMALIZERS (idle sessions only).
+   */
+  private normalizers = new Map<string, SessionUpdateNormalizer>();
   private sessionId_: string | null = null;
+  /** Sessions the agent currently holds (created/loaded/resumed here); cleared with the connection. */
+  private loadedSessionIds = new Set<string>();
   private cmdPath: string;
   private cwd?: string;
   private vaultIo?: VaultWriteIo;
-  private availableCommands: AvailableCommand[] = [{ name: 'compact', description: t().slash.compact }];
-  private availableModels: ModelOption[] = [];
-  private availableModes: ModeOption[] = [];
-  private configOptions: SessionConfigOption[] = [];
-  private currentModelId: string | null = null;
-  private currentModeId: string | null = null;
-  private sessionInfo: { sessionId?: string; title?: string; cwd?: string } | null = null;
+  /** Session metadata per session id; the null key is the pre-session slot. */
+  private sessionMeta = new Map<string | null, AcpSessionMeta>();
+  /** No-sessionId frames with several delivery targets are dropped; warn once per connection. */
+  private warnedAmbiguousNoSid = false;
   onClose?: () => void;
   onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
   onPermissionUnreadable?: (summary: string) => void;
@@ -616,8 +621,10 @@ export class AcpClient implements OpencodeClient {
     }
     const parsed = z.object({ sessionId: z.string() }).safeParse(r);
     if (!parsed.success) throw new Error(t().acp.invalidSessionId);
-    this.applySessionSnapshot(r as Record<string, unknown>);
-    this.sessionId_ = parsed.data.sessionId;
+    const sid = parsed.data.sessionId;
+    this.applySessionSnapshot(r as Record<string, unknown>, sid);
+    this.loadedSessionIds.add(sid);
+    this.sessionId_ = sid;
     return this.sessionId_;
   }
 
@@ -627,9 +634,9 @@ export class AcpClient implements OpencodeClient {
     mcpServers: McpServerConfig[] = [],
     onReplayUpdate?: (u: NormalizedUpdate) => void,
   ): Promise<void> {
-    // A replay reset while another session streams would wipe its
-    // accumulated text — same guard as sendMessage.
-    if (this.activeStreams.size === 0) this.normalizer.reset();
+    // A replay reset while this same session streams would wipe its
+    // accumulated text — other sessions keep their own normalizer instances.
+    if (!this.activeStreams.has(id)) this.normalizers.delete(id);
     // A big history keeps the load alive far past the fixed per-request
     // timeout; the deadline is idle-based instead — every replay update
     // refreshes it, so only a stalled load ever expires.
@@ -665,7 +672,8 @@ export class AcpClient implements OpencodeClient {
         ),
         idleDeadline,
       ]);
-      this.applySessionSnapshot(r as Record<string, unknown>);
+      this.applySessionSnapshot(r as Record<string, unknown>, id);
+      this.loadedSessionIds.add(id);
       this.sessionId_ = id;
     } catch (e) {
       if (isSessionMissingError(e)) throw new AcpSessionMissingError(id, e);
@@ -713,12 +721,13 @@ export class AcpClient implements OpencodeClient {
   }
 
   async resumeSession(id: string, cwd?: string, onReplayUpdate?: (u: NormalizedUpdate) => void): Promise<void> {
-    if (this.activeStreams.size === 0) this.normalizer.reset();
+    if (!this.activeStreams.has(id)) this.normalizers.delete(id);
     this.replayHandler = onReplayUpdate ?? null;
     this.replaySessionId = id;
     try {
       const r = await this.requestWithFallback('resumeSession', { sessionId: id, cwd: this.resolveCwd(cwd) });
-      this.applySessionSnapshot(r as Record<string, unknown>);
+      this.applySessionSnapshot(r as Record<string, unknown>, id);
+      this.loadedSessionIds.add(id);
       this.sessionId_ = id;
     } catch (e) {
       if (isSessionMissingError(e)) throw new AcpSessionMissingError(id, e);
@@ -730,6 +739,7 @@ export class AcpClient implements OpencodeClient {
   }
 
   async closeSession(id: string): Promise<void> {
+    this.loadedSessionIds.delete(id);
     try {
       await this.requestWithFallback('closeSession', { sessionId: id });
     } catch (e) {
@@ -739,26 +749,27 @@ export class AcpClient implements OpencodeClient {
 
   async setMode(id: string, modeId: string): Promise<void> {
     await this.requestWithFallback('setMode', { sessionId: id, modeId }).then(() => {});
-    this.currentModeId = modeId;
+    this.metaFor(id).currentModeId = modeId;
   }
 
   async setModel(id: string, modelId: string): Promise<void> {
     await this.requestWithFallback('setModel', { sessionId: id, modelId }).then(() => {});
-    this.currentModelId = modelId;
+    this.metaFor(id).currentModelId = modelId;
   }
 
   async setConfigOption(id: string, configId: string, value: string): Promise<SessionConfigOption[]> {
     const r = await this.requestWithFallback('setConfigOption', { sessionId: id, configId, value });
     const parsed = z.object({ configOptions: z.array(z.any()).optional() }).safeParse(r);
     const configOptions = parsed.success ? ((parsed.data.configOptions as SessionConfigOption[]) ?? []) : [];
-    this.applyConfigOptions(configOptions);
+    this.applyConfigOptions(configOptions, id);
     return configOptions;
   }
 
   /**
-   * Route one session/update notification frame: state updates apply only to
-   * the main (or replaying) session, chunk delivery targets that session's
-   * active stream slot.
+   * Route one session/update notification frame: metadata applies to the
+   * session the frame belongs to; chunk delivery targets that session's
+   * active stream slot. Frames without a sessionId are only routed when
+   * there is exactly one candidate target (streams + replay).
    */
   private dispatchSessionUpdate(params: unknown): void {
     const p = params as Record<string, unknown> | undefined;
@@ -769,18 +780,25 @@ export class AcpClient implements OpencodeClient {
       // Usage updates are frequent in long sessions; only log when debug is enabled.
       console.debug('[co-ober] usage_update:', JSON.stringify(update));
     }
+    let target = sid;
+    if (!target) {
+      const candidates = this.noSidTargets();
+      if (candidates.length > 1) {
+        // Two sessions could own this frame; guessing would cross-wire them.
+        if (!this.warnedAmbiguousNoSid) {
+          this.warnedAmbiguousNoSid = true;
+          console.warn('[co-ober] dropping session update without sessionId: several delivery targets are live');
+        }
+        return;
+      }
+      target = candidates[0] ?? null;
+    }
     // Client state (models, modes, commands, config) is per-session:
-    // a side-chat or a session we switched away from must not clobber it.
-    if (!sid || sid === this.sessionId_ || sid === this.replaySessionId) {
-      this.applySessionUpdate(update);
-    }
-    const norms = this.normalizer.normalizeList(update);
+    // a side-chat or a background load must not clobber another session's slot.
+    this.applySessionUpdate(update, target ?? this.sessionId_);
+    const norms = this.normalizerFor(target ?? this.sessionId_).normalizeList(update);
     if (norms.length === 0) return;
-    let entry = sid ? this.activeStreams.get(sid) : undefined;
-    if (!entry && !sid && this.activeStreams.size === 1) {
-      // Legacy wire frames without a session id: safe only when unambiguous.
-      entry = this.activeStreams.values().next().value;
-    }
+    const entry = target ? this.activeStreams.get(target) : undefined;
     if (entry) {
       for (const norm of norms) entry.handler(norm);
     } else if (this.replayHandler && (!sid || sid === this.replaySessionId)) {
@@ -788,13 +806,23 @@ export class AcpClient implements OpencodeClient {
     }
   }
 
+  /** Sessions a frame without a sessionId could belong to. */
+  private noSidTargets(): string[] {
+    const targets = [...this.activeStreams.keys()];
+    if (this.replaySessionId) targets.push(this.replaySessionId);
+    return targets;
+  }
+
   sendMessage(id: string, parts: PromptPart[], onChunk: (u: NormalizedUpdate) => void): Promise<AcpResponse> {
     if (this.activeStreams.has(id)) {
       return Promise.reject(new Error(t().acp.streamActive));
     }
-    // One normalizer serves all streams (state is keyed by messageId), but a
-    // reset mid-flight would wipe another session's accumulated text.
-    if (this.activeStreams.size === 0) this.normalizer.reset();
+    if (this.activeStreams.size >= MAX_CONCURRENT_STREAMS) {
+      return Promise.reject(new AcpStreamCapacityError(MAX_CONCURRENT_STREAMS));
+    }
+    // Each session owns its normalizer; a new turn starts from clean
+    // accumulation without touching any other session in flight.
+    this.normalizers.delete(id);
     const stream = { handler: onChunk, abort: new AbortController() };
     this.activeStreams.set(id, stream);
     const signal = stream.abort.signal;
@@ -857,26 +885,29 @@ export class AcpClient implements OpencodeClient {
   }
 
   getAvailableAgents(): Promise<ModeOption[]> {
-    return Promise.resolve([...this.availableModes]);
+    return Promise.resolve([...this.metaFor(this.sessionId_).availableModes]);
   }
   getAvailableModels(): Promise<ModelOption[]> {
-    return Promise.resolve([...this.availableModels]);
+    return Promise.resolve([...this.metaFor(this.sessionId_).availableModels]);
   }
   getAvailableCommands(): Promise<AvailableCommand[]> {
-    return Promise.resolve([...this.availableCommands]);
+    return Promise.resolve([...this.metaFor(this.sessionId_).availableCommands]);
   }
   getSessionInfo(): { sessionId?: string; title?: string; cwd?: string } | null {
-    return this.sessionInfo;
+    return this.metaFor(this.sessionId_).sessionInfo ?? null;
   }
   getSessionSnapshot(): SessionSnapshot {
-    return {
-      configOptions: [...this.configOptions],
-      availableCommands: [...this.availableCommands],
-      availableModels: [...this.availableModels],
-      availableModes: [...this.availableModes],
-      currentModelId: this.currentModelId,
-      currentModeId: this.currentModeId,
-    };
+    return this.snapshotOf(this.sessionId_);
+  }
+  getSessionSnapshotFor(sessionId: string): SessionSnapshot {
+    return this.snapshotOf(sessionId);
+  }
+  /** Whether the agent was told this session is live on this connection. */
+  isSessionLoaded(sessionId: string): boolean {
+    return this.loadedSessionIds.has(sessionId);
+  }
+  activeStreamCount(): number {
+    return this.activeStreams.size;
   }
 
   getCurrentSessionId(): string | undefined {
@@ -931,59 +962,112 @@ export class AcpClient implements OpencodeClient {
     return cwd ?? this.cwd ?? process.cwd();
   }
 
-  private applySessionSnapshot(result: Record<string, unknown>): void {
+  /** Metadata slot for one session (null = the pre-session slot); created on first read. */
+  private metaFor(sid: string | null): AcpSessionMeta {
+    let meta = this.sessionMeta.get(sid);
+    if (!meta) {
+      meta = {
+        availableCommands: [{ name: 'compact', description: t().slash.compact }],
+        availableModels: [],
+        availableModes: [],
+        configOptions: [],
+        currentModelId: null,
+        currentModeId: null,
+      };
+      this.sessionMeta.set(sid, meta);
+    }
+    return meta;
+  }
+
+  private snapshotOf(sid: string | null): SessionSnapshot {
+    const meta = this.metaFor(sid);
+    return {
+      configOptions: [...meta.configOptions],
+      availableCommands: [...meta.availableCommands],
+      availableModels: [...meta.availableModels],
+      availableModes: [...meta.availableModes],
+      currentModelId: meta.currentModelId,
+      currentModeId: meta.currentModeId,
+    };
+  }
+
+  /** Per-session normalizer; idle entries are LRU-evicted past the cap. */
+  private normalizerFor(sid: string | null): SessionUpdateNormalizer {
+    if (sid === null) return new SessionUpdateNormalizer();
+    let normalizer = this.normalizers.get(sid);
+    if (normalizer) {
+      this.normalizers.delete(sid);
+      this.normalizers.set(sid, normalizer);
+      return normalizer;
+    }
+    normalizer = new SessionUpdateNormalizer();
+    this.normalizers.set(sid, normalizer);
+    if (this.normalizers.size > MAX_SESSION_NORMALIZERS) {
+      for (const idleSid of [...this.normalizers.keys()]) {
+        if (this.normalizers.size <= MAX_SESSION_NORMALIZERS) break;
+        if (this.activeStreams.has(idleSid) || idleSid === this.replaySessionId) continue;
+        this.normalizers.delete(idleSid);
+      }
+    }
+    return normalizer;
+  }
+
+  private applySessionSnapshot(result: Record<string, unknown>, sid: string): void {
     const snapshot = extractSessionSnapshot(result);
-    this.availableCommands = snapshot.availableCommands;
-    this.availableModels = snapshot.availableModels;
-    this.availableModes = snapshot.availableModes;
-    this.configOptions = snapshot.configOptions;
-    this.currentModelId = snapshot.currentModelId;
-    this.currentModeId = snapshot.currentModeId;
-    this.sessionInfo = snapshot.sessionInfo ?? null;
+    const meta = this.metaFor(sid);
+    meta.availableCommands = snapshot.availableCommands;
+    meta.availableModels = snapshot.availableModels;
+    meta.availableModes = snapshot.availableModes;
+    meta.configOptions = snapshot.configOptions;
+    meta.currentModelId = snapshot.currentModelId;
+    meta.currentModeId = snapshot.currentModeId;
+    meta.sessionInfo = snapshot.sessionInfo;
   }
 
-  private applyConfigOptions(configOptions: SessionConfigOption[]): void {
-    const meta = extractConfigMeta(configOptions);
-    this.configOptions = meta.configOptions;
-    this.currentModelId = meta.currentModelId;
-    this.availableModels = meta.availableModels;
-    this.currentModeId = meta.currentModeId;
-    this.availableModes = meta.availableModes;
+  private applyConfigOptions(configOptions: SessionConfigOption[], sid: string | null): void {
+    const meta = this.metaFor(sid);
+    const extracted = extractConfigMeta(configOptions);
+    meta.configOptions = extracted.configOptions;
+    meta.currentModelId = extracted.currentModelId;
+    meta.availableModels = extracted.availableModels;
+    meta.currentModeId = extracted.currentModeId;
+    meta.availableModes = extracted.availableModes;
   }
 
-  private applySessionUpdate(update: SessionUpdate): void {
+  private applySessionUpdate(update: SessionUpdate, sid: string | null): void {
+    const meta = this.metaFor(sid);
     switch (update.sessionUpdate) {
       case 'config_option_update':
-        this.applyConfigOptions(update.configOptions);
+        this.applyConfigOptions(update.configOptions, sid);
         break;
       case 'available_commands_update':
-        this.availableCommands = mergeAvailableCommands(update.availableCommands);
+        meta.availableCommands = mergeAvailableCommands(update.availableCommands);
         break;
       case 'current_mode_update':
         if (typeof update.currentModeId === 'string') {
-          this.currentModeId = update.currentModeId;
+          meta.currentModeId = update.currentModeId;
         }
         if (update.availableModes) {
-          this.availableModes = [...update.availableModes];
+          meta.availableModes = [...update.availableModes];
         }
         break;
       case 'current_model_update':
         if (typeof update.currentModelId === 'string') {
-          this.currentModelId = update.currentModelId;
+          meta.currentModelId = update.currentModelId;
         }
         if (update.availableModels) {
-          this.availableModels = [...update.availableModels];
+          meta.availableModels = [...update.availableModels];
         }
         break;
       case 'session_info_update':
-        this.sessionInfo = {
-          ...this.sessionInfo,
+        meta.sessionInfo = {
+          ...meta.sessionInfo,
           ...(typeof update.sessionId === 'string' ? { sessionId: update.sessionId } : {}),
           ...(typeof update.title === 'string' ? { title: update.title } : {}),
           ...(typeof update.cwd === 'string' ? { cwd: update.cwd } : {}),
         };
         // v2-alpha may carry config options inside the session info frame.
-        if (update.configOptions) this.applyConfigOptions(update.configOptions);
+        if (update.configOptions) this.applyConfigOptions(update.configOptions, sid);
         break;
     }
   }
@@ -1052,7 +1136,9 @@ export class AcpClient implements OpencodeClient {
     this.sessionId_ = null;
     this.activeStreams.clear();
     this.replaySessionId = null;
-    this.normalizer.reset();
+    this.normalizers.clear();
+    this.loadedSessionIds.clear();
+    this.warnedAmbiguousNoSid = false;
 
     transport?.dispose(error);
     if (shutdownSubprocess) {

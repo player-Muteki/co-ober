@@ -34,3 +34,7 @@ export const UNREADABLE_SUMMARY_MAX_CHARS = 240;
 export const ELICITATION_SCHEMA_MAX_CHARS = 500;
 /** Upper bound on assistant-message references the stream controller tracks; oldest evicted first. */
 export const MAX_TRACKED_ASSISTANT_MESSAGES = 500;
+/** Concurrent prompt streams the client admits before rejecting with a capacity error. */
+export const MAX_CONCURRENT_STREAMS = 4;
+/** Idle per-session normalizers kept alive before LRU eviction. */
+export const MAX_SESSION_NORMALIZERS = 32;

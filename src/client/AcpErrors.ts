@@ -38,6 +38,16 @@ export class AcpAbortError extends AcpTransportError {
   }
 }
 
+import { t } from '../i18n/index';
+
+/** Raised when a prompt is refused because the concurrent-stream budget is full. */
+export class AcpStreamCapacityError extends Error {
+  constructor(public readonly maxStreams: number) {
+    super(t().acp.streamCapacity.replace('{max}', String(maxStreams)));
+    this.name = 'AcpStreamCapacityError';
+  }
+}
+
 /** Raised when the agent reports that a session id no longer exists (e.g. after an agent restart). */
 export class AcpSessionMissingError extends Error {
   constructor(

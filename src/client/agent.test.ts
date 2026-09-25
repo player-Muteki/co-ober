@@ -37,6 +37,9 @@ describe('AgentRuntime', () => {
       getAvailableCommands: vi.fn().mockResolvedValue([]),
       getSessionInfo: vi.fn().mockReturnValue(null),
       getSessionSnapshot: vi.fn().mockReturnValue({ messages: [] }),
+      getSessionSnapshotFor: vi.fn().mockReturnValue({ messages: [] }),
+      isSessionLoaded: vi.fn().mockReturnValue(true),
+      activeStreamCount: vi.fn().mockReturnValue(0),
       getCurrentSessionId: vi.fn().mockReturnValue('session-1'),
       onClose: undefined,
       onReconnect: undefined,
@@ -163,6 +166,21 @@ describe('AgentRuntime', () => {
     it('getCurrentSessionId delegates to acp', () => {
       runtime.getCurrentSessionId();
       expect(mockAcp.getCurrentSessionId).toHaveBeenCalled();
+    });
+
+    it('getSessionSnapshotFor delegates to acp', () => {
+      runtime.getSessionSnapshotFor('session-2');
+      expect(mockAcp.getSessionSnapshotFor).toHaveBeenCalledWith('session-2');
+    });
+
+    it('isSessionLoaded delegates to acp', () => {
+      runtime.isSessionLoaded('session-2');
+      expect(mockAcp.isSessionLoaded).toHaveBeenCalledWith('session-2');
+    });
+
+    it('activeStreamCount delegates to acp', () => {
+      runtime.activeStreamCount();
+      expect(mockAcp.activeStreamCount).toHaveBeenCalled();
     });
   });
 

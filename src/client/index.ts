@@ -57,7 +57,10 @@ export interface OpencodeClient {
   getAvailableCommands(): Promise<AvailableCommand[]>;
   getSessionInfo(): { sessionId?: string; title?: string; cwd?: string } | null;
 	getSessionSnapshot(): SessionSnapshot;
+	getSessionSnapshotFor(sessionId: SessionId): SessionSnapshot;
 	getCurrentSessionId(): SessionId | undefined;
+	isSessionLoaded(sessionId: SessionId): boolean;
+	activeStreamCount(): number;
 	setClientHandlers(handlers: ClientHandlers): void;
 	setFsCapabilityMode(mode: FsCapabilityMode, maxBytes?: number): void;
 	setTerminalCapabilityMode(mode: TerminalCapabilityMode, timeoutMs?: number, maxOutputBytes?: number): void;

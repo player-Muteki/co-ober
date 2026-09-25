@@ -383,6 +383,7 @@ const zh: Locale = {
     invalidSessionId: '服务端未返回有效的会话 ID',
     invalidForkSessionId: '服务端未返回有效的分叉会话 ID',
     streamActive: '已有消息流正在进行',
+    streamCapacity: '最多同时生成 {max} 个对话——请等待其中一个完成',
     invalidResponse: '无效的 ACP 响应格式',
   },
 
