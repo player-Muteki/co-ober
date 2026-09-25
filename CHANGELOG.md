@@ -1,3 +1,19 @@
+## 0.2.1 - 2026-09-25
+
+No new capabilities — this release levels the ground that 0.2.0's tabs stood on, so moving between conversations stops costing you anything.
+
+### Changed
+- **Auto-scroll describes the surface, not one conversation**: the setting now applies to every open tab and to tabs opened later, instead of only the one in view when you flipped it.
+- **`/clear` really clears**: the tab hands itself to the same reset path a session restore uses, so its half-finished stream, its painted markers and its queued prompts go with it.
+
+### Fixed
+- **A staged image stays in the tab that staged it**: image chips travel with the conversation they belong to — switching tabs no longer leaves the picture and its chip on the wrong composer, and a restored chip is still removed by identity.
+- **Coming back keeps your reading position**: reactivating a tab you had scrolled up in no longer jumps to the latest message, and the jump-to-latest button is waiting there for you instead.
+- **Closing a tab says what it threw away**: prompts still waiting in its queue are announced, the same way every other discard already was.
+- **A contested stream slot no longer eats a prompt**: when two turns race for the last free slot, the loser re-queues with its bubble and images intact rather than surfacing a red error and losing the message.
+- **The slash menu speaks for the conversation in view**: a background session's command list can no longer overwrite it, and each tab's own list is re-projected when it comes forward.
+- **`/clear` keeps the note cache**: note contents are memoized by path, so clearing one tab's screen no longer makes every later reference read the file again.
+
 ## 0.2.0 - 2026-09-25
 
 ### Added
