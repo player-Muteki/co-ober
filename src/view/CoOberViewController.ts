@@ -630,9 +630,12 @@ export class CoOberViewController {
   // ── Session dropdown actions ──
 
   async switchSession(sessionId: string, source?: 'local' | 'opencode'): Promise<void> {
+    // Cancel first: the agent-side cancel targets state.sessionId, so
+    // repointing it before cancelling skips the still-running turn and
+    // sends a no-op cancel to the session we are switching into.
+    await this.cancelActiveGeneration();
     this.state.sessionId = sessionId;
     this.deps.sessionStore.getOrCreate(sessionId);
-    await this.cancelActiveGeneration();
     this.callbacks.onClearUI();
     this.resetConversationView();
     try {

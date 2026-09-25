@@ -12,6 +12,7 @@ import { setLocale, t } from './i18n/index';
 import { Mutex } from './utils/mutex';
 import { SessionRepository } from './chat/session';
 import { migratePluginDataSessions, readSchemaVersion, PLUGIN_DATA_SCHEMA_VERSION } from './chat/pluginDataMigration';
+import { SAVE_NOTICE_THROTTLE_MS } from './constants';
 
 export default class CoOberPlugin extends Plugin {
   settings: CoOberSettings = DEFAULT_SETTINGS;
@@ -34,7 +35,21 @@ export default class CoOberPlugin extends Plugin {
   }
 
   override async onload(): Promise<void> {
-    await this.loadPluginData();
+    try {
+      await this.loadPluginData();
+    } catch (e) {
+      // A corrupted data.json must not brick the plugin: fall back to defaults
+      // and keep the unreadable file aside so the data is not silently lost.
+      console.error('[co-ober] failed to load plugin data:', e);
+      const backupPath = await this.backupUnreadableData();
+      this.settings = { ...DEFAULT_SETTINGS };
+      this.sessionStore.hydrate([], null);
+      new Notice(
+        backupPath
+          ? t().notice.dataLoadFailed.replace('{file}', backupPath)
+          : t().notice.dataLoadFailedNoBackup,
+      );
+    }
     setLocale(this.settings.language);
 
     this.registerView(VIEW_TYPE, (leaf) => new CoOberView(leaf, this));
@@ -106,14 +121,41 @@ export default class CoOberPlugin extends Plugin {
     };
   }
 
+  private lastSaveNoticeAt = 0;
+
   async savePluginData(): Promise<void> {
-    await this.saveMutex.runExclusive(async () => {
-      this.sessionStore.prune({
-        maxMessages: this.settings.maxSessionMessages ?? 200,
-        retentionDays: this.settings.sessionRetentionDays ?? 30,
+    try {
+      await this.saveMutex.runExclusive(async () => {
+        this.sessionStore.prune({
+          maxMessages: this.settings.maxSessionMessages ?? 200,
+          retentionDays: this.settings.sessionRetentionDays ?? 30,
+        });
+        await super.saveData(this.buildPluginData());
       });
-      await super.saveData(this.buildPluginData());
-    });
+    } catch (e) {
+      // Every save call site except unload is fire-and-forget; surface failures
+      // here once (throttled) instead of losing chat data silently.
+      console.error('[co-ober] save failed:', e);
+      const now = Date.now();
+      if (now - this.lastSaveNoticeAt > SAVE_NOTICE_THROTTLE_MS) {
+        this.lastSaveNoticeAt = now;
+        new Notice(t().notice.saveFailed);
+      }
+    }
+  }
+
+  private async backupUnreadableData(): Promise<string | null> {
+    const dataPath = `${this.app.vault.configDir}/plugins/${this.manifest.id}/data.json`;
+    const backupPath = `${dataPath.slice(0, -'.json'.length)}.corrupt-${Date.now()}.json`;
+    try {
+      const adapter = this.app.vault.adapter;
+      if (!(await adapter.exists(dataPath))) return null;
+      await adapter.rename(dataPath, backupPath);
+      return backupPath;
+    } catch (e) {
+      console.error('[co-ober] failed to set aside unreadable data.json:', e);
+      return null;
+    }
   }
 
   async loadPluginData(): Promise<void> {

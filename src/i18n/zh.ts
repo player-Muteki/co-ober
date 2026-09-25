@@ -290,6 +290,9 @@ const zh: Locale = {
     noSelection: '未选择文本',
     connected: 'Co-Ober 已连接',
     connectFailed: '连接 OpenCode 失败',
+    dataLoadFailed: '无法读取已保存的聊天数据，将以默认设置启动；不可读的文件已保留为 {file}',
+    dataLoadFailedNoBackup: '无法读取已保存的聊天数据，且未能保留不可读文件；将以默认设置启动',
+    saveFailed: 'Co-Ober 保存聊天数据失败——最近的更改可能丢失',
   },
 
   usage: {

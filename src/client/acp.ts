@@ -353,6 +353,13 @@ export class AcpClient implements OpencodeClient {
    * tear down the newer connection's state.
    */
   private kernelGeneration = 0;
+  /**
+   * Generation of a connect() whose handshake has not finished yet. While set,
+   * a subprocess close for that connection belongs to the in-flight connect and
+   * its catch owns teardown — handling it here too would schedule a reconnect
+   * that resurrects a subprocess whose launch already failed (ENOENT retry storms).
+   */
+  private connectingGeneration: number | null = null;
 
   constructor(cmdPath: string, cwd?: string, vaultIo?: VaultWriteIo) {
     this.cmdPath = cmdPath;
@@ -378,6 +385,7 @@ export class AcpClient implements OpencodeClient {
     this.isIntentionalDisconnect = false;
     this.clearReconnectTimer();
     const generation = ++this.kernelGeneration;
+    this.connectingGeneration = generation;
 
     const cmd = this.cmdPath.replace(/^"(.+)"$/, '$1').replace(/^'(.+)'$/, '$1');
     const args = ['acp'];
@@ -464,6 +472,8 @@ export class AcpClient implements OpencodeClient {
         await subprocess.shutdown().catch(() => {});
       }
       throw error;
+    } finally {
+      if (this.connectingGeneration === generation) this.connectingGeneration = null;
     }
   }
 
@@ -908,6 +918,10 @@ export class AcpClient implements OpencodeClient {
 
   private handleSubprocessClose(subprocess: AcpSubprocess, error?: Error): void {
     if (this.subprocess !== subprocess) return;
+    // A close that races the in-flight handshake belongs to that connect():
+    // its catch owns teardown, and scheduling a reconnect behind it would
+    // resurrect a subprocess whose launch just failed (ENOENT retry storms).
+    if (this.connectingGeneration !== null && !this.connected) return;
 
     const stderrMsg = subprocess.getStderrSnapshot() || '';
     const closeError = error ?? new Error(t().acp.processExited.replace('{code}', t().acp.unknownCode));

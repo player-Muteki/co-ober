@@ -1082,6 +1082,18 @@ describe('CoOberViewController', () => {
       expect(callbacks.onAutoRefActiveFile).toHaveBeenCalled();
     });
 
+    it('cancels the outgoing session before repointing state', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      controller.state.sessionId = 'old-ses';
+      Reflect.set(controller, 'busy', true);
+
+      await controller.switchSession('new-ses');
+
+      expect(client.cancel).toHaveBeenCalledWith('old-ses');
+      expect(controller.getSessionId()).toBe('new-ses');
+    });
+
     it('shows a dedicated error when a native OpenCode session is gone', async () => {
       const client = createMockClient({
         loadSession: vi.fn().mockRejectedValue(new AcpSessionMissingError('ses_gone')),

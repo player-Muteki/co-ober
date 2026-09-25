@@ -288,6 +288,9 @@ const en = {
     noSelection: 'No text selected',
     connected: 'Co-Ober connected',
     connectFailed: 'Failed to connect to OpenCode',
+    dataLoadFailed: 'Could not read saved chat data; starting with defaults. The unreadable file was kept as {file}',
+    dataLoadFailedNoBackup: 'Could not read saved chat data or set the unreadable file aside; starting with defaults',
+    saveFailed: 'Co-Ober failed to save chat data — recent changes may be lost',
   },
 
   usage: {

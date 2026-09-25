@@ -1041,3 +1041,52 @@ describe('parseSessionUpdate non-text content and observability', () => {
     warn.mockRestore();
   });
 });
+
+describe('AcpClient subprocess close during the connect handshake', () => {
+  function makeClient() {
+    const client = new AcpClient('opencode');
+    const subprocess = {
+      getStderrSnapshot: () => '',
+      shutdown: vi.fn().mockResolvedValue(undefined),
+    };
+    Reflect.set(client, 'subprocess', subprocess);
+    return { client, subprocess };
+  }
+
+  it('skips reconnect scheduling while a connect handshake is still in flight', () => {
+    const { client, subprocess } = makeClient();
+    const schedule = vi.fn();
+    Reflect.set(client, 'scheduleReconnect', schedule);
+    const dispose = vi.fn().mockResolvedValue(undefined);
+    Reflect.set(client, 'disposeConnection', dispose);
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // A launch that fails (ENOENT) closes the subprocess before connect() sets connected.
+    Reflect.set(client, 'connectingGeneration', client.generation);
+    Reflect.set(client, 'connected', false);
+
+    Reflect.get(client, 'handleSubprocessClose').call(client, subprocess, new Error('spawn ENOENT'));
+
+    expect(dispose).not.toHaveBeenCalled();
+    expect(schedule).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it('does dispose and reconnect for a close that arrives after the handshake finished', async () => {
+    const { client, subprocess } = makeClient();
+    const dispose = vi.fn().mockResolvedValue(undefined);
+    Reflect.set(client, 'disposeConnection', dispose);
+    const schedule = vi.fn();
+    Reflect.set(client, 'scheduleReconnect', schedule);
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // Normal runtime loss: connected is true and no handshake is pending.
+    Reflect.set(client, 'connectingGeneration', null);
+    Reflect.set(client, 'connected', true);
+
+    Reflect.get(client, 'handleSubprocessClose').call(client, subprocess, new Error('exited'));
+    await Promise.resolve();
+
+    expect(dispose).toHaveBeenCalled();
+    expect(schedule).toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+});

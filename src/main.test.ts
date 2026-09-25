@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
 import { Plugin } from 'obsidian';
+import { Notice } from './test/obsidianMock';
 import CoOberPlugin from './main';
 import { DEFAULT_SETTINGS, VIEW_TYPE } from './types';
 import { SessionRepository } from './chat/session';
@@ -149,6 +150,81 @@ describe('CoOberPlugin.loadData autoConnect migration', () => {
 
     expect(data?.settings.autoConnect).toBe(false);
     loadSpy.mockRestore();
+  });
+});
+
+describe('CoOberPlugin corrupted data recovery', () => {
+  function createLoadPlugin(loadData: () => Promise<unknown>) {
+    const rename = vi.fn().mockResolvedValue(undefined);
+    const exists = vi.fn().mockResolvedValue(true);
+    const plugin = Object.create(CoOberPlugin.prototype) as CoOberPlugin;
+    Object.assign(plugin, {
+      app: {
+        vault: { configDir: '.obsidian', adapter: { exists, rename } },
+        workspace: { getLeavesOfType: vi.fn(() => []) },
+      },
+      manifest: { id: 'co-ober' },
+      settings: { ...DEFAULT_SETTINGS },
+      sessionStore: { hydrate: vi.fn() },
+      loadData,
+      registerView: vi.fn(),
+      deduplicateCoOberLeaves: vi.fn(),
+      addRibbonIcon: vi.fn(),
+      addSettingTab: vi.fn(),
+      addCommand: vi.fn(),
+    });
+    return { plugin, rename, exists };
+  }
+
+  it('sets the unreadable file aside and starts with defaults instead of bricking', async () => {
+    Notice.messages.length = 0;
+    const { plugin, rename, exists } = createLoadPlugin(() => Promise.reject(new Error('bad json')));
+
+    await plugin.onload();
+
+    expect(exists).toHaveBeenCalledWith('.obsidian/plugins/co-ober/data.json');
+    expect(rename).toHaveBeenCalledWith(
+      '.obsidian/plugins/co-ober/data.json',
+      expect.stringMatching(/^\.obsidian\/plugins\/co-ober\/data\.corrupt-\d+\.json$/),
+    );
+    expect(plugin.sessionStore.hydrate).toHaveBeenCalledWith([], null);
+    expect(Notice.messages.some((m) => m.includes('.corrupt-'))).toBe(true);
+  });
+
+  it('still starts with defaults when the corrupt file cannot be renamed away', async () => {
+    Notice.messages.length = 0;
+    const { plugin, rename } = createLoadPlugin(() => Promise.reject(new Error('bad json')));
+    rename.mockRejectedValueOnce(new Error('rename denied'));
+
+    await plugin.onload();
+
+    expect(plugin.sessionStore.hydrate).toHaveBeenCalledWith([], null);
+    expect(Notice.messages.some((m) => m.includes('starting with defaults'))).toBe(true);
+  });
+
+  it('does not treat a missing data.json as a failed rename backup', async () => {
+    Notice.messages.length = 0;
+    const { plugin, rename } = createLoadPlugin(() => Promise.reject(new Error('bad json')));
+    rename.mockResolvedValue(undefined);
+    (plugin.app.vault.adapter.exists as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+
+    await plugin.onload();
+
+    expect(rename).not.toHaveBeenCalled();
+    expect(Notice.messages.some((m) => m.includes('starting with defaults'))).toBe(true);
+  });
+
+  it('surfaces a save failure once per throttle window', async () => {
+    Notice.messages.length = 0;
+    const saveSpy = vi.spyOn(Plugin.prototype, 'saveData').mockRejectedValue(new Error('disk full'));
+    const plugin = new CoOberPlugin({} as never, {} as never);
+    plugin.settings = { ...DEFAULT_SETTINGS };
+
+    await plugin.savePluginData();
+    await plugin.savePluginData();
+
+    expect(Notice.messages.filter((m) => m.includes('failed to save'))).toHaveLength(1);
+    saveSpy.mockRestore();
   });
 });
 
