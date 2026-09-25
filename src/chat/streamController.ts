@@ -25,7 +25,7 @@ import type { SyncEngine } from '../sync/engine';
 import type { SyncContext } from '../sync/templates';
 import type { SessionStore } from './session';
 import { t } from '../i18n/index';
-import { STREAM_SAVE_DEBOUNCE_MS } from '../constants';
+import { STREAM_SAVE_DEBOUNCE_MS, MAX_TRACKED_ASSISTANT_MESSAGES } from '../constants';
 
 export interface StreamControllerDeps {
   state: ChatState;
@@ -359,11 +359,25 @@ export class StreamController {
       };
       session.messages.push(message);
       this.assistantMessages.set(key, message);
+      // Insertion-ordered map: evicting the oldest reference keeps a very
+      // long session from retaining every assistant message forever.
+      if (this.assistantMessages.size > MAX_TRACKED_ASSISTANT_MESSAGES) {
+        const oldest = this.assistantMessages.keys().next();
+        if (!oldest.done) this.assistantMessages.delete(oldest.value);
+      }
       session.updatedAt = Date.now();
     } else {
       const session = this.deps.sessionStore.get(sessionId);
       if (!session) return;
       const msg = tracked;
+      if (!session.messages.includes(msg)) {
+        // Prune dropped this message from the transcript. A reused
+        // messageId must start a fresh entry rather than mutate a detached
+        // object nobody can see; re-enter to take the create branch.
+        this.assistantMessages.delete(key);
+        this.saveAssistantChunk(messageId, accumulatedText, type);
+        return;
+      }
       msg.content = accumulatedText;
       // Update contentBlocks text
       if (msg.contentBlocks) {

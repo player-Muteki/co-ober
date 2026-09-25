@@ -460,8 +460,47 @@ describe('SessionDropdown', () => {
       dd.destroy();
     });
 
-    it('hides loading placeholder when loader rejects', async () => {
-      const dd = makeDropdown(() => Promise.reject(new Error('no sqlite')));
+    it('keeps the typed search filter when an async rerender rebuilds the list', async () => {
+      let resolveLoader: (sessions: unknown[]) => void = () => {};
+      const dd = makeDropdown(() => new Promise<unknown[]>((r) => { resolveLoader = r; }));
+      dd.open();
+      const search = container.querySelector('.co-ober-session-search') as HTMLInputElement;
+      search.value = 'Chat 2';
+      search.dispatchEvent(new Event('input'));
+      expect(container.querySelectorAll('.co-ober-session-item').length).toBe(1);
+
+      resolveLoader([]);
+      await new Promise((r) => setTimeout(r, 10));
+
+      const rebuilt = container.querySelector('.co-ober-session-search') as HTMLInputElement;
+      expect(rebuilt.value).toBe('Chat 2');
+      expect(container.querySelectorAll('.co-ober-session-item').length).toBe(1);
+      dd.destroy();
+    });
+
+    it('does not tear down an in-progress rename when the native list arrives', async () => {
+      let resolveLoader: (sessions: unknown[]) => void = () => {};
+      const dd = makeDropdown(() => new Promise<unknown[]>((r) => { resolveLoader = r; }));
+      dd.open();
+      (container.querySelector('.session-rename') as HTMLButtonElement).click();
+      expect(container.querySelector('.session-rename-input')).not.toBeNull();
+
+      resolveLoader([{ sessionId: 'ses_native_1', title: 'Terminal chat' }]);
+      await new Promise((r) => setTimeout(r, 10));
+
+      const renaming = container.querySelector('.session-rename-input') as HTMLInputElement;
+      expect(renaming).not.toBeNull(); // the deferred rebuild left the editor alone
+
+      renaming.value = 'Renamed';
+      renaming.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(container.querySelector('.session-rename-input')).toBeNull();
+      expect(container.querySelector('.co-ober-session-native')).not.toBeNull(); // rebuild happened with fresh data
+      dd.destroy();
+    });
+
+    it('hides loading placeholder when loader rejects', async () => {      const dd = makeDropdown(() => Promise.reject(new Error('no sqlite')));
       dd.open();
       await new Promise((r) => setTimeout(r, 10));
       expect(container.querySelector('.co-ober-session-native-loading')).toBeNull();

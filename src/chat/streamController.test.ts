@@ -739,6 +739,29 @@ describe('StreamController', () => {
     expect(session.messages[1].content).toBe('q2');
   });
 
+  it('recreates a transcript message when a reused messageId follows a prune that dropped it', () => {
+    const session: { messages: Array<Record<string, unknown>>; updatedAt: number } = { messages: [], updatedAt: 0 };
+    deps.sessionStore.get.mockReturnValue(session);
+
+    controller.handleChunk({
+      kind: 'message_chunk', role: 'agent', messageId: 'msg-1', chunkText: 'A', accumulatedText: 'A',
+    });
+    const tracked = session.messages[session.messages.length - 1];
+    expect(tracked.content).toBe('A');
+
+    // Retention prune drops the tracked message entirely — the map entry is
+    // now detached and must not swallow the next update for this messageId.
+    session.messages = [];
+
+    controller.handleChunk({
+      kind: 'message_chunk', role: 'agent', messageId: 'msg-1', chunkText: 'B', accumulatedText: 'AB',
+    });
+
+    expect(tracked.content).toBe('A');
+    expect(session.messages).toHaveLength(1);
+    expect(session.messages[0].content).toBe('AB');
+  });
+
   it('beginTurn keeps tool calls from an interrupted turn out of the next message', () => {
     const session: { messages: Array<Record<string, unknown>>; updatedAt: number } = { messages: [], updatedAt: 0 };
     deps.sessionStore.get.mockReturnValue(session);

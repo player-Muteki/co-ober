@@ -15,7 +15,7 @@ import { setLocale, t } from '../i18n/index';
 import zhLocale from '../i18n/zh';
 import { Notice } from '../test/obsidianMock';
 import { commandRegistry } from '../commands/registry';
-import { AcpSessionMissingError, AcpProcessExitError } from '../client/AcpErrors';
+import { AcpSessionMissingError, AcpProcessExitError, AcpTimeoutError } from '../client/AcpErrors';
 import {
   readNativeMessageStats,
   readNativeSessionTodos,
@@ -2399,6 +2399,91 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
 
       const parts = client.sendMessage.mock.calls[0][1] as Array<{ type: string }>;
       expect(parts.some((p) => p.type === 'image')).toBe(false);
+    });
+  });
+
+  describe('0.1.39 stage 1 correctness', () => {
+    function restorableSession() {
+      return {
+        sessionId: 'test',
+        messages: [
+          { role: 'user', content: 'hello', type: 'text', timestamp: 1000 },
+          { role: 'assistant', content: 'hi', type: 'text', timestamp: 2000, nativeMessageId: 'msg_1' },
+        ],
+      };
+    }
+
+    it('restoreSession bails when the session switches while enriching', async () => {
+      controller.state.sessionId = 'test';
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue(restorableSession());
+      const gate = deferred<unknown[]>();
+      (readNativeMessageStats as ReturnType<typeof vi.fn>).mockReturnValueOnce(gate.promise);
+
+      const restoring = controller.restoreSession();
+      controller.state.sessionId = 'other';
+      gate.resolve([]);
+      await restoring;
+
+      expect(deps.renderer.addUserMessage).not.toHaveBeenCalled();
+      expect(deps.renderer.appendText).not.toHaveBeenCalled();
+    });
+
+    it('restoreSession bails when a newer generation claims the transcript', async () => {
+      controller.state.sessionId = 'test';
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue(restorableSession());
+      const gate = deferred<unknown[]>();
+      (readNativeMessageStats as ReturnType<typeof vi.fn>).mockReturnValueOnce(gate.promise);
+
+      const restoring = controller.restoreSession();
+      Reflect.set(controller, 'genId', (Reflect.get(controller, 'genId') as number) + 1);
+      gate.resolve([]);
+      await restoring;
+
+      expect(deps.renderer.addUserMessage).not.toHaveBeenCalled();
+    });
+
+    it('renders normally when nothing superseded the restore', async () => {
+      controller.state.sessionId = 'test';
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue(restorableSession());
+      const addUser = vi.fn();
+      (deps.renderer as unknown as { addUserMessage: ReturnType<typeof vi.fn> }).addUserMessage = addUser;
+
+      await controller.restoreSession();
+
+      expect(addUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('timeout retry replays the captured images without a duplicate user bubble', async () => {
+      const client = createMockClient({
+        sendMessage: vi
+          .fn()
+          .mockRejectedValueOnce(new AcpTimeoutError('session/prompt', 30000))
+          .mockResolvedValue({ stopReason: 'end_turn' }),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      controller.state.sessionId = 'local-1';
+      const addUser = vi.fn();
+      (deps.renderer as unknown as { addUserMessage: ReturnType<typeof vi.fn> }).addUserMessage = addUser;
+      const addError = vi.fn();
+      (deps.renderer as unknown as { addError: ReturnType<typeof vi.fn> }).addError = addError;
+      let chips: PromptPart[] = [{ type: 'image', mimeType: 'image/png', data: 'AAA' }];
+      callbacks.getPendingImageParts = vi.fn(() => chips);
+      callbacks.onClearPendingImageChips = vi.fn(() => {
+        chips = [];
+      });
+
+      await controller.send('look', []);
+
+      const retryCall = addError.mock.calls.find((c) => c[1] === 'retry');
+      expect(retryCall).toBeDefined();
+      await (retryCall![2] as () => Promise<void>)();
+
+      expect(client.sendMessage).toHaveBeenCalledTimes(2);
+      const retryParts = client.sendMessage.mock.calls[1][1] as Array<{ type: string }>;
+      expect(retryParts.some((p) => p.type === 'image')).toBe(true);
+      // The original attempt already added and persisted the user message once.
+      expect(addUser).toHaveBeenCalledTimes(1);
+      expect(callbacks.getPendingImageParts).toHaveBeenCalledTimes(1);
     });
   });
 

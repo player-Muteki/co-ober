@@ -19,6 +19,7 @@ export class ChatInput {
   private readonly resizeHandle: HTMLDivElement;
   private readonly keydownHandler: (e: KeyboardEvent) => void;
   private readonly mousedownHandler: (e: MouseEvent) => void;
+  private activeDrag: { move: (e: MouseEvent) => void; up: () => void } | null = null;
   private readonly unsubscribeLocale: () => void;
 
   constructor(
@@ -49,22 +50,30 @@ export class ChatInput {
       const startY = e.clientY;
       const startH = container.offsetHeight;
       this.resizeHandle.addClass('dragging');
-      const onMove = (ev: MouseEvent) => {
+      const move = (ev: MouseEvent) => {
         container.setCssProps({ height: `${Math.min(400, Math.max(144, startH + startY - ev.clientY))}px` });
       };
-      const onUp = () => {
-        this.resizeHandle.removeClass('dragging');
-        this.doc.removeEventListener('mousemove', onMove);
-        this.doc.removeEventListener('mouseup', onUp);
+      const up = () => {
+        this.endDrag();
       };
-      this.doc.addEventListener('mousemove', onMove);
-      this.doc.addEventListener('mouseup', onUp);
+      this.activeDrag = { move, up };
+      this.doc.addEventListener('mousemove', move);
+      this.doc.addEventListener('mouseup', up);
     };
     this.resizeHandle.addEventListener('mousedown', this.mousedownHandler);
   }
 
+  private endDrag(): void {
+    if (!this.activeDrag) return;
+    this.doc.removeEventListener('mousemove', this.activeDrag.move);
+    this.doc.removeEventListener('mouseup', this.activeDrag.up);
+    this.activeDrag = null;
+    this.resizeHandle.removeClass('dragging');
+  }
+
   dispose(): void {
     this.unsubscribeLocale();
+    this.endDrag();
     this.textarea.removeEventListener('keydown', this.keydownHandler);
     this.resizeHandle.removeEventListener('mousedown', this.mousedownHandler);
   }

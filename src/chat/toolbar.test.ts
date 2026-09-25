@@ -29,6 +29,30 @@ describe('InputToolbar locale refresh', () => {
   });
 });
 
+describe('InputToolbar effort locale refresh', () => {
+  it('keeps agent-offered tiers (including custom ones) when the locale changes', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const toolbar = new InputToolbar(container, {});
+    toolbar.updateEffort(
+      [
+        { value: 'minimal', label: 'Minimal' },
+        { value: 'x_high', label: 'Extra high' },
+        { value: 'turbo', label: 'Turbo Mode' },
+      ],
+      'turbo',
+    );
+
+    setLocale('zh');
+    toolbar.refreshLocale();
+
+    const labels = Array.from(container.querySelectorAll('.co-ober-effort-option')).map((el) => el.textContent);
+    expect(labels).toEqual(['最低', '极高', 'Turbo Mode']);
+    expect(container.querySelector('.co-ober-effort-label')?.textContent).toBe('Turbo Mode');
+    setLocale('en');
+  });
+});
+
 describe('InputToolbar image attach', () => {
   it('renders an attach button that fires onAttachImage', () => {
     setLocale('en');

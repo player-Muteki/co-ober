@@ -53,6 +53,23 @@ describe('ChatInput', () => {
 		expect(callbacks.onStop).toHaveBeenCalled();
 	});
 
+	it('dispose mid-drag detaches the document resize listeners', () => {
+		const setCss = vi.fn();
+		(container as unknown as { setCssProps: ReturnType<typeof vi.fn> }).setCssProps = setCss;
+		const handle = container.querySelector('.co-ober-input-resize-handle') as HTMLElement;
+		handle.dispatchEvent(new MouseEvent('mousedown', { clientY: 200, bubbles: true, cancelable: true }));
+		document.dispatchEvent(new MouseEvent('mousemove', { clientY: 150, bubbles: true }));
+		expect(setCss).toHaveBeenCalled();
+		setCss.mockClear();
+
+		chatInput.dispose();
+
+		document.dispatchEvent(new MouseEvent('mousemove', { clientY: 100, bubbles: true }));
+		document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+		expect(setCss).not.toHaveBeenCalled();
+		expect(handle.classList.contains('dragging')).toBe(false);
+	});
+
 	it('setStreaming tracks streaming state', () => {
 		chatInput.setStreaming(true);
 		expect(chatInput.isStreaming()).toBe(true);

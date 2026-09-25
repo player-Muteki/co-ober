@@ -1,5 +1,6 @@
 import { setIcon } from 'obsidian';
 import { t, onLocaleChange } from '../i18n/index';
+import { normalizeEffortLabel } from './effortLabel';
 
 export interface ToolbarCallbacks {
   onAgentChange?: (agent: string) => void;
@@ -420,12 +421,20 @@ export class InputToolbar {
     this.attachBtnEl.title = this.attachBtnEl.disabled
       ? t().toolbar.attachImageUnsupported
       : t().toolbar.attachImage;
-    this.updateEffort([
-      { value: 'default', label: t().toolbar.effort.default },
-      { value: 'low', label: t().toolbar.effort.low },
-      { value: 'medium', label: t().toolbar.effort.medium },
-      { value: 'high', label: t().toolbar.effort.high },
-    ], this.currentEffort);
+    // Relabel the options the agent actually offered (custom tiers like
+    // minimal/xhigh would otherwise vanish under a hardcoded 4-tier list);
+    // agent-supplied names for unknown values pass through unchanged.
+    this.updateEffort(
+      this.effortOptions.length > 0
+        ? this.effortOptions.map((o) => ({ value: o.value, label: normalizeEffortLabel(o.value, o.label) }))
+        : [
+            { value: 'default', label: t().toolbar.effort.default },
+            { value: 'low', label: t().toolbar.effort.low },
+            { value: 'medium', label: t().toolbar.effort.medium },
+            { value: 'high', label: t().toolbar.effort.high },
+          ],
+      this.currentEffort,
+    );
     this.setSending(this.sending);
   }
 }

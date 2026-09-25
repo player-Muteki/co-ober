@@ -39,6 +39,8 @@ export class SessionDropdown {
 	private nativeLoadError: string | null = null;
 	private contentResults: SessionMeta[] = [];
 	private searchToken = 0;
+	/** Live title filter while open; survives mid-open rerenders, cleared on close. */
+	private searchValue = '';
 
 	constructor(
 		private container: HTMLElement,
@@ -78,6 +80,7 @@ export class SessionDropdown {
 					attr: { placeholder: t().session.search, type: 'text' },
 				})
 			: null;
+		if (searchInput && this.searchValue) searchInput.value = this.searchValue;
 
 		const itemsContainer = dd.createDiv({ cls: 'co-ober-session-items' });
 
@@ -125,6 +128,7 @@ export class SessionDropdown {
 
 		searchInput?.addEventListener('input', () => {
 			const value = searchInput.value;
+			this.searchValue = value;
 			renderItems(value);
 			void this.runContentSearch(value, () => renderItems(searchInput.value));
 		});
@@ -132,7 +136,8 @@ export class SessionDropdown {
 		if (this.loadNativeSessions && !this.nativeLoadedOnce) {
 			this.nativeLoading = true;
 		}
-		renderItems('');
+		renderItems(this.searchValue);
+		if (this.searchValue) void this.runContentSearch(this.searchValue, () => renderItems(this.searchValue));
 
 		this.dropdownEl = dd;
 		this.outsideHandler = (evt: MouseEvent) => {
@@ -197,10 +202,13 @@ export class SessionDropdown {
 		}
 	}
 
-	private rerender(): void {
-		// Re-open rendering by simulating a close/open is too disruptive; instead
-		// rebuild the items container content via a fresh open cycle on next toggle.
+	private rerender(opts?: { force?: boolean }): void {
+		// Async refreshes (native list, pin toggle) must not tear down an
+		// in-progress rename; the rename's own settle forces the rebuild.
+		if (!opts?.force && this.dropdownEl?.querySelector('.session-rename-input')) return;
+		const filter = this.searchValue;
 		this.close();
+		this.searchValue = filter;
 		this.open();
 	}
 
@@ -251,6 +259,7 @@ export class SessionDropdown {
 	}
 
 	close(): void {
+		this.searchValue = '';
 		for (const timer of this.pendingDeleteTimers) window.clearTimeout(timer);
 		this.pendingDeleteTimers.clear();
 		if (this.dropdownEl) {
@@ -351,12 +360,12 @@ export class SessionDropdown {
 			if (value && value !== original) {
 				await this.callbacks.onRename?.(session.sessionId, value);
 			}
-			this.rerender();
+			this.rerender({ force: true });
 		};
 		const cancel = (): void => {
 			if (settled) return;
 			settled = true;
-			this.rerender();
+			this.rerender({ force: true });
 		};
 		input.addEventListener('keydown', (e: KeyboardEvent) => {
 			if (e.key === 'Enter') {

@@ -26,6 +26,7 @@ import { StreamController } from '../chat/streamController';
 import { buildCustomAgentPrompt, getValidActiveCustomAgent } from '../agents/custom';
 import { filterCommonModelOptions } from './modelFilter';
 import { applyDefaultSessionSettings } from './sessionDefaults';
+import { normalizeEffortLabel } from '../chat/effortLabel';
 import { Mutex } from '../utils/mutex';
 import type { WelcomeView } from './welcomeView';
 import type { PermissionBanner } from './permissionBanner';
@@ -96,6 +97,17 @@ export interface ControllerDeps {
   updateContextMeter: (usage: import('../types').UsageInfo | null) => void;
 }
 
+/** Per-turn knobs for executeAgentCall. */
+export interface AgentCallConfig {
+  addUserMessage?: boolean;
+  saveMessage?: boolean;
+  buildPartsWithRefs?: ContextRef[];
+  history?: SerializedMessage[];
+  onAfterResponse?: (response: AcpResponse | undefined) => Promise<void>;
+  onFinally?: () => void;
+  retryFn?: (text: string, refs?: ContextRef[]) => Promise<void>;
+}
+
 export class CoOberViewController {
   private sessionMutex = new Mutex();
   readonly state = new ChatState();
@@ -105,6 +117,8 @@ export class CoOberViewController {
   private genId = 0;
   private unsubscribeLocale: (() => void) | null = null;
   private promptQueue: Array<{ text: string; refs: ContextRef[] }> = [];
+  /** Turn content captured for a user-initiated retry (see retryTurn). */
+  private pendingRetry: { text: string; imageParts: PromptPart[] } | null = null;
   private sideChatSessionId: string | null = null;
   queueIndicatorEl: HTMLDivElement | null = null;
 
@@ -580,7 +594,13 @@ export class CoOberViewController {
     if (!this.state.sessionId) return;
     const session = this.deps.sessionStore.get(this.state.sessionId);
     if (!session) return;
+    const gen = this.genId;
+    const sid = this.state.sessionId;
     await this.enrichMessagesFromNative(session);
+    // A session switch during enrichment resets the view and repoints
+    // sessionId; painting this transcript then would render A's messages
+    // into B's freshly cleared panel.
+    if (this.genId !== gen || this.state.sessionId !== sid) return;
     let idx = 0;
     for (const msg of session.messages) {
       const restoreId = `restore-${msg.timestamp}-${idx++}`;
@@ -892,18 +912,31 @@ export class CoOberViewController {
 
   // ── Sending ──
 
+  /**
+   * Replay a failed turn through its original retry path while handing the
+   * next executeAgentCall the parts captured on the first attempt. Cleared in
+   * finally so a retry that gets enqueued (a new turn started meanwhile)
+   * never leaves stale images behind.
+   */
+  private async retryTurn(
+    config: AgentCallConfig,
+    text: string,
+    refs: ContextRef[],
+    imageParts: PromptPart[],
+  ): Promise<void> {
+    if (!config.retryFn) return;
+    this.pendingRetry = { text, imageParts };
+    try {
+      await config.retryFn(text, refs);
+    } finally {
+      this.pendingRetry = null;
+    }
+  }
+
   private async executeAgentCall(
     text: string,
     refs: ContextRef[],
-    config: {
-      addUserMessage?: boolean;
-      saveMessage?: boolean;
-      buildPartsWithRefs?: ContextRef[];
-      history?: SerializedMessage[];
-      onAfterResponse?: (response: AcpResponse | undefined) => Promise<void>;
-      onFinally?: () => void;
-      retryFn?: (text: string, refs?: ContextRef[]) => Promise<void>;
-    },
+    config: AgentCallConfig,
   ): Promise<void> {
     // Claim the busy flag synchronously, before any await: two Enter
     // presses in the same tick must not both pass send()'s busy check.
@@ -942,14 +975,19 @@ export class CoOberViewController {
     this.deps.input.setStreaming(true);
     this.deps.toolbar.setSending(true);
     this.sendStartTime = Date.now();
-    const imageParts = this.callbacks.getPendingImageParts();
-    this.callbacks.onClearPendingImageChips();
+    // A retry replays the parts captured on the failed attempt: the chips
+    // were cleared then, and the user bubble + persisted message already
+    // exist from that attempt, so re-adding either would corrupt the turn.
+    const savedRetry = this.pendingRetry && this.pendingRetry.text === text ? this.pendingRetry : null;
+    this.pendingRetry = null;
+    const imageParts = savedRetry ? savedRetry.imageParts : this.callbacks.getPendingImageParts();
+    if (!savedRetry) this.callbacks.onClearPendingImageChips();
     const images = imageParts
       .filter((p) => p.type === 'image' && typeof p.mimeType === 'string' && typeof p.data === 'string')
       .map((p) => ({ mimeType: p.mimeType as string, data: p.data as string }));
-    if (config.addUserMessage !== false)
+    if (!savedRetry && config.addUserMessage !== false)
       this.deps.renderer.addUserMessage(text, undefined, images.length > 0 ? images : undefined);
-    if (config.saveMessage !== false)
+    if (!savedRetry && config.saveMessage !== false)
       this.streamCtrl.saveMessage('user', text, 'text', undefined, images.length > 0 ? images : undefined);
     this.deps.renderer.addAssistantPlaceholder();
 
@@ -1003,12 +1041,12 @@ export class CoOberViewController {
           // User cancelled, don't show error
         } else if (e instanceof AcpTimeoutError) {
           this.deps.renderer.addError(t().error.timeout, 'retry', () =>
-            config.retryFn ? config.retryFn(text, refs) : undefined,
+            this.retryTurn(config, text, refs, imageParts),
           );
         } else if (e instanceof AcpProcessExitError) {
           this.deps.renderer.addError(t().error.processExit, 'restart', async () => {
             await this.reconnect();
-            if (config.retryFn) await config.retryFn(text, refs);
+            await this.retryTurn(config, text, refs, imageParts);
           });
         } else {
           this.deps.renderer.addError(e instanceof Error ? e.message : String(e));
@@ -1738,20 +1776,7 @@ export function deriveSessionTitle(text: string): string {
   return queuePreview(text);
 }
 
-const EFFORT_LABEL_KEYS = ['default', 'low', 'medium', 'high', 'minimal', 'xhigh', 'max'] as const;
-
-/**
- * Localize well-known reasoning-effort values; agent-supplied names for
- * unknown values pass through untouched so custom tiers stay visible.
- */
-export function normalizeEffortLabel(value: string, name: string): string {
-  const key = value.trim().toLowerCase().replace(/[\s_-]+/g, '');
-  const ef = t().toolbar.effort;
-  for (const known of EFFORT_LABEL_KEYS) {
-    if (known === key) return ef[known];
-  }
-  return name || value;
-}
+export { normalizeEffortLabel } from '../chat/effortLabel';
 
 function buildNotesBlock(resolved: Array<{ name: string; content: string }>): string {
   if (resolved.length === 0) return '';
