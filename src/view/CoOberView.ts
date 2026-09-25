@@ -172,8 +172,12 @@ export class CoOberView extends ItemView {
     const actions = header.createDiv({ cls: 'co-ober-header-actions' });
     this.newSessionBtnEl = actions.createEl('button', { cls: 'mod-icon' });
     setIcon(this.newSessionBtnEl, 'plus-circle');
+    this.newSessionBtnEl.setAttribute('aria-label', t().header.newSession);
+    this.newSessionBtnEl.title = t().header.newSession;
     this.sessionButtonEl = actions.createEl('button', { cls: 'mod-icon' });
     setIcon(this.sessionButtonEl, 'history');
+    this.sessionButtonEl.setAttribute('aria-label', t().header.sessionHistory);
+    this.sessionButtonEl.title = t().header.sessionHistory;
 
     // ── Messages ──
     this.messagesEl = el.createDiv({ cls: 'co-ober-messages' });
@@ -531,6 +535,8 @@ export class CoOberView extends ItemView {
       cls: 'co-ober-new-messages-btn',
     });
     setIcon(btn, 'arrow-down');
+    btn.setAttribute('aria-label', t().message.jumpToLatest);
+    btn.title = t().message.jumpToLatest;
     btn.onclick = () => {
       this.controller.state.autoScrollEnabled = true;
       this.hideNewMessagesBtn();
@@ -551,10 +557,21 @@ export class CoOberView extends ItemView {
 
   refreshLocale(): void {
     this.headerTitleEl?.setText(t().appName);
+    if (this.newSessionBtnEl) {
+      this.newSessionBtnEl.setAttribute('aria-label', t().header.newSession);
+      this.newSessionBtnEl.title = t().header.newSession;
+    }
+    if (this.sessionButtonEl) {
+      this.sessionButtonEl.setAttribute('aria-label', t().header.sessionHistory);
+      this.sessionButtonEl.title = t().header.sessionHistory;
+    }
+    if (this.newMessagesBtn) {
+      this.newMessagesBtn.setAttribute('aria-label', t().message.jumpToLatest);
+      this.newMessagesBtn.title = t().message.jumpToLatest;
+    }
     if (this.reconnectBtn) {
       this.reconnectBtn.textContent = this.reconnectBtn.disabled ? t().reconnect.connecting : t().reconnect.text;
     }
-    // newMessagesBtn is icon-only, no text to update
   }
 
   // ── Reconnect button (view-owned DOM) ──

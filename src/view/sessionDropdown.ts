@@ -189,7 +189,7 @@ export class SessionDropdown {
 			const summary = nativeSummaryText(s);
 			if (summary) it.createSpan({ cls: 'session-summary', text: summary });
 			if (s.updatedAt) {
-				it.createSpan({ cls: 'session-time', text: s.updatedAt.slice(0, 10) });
+				it.createSpan({ cls: 'session-time', text: this.formatSessionDate(s.updatedAt) });
 			}
 			it.onclick = () => {
 				void this.callbacks.onSwitch(s.sessionId, 'opencode').catch((e) => this.reportActionError(e));
@@ -242,7 +242,7 @@ export class SessionDropdown {
 				cls: `co-ober-session-item co-ober-session-content${s.sessionId === currentId ? ' active' : ''}`,
 			});
 			it.createSpan({ text: s.title || s.sessionId, cls: 'session-label' });
-			if (s.updatedAt) it.createSpan({ cls: 'session-time', text: s.updatedAt.slice(0, 10) });
+			if (s.updatedAt) it.createSpan({ cls: 'session-time', text: this.formatSessionDate(s.updatedAt) });
 			if (s.snippet) it.createDiv({ cls: 'session-snippet', text: s.snippet.trim() });
 			it.onclick = () => {
 				void this.callbacks.onSwitch(s.sessionId, 'opencode').catch((e) => this.reportActionError(e));
@@ -375,6 +375,12 @@ export class SessionDropdown {
 		input.addEventListener('blur', () => {
 			void commit().catch((err) => this.reportActionError(err));
 		});
+	}
+
+	/** Render an ISO timestamp as a locale date; keep the raw prefix if unparsable. */
+	private formatSessionDate(iso: string): string {
+		const date = new Date(iso);
+		return Number.isNaN(date.getTime()) ? iso.slice(0, 10) : date.toLocaleDateString();
 	}
 
 	private reportActionError(e: unknown): void {

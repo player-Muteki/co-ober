@@ -1380,7 +1380,10 @@ export class CoOberViewController {
       const ta = this.deps.input.textareaEl;
       const existing = ta.value.trim();
       const queued = restorable.map((q) => q.text);
-      ta.value = existing ? `${existing}\n${queued.join('\n')}` : queued.join('\n');
+      // Blank-line separation: a single \n would weld independent prompts
+      // into one message the next send submits as a combined prompt.
+      const restored = queued.join('\n\n');
+      ta.value = existing ? `${existing}\n\n${restored}` : restored;
       ta.dispatchEvent(new Event('input', { bubbles: true }));
       this.deps.input.focus();
     }

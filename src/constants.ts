@@ -18,6 +18,14 @@ export const PERMISSION_SUMMARY_MAX_KEYS = 3;
 export const NOTECACHE_MAX_SIZE = 100;
 export const REQUEST_DEFAULT_TIMEOUT_MS = 30000;
 export const REQUEST_DEFAULT_MAX_OUTPUT_BYTES = 100000;
+/** Marker appended to text content truncated to fit a byte cap (wire payloads, not UI). */
+export const TRUNCATION_MARKER = '... [truncated]';
+/** Default byte cap for a note read into prompt context. */
+export const CONTEXT_NOTE_MAX_BYTES = 8000;
+/** Max characters of sqlite stderr kept when reporting a query failure. */
+export const SQLITE_STDERR_MAX_CHARS = 2000;
+/** Turns shorter than this render no tok/s figure — the rate would mislead. */
+export const MIN_THROUGHPUT_SAMPLE_MS = 1000;
 /** Max characters of zod detail surfaced when a server request cannot be parsed. */
 export const UNREADABLE_SUMMARY_MAX_CHARS = 240;
 /** Max characters of the elicitation requestSchema JSON shown as a banner title. */

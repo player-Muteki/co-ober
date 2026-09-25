@@ -2,7 +2,7 @@ import type { App } from 'obsidian';
 import { MarkdownRenderer, setIcon, type Component } from 'obsidian';
 import { t, onLocaleChange } from '../i18n/index';
 import type { UsageInfo, ContentBlock, SerializedMessage, ToolCallContent, ImageAttachment, MessageUsage, TurnStats } from '../types';
-import { COPY_BUTTON_RESET_MS } from '../constants';
+import { COPY_BUTTON_RESET_MS, MIN_THROUGHPUT_SAMPLE_MS } from '../constants';
 import {
   renderLiveThinkingBlock,
   renderStoredThinkingBlock,
@@ -381,7 +381,7 @@ export class ChatRenderer {
     const usageText = usage ? formatMessageUsage(usage) : '';
     if (usageText) parts.push(usageText);
     const rate = turnStats ? ChatRenderer.throughput(turnStats.outputTokens, turnStats.durationMs) : null;
-    if (rate !== null) parts.push(`${rate.toFixed(1)} tok/s`);
+    if (rate !== null) parts.push(ChatRenderer.formatRate(rate));
     if (parts.length === 0) return;
     const footer = wrap.createDiv({ cls: 'co-ober-response-footer' });
     footer.createSpan({ cls: 'co-ober-msg-usage', text: parts.join(' · ') });
@@ -803,7 +803,7 @@ export class ChatRenderer {
     if (usage.thoughtTokens) parts.push(`💭${usage.thoughtTokens}`);
     const generated = (usage.outputTokens || 0) + (usage.thoughtTokens || 0);
     const rate = ChatRenderer.throughput(generated, usage.elapsedMs);
-    if (rate !== null) parts.push(`${rate.toFixed(1)} tok/s`);
+    if (rate !== null) parts.push(ChatRenderer.formatRate(rate));
     const pct = contextPercentage(usage);
     if (pct !== null) parts.push(`${pct}%`);
     if (usage.cost?.amount) parts.push(`${currencySymbol(usage.cost.currency)}${usage.cost.amount.toFixed(4)}`);
@@ -831,14 +831,19 @@ export class ChatRenderer {
    * for the rate to mean anything.
    */
   private static throughput(generatedTokens: number, elapsedMs: number | undefined): number | null {
-    if (generatedTokens <= 0 || elapsedMs === undefined || elapsedMs < 1000) return null;
+    if (generatedTokens <= 0 || elapsedMs === undefined || elapsedMs < MIN_THROUGHPUT_SAMPLE_MS) return null;
     return generatedTokens / (elapsedMs / 1000);
+  }
+
+  /** One rendered form for token rates; "tok/s" is a unit symbol, not prose. */
+  private static formatRate(rate: number): string {
+    return `${rate.toFixed(1)} tok/s`;
   }
 
   private formatUsageTitle(usage: UsageInfo): string {
     const labels = t().usage;
     const rate = ChatRenderer.throughput((usage.outputTokens || 0) + (usage.thoughtTokens || 0), usage.elapsedMs);
-    const rateSuffix = rate !== null ? ` | ${labels.rate}: ${rate.toFixed(1)} tok/s` : '';
+    const rateSuffix = rate !== null ? ` | ${labels.rate}: ${ChatRenderer.formatRate(rate)}` : '';
     const pct = contextPercentage(usage);
     const ctxSuffix = pct !== null ? ` | ${labels.context}: ${pct}%` : '';
     return `${labels.model}: ${usage.modelId ?? '?'} | ${labels.input}: ${usage.inputTokens}, ${labels.output}: ${usage.outputTokens}${usage.thoughtTokens ? `, ${labels.thinking}: ${usage.thoughtTokens}` : ''}${rateSuffix}${ctxSuffix}`;
@@ -887,7 +892,7 @@ export class ChatRenderer {
       }
       if (turnRate !== null) {
         dot();
-        footer.createSpan({ cls: 'co-ober-msg-usage', text: `${turnRate.toFixed(1)} tok/s` });
+        footer.createSpan({ cls: 'co-ober-msg-usage', text: ChatRenderer.formatRate(turnRate) });
       }
     }
 

@@ -33,6 +33,8 @@ const en = {
 
   header: {
     new: 'New',
+    newSession: 'New session',
+    sessionHistory: 'Session history',
   },
 
   input: {
@@ -139,6 +141,7 @@ const en = {
 
   message: {
     compacted: 'Session compacted.',
+    jumpToLatest: 'Jump to latest message',
   },
 
   loading: {
@@ -341,6 +344,7 @@ const en = {
   },
 
   settings: {
+    invalidNumber: 'Enter a whole number between {min} and {max}',
     connection: 'Connection',
     opencodePath: {
       name: 'OpenCode CLI Path',

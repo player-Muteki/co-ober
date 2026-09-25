@@ -919,7 +919,7 @@ describe('CoOberViewController', () => {
       const queue = Reflect.get(controller, 'promptQueue') as Array<{ text: string }>;
       expect(queue).toHaveLength(0);
       const ta = deps.input.textareaEl as unknown as { value: string; dispatchEvent: ReturnType<typeof vi.fn> };
-      expect(ta.value).toBe('queued-1\nqueued-2');
+      expect(ta.value).toBe('queued-1\n\nqueued-2');
       expect(ta.dispatchEvent).toHaveBeenCalled();
       expect(controller.isBusy()).toBe(false);
 
@@ -927,7 +927,7 @@ describe('CoOberViewController', () => {
       await first;
       // Stopped turn must not drain the (now-restored) queue
       expect(client.sendMessage).toHaveBeenCalledTimes(1);
-      expect(ta.value).toBe('queued-1\nqueued-2');
+      expect(ta.value).toBe('queued-1\n\nqueued-2');
     });
 
     it('appends restored queue text to an existing draft', async () => {
@@ -946,7 +946,7 @@ describe('CoOberViewController', () => {
 
       await controller.stopGeneration();
 
-      expect(ta.value).toBe('my draft\nqueued-msg');
+      expect(ta.value).toBe('my draft\n\nqueued-msg');
       gate.resolve({ stopReason: 'interrupted' });
       await first;
     });

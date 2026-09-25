@@ -35,6 +35,8 @@ const zh: Locale = {
 
   header: {
     new: '新建',
+    newSession: '新建会话',
+    sessionHistory: '会话历史',
   },
 
   input: {
@@ -141,6 +143,7 @@ const zh: Locale = {
 
   message: {
     compacted: '会话已压缩。',
+    jumpToLatest: '跳转到最新消息',
   },
 
   loading: {
@@ -343,6 +346,7 @@ const zh: Locale = {
   },
 
   settings: {
+    invalidNumber: '请输入 {min} 到 {max} 之间的整数',
     connection: '连接',
     opencodePath: {
       name: 'OpenCode CLI 路径',

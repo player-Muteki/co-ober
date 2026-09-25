@@ -1,8 +1,9 @@
 import { Vault, TFile } from 'obsidian';
+import { CONTEXT_NOTE_MAX_BYTES, TRUNCATION_MARKER } from '../constants';
 
 /** Resolve note references into structured content blocks */
 export class ContextResolver {
-  constructor(private vault: Vault, private maxBytes = 8000) {}
+  constructor(private vault: Vault, private maxBytes = CONTEXT_NOTE_MAX_BYTES) {}
 
   /** Read and return note content up to maxBytes */
   async resolveNote(path: string): Promise<{ name: string; content: string } | null> {
@@ -13,7 +14,7 @@ export class ContextResolver {
       const name = abstract.basename;
       const encoded = new TextEncoder().encode(content);
       if (encoded.byteLength > this.maxBytes) {
-        return { name, content: truncateUtf8(content, this.maxBytes) + '... [truncated]' };
+        return { name, content: truncateUtf8(content, this.maxBytes) + TRUNCATION_MARKER };
       }
       return { name, content };
     } catch {

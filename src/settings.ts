@@ -14,6 +14,20 @@ interface AutoScrollView {
   setAutoScrollEnabled?: (enabled: boolean) => void;
 }
 
+/**
+ * Parse an integer settings field. Out-of-range input gets a visible hint
+ * instead of the previous silent no-save, which left the box showing a value
+ * that was never stored.
+ */
+function parseBoundedInt(raw: string, min: number, max: number): number | null {
+  const n = parseInt(raw, 10);
+  if (!Number.isInteger(n) || n < min || n > max) {
+    new Notice(locale().settings.invalidNumber.replace('{min}', String(min)).replace('{max}', String(max)));
+    return null;
+  }
+  return n;
+}
+
 interface LocaleAwareView {
   refreshLocale?: () => void;
 }
@@ -210,15 +224,14 @@ export class CoOberSettingsTab extends PluginSettingTab {
       .addText((t) => t.setValue(String(s.maxNoteSize))
         .setPlaceholder('8000')
         .onChange(async (v) => {
-          const n = parseInt(v, 10);
-          if (!isNaN(n) && n > 0) {
-            s.maxNoteSize = n;
-            await this.save();
-            new Notice(locale().settings.notes.saved);
-            // Live push: the connected handler caches maxBytes at set time.
-            const client = this.plugin.getClient();
-            if (client) applyPermissionTier(client, s.permissionMode, s);
-          }
+          const n = parseBoundedInt(v, 100, 1_000_000);
+          if (n === null) return;
+          s.maxNoteSize = n;
+          await this.save();
+          new Notice(locale().settings.notes.saved);
+          // Live push: the connected handler caches maxBytes at set time.
+          const client = this.plugin.getClient();
+          if (client) applyPermissionTier(client, s.permissionMode, s);
         }));
 
     // ── Custom Agents & Skills ──
@@ -421,11 +434,10 @@ export class CoOberSettingsTab extends PluginSettingTab {
       .addText((t) => t.setValue(String(s.maxSessionMessages ?? 200))
         .setPlaceholder('200')
         .onChange(async (v) => {
-          const n = parseInt(v, 10);
-          if (!isNaN(n) && n > 0) {
-            s.maxSessionMessages = n;
-            await this.save();
-          }
+          const n = parseBoundedInt(v, 1, 10_000);
+          if (n === null) return;
+          s.maxSessionMessages = n;
+          await this.save();
         }));
 
     new Setting(containerEl)
@@ -434,11 +446,10 @@ export class CoOberSettingsTab extends PluginSettingTab {
       .addText((t) => t.setValue(String(s.sessionRetentionDays ?? 30))
         .setPlaceholder('30')
         .onChange(async (v) => {
-          const n = parseInt(v, 10);
-          if (!isNaN(n) && n > 0) {
-            s.sessionRetentionDays = n;
-            await this.save();
-          }
+          const n = parseBoundedInt(v, 1, 3650);
+          if (n === null) return;
+          s.sessionRetentionDays = n;
+          await this.save();
         }));
 
     // ── File System Capability ──
@@ -494,13 +505,12 @@ export class CoOberSettingsTab extends PluginSettingTab {
       .addText((t) => t.setValue(String(s.terminalTimeoutMs ?? 30000))
         .setPlaceholder('30000')
         .onChange(async (v) => {
-          const n = parseInt(v, 10);
-          if (!isNaN(n) && n > 0) {
-            s.terminalTimeoutMs = n;
-            await this.save();
-            const client = this.plugin.getClient();
-            if (client) applyPermissionTier(client, s.permissionMode, s);
-          }
+          const n = parseBoundedInt(v, 100, 600_000);
+          if (n === null) return;
+          s.terminalTimeoutMs = n;
+          await this.save();
+          const client = this.plugin.getClient();
+          if (client) applyPermissionTier(client, s.permissionMode, s);
         }));
 
     new Setting(containerEl)
@@ -509,13 +519,12 @@ export class CoOberSettingsTab extends PluginSettingTab {
       .addText((t) => t.setValue(String(s.terminalMaxOutputBytes ?? 100000))
         .setPlaceholder('100000')
         .onChange(async (v) => {
-          const n = parseInt(v, 10);
-          if (!isNaN(n) && n > 0) {
-            s.terminalMaxOutputBytes = n;
-            await this.save();
-            const client = this.plugin.getClient();
-            if (client) applyPermissionTier(client, s.permissionMode, s);
-          }
+          const n = parseBoundedInt(v, 1_000, 10_000_000);
+          if (n === null) return;
+          s.terminalMaxOutputBytes = n;
+          await this.save();
+          const client = this.plugin.getClient();
+          if (client) applyPermissionTier(client, s.permissionMode, s);
         }));
 
     // Idle timeout
@@ -526,15 +535,14 @@ export class CoOberSettingsTab extends PluginSettingTab {
       .addText((t) => t.setValue(String(s.idleTimeoutMs ?? 300000))
         .setPlaceholder('300000')
         .onChange(async (v) => {
-          const n = parseInt(v, 10);
-          if (!isNaN(n) && n >= 0) {
-            s.idleTimeoutMs = n;
-            await this.save();
-            const client = this.plugin.getClient();
-            if (client) {
-              // 0 means "no idle timeout" — pass it through honestly.
-              client.idleTimeoutMs = n;
-            }
+          const n = parseBoundedInt(v, 0, 3_600_000);
+          if (n === null) return;
+          s.idleTimeoutMs = n;
+          await this.save();
+          const client = this.plugin.getClient();
+          if (client) {
+            // 0 means "no idle timeout" — pass it through honestly.
+            client.idleTimeoutMs = n;
           }
         }));
   }

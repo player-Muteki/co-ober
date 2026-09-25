@@ -70,11 +70,15 @@ export class InputToolbar {
     this.modelDropdownEl.setAttribute('role', 'listbox');
     this.wireDropdown(this.modelSelectorEl, this.modelBtnEl, this.modelDropdownEl, '.co-ober-model-option:not(.empty)');
 
-    // Mode cycle button (click to cycle)
+    // Mode cycle button (click or Enter/Space to cycle)
     this.modeCycleEl = row.createDiv({ cls: 'co-ober-mode-cycle' });
+    this.modeCycleEl.setAttribute('role', 'button');
+    this.modeCycleEl.setAttribute('tabindex', '0');
+    this.modeCycleEl.setAttribute('aria-label', t().toolbar.agentTitle);
     this.modeCycleLabelEl = this.modeCycleEl.createSpan({ cls: 'co-ober-mode-cycle-label' });
     this.modeCycleLabelEl.setText('—');
     this.modeCycleEl.addEventListener('click', () => this.cycleMode());
+    this.wireActivationKeys(this.modeCycleEl, () => this.cycleMode());
 
     // Custom effort selector (hover + keyboard dropdown)
     this.effortSelectorEl = row.createDiv({ cls: 'co-ober-effort-selector' });
@@ -89,10 +93,13 @@ export class InputToolbar {
     this.effortDropdownEl.setAttribute('role', 'listbox');
     this.wireDropdown(this.effortSelectorEl, this.effortBtnEl, this.effortDropdownEl, '.co-ober-effort-option:not(.empty)');
 
-    // Permission toggle (click to cycle)
+    // Permission toggle (click or Enter/Space to cycle)
     this.permToggleEl = row.createDiv({ cls: 'co-ober-perm-toggle' });
+    this.permToggleEl.setAttribute('role', 'button');
+    this.permToggleEl.setAttribute('tabindex', '0');
     this.permLabelEl = this.permToggleEl.createSpan({ cls: 'co-ober-perm-label' });
     this.permToggleEl.addEventListener('click', () => this.cyclePermission());
+    this.wireActivationKeys(this.permToggleEl, () => this.cyclePermission());
     this.updatePermissionDisplay();
 
     // Image attach button
@@ -296,10 +303,9 @@ export class InputToolbar {
       yolo: t().toolbar.permYolo,
     };
     this.permLabelEl.setText(labels[this.currentPermission] ?? t().toolbar.permSafe);
-    this.permToggleEl.setAttribute(
-      'title',
-      t().toolbar.permTitle.replace('{mode}', this.currentPermission),
-    );
+    const hint = t().toolbar.permTitle.replace('{mode}', this.currentPermission);
+    this.permToggleEl.setAttribute('title', hint);
+    this.permToggleEl.setAttribute('aria-label', hint);
     this.permToggleEl.className = 'co-ober-perm-toggle';
     this.permToggleEl.addClass(`mod-${this.currentPermission}`);
   }
@@ -369,7 +375,12 @@ export class InputToolbar {
   }
 
   private wireOptionKeys(optionEl: HTMLElement, activate: () => void): void {
-    optionEl.addEventListener('keydown', (e) => {
+    this.wireActivationKeys(optionEl, activate);
+  }
+
+  /** A div[role=button] must answer the same activation keys a real button does. */
+  private wireActivationKeys(el: HTMLElement, activate: () => void): void {
+    el.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         activate();
@@ -404,6 +415,7 @@ export class InputToolbar {
     this.renderModelDropdown();
     const selected = this.modeOptions.find(o => o.value === this.currentMode);
     this.modeCycleLabelEl.setText(selected?.label ?? this.modeOptions[0]?.label ?? '—');
+    this.modeCycleEl.setAttribute('aria-label', t().toolbar.agentTitle);
     this.updatePermissionDisplay();
     this.attachBtnEl.title = this.attachBtnEl.disabled
       ? t().toolbar.attachImageUnsupported

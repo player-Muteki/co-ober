@@ -219,6 +219,31 @@ describe('CoOberView cleanup', () => {
   });
 });
 
+describe('CoOberView icon button a11y', () => {
+  it('names the header and jump-to-latest buttons accessibly, in the active locale', async () => {
+    setLocale('en');
+    const view = createView(createPlugin());
+    await view.onOpen();
+
+    const [newBtn, historyBtn] = [...view.contentEl.querySelectorAll('.co-ober-header-actions button')] as HTMLButtonElement[];
+    expect(newBtn.getAttribute('aria-label')).toBe('New session');
+    expect(newBtn.title).toBe('New session');
+    expect(historyBtn.getAttribute('aria-label')).toBe('Session history');
+    expect(historyBtn.title).toBe('Session history');
+
+    (Reflect.get(view, 'showNewMessagesBtn') as () => void).call(view);
+    const jumpBtn = view.contentEl.querySelector('.co-ober-new-messages-btn') as HTMLButtonElement;
+    expect(jumpBtn.getAttribute('aria-label')).toBe('Jump to latest message');
+
+    setLocale('zh');
+    view.refreshLocale();
+    expect(newBtn.getAttribute('aria-label')).toBe('新建会话');
+    expect(historyBtn.getAttribute('aria-label')).toBe('会话历史');
+    expect(jumpBtn.getAttribute('aria-label')).toBe('跳转到最新消息');
+    setLocale('en');
+  });
+});
+
 function createView(plugin = createPlugin()): CoOberView {
   const view = new CoOberView({} as never, plugin);
   Reflect.set(view, 'registerEvent', vi.fn());

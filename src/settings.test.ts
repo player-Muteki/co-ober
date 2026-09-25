@@ -2,7 +2,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CoOberSettingsTab } from './settings';
 import { DEFAULT_SETTINGS, VIEW_TYPE } from './types';
-import { setLocale } from './i18n/index';
+import { setLocale, t as locale } from './i18n/index';
+import { Notice } from './test/obsidianMock';
 import { installObsidianDomHelpers } from './test/domHelpers';
 import type CoOberPlugin from './main';
 import type { CoOberSettings } from './types';
@@ -479,5 +480,37 @@ describe('CoOberSettingsTab live capability push', () => {
     await changeInput(findTextSettingInput(tab, 'Idle Timeout (ms)'), '0');
     expect(plugin.settings.idleTimeoutMs).toBe(0);
     expect(client.idleTimeoutMs).toBe(0);
+  });
+
+  it('rejects an out-of-range number with a visible hint and keeps the stored value', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+    const before = plugin.settings.maxNoteSize;
+    Notice.messages.length = 0;
+
+    await changeInput(findTextSettingInput(tab, 'Max Note Reference Size'), '999999999');
+
+    expect(plugin.settings.maxNoteSize).toBe(before);
+    expect(Notice.messages).toContain(
+      locale().settings.invalidNumber.replace('{min}', '100').replace('{max}', '1000000'),
+    );
+  });
+
+  it('rejects a non-numeric number field with the same hint', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+    const before = plugin.settings.sessionRetentionDays;
+    Notice.messages.length = 0;
+
+    await changeInput(findTextSettingInput(tab, 'Session Retention Days'), 'abc');
+
+    expect(plugin.settings.sessionRetentionDays).toBe(before);
+    expect(Notice.messages).toContain(
+      locale().settings.invalidNumber.replace('{min}', '1').replace('{max}', '3650'),
+    );
   });
 });

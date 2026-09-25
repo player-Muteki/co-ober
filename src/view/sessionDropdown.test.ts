@@ -451,6 +451,15 @@ describe('SessionDropdown', () => {
       dd.destroy();
     });
 
+    it('renders session dates in the locale calendar, not raw ISO slices', () => {
+      const dd = makeDropdown(null);
+      const fmt = Reflect.get(dd, 'formatSessionDate') as (iso: string) => string;
+      expect(fmt('2026-08-22T03:39:57.497Z')).toBe(new Date('2026-08-22T03:39:57.497Z').toLocaleDateString());
+      // Unparsable timestamps fall back to a fixed prefix instead of rendering NaN
+      expect(fmt('not-a-date')).toBe('not-a-date');
+      dd.destroy();
+    });
+
     it('hides loading placeholder when loader rejects', async () => {
       const dd = makeDropdown(() => Promise.reject(new Error('no sqlite')));
       dd.open();

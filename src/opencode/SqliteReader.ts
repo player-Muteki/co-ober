@@ -1,5 +1,6 @@
 import { spawn, type SpawnOptions, type ChildProcess } from 'child_process';
 import { getSpawnInfo } from '../utils/commandResolution';
+import { SQLITE_STDERR_MAX_CHARS } from '../constants';
 
 export interface SqliteRow {
 	[key: string]: unknown;
@@ -149,7 +150,7 @@ function runChild(
 			}
 		});
 		child.stderr?.on('data', (chunk: Buffer) => {
-			stderr += chunk.toString('utf-8').slice(0, 2000);
+			stderr += chunk.toString('utf-8').slice(0, SQLITE_STDERR_MAX_CHARS);
 		});
 		child.on('error', (error) => {
 			if (settled) return;

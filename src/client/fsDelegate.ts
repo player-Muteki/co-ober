@@ -1,5 +1,6 @@
 import { normalize, relative, isAbsolute, sep, dirname } from 'path';
 import { existsSync, readFileSync, statSync, openSync, readSync, closeSync, writeFileSync, mkdirSync } from 'fs';
+import { TRUNCATION_MARKER } from '../constants';
 
 export interface FsReadResult {
 	content: string;
@@ -65,7 +66,7 @@ export class FsDelegate {
 
 			if (stat.size > this.maxBytes) {
 				const content = this.readLimited(resolvedPath, this.maxBytes);
-				return { content: content + '\n... [truncated]' };
+				return { content: `${content}\n${TRUNCATION_MARKER}` };
 			}
 
 			const content = readFileSync(resolvedPath, 'utf-8');

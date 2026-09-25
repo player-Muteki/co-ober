@@ -245,6 +245,13 @@ describe('ToolCallRenderer', () => {
       expect(section.querySelector('.co-ober-tool-empty')?.textContent).toBe('File deleted');
     });
 
+    it('renders the localized empty-result line for a payload-less patch', () => {
+      setLocale('zh');
+      const state = createToolCallElement(container, 'tc', 'apply_patch', 'Patch');
+      updateToolCallElement(state, 'completed', 'apply_patch', undefined, [textItem('')]);
+      expect(state.body.querySelector('.co-ober-tool-empty')?.textContent).toBe('无结果');
+    });
+
     it('renders a multi-file patch with update diff lines', () => {
       const state = createToolCallElement(container, 'tc', 'apply_patch', 'Patch');
       updateToolCallElement(state, 'completed', 'apply_patch', undefined, [

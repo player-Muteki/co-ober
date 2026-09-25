@@ -146,6 +146,54 @@ describe('InputToolbar permission cycle', () => {
   });
 });
 
+describe('InputToolbar cycle button a11y', () => {
+  it('exposes mode cycle and permission toggles as keyboard-operable buttons', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    new InputToolbar(container, {});
+
+    const mode = container.querySelector('.co-ober-mode-cycle') as HTMLElement;
+    const perm = container.querySelector('.co-ober-perm-toggle') as HTMLElement;
+    expect(mode.getAttribute('role')).toBe('button');
+    expect(mode.getAttribute('tabindex')).toBe('0');
+    expect(mode.getAttribute('aria-label')).toBe('Agent mode');
+    expect(perm.getAttribute('role')).toBe('button');
+    expect(perm.getAttribute('tabindex')).toBe('0');
+    expect(perm.getAttribute('aria-label')).toContain('Permission');
+  });
+
+  it('Enter and Space activate the cycle controls', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const onAgentChange = vi.fn();
+    const onPermissionChange = vi.fn();
+    const toolbar = new InputToolbar(container, { onAgentChange, onPermissionChange });
+    toolbar.updateAgents([{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }], 'a');
+
+    const mode = container.querySelector('.co-ober-mode-cycle') as HTMLElement;
+    pressKey(mode, 'Enter');
+    expect(onAgentChange).toHaveBeenLastCalledWith('b');
+    pressKey(mode, ' ');
+    expect(onAgentChange).toHaveBeenLastCalledWith('a');
+
+    const perm = container.querySelector('.co-ober-perm-toggle') as HTMLElement;
+    pressKey(perm, 'Enter');
+    expect(onPermissionChange).toHaveBeenCalledWith('readonly');
+  });
+
+  it('localizes the cycle aria-labels on refreshLocale', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const toolbar = new InputToolbar(container, {});
+    setLocale('zh');
+    toolbar.refreshLocale();
+
+    expect(container.querySelector('.co-ober-mode-cycle')?.getAttribute('aria-label')).toBe('Agent 模式');
+    expect(container.querySelector('.co-ober-perm-toggle')?.getAttribute('aria-label')).toContain('权限模式');
+    setLocale('en');
+  });
+});
+
 function pressKey(target: Element, key: string): void {
   target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
 }

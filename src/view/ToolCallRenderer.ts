@@ -530,7 +530,7 @@ function renderApplyPatchExpanded(
         container.createDiv({ text: renderTruncatedText(json, 20) });
       }
     } else {
-      container.createDiv({ cls: 'co-ober-tool-empty', text: 'No result' });
+      container.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.noResult });
     }
   }
 }
