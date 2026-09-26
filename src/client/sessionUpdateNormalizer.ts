@@ -10,6 +10,12 @@ export type ToolCallStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
 
 const TOOL_STATUSES: readonly string[] = ['pending', 'in_progress', 'completed', 'failed'];
 
+// Synthetic ids stand in for the optional ACP `messageId`. They are never
+// written to disk, so only same-process uniqueness matters: per-instance
+// numbering restarted at 1 on every replay, which folded a session's second
+// id-less turn onto the first message.
+let anonymousRuns = 0;
+
 /**
  * Agents mint statuses ahead of the four we render ('cancelled' is the
  * common one). Abort-shaped statuses map to failed so they badge terminally;
@@ -28,11 +34,30 @@ export class SessionUpdateNormalizer {
   // v2-alpha compactions are upserts keyed by compactionId: the boundary is
   // pinned at the first frame and must not be re-emitted by later patches.
   private readonly startedCompactions = new Set<string>();
+  // Chunks with no `messageId` (an optional, unstable ACP field) still belong
+  // to one message: the run they arrive in gets a synthetic id, kept until the
+  // role changes or a real id shows up, which starts a new message.
+  private anonymousRun: { role: 'user' | 'agent' | 'thought'; messageId: string } | null = null;
 
   reset(): void {
     this.accumulatedMessages.clear();
     this.toolCalls.clear();
     this.startedCompactions.clear();
+    this.anonymousRun = null;
+  }
+
+  /** The id one chunk accumulates under: its own, or its run's synthetic one. */
+  private idFor(role: 'user' | 'agent' | 'thought', messageId: string | undefined): string {
+    if (messageId) {
+      this.anonymousRun = null;
+      return messageId;
+    }
+    if (this.anonymousRun?.role === role) return this.anonymousRun.messageId;
+    // Process-wide, so a reconnect's fresh normalizer cannot hand the next turn
+    // an id a previous turn already persisted under.
+    const synthetic = `#anon-${++anonymousRuns}`;
+    this.anonymousRun = { role, messageId: synthetic };
+    return synthetic;
   }
 
   /** Evict the oldest entries when the map exceeds the given limit. */
@@ -71,16 +96,17 @@ export class SessionUpdateNormalizer {
    * non-text payloads ride along on the update so consumers can surface them
    * instead of the frame vanishing.
    */
-  private chunkUpdate(role: 'user' | 'agent' | 'thought', messageId: string, content: ChunkContent): NormalizedUpdate {
+  private chunkUpdate(role: 'user' | 'agent' | 'thought', messageId: string | undefined, content: ChunkContent): NormalizedUpdate {
+    const id = this.idFor(role, messageId);
     const text = content.type === 'text' ? content.text ?? '' : '';
-    const existing = this.accumulatedMessages.get(messageId);
+    const existing = this.accumulatedMessages.get(id);
     const accumulatedText = existing ? existing.text + text : text;
-    this.accumulatedMessages.set(messageId, { role, text: accumulatedText });
+    this.accumulatedMessages.set(id, { role, text: accumulatedText });
     this.trimMap(this.accumulatedMessages, MAX_ACCUMULATED_MESSAGES);
     const update: Extract<NormalizedUpdate, { kind: 'message_chunk' }> = {
       kind: 'message_chunk',
       role,
-      messageId,
+      messageId: id,
       chunkText: text,
       accumulatedText,
     };

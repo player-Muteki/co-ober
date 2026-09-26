@@ -26,9 +26,19 @@ describe('acpSchemas', () => {
       expect(r.success).toBe(true);
     });
 
-    it('rejects missing messageId', () => {
+    it('accepts a chunk with no messageId, because the SDK only requires content', () => {
       const r = zAgentMessageChunk.safeParse({ sessionUpdate: 'agent_message_chunk', content: validTextContent });
-      expect(r.success).toBe(false);
+      expect(r.success).toBe(true);
+      if (r.success) expect(r.data.messageId).toBeUndefined();
+    });
+
+    it('reads an explicit null messageId as no id rather than a broken frame', () => {
+      const r = zAgentThoughtChunk.safeParse({
+        sessionUpdate: 'agent_thought_chunk',
+        messageId: null,
+        content: validTextContent,
+      });
+      expect(r.success).toBe(true);
     });
 
     it('rejects wrong sessionUpdate literal', () => {
@@ -214,6 +224,23 @@ describe('acpSchemas', () => {
         expect(r.data.configOptions[1].type).toBe('checkbox');
       }
     });
+
+    it('drops only the unreadable option, keeping the model list beside it', () => {
+      const r = zConfigOptionUpdate.safeParse({
+        sessionUpdate: 'config_option_update',
+        configOptions: [
+          { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: 'gpt-4', options: [{ value: 'gpt-4', name: 'GPT-4' }] },
+          // An agent-side shape this client cannot read: no id to look it up by.
+          { name: 'Thinking', type: 'select', currentValue: 'low', options: [] },
+          'not-an-object',
+          { id: 'effort', name: 'Effort', category: 'effort', type: 'select', currentValue: 'medium', options: [{ value: 'medium', name: 'Medium' }] },
+        ],
+      });
+      expect(r.success).toBe(true);
+      if (r.success) {
+        expect(r.data.configOptions.map((o) => o.id)).toEqual(['model', 'effort']);
+      }
+    });
   });
 
   describe('zAvailableCommandsUpdate', () => {
@@ -302,11 +329,13 @@ describe('acpSchemas', () => {
       const r = zSessionInfoUpdate.safeParse({
         sessionUpdate: 'session_info_update',
         title: 'My Session',
-        configOptions: [{ id: 'x', name: 1, category: 'bogus', type: 'checkbox', currentValue: null, options: 'no' }],
+        // No readable id, so this option cannot be looked up by anything: it is
+        // the one that goes, and the frame around it stays.
+        configOptions: [{ name: 1, category: 'bogus', type: 'checkbox', currentValue: null, options: 'no' }],
       });
       expect(r.success).toBe(true);
       if (r.success) {
-        expect(r.data.configOptions).toBeUndefined();
+        expect(r.data.configOptions).toEqual([]);
         expect(r.data.title).toBe('My Session');
       }
     });

@@ -676,3 +676,41 @@ describe('0.2.3 stage 1 negotiation honesty', () => {
     await client.disconnect().catch(() => {});
   });
 });
+
+describe('0.2.4 stage 2 teardown that cannot finish', () => {
+  beforeEach(() => {
+    FakeSubprocess.instances.length = 0;
+    FakeTransport.instances.length = 0;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('still reports the death and retries when the teardown itself throws', async () => {
+    vi.useFakeTimers();
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const client = new AcpClient('opencode', '/vault');
+    const onClose = vi.fn();
+    client.onClose = onClose;
+
+    const connecting = client.connect();
+    await vi.advanceTimersByTimeAsync(0);
+    FakeTransport.instances[0].deferred.resolve({});
+    await connecting;
+
+    // A transport that refuses to let go must not be allowed to keep the
+    // conversation looking alive: Send was still lit on a dead agent.
+    FakeTransport.instances[0].dispose = () => {
+      throw new Error('dispose hung');
+    };
+    FakeSubprocess.instances[0].closeCb!(new Error('agent died'));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(Reflect.get(client, 'reconnectAttempts')).toBe(1);
+
+    errorLog.mockRestore();
+    await client.disconnect().catch(() => {});
+  });
+});

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SessionUpdateNormalizer } from './sessionUpdateNormalizer';
-import type { SessionUpdate } from '../types';
+import type { SessionUpdate, NormalizedUpdate } from '../types';
 import { setLocale, t } from '../i18n/index';
 
 setLocale('en');
@@ -519,5 +519,66 @@ describe('SessionUpdateNormalizer state_update', () => {
       status: 'aborted',
     });
     expect((patch as { status?: string }).status).toBe('failed');
+  });
+});
+
+describe('SessionUpdateNormalizer chunks without messageId', () => {
+  let normalizer: SessionUpdateNormalizer;
+
+  beforeEach(() => {
+    normalizer = new SessionUpdateNormalizer();
+  });
+
+  const chunk = (sessionUpdate: 'agent_message_chunk' | 'agent_thought_chunk' | 'user_message_chunk', text: string, messageId?: string): SessionUpdate =>
+    messageId === undefined
+      ? { sessionUpdate, content: { type: 'text', text } }
+      : { sessionUpdate, messageId, content: { type: 'text', text } };
+
+  it('keeps one id-less run in a single message under a stable synthetic id', () => {
+    const first = normalizer.normalize(chunk('agent_message_chunk', 'Hello ')) as Extract<NormalizedUpdate, { kind: 'message_chunk' }>;
+    const second = normalizer.normalize(chunk('agent_message_chunk', 'world')) as Extract<NormalizedUpdate, { kind: 'message_chunk' }>;
+
+    expect(first.messageId).toBeTruthy();
+    expect(second.messageId).toBe(first.messageId);
+    expect(second.accumulatedText).toBe('Hello world');
+  });
+
+  it('starts a new message when the role changes mid-run', () => {
+    const agent = normalizer.normalize(chunk('agent_message_chunk', 'answer')) as Extract<NormalizedUpdate, { kind: 'message_chunk' }>;
+    const thought = normalizer.normalize(chunk('agent_thought_chunk', 'hmm')) as Extract<NormalizedUpdate, { kind: 'message_chunk' }>;
+
+    expect(thought.messageId).not.toBe(agent.messageId);
+    expect(thought.accumulatedText).toBe('hmm');
+  });
+
+  it('does not fold a real id into the preceding anonymous run, or the reverse', () => {
+    const anonymous = normalizer.normalize(chunk('agent_message_chunk', 'anon ')) as Extract<NormalizedUpdate, { kind: 'message_chunk' }>;
+    const real = normalizer.normalize(chunk('agent_message_chunk', 'real', 'msg-9')) as Extract<NormalizedUpdate, { kind: 'message_chunk' }>;
+    const after = normalizer.normalize(chunk('agent_message_chunk', 'trailing')) as Extract<NormalizedUpdate, { kind: 'message_chunk' }>;
+
+    expect(real.messageId).toBe('msg-9');
+    expect(after.messageId).not.toBe(anonymous.messageId);
+    expect(after.accumulatedText).toBe('trailing');
+  });
+
+  it('numbers successive anonymous runs apart and keeps them unique across instances', () => {
+    const runA = normalizer.normalize(chunk('user_message_chunk', 'one')) as Extract<NormalizedUpdate, { kind: 'message_chunk' }>;
+    normalizer.normalize(chunk('agent_message_chunk', 'two', 'msg-1'));
+    const runB = normalizer.normalize(chunk('user_message_chunk', 'three')) as Extract<NormalizedUpdate, { kind: 'message_chunk' }>;
+    expect(runB.messageId).not.toBe(runA.messageId);
+
+    // A history replay builds its own normalizer; its ids key the same persisted
+    // messages, so they must not re-use the live turn's key.
+    const runC = new SessionUpdateNormalizer().normalize(chunk('user_message_chunk', 'four')) as Extract<NormalizedUpdate, { kind: 'message_chunk' }>;
+    expect(runC.messageId).not.toBe(runA.messageId);
+    expect(runC.messageId).not.toBe(runB.messageId);
+    expect(runC.accumulatedText).toBe('four');
+  });
+
+  it('forgets the open run on reset so the next chunk starts clean', () => {
+    normalizer.normalize(chunk('agent_message_chunk', 'half '));
+    normalizer.reset();
+    const after = normalizer.normalize(chunk('agent_message_chunk', 'whole')) as Extract<NormalizedUpdate, { kind: 'message_chunk' }>;
+    expect(after.accumulatedText).toBe('whole');
   });
 });

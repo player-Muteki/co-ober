@@ -41,6 +41,18 @@ const zConfigOption = z.object({
   // malformed options array must not drop the whole config frame.
   options: z.array(z.object({ value: z.string(), name: z.string(), description: z.string().optional() })).catch([]),
 });
+// One option this client cannot read — an id-less or type-less entry, or
+// something that is not an object at all — may only remove itself. Parsing the
+// array element by element is what keeps that option from taking the model
+// list, the mode list and the effort selector with it.
+const zConfigOptions = z.array(z.unknown()).transform((items) => {
+  const readable: z.infer<typeof zConfigOption>[] = [];
+  for (const item of items) {
+    const parsed = zConfigOption.safeParse(item);
+    if (parsed.success) readable.push(parsed.data);
+  }
+  return readable;
+});
 const zModeOption = z.object({ id: z.string(), name: z.string(), description: z.string().optional() });
 const zModelOption = z.object({ modelId: z.string(), name: z.string() });
 // ACP carries the expected-argument hint in `input.hint`; dropping it here is
@@ -68,19 +80,23 @@ const zEntry = z.object({
   priority: z.string().catch('medium'),
 });
 
+// `messageId` is optional and unstable in the SDK (only `content` is
+// required), so a chunk that carries no id is a frame the protocol allows. It
+// must reach the transcript; the normalizer gives it a stable id for its run.
+const zChunkMessageId = z.string().nullish().transform((id) => id ?? undefined);
 export const zAgentMessageChunk = z.object({
   sessionUpdate: z.literal('agent_message_chunk'),
-  messageId: z.string(),
+  messageId: zChunkMessageId,
   content: zChunkContent,
 });
 export const zAgentThoughtChunk = z.object({
   sessionUpdate: z.literal('agent_thought_chunk'),
-  messageId: z.string(),
+  messageId: zChunkMessageId,
   content: zChunkContent,
 });
 export const zUserMessageChunk = z.object({
   sessionUpdate: z.literal('user_message_chunk'),
-  messageId: z.string(),
+  messageId: zChunkMessageId,
   content: zChunkContent,
 });
 export const zToolCall = z.object({
@@ -133,7 +149,7 @@ export const zPlanRemoved = z.object({
 });
 export const zConfigOptionUpdate = z.object({
   sessionUpdate: z.literal('config_option_update'),
-  configOptions: z.array(zConfigOption),
+  configOptions: zConfigOptions,
 });
 export const zAvailableCommandsUpdate = z.object({
   sessionUpdate: z.literal('available_commands_update'),
@@ -156,7 +172,7 @@ export const zSessionInfoUpdate = z.object({
   cwd: z.string().optional(),
   // v2-alpha folds config option delivery into session info. A shape we do
   // not understand must not cost us the title update, so drop it silently.
-  configOptions: z.array(zConfigOption).optional().catch(undefined),
+  configOptions: zConfigOptions.optional().catch(undefined),
 });
 export const zUsageUpdate = z.object({
   sessionUpdate: z.literal('usage_update'),

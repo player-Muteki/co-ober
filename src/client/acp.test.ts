@@ -525,6 +525,62 @@ describe('AcpClient terminal reads and drift reports', () => {
   });
 });
 
+describe('AcpClient frames that outlive their stream', () => {
+  const streamsOf = (client: AcpClient) =>
+    Reflect.get(client, 'activeStreams') as Map<string, { handler: (u: NormalizedUpdate) => void; abort: AbortController }>;
+
+  function clientWithNoStream(): { client: AcpClient; norms: NormalizedUpdate[]; drifts: [string | null, string][] } {
+    const client = new AcpClient('opencode');
+    const norms: NormalizedUpdate[] = [];
+    const drifts: [string | null, string][] = [];
+    // The slot a Stop freed: the frame still has a session to be counted against.
+    streamsOf(client).set('s1', { handler: (u) => norms.push(u), abort: new AbortController() });
+    streamsOf(client).delete('s1');
+    Reflect.set(client, 'sessionId_', 's1');
+    client.onProtocolDrift = (sessionId, kind) => drifts.push([sessionId, kind]);
+    return { client, norms, drifts };
+  }
+
+  const dispatch = (client: AcpClient, params: unknown) =>
+    Reflect.get(client, 'dispatchSessionUpdate').call(client, params);
+
+  it('counts a tail chunk nobody could draw as drift for its session', () => {
+    const { client, norms, drifts } = clientWithNoStream();
+    dispatch(client, {
+      sessionId: 's1',
+      update: { sessionUpdate: 'agent_message_chunk', messageId: 'm1', content: { type: 'text', text: ' trailing' } },
+    });
+    expect(norms).toEqual([]);
+    expect(drifts).toEqual([['s1', 'message_chunk']]);
+  });
+
+  it('counts the last tool and plan frames of an abandoned turn the same way', () => {
+    const { client, drifts } = clientWithNoStream();
+    dispatch(client, { sessionId: 's1', update: { sessionUpdate: 'tool_call_update', toolCallId: 'tc1', status: 'completed' } });
+    dispatch(client, { sessionId: 's1', update: { sessionUpdate: 'plan', entries: [{ content: 'step', status: 'pending', priority: 'medium' }] } });
+    expect(drifts).toEqual([['s1', 'tool_call_snapshot'], ['s1', 'plan']]);
+  });
+
+  it('stays quiet about metadata that has nothing to draw either', () => {
+    const { client, drifts } = clientWithNoStream();
+    dispatch(client, { sessionId: 's1', update: { sessionUpdate: 'available_commands_update', availableCommands: [] } });
+    dispatch(client, { sessionId: 's1', update: { sessionUpdate: 'usage_update', totalTokens: 12 } });
+    expect(drifts).toEqual([]);
+  });
+
+  it('does not double-report a frame the replay handler still accepted', () => {
+    const { client, norms, drifts } = clientWithNoStream();
+    Reflect.set(client, 'replayHandler', (u: NormalizedUpdate) => norms.push(u));
+    Reflect.set(client, 'replaySessionId', 's1');
+    dispatch(client, {
+      sessionId: 's1',
+      update: { sessionUpdate: 'agent_message_chunk', messageId: 'm1', content: { type: 'text', text: 'restored' } },
+    });
+    expect(norms).toHaveLength(1);
+    expect(drifts).toEqual([]);
+  });
+});
+
 describe('extractSessionSnapshot', () => {
   it('should handle empty result', () => {
     const snapshot = extractSessionSnapshot({});

@@ -61,6 +61,12 @@ import {
 } from './acpSchemas';
 import { z } from 'zod';
 
+// Update kinds whose only destination is a transcript. The rest (models,
+// modes, commands, config, usage) are client state `applySessionUpdate` has
+// already taken in, so such a frame arriving with no stream behind it is not a
+// lost piece of the conversation.
+const UNPLACED_UPDATE_KINDS = new Set(['message_chunk', 'tool_call_snapshot', 'plan', 'notice', 'compaction']);
+
 export const CLIENT_VERSION = '0.2.3';
 
 /** Tail length of the agent stderr snapshot attached to a close error. */
@@ -910,8 +916,18 @@ export class AcpClient implements OpencodeClient {
     const entry = target ? this.activeStreams.get(target) : undefined;
     if (entry) {
       for (const norm of norms) entry.handler(norm);
-    } else if (this.replayHandler && (!sid || sid === this.replaySessionId)) {
+      return;
+    }
+    if (this.replayHandler && (!sid || sid === this.replaySessionId)) {
       for (const norm of norms) this.replayHandler(norm);
+      return;
+    }
+    // Normalized, and nothing left to draw it into: the turn had already given
+    // up its slot — Stop removes it before the agent's last frames land. The
+    // reader learns the answer arrived incomplete instead of meeting a gap
+    // that looks like the model simply stopped talking.
+    for (const norm of norms) {
+      if (UNPLACED_UPDATE_KINDS.has(norm.kind)) this.reportDrift(sid ?? target, norm.kind);
     }
   }
 
@@ -1322,12 +1338,17 @@ export class AcpClient implements OpencodeClient {
       console.error('[co-ober] process exited. stderr:', stderrMsg);
     }
 
-    void this.disposeConnection(closeError).then(() => {
+    // Teardown runs either way: a subprocess that refuses to die still left the
+    // conversation. Reporting only success here left Send lit and no process
+    // behind it, with no reconnect scheduled, because the rejection had nowhere
+    // to go.
+    const afterTeardown = (): void => {
       this.onClose?.();
       if (!this.isIntentionalDisconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
         this.scheduleReconnect();
       }
-    });
+    };
+    void this.disposeConnection(closeError).then(afterTeardown, afterTeardown);
   }
 
   async reconnect(): Promise<void> {
