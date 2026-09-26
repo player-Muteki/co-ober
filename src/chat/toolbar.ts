@@ -1,11 +1,14 @@
 import { setIcon } from 'obsidian';
 import { t, onLocaleChange } from '../i18n/index';
 import { normalizeEffortLabel } from './effortLabel';
+import type { ExtraConfigOption } from './configOptions';
 
 export interface ToolbarCallbacks {
   onAgentChange?: (agent: string) => void;
   onModelChange?: (model: string) => void;
   onEffortChange?: (effort: string) => void;
+  /** A config option this client has no dedicated control for (reasoning budget, persona…). */
+  onConfigChange?: (configId: string, value: string) => void;
   onPermissionChange?: (mode: string) => void;
   onAttachImage?: () => void;
   onSend?: () => void;
@@ -42,6 +45,10 @@ export class InputToolbar {
   private permToggleEl: HTMLDivElement;
   private permLabelEl: HTMLSpanElement;
   private currentPermission: string = 'safe';
+
+  // Generic config-option chips (anything the agent offers beyond model/mode/effort)
+  private extraConfigsEl: HTMLDivElement;
+  private extraConfigs: ExtraConfigOption[] = [];
 
   // Image attach button
   private attachBtnEl: HTMLButtonElement;
@@ -93,6 +100,9 @@ export class InputToolbar {
     this.effortDropdownEl = this.effortSelectorEl.createDiv({ cls: 'co-ober-effort-dropdown' });
     this.effortDropdownEl.setAttribute('role', 'listbox');
     this.wireDropdown(this.effortSelectorEl, this.effortBtnEl, this.effortDropdownEl, '.co-ober-effort-option:not(.empty)');
+
+    // Generic controls for config options this client has no dedicated control for.
+    this.extraConfigsEl = row.createDiv({ cls: 'co-ober-extra-configs' });
 
     // Permission toggle (click or Enter/Space to cycle)
     this.permToggleEl = row.createDiv({ cls: 'co-ober-perm-toggle' });
@@ -281,6 +291,54 @@ export class InputToolbar {
     }
   }
 
+  // ── Generic config options ──
+
+  /**
+   * Draw one cycle chip per agent-declared option this client has no dedicated
+   * control for. Callers decide what is worth a control (see
+   * projectGenericConfigOptions); an empty list clears the row.
+   */
+  updateExtraConfigs(options: ExtraConfigOption[]): void {
+    this.extraConfigs = [...options];
+    this.renderExtraConfigs();
+  }
+
+  private renderExtraConfigs(): void {
+    this.extraConfigsEl.empty();
+    for (const opt of this.extraConfigs) {
+      const chip = this.extraConfigsEl.createDiv({ cls: 'co-ober-config-chip' });
+      chip.setAttribute('role', 'button');
+      chip.setAttribute('tabindex', '0');
+      const labelEl = chip.createSpan({ cls: 'co-ober-config-chip-label' });
+      const hint = this.configHint(opt);
+      chip.setAttribute('title', hint);
+      chip.setAttribute('aria-label', hint);
+      labelEl.setText(`${opt.label}: ${this.configValueLabel(opt)}`);
+      const cycle = (): void => {
+        const idx = opt.values.findIndex((v) => v.value === opt.value);
+        const next = opt.values[(idx + 1) % opt.values.length];
+        opt.value = next.value;
+        labelEl.setText(`${opt.label}: ${next.label}`);
+        const updated = this.configHint(opt);
+        chip.setAttribute('title', updated);
+        chip.setAttribute('aria-label', updated);
+        this.callbacks.onConfigChange?.(opt.id, next.value);
+      };
+      chip.addEventListener('click', cycle);
+      this.wireActivationKeys(chip, cycle);
+    }
+  }
+
+  private configValueLabel(opt: ExtraConfigOption): string {
+    return opt.values.find((v) => v.value === opt.value)?.label ?? opt.value;
+  }
+
+  private configHint(opt: ExtraConfigOption): string {
+    return t().toolbar.configTitle
+      .replace('{name}', opt.label)
+      .replace('{value}', this.configValueLabel(opt));
+  }
+
   // ── Permission toggle ──
 
   updatePermission(mode: string): void {
@@ -437,6 +495,8 @@ export class InputToolbar {
           ],
       this.currentEffort,
     );
+    // The option names are the agent's own, but the tooltip around them is not.
+    this.renderExtraConfigs();
     this.setSending(this.sending);
   }
 }

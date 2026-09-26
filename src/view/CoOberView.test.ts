@@ -129,6 +129,51 @@ describe('CoOberView runtime session sync', () => {
     errSpy.mockRestore();
   });
 
+  it('sends a generic config choice to the agent and re-reads the toolbar', async () => {
+    setLocale('en');
+    const client = createClient();
+    const plugin = createPlugin({ client });
+    const view = createView(plugin);
+    await view.onOpen();
+
+    const controller = Reflect.get(view, 'controller') as CoOberViewController;
+    controller.state.sessionId = 'runtime-session';
+    const reloadSpy = vi.spyOn(controller, 'loadToolbarOptions');
+
+    const toolbar = Reflect.get(view, 'toolbar') as unknown as {
+      callbacks: { onConfigChange: (configId: string, value: string) => void };
+    };
+    toolbar.callbacks.onConfigChange('reasoning_budget', 'high');
+    await vi.waitFor(() => expect(reloadSpy).toHaveBeenCalled());
+
+    // The chip's label is only honest once the agent has confirmed the change,
+    // so the projection is re-read rather than rewritten locally.
+    expect(client.setConfigOption).toHaveBeenCalledWith('runtime-session', 'reasoning_budget', 'high');
+  });
+
+  it('notifies the reader when a generic config choice is refused', async () => {
+    setLocale('en');
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    Notice.messages.length = 0;
+    const client = createClient();
+    client.setConfigOption = vi.fn().mockRejectedValue(new Error('config boom'));
+    const plugin = createPlugin({ client });
+    const view = createView(plugin);
+    await view.onOpen();
+
+    const controller = Reflect.get(view, 'controller') as CoOberViewController;
+    controller.state.sessionId = 'runtime-session';
+
+    const toolbar = Reflect.get(view, 'toolbar') as unknown as {
+      callbacks: { onConfigChange: (configId: string, value: string) => void };
+    };
+    toolbar.callbacks.onConfigChange('reasoning_budget', 'high');
+    await vi.waitFor(() =>
+      expect(Notice.messages.some((m) => m.includes('config boom'))).toBe(true),
+    );
+    errSpy.mockRestore();
+  });
+
   it('connects and creates a runtime session when sending the first message', async () => {
     setLocale('en');
     const client = createClient();
@@ -737,9 +782,9 @@ function createController(plugin: CoOberPlugin): CoOberViewController {
       setSystemNote: noop, clearSystemNote: noop,
     } as unknown as ControllerDeps['renderer'],
     input: { setStreaming: noop, focus: noop, appendValue: noop, triggerSend: noop, triggerStop: noop } as unknown as ControllerDeps['input'],
-    toolbar: { setSending: noop, updateAgents: noop, updateModels: noop, updateEffort: noop } as unknown as ControllerDeps['toolbar'],
+    toolbar: { setSending: noop, updateAgents: noop, updateModels: noop, updateEffort: noop, updateExtraConfigs: noop } as unknown as ControllerDeps['toolbar'],
     inlineEditPanel: { clearState: noop, pendingState: null, showDiffFromResponse: noop } as unknown as ControllerDeps['inlineEditPanel'],
-    permissionBanner: { dismiss: noop, show: vi.fn() } as unknown as ControllerDeps['permissionBanner'],
+    permissionBanner: { dismiss: noop, show: vi.fn(), showElicitation: vi.fn() } as unknown as ControllerDeps['permissionBanner'],
     mention: { clear: noop, listAllNotes: vi.fn(() => []), addRef: noop, hasRef: vi.fn(() => false), removeRef: noop } as unknown as ControllerDeps['mention'],
     resolver: { resolveNote: vi.fn() } as unknown as ControllerDeps['resolver'],
     syncEngine: { process: vi.fn() } as unknown as ControllerDeps['syncEngine'],

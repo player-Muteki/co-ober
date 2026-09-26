@@ -347,12 +347,12 @@ describe('parseSessionUpdate drop reporting', () => {
     expect(dropped).toEqual(['plan_update']);
   });
 
-  it('leaves a frame the transcript chooses not to paint out of the count', () => {
+  it('counts a summary chunk the transcript never paints', () => {
     const dropped: string[] = [];
     expect(
       parseSessionUpdate({ sessionUpdate: 'compaction_summary_chunk', compactionId: 'c-1' }, (kind) => dropped.push(kind)),
     ).toBeNull();
-    expect(dropped).toEqual([]);
+    expect(dropped).toEqual(['compaction_summary_chunk']);
   });
 
   it('stays silent about a frame it drew', () => {
@@ -880,7 +880,11 @@ describe('AcpRequestHandler permission handling', () => {
 });
 
 describe('AcpRequestHandler elicitation handling', () => {
-  function handlerWithTransport(uiHandler?: (req: unknown) => Promise<string>, unreadable?: (s: string) => void) {
+  function handlerWithTransport(
+    uiHandler?: (req: unknown) => Promise<string>,
+    unreadable?: (s: string) => void,
+    elicitationHandler?: (req: unknown) => Promise<unknown>,
+  ) {
     const registrations = new Map<string, (params: unknown) => Promise<unknown>>();
     const mockTransport = {
       onRequest: vi.fn((name: string, h: (params: unknown) => Promise<unknown>) => {
@@ -898,50 +902,128 @@ describe('AcpRequestHandler elicitation handling', () => {
       transport: mockTransport,
       vaultPath: '/test',
       onPermissionRequest: uiHandler as never,
+      onElicitationRequest: elicitationHandler as never,
       onPermissionUnreadable: unreadable,
     });
     return { handler, registrations };
   }
 
-  it('registers elicitation/create and routes it through the permission banner callback', async () => {
-    const uiHandler = vi.fn().mockResolvedValue('accept');
-    const { handler, registrations } = handlerWithTransport(uiHandler);
+  const ask = (
+    registrations: Map<string, (params: unknown) => Promise<unknown>>,
+    params: Record<string, unknown>,
+  ) => registrations.get('elicitation/create')!(params);
 
-    const dispatch = registrations.get('elicitation/create');
-    expect(dispatch).toBeTypeOf('function');
+  it('routes a form elicitation through the elicitation callback with its parsed fields', async () => {
+    const answer = vi.fn().mockResolvedValue({ action: 'accept', content: { target: 'prod' } });
+    const { handler, registrations } = handlerWithTransport(undefined, undefined, answer);
 
-    const result = await dispatch!({
+    expect(registrations.get('elicitation/create')).toBeTypeOf('function');
+    const result = await ask(registrations, {
       sessionId: 's1',
       mode: 'form',
-      message: 'Run the migration now?',
-      requestedSchema: { type: 'object' },
+      message: 'Which environment?',
+      requestedSchema: {
+        type: 'object',
+        properties: { target: { type: 'string', title: 'Target' } },
+        required: ['target'],
+      },
     });
 
-    expect(result).toEqual({ action: 'accept', content: {} });
-    expect(uiHandler).toHaveBeenCalledTimes(1);
-    const req = uiHandler.mock.calls[0][0] as {
-      sessionId: string;
-      toolCall: { title: string; rawInput: Record<string, unknown>; kind: string };
-      options: { optionId: string; kind: string }[];
-    };
+    expect(result).toEqual({ action: 'accept', content: { target: 'prod' } });
+    expect(answer).toHaveBeenCalledTimes(1);
+    const req = answer.mock.calls[0][0] as Record<string, unknown>;
     expect(req.sessionId).toBe('s1');
-    expect(req.toolCall.title).toBe('Run the migration now?');
-    expect(req.toolCall.rawInput.elicitation).toBe(true);
-    expect(req.toolCall.kind).toBe('other');
-    expect(req.options.map((o) => o.optionId)).toEqual(['accept', 'decline']);
+    expect(req.message).toBe('Which environment?');
+    expect(req.fields).toEqual([{ key: 'target', label: 'Target', required: true, kind: 'text' }]);
+    expect(req.omittedFields).toEqual([]);
     handler.dispose();
   });
 
-  it('maps decline and unknown decisions to decline/cancel', async () => {
-    const declineHandler = vi.fn().mockResolvedValue('decline');
-    const { handler: h1, registrations: r1 } = handlerWithTransport(declineHandler);
-    expect(await r1.get('elicitation/create')!({ sessionId: 's1', message: 'ok?' })).toEqual({ action: 'decline' });
-    h1.dispose();
+  it('echoes only the keys the schema asked for, so a caller cannot inject answers', async () => {
+    const answer = vi.fn().mockResolvedValue({ action: 'accept', content: { target: 'prod', sessionId: 'victim', approved: true } });
+    const { handler, registrations } = handlerWithTransport(undefined, undefined, answer);
 
-    const otherHandler = vi.fn().mockResolvedValue('whatever');
-    const { handler: h2, registrations: r2 } = handlerWithTransport(otherHandler);
-    expect(await r2.get('elicitation/create')!({ sessionId: 's1', message: 'ok?' })).toEqual({ action: 'cancel' });
-    h2.dispose();
+    const result = await ask(registrations, {
+      sessionId: 's1',
+      message: 'Which environment?',
+      requestedSchema: { properties: { target: { type: 'string' } } },
+    });
+
+    expect(result).toEqual({ action: 'accept', content: { target: 'prod' } });
+    handler.dispose();
+  });
+
+  it('passes a decline or cancel back to the agent untouched', async () => {
+    const { handler, registrations } = handlerWithTransport(undefined, undefined, vi.fn().mockResolvedValue({ action: 'decline' }));
+    expect(await ask(registrations, { sessionId: 's1', message: 'ok?', requestedSchema: { properties: { a: { type: 'string' } } } }))
+      .toEqual({ action: 'decline' });
+    handler.dispose();
+
+    const h2 = handlerWithTransport(undefined, undefined, vi.fn().mockResolvedValue({ action: 'cancel' }));
+    expect(await ask(h2.registrations, { sessionId: 's1', message: 'ok?', requestedSchema: { properties: { a: { type: 'string' } } } }))
+      .toEqual({ action: 'cancel' });
+    h2.handler.dispose();
+  });
+
+  it('treats a schema that asks for no keys as a confirmation and answers it empty', async () => {
+    const answer = vi.fn().mockResolvedValue({ action: 'accept', content: {} });
+    const { handler, registrations } = handlerWithTransport(undefined, undefined, answer);
+    expect(await ask(registrations, { sessionId: 's1', mode: 'form', message: 'Run the migration now?', requestedSchema: { type: 'object' } }))
+      .toEqual({ action: 'accept', content: {} });
+    expect(answer).toHaveBeenCalledTimes(1);
+    handler.dispose();
+  });
+
+  it('declines a schema whose keys it cannot render rather than accepting a blank answer', async () => {
+    const answer = vi.fn();
+    const unreadable = vi.fn();
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { handler, registrations } = handlerWithTransport(undefined, unreadable, answer);
+
+    const result = await ask(registrations, {
+      sessionId: 's1',
+      message: 'Pick a shape',
+      requestedSchema: { properties: { grid: { type: 'array', items: { type: 'string' } } } },
+    });
+
+    expect(result).toEqual({ action: 'decline' });
+    expect(answer).not.toHaveBeenCalled();
+    expect(unreadable).toHaveBeenCalledWith(expect.stringContaining('grid'));
+    consoleSpy.mockRestore();
+    handler.dispose();
+  });
+
+  it('declines while no elicitation view is bound, instead of answering for the user', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { handler, registrations } = handlerWithTransport(vi.fn().mockResolvedValue('accept'));
+    const result = await ask(registrations, {
+      sessionId: 's1',
+      message: 'Which environment?',
+      requestedSchema: { properties: { target: { type: 'string' } } },
+    });
+    expect(result).toEqual({ action: 'decline' });
+    warnSpy.mockRestore();
+    handler.dispose();
+  });
+
+  it('carries a url-mode elicitation to the view so its link can be shown', async () => {
+    const answer = vi.fn().mockResolvedValue({ action: 'accept', content: {} });
+    const { handler, registrations } = handlerWithTransport(undefined, undefined, answer);
+
+    const result = await ask(registrations, {
+      sessionId: 's1',
+      mode: 'url',
+      elicitationId: 'el-9',
+      message: 'Sign in to continue',
+      url: 'https://example.test/sign-in',
+    });
+
+    expect(result).toEqual({ action: 'accept', content: {} });
+    const req = answer.mock.calls[0][0] as { url: string; elicitationId: string; fields: unknown[] };
+    expect(req.url).toBe('https://example.test/sign-in');
+    expect(req.elicitationId).toBe('el-9');
+    expect(req.fields).toEqual([]);
+    handler.dispose();
   });
 
   it('cancels and surfaces an unreadable elicitation without touching the banner', async () => {
@@ -951,7 +1033,7 @@ describe('AcpRequestHandler elicitation handling', () => {
     const { handler, registrations } = handlerWithTransport(uiHandler, unreadable);
 
     // sessionId must be a string when present; a number fails the schema.
-    const result = await registrations.get('elicitation/create')!({ sessionId: 42 });
+    const result = await ask(registrations, { sessionId: 42 });
     expect(result).toEqual({ action: 'cancel' });
     expect(unreadable).toHaveBeenCalledTimes(1);
     expect(uiHandler).not.toHaveBeenCalled();
@@ -959,10 +1041,11 @@ describe('AcpRequestHandler elicitation handling', () => {
     handler.dispose();
   });
 
-  it('cancels safely when the permission handler throws', async () => {
+  it('cancels safely when the elicitation handler throws', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const { handler, registrations } = handlerWithTransport(vi.fn().mockRejectedValue(new Error('ui dead')));
-    expect(await registrations.get('elicitation/create')!({ sessionId: 's1', message: 'hi' })).toEqual({ action: 'cancel' });
+    const { handler, registrations } = handlerWithTransport(undefined, undefined, vi.fn().mockRejectedValue(new Error('ui dead')));
+    expect(await ask(registrations, { sessionId: 's1', message: 'hi', requestedSchema: { properties: { a: { type: 'string' } } } }))
+      .toEqual({ action: 'cancel' });
     consoleSpy.mockRestore();
     handler.dispose();
   });

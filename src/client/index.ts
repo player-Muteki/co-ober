@@ -5,6 +5,8 @@ import type {
 	ModeOption,
 	AvailableCommand,
 	PermissionRequest,
+	ElicitationRequest,
+	ElicitationAnswer,
 	PermissionLevel,
 	NormalizedUpdate,
 	PromptPart,
@@ -22,6 +24,8 @@ export interface ClientHandlers {
   onReconnect?: () => Promise<void>;
   onReconnectFailed?: () => void;
   onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
+  /** Ask the user to answer an elicitation the agent posed; the answer goes back verbatim. */
+  onElicitationRequest?: (req: ElicitationRequest) => Promise<ElicitationAnswer>;
   /** Called when an inbound permission request fails schema validation and had to be cancelled. */
   onPermissionUnreadable?: (summary: string) => void;
   /** An inbound update frame was dropped without being drawn; the conversation says so. */

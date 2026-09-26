@@ -132,8 +132,12 @@ const en = {
 
   elicitation: {
     title: 'The agent is asking for input',
-    accept: 'Allow',
+    accept: 'Send answer',
     decline: 'Decline',
+    opened: 'I opened it',
+    requiredMissing: 'Fill in the required fields before answering.',
+    omittedFields: 'Co-Ober cannot answer these parts of the request: {fields}',
+    notInThisMode: 'The agent asked you a question, but Co-Ober only shows agent questions in Safe mode — it was declined.',
   },
 
   stopReason: {
@@ -245,6 +249,8 @@ const en = {
     terminalGone: 'This terminal is no longer available.',
     outputTrimmed: '… earlier output was trimmed …',
     terminated: 'Terminated by {signal}',
+    unsupportedContent: 'Co-Ober cannot show {type} content from this tool.',
+    unsupportedUnknown: 'Co-Ober cannot show part of this tool result.',
   },
 
   toolKind: {
@@ -360,6 +366,7 @@ const en = {
     permPlan: '📋 Plan',
     permYolo: '⚡ Yolo',
     permTitle: 'Permission: {mode} (click to switch)',
+    configTitle: '{name}: {value} (click to change)',
   },
 
   notice: {

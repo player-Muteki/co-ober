@@ -30,8 +30,6 @@ export const SQLITE_STDERR_MAX_CHARS = 2000;
 export const MIN_THROUGHPUT_SAMPLE_MS = 1000;
 /** Max characters of zod detail surfaced when a server request cannot be parsed. */
 export const UNREADABLE_SUMMARY_MAX_CHARS = 240;
-/** Max characters of the elicitation requestSchema JSON shown as a banner title. */
-export const ELICITATION_SCHEMA_MAX_CHARS = 500;
 /** Upper bound on assistant-message references the stream controller tracks; oldest evicted first. */
 export const MAX_TRACKED_ASSISTANT_MESSAGES = 500;
 /** Concurrent prompt streams the client admits before rejecting with a capacity error. */

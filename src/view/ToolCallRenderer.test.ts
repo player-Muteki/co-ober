@@ -348,4 +348,60 @@ describe('ToolCallRenderer', () => {
       expect(renderTruncatedText(makeLines(22), 20)).toBe(`${makeLines(20)}\n... 2 more lines`);
     });
   });
+
+  describe('updateToolCallElement — image and unsupported content items', () => {
+    const imageItem = (mimeType: string, data = 'AAAA'): ToolCallContent => ({
+      type: 'content',
+      content: { type: 'image', mimeType, data },
+    });
+
+    it('draws a raster image item as an image', () => {
+      const state = createToolCallElement(container, 'tc', 'fetch', 'Screenshot', { url: 'https://e.com' });
+      updateToolCallElement(state, 'completed', 'fetch', undefined, [imageItem('image/png')]);
+
+      const img = state.body.querySelector('img.co-ober-tool-image') as HTMLImageElement;
+      expect(img).not.toBeNull();
+      expect(img.getAttribute('src')).toBe('data:image/png;base64,AAAA');
+      expect(img.getAttribute('loading')).toBe('lazy');
+      expect(state.body.querySelector('.co-ober-tool-empty')).toBeNull();
+    });
+
+    it('keeps a markup image out of the document and names what it refused', () => {
+      const state = createToolCallElement(container, 'tc', 'fetch', 'Screenshot');
+      updateToolCallElement(state, 'completed', 'fetch', undefined, [imageItem('image/svg+xml')]);
+
+      expect(state.body.querySelector('img')).toBeNull();
+      expect(state.body.querySelector('.co-ober-tool-unsupported')?.textContent).toBe(
+        'Co-Ober cannot show image/svg+xml content from this tool.',
+      );
+    });
+
+    it('says an item is unsupported by the name the agent sent it under', () => {
+      const state = createToolCallElement(container, 'tc', 'other', 'Audit');
+      updateToolCallElement(state, 'completed', 'other', undefined, [{ type: 'unsupported', originalType: 'resource_link' }]);
+
+      expect(state.body.querySelector('.co-ober-tool-unsupported')?.textContent).toBe(
+        'Co-Ober cannot show resource_link content from this tool.',
+      );
+      // The reader learns the item was lost, not that the tool said nothing.
+      expect(state.body.querySelector('.co-ober-tool-empty')).toBeNull();
+    });
+
+    it('reads a whole sentence when even the tag was unreadable', () => {
+      const state = createToolCallElement(container, 'tc', 'other', 'Audit');
+      updateToolCallElement(state, 'completed', 'other', undefined, [{ type: 'unsupported', originalType: '' }]);
+
+      expect(state.body.querySelector('.co-ober-tool-unsupported')?.textContent).toBe(
+        'Co-Ober cannot show part of this tool result.',
+      );
+    });
+
+    it('keeps the text that came alongside an unreadable item', () => {
+      const state = createToolCallElement(container, 'tc', 'other', 'Audit');
+      updateToolCallElement(state, 'completed', 'other', undefined, [textItem('found 3 matches'), { type: 'unsupported', originalType: 'blob' }]);
+
+      expect(state.body.textContent).toContain('found 3 matches');
+      expect(state.body.querySelector('.co-ober-tool-unsupported')).not.toBeNull();
+    });
+  });
 });

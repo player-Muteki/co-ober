@@ -776,6 +776,37 @@
   font-weight: 500;
 }
 
+/* Generic config options the agent declares beyond model/mode/effort */
+.co-ober-extra-configs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.co-ober-config-chip {
+  display: flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+  cursor: pointer;
+  font-size: var(--font-smaller);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.co-ober-config-chip:hover,
+.co-ober-config-chip:focus-visible {
+  color: var(--text-normal);
+  border-color: var(--text-accent);
+}
+
+.co-ober-config-chip-label {
+  font-weight: 500;
+}
+
 /* Permission toggle */
 .co-ober-perm-toggle {
   display: flex;
@@ -1297,6 +1328,52 @@
   border-color: var(--text-accent);
 }
 
+/* Elicitation form: a question the agent asks the user mid-turn */
+.co-ober-permission-banner .perm-elicit-url {
+  display: block;
+  font-family: var(--font-monospace);
+  font-size: var(--font-smaller);
+  margin-bottom: 6px;
+  overflow-wrap: anywhere;
+}
+
+.co-ober-permission-banner .perm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.co-ober-permission-banner .perm-field-label {
+  font-size: var(--font-smaller);
+  font-weight: 600;
+}
+
+.co-ober-permission-banner .perm-field-required {
+  color: var(--text-error);
+}
+
+.co-ober-permission-banner .perm-field-desc {
+  font-size: var(--font-smaller);
+  color: var(--text-muted);
+}
+
+.co-ober-permission-banner .perm-field-input {
+  width: 100%;
+  font-size: var(--font-smaller);
+}
+
+.co-ober-permission-banner .perm-field-checkbox {
+  align-self: flex-start;
+}
+
+.co-ober-permission-banner .perm-elicit-omitted,
+.co-ober-permission-banner .perm-elicit-hint {
+  font-size: var(--font-smaller);
+  color: var(--text-warning, var(--text-error));
+  margin-bottom: 6px;
+}
+
 .co-ober-permission-banner .perm-reject_once {
   background: var(--background-primary);
   color: var(--text-error);
@@ -1477,6 +1554,24 @@ pre:focus-within .co-ober-copy-btn {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.co-ober-tool-image {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  height: auto;
+  margin-top: 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  object-fit: contain;
+}
+.co-ober-tool-unsupported {
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  margin-top: 4px;
+  background: var(--background-modifier-hover);
+  border-radius: var(--radius-s);
 }
 /* ── Apply Patch sections ── */
 .co-ober-patch-section {

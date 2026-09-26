@@ -310,6 +310,7 @@ function renderToolBodyContent(
   // Extract text content from content items
   const textParts: string[] = [];
   let hasDiffContent = false;
+  let hasStandaloneContent = false;
 
   for (const item of content) {
     if (item.type === 'diff' && item.path && item.oldText !== undefined && item.newText !== undefined) {
@@ -318,9 +319,23 @@ function renderToolBodyContent(
       hasDiffContent = true;
     } else if (item.type === 'content' && item.content?.type === 'text' && item.content.text) {
       textParts.push(item.content.text);
+    } else if (item.type === 'content' && item.content?.type === 'image') {
+      renderToolImage(body, item.content.mimeType, item.content.data);
+      hasStandaloneContent = true;
+    } else if (item.type === 'unsupported') {
+      // Parsing kept the wire tag precisely so this line can name it: an item
+      // the reader never hears about is an item they assume the tool did not send.
+      body.createDiv({
+        cls: 'co-ober-tool-unsupported',
+        text: item.originalType
+          ? t().tool.unsupportedContent.replace('{type}', item.originalType)
+          : t().tool.unsupportedUnknown,
+      });
+      hasStandaloneContent = true;
     }
   }
 
+  const emptyStateShown = hasDiffContent || hasStandaloneContent;
   const text = textParts.join('\n');
   const outputText = rawOutput
     ? ((rawOutput.text ?? rawOutput.output ?? rawOutput.result ?? rawOutput.content) as string | undefined)
@@ -336,7 +351,7 @@ function renderToolBodyContent(
     case 'read': {
       if (text || outputText) {
         renderLinesExpanded(body, text || outputText!, 15);
-      } else if (!hasDiffContent) {
+      } else if (!emptyStateShown) {
         body.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.noContent });
       }
       return;
@@ -346,7 +361,7 @@ function renderToolBodyContent(
       const searchResult = text || outputText || '';
       if (searchResult) {
         renderSearchExpanded(body, searchResult);
-      } else if (!hasDiffContent) {
+      } else if (!emptyStateShown) {
         body.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.noMatches });
       }
       return;
@@ -361,7 +376,7 @@ function renderToolBodyContent(
             text: t().tool.source.replace('{url}', rawOutput.url as string),
           });
         }
-      } else if (!hasDiffContent) {
+      } else if (!emptyStateShown) {
         body.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.noResult });
       }
       return;
@@ -377,20 +392,40 @@ function renderToolBodyContent(
       return;
     }
     default: {
-      // Default: render content items or raw output
-      if (!hasDiffContent) {
-        if (text) {
-          body.createDiv({ text: renderTruncatedText(text, 20) });
-        } else if (rawOutput) {
-          const json = JSON.stringify(rawOutput, null, 2);
-          if (json !== '{}' && json !== 'undefined') {
-            body.createDiv({ text: renderTruncatedText(json, 20) });
-          }
+      // Default: render content items or raw output. An image or an unreadable
+      // item alongside text does not replace that text — showing one and
+      // hiding the other loses half of what the tool returned. The JSON dump
+      // stays a last resort, so it does not crowd out a drawn result.
+      if (text) {
+        body.createDiv({ text: renderTruncatedText(text, 20) });
+      } else if (rawOutput && !emptyStateShown) {
+        const json = JSON.stringify(rawOutput, null, 2);
+        if (json !== '{}' && json !== 'undefined') {
+          body.createDiv({ text: renderTruncatedText(json, 20) });
         }
       }
       break;
     }
   }
+}
+
+/** The only image types this client will hand to an <img> element as a data URL. */
+const RENDERABLE_IMAGE_MIME = /^(image\/(png|jpeg|gif|webp|bmp))$/i;
+
+function renderToolImage(body: HTMLElement, mimeType: string, data: string): void {
+  if (!RENDERABLE_IMAGE_MIME.test(mimeType) || !data) {
+    body.createDiv({
+      cls: 'co-ober-tool-unsupported',
+      text: mimeType
+        ? t().tool.unsupportedContent.replace('{type}', mimeType)
+        : t().tool.unsupportedUnknown,
+    });
+    return;
+  }
+  const img = body.createEl('img', { cls: 'co-ober-tool-image' });
+  img.setAttribute('loading', 'lazy');
+  img.setAttribute('decoding', 'async');
+  img.src = `data:${mimeType};base64,${data}`;
 }
 
 /**

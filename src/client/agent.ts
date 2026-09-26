@@ -3,6 +3,7 @@ import type {
 	PromptPart,
 	SessionConfigOption,
 	PermissionRequest,
+	ElicitationAnswer,
 	AvailableCommand,
 	ModelOption,
 	ModeOption,
@@ -22,8 +23,9 @@ export class AgentRuntime implements OpencodeClient {
   permissionMode: import('../types').PermissionLevel = 'safe';
   idleTimeoutMs = 5 * 60 * 1000; // 5 minutes default
   /**
-   * Outstanding permission prompts (banners). While held, the idle clock
-   * keeps deferring: a turn waiting on the user is not an idle turn.
+   * Outstanding prompts — permission banners and elicitations alike. While
+   * held, the idle clock keeps deferring: a turn waiting on the user is not
+   * an idle turn.
    */
   private permissionHolds = 0;
 
@@ -92,6 +94,10 @@ export class AgentRuntime implements OpencodeClient {
   setClientHandlers(handlers: ClientHandlers): void {
     const permissionHandler =
       handlers.onPermissionRequest ?? ((req: PermissionRequest): Promise<string> => this.requestPermission(req));
+    // Nobody having answered is a decline, never an accept: the agent must not
+    // be told the user agreed just because no banner was bound yet.
+    const elicitationHandler =
+      handlers.onElicitationRequest ?? ((): Promise<ElicitationAnswer> => Promise.resolve({ action: 'decline' }));
     // Hold the idle timer for however long the permission (or its banner) is
     // outstanding, so slow human decisions never kill the turn.
     // Must go through AcpClient.setClientHandlers: the AcpRequestHandler is
@@ -104,6 +110,14 @@ export class AgentRuntime implements OpencodeClient {
         this.permissionHolds += 1;
         try {
           return await permissionHandler(req);
+        } finally {
+          this.permissionHolds -= 1;
+        }
+      },
+      onElicitationRequest: async (req) => {
+        this.permissionHolds += 1;
+        try {
+          return await elicitationHandler(req);
         } finally {
           this.permissionHolds -= 1;
         }

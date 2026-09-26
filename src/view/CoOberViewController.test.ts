@@ -96,6 +96,7 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): MockDeps {
       updateAgents: noop,
       updateModels: noop,
       updateEffort: noop,
+      updateExtraConfigs: noop,
       updatePermission: noop,
       setImageAttachEnabled: noop,
     } as unknown as ControllerDeps['toolbar'],
@@ -104,7 +105,12 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): MockDeps {
       pendingState: null,
       showDiffFromResponse: noop,
     } as unknown as ControllerDeps['inlineEditPanel'],
-    permissionBanner: { dismiss: noop, show: vi.fn(), resolveExternally: vi.fn() } as unknown as ControllerDeps['permissionBanner'],
+    permissionBanner: {
+      dismiss: noop,
+      show: vi.fn(),
+      showElicitation: vi.fn(),
+      resolveExternally: vi.fn(),
+    } as unknown as ControllerDeps['permissionBanner'],
     mention: {
       clear: noop,
       listAllNotes: vi.fn(() => []),
@@ -344,6 +350,52 @@ describe('CoOberViewController', () => {
       } as never);
 
       expect(decision).toBe('reject');
+    });
+  });
+
+  describe('client elicitation handling', () => {
+    const elicitReq = {
+      sessionId: 'session-1',
+      elicitationId: 'el-1',
+      message: 'Which environment should I deploy to?',
+      fields: [{ key: 'env', label: 'Environment', kind: 'text', required: true }],
+      omittedFields: [],
+    };
+
+    it('declines an elicitation the permission tier never shows, and says why', async () => {
+      const addError = vi.fn();
+      Object.assign(deps.renderer, { addError });
+      const client = createMockClient({ permissionMode: 'plan' });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      controller.bindClientHandlers();
+      const handlers = (client.setClientHandlers as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
+      const answer = await handlers.onElicitationRequest(elicitReq);
+
+      // Answering a question meant for the reader is not a permission decision
+      // this client may make silently on their behalf.
+      expect(answer).toEqual({ action: 'decline' });
+      expect(addError).toHaveBeenCalledWith(t().elicitation.notInThisMode);
+      expect(deps.permissionBanner.showElicitation).not.toHaveBeenCalled();
+    });
+
+    it('hands the form to the banner and returns the answer the reader gave', async () => {
+      const addError = vi.fn();
+      Object.assign(deps.renderer, { addError });
+      (deps.permissionBanner.showElicitation as ReturnType<typeof vi.fn>).mockResolvedValue({
+        action: 'accept',
+        content: { env: 'prod' },
+      });
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      controller.bindClientHandlers();
+      const handlers = (client.setClientHandlers as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
+      const answer = await handlers.onElicitationRequest(elicitReq);
+
+      expect(deps.permissionBanner.showElicitation).toHaveBeenCalledWith(elicitReq, undefined);
+      expect(answer).toEqual({ action: 'accept', content: { env: 'prod' } });
+      expect(addError).not.toHaveBeenCalled();
     });
   });
 
@@ -1893,6 +1945,94 @@ describe('CoOberViewController', () => {
         ],
         'xhigh',
       );
+    });
+  });
+
+  describe('applyConfigOptions generic projection', () => {
+    const reasoningBudget = {
+      id: 'reasoning_budget',
+      name: 'Reasoning budget',
+      category: 'other',
+      type: 'select',
+      currentValue: 'low',
+      options: [
+        { value: 'low', name: 'Low' },
+        { value: 'high', name: 'High' },
+      ],
+    };
+
+    it('turns an option with no dedicated toolbar control into a visible choice', () => {
+      const updateExtraConfigs = vi.fn();
+      Object.assign(deps.toolbar, { updateExtraConfigs });
+
+      controller.applyConfigOptions([
+        {
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          type: 'select',
+          currentValue: 'gpt-4',
+          options: [
+            { value: 'gpt-4', name: 'GPT-4' },
+            { value: 'gpt-5', name: 'GPT-5' },
+          ],
+        },
+        reasoningBudget,
+      ]);
+
+      // The dedicated controls already show model, so only the leftover choice
+      // is projected; before this it was stored on the session and never shown.
+      expect(updateExtraConfigs).toHaveBeenCalledWith([
+        {
+          id: 'reasoning_budget',
+          label: 'Reasoning budget',
+          value: 'low',
+          values: [
+            { value: 'low', label: 'Low' },
+            { value: 'high', label: 'High' },
+          ],
+        },
+      ]);
+    });
+
+    it('clears the projected choices when the agent stops offering them', () => {
+      const updateExtraConfigs = vi.fn();
+      Object.assign(deps.toolbar, { updateExtraConfigs });
+      controller.applyConfigOptions([reasoningBudget]);
+      controller.applyConfigOptions([]);
+
+      expect(updateExtraConfigs).toHaveBeenLastCalledWith([]);
+    });
+
+    it('projects the agent-declared choices a session was loaded with', () => {
+      const updateExtraConfigs = vi.fn();
+      Object.assign(deps.toolbar, { updateExtraConfigs });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(
+        createMockClient({
+          getSessionSnapshot: vi.fn(() => ({
+            configOptions: [reasoningBudget],
+            availableCommands: [],
+            availableModels: [],
+            availableModes: [],
+            currentModelId: null,
+            currentModeId: null,
+          })),
+        }),
+      );
+
+      controller.loadToolbarOptions();
+
+      expect(updateExtraConfigs).toHaveBeenCalledWith([
+        {
+          id: 'reasoning_budget',
+          label: 'Reasoning budget',
+          value: 'low',
+          values: [
+            { value: 'low', label: 'Low' },
+            { value: 'high', label: 'High' },
+          ],
+        },
+      ]);
     });
   });
 

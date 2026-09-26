@@ -134,8 +134,12 @@ const zh: Locale = {
 
   elicitation: {
     title: 'Agent 正在请求输入',
-    accept: '允许',
+    accept: '提交回答',
     decline: '拒绝',
+    opened: '我已打开',
+    requiredMissing: '请先填写必填项再作答。',
+    omittedFields: 'Co-Ober 无法回答本次请求中的这些部分：{fields}',
+    notInThisMode: 'Agent 向你提出了一个问题，但 Co-Ober 仅在“安全”模式下展示 Agent 提问——本次已拒绝。',
   },
 
   stopReason: {
@@ -247,6 +251,8 @@ const zh: Locale = {
     terminalGone: '该终端已不可用。',
     outputTrimmed: '…… 较早的输出已被裁剪 ……',
     terminated: '被 {signal} 终止',
+    unsupportedContent: 'Co-Ober 无法展示该工具的 {type} 内容。',
+    unsupportedUnknown: 'Co-Ober 无法展示该工具结果的一部分。',
   },
 
   toolKind: {
@@ -362,6 +368,7 @@ const zh: Locale = {
     permPlan: '📋 计划',
     permYolo: '⚡ 放行',
     permTitle: '权限模式：{mode}（点击切换）',
+    configTitle: '{name}：{value}（点击切换）',
   },
 
   notice: {

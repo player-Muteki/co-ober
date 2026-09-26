@@ -474,7 +474,19 @@ describe('permissive chunk content and plan entries', () => {
     expect(r.success).toBe(true);
     if (r.success) {
       expect(r.data.content).toHaveLength(1);
-      expect(r.data.content?.[0]).toEqual({ type: 'content', content: { type: 'text', text: '' } });
+      expect(r.data.content?.[0]).toEqual({ type: 'unsupported', originalType: 'audit_blob' });
+    }
+  });
+
+  it('keeps an image item on a tool frame as an image item', () => {
+    const r = zToolCallUpdate.safeParse({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 't1',
+      content: [{ type: 'content', content: { type: 'image', mimeType: 'image/png', data: 'AAA' } }],
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.content).toEqual([{ type: 'content', content: { type: 'image', mimeType: 'image/png', data: 'AAA' } }]);
     }
   });
 

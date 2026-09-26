@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { AcpRequestHandler } from './AcpRequestHandler';
+import { AcpRequestHandler, parseElicitationForm } from './AcpRequestHandler';
 import type { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
 import type { PermissionRequest } from '../types';
 
@@ -185,5 +185,58 @@ describe('AcpRequestHandler.readTerminal', () => {
     const handler = makeHandler({});
     handler.dispose();
     expect(handler.readTerminal('term-1')).toBeNull();
+  });
+});
+
+describe('parseElicitationForm', () => {
+  it('reads a scalar property as an answerable field', () => {
+    const { fields, omitted } = parseElicitationForm({
+      properties: {
+        target: { type: 'string', title: 'Target', description: 'Where to deploy' },
+        retries: { type: 'number' },
+        cap: { type: 'integer' },
+        force: { type: 'boolean' },
+      },
+      required: ['target'],
+    });
+    expect(omitted).toEqual([]);
+    expect(fields).toEqual([
+      { key: 'target', label: 'Target', required: true, kind: 'text', description: 'Where to deploy' },
+      { key: 'retries', label: 'retries', required: false, kind: 'number' },
+      { key: 'cap', label: 'cap', required: false, kind: 'number' },
+      { key: 'force', label: 'force', required: false, kind: 'boolean' },
+    ]);
+  });
+
+  it('reads an enum as the choices the agent offered, in order', () => {
+    const { fields } = parseElicitationForm({
+      properties: {
+        plain: { type: 'string', enum: ['dev', 'prod'] },
+        titled: { oneOf: [{ const: 'dev', title: 'Development' }, { const: 'prod' }] },
+      },
+    });
+    expect(fields[0].kind).toBe('enum');
+    expect(fields[0].values).toEqual([{ value: 'dev', label: 'dev' }, { value: 'prod', label: 'prod' }]);
+    expect(fields[1].values).toEqual([{ value: 'dev', label: 'Development' }, { value: 'prod', label: 'prod' }]);
+  });
+
+  it('keeps the renderable half of a schema and names the rest', () => {
+    const { fields, omitted } = parseElicitationForm({
+      properties: {
+        window: { type: 'array', items: { type: 'string' } },
+        notes: { type: 'string' },
+        owner: { type: 'object', properties: { id: { type: 'string' } } },
+      },
+      required: 'nobody should send this',
+    });
+    expect(fields.map((f) => f.key)).toEqual(['notes']);
+    // One unreadable property costs its own answer, not the whole question.
+    expect(omitted).toEqual(['window', 'owner']);
+  });
+
+  it('asks nothing of the reader when the schema has no properties to read', () => {
+    for (const raw of [{ type: 'object' }, {}, 'nonsense', undefined, null, { properties: 'nope' }]) {
+      expect(parseElicitationForm(raw)).toEqual({ fields: [], omitted: [] });
+    }
   });
 });

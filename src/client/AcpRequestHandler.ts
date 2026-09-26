@@ -1,12 +1,20 @@
-import type { PermissionRequest, FsCapabilityMode, TerminalCapabilityMode, TerminalCreateParams, TerminalOutputResult } from '../types';
+import type {
+  PermissionRequest,
+  FsCapabilityMode,
+  TerminalCapabilityMode,
+  TerminalCreateParams,
+  TerminalOutputResult,
+  ElicitationField,
+  ElicitationRequest,
+  ElicitationAnswer,
+} from '../types';
 import type { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
 import { FsDelegate, type VaultWriteIo } from './fsDelegate';
 import { TerminalManager, TerminalError } from './terminalManager';
 import { z } from 'zod';
-import { REQUEST_DEFAULT_TIMEOUT_MS, REQUEST_DEFAULT_MAX_OUTPUT_BYTES, UNREADABLE_SUMMARY_MAX_CHARS, ELICITATION_SCHEMA_MAX_CHARS } from '../constants';
+import { REQUEST_DEFAULT_TIMEOUT_MS, REQUEST_DEFAULT_MAX_OUTPUT_BYTES, UNREADABLE_SUMMARY_MAX_CHARS } from '../constants';
 import { ACP_SERVER_REQUEST_ALIASES } from './AcpMethodNames';
 import { zToolKind } from './acpSchemas';
-import { t } from '../i18n/index';
 
 // One dropped option is survivable; losing the whole request because a
 // single field is malformed means the user never sees a prompt that was
@@ -57,10 +65,67 @@ const zElicitationParams = z
     mode: z.string().optional(),
     elicitationId: z.string().optional(),
     message: z.unknown().optional(),
+    url: z.unknown().optional(),
     requestedSchema: z.unknown().optional(),
     schema: z.unknown().optional(),
   })
   .passthrough();
+
+// ACP restricts elicitation properties to primitives. Everything here is
+// lenient on purpose: one property we fail to read must cost that property's
+// answer, not the whole question.
+const zElicitationProperty = z.object({
+  type: z.string().optional(),
+  title: z.string().optional(),
+  description: z.string().optional(),
+  enum: z.array(z.string()).optional(),
+  oneOf: z.array(z.object({ const: z.string(), title: z.string().optional() })).optional(),
+});
+const zElicitationSchema = z
+  .object({
+    properties: z.record(z.string(), z.unknown()).optional(),
+    required: z.array(z.string()).catch([]).optional(),
+  })
+  .catch({});
+
+function elicitationField(
+  key: string,
+  raw: unknown,
+  required: boolean,
+): ElicitationField | null {
+  const parsed = zElicitationProperty.safeParse(raw);
+  if (!parsed.success) return null;
+  const prop = parsed.data;
+  const values =
+    prop.oneOf?.map((option) => ({ value: option.const, label: option.title ?? option.const })) ??
+    prop.enum?.map((value) => ({ value, label: value }));
+  const base = { key, label: prop.title ?? key, required, ...(prop.description ? { description: prop.description } : {}) };
+  if (values && values.length > 0) return { ...base, kind: 'enum' as const, values };
+  if (prop.type === 'string') return { ...base, kind: 'text' as const };
+  if (prop.type === 'number' || prop.type === 'integer') return { ...base, kind: 'number' as const };
+  if (prop.type === 'boolean') return { ...base, kind: 'boolean' as const };
+  return null;
+}
+
+/**
+ * Split an elicitation schema into the fields this client can put an input
+ * against and the keys it cannot. The second list exists so the reader sees a
+ * partial answer coming; answering nothing at all is the failure this replaces.
+ */
+export function parseElicitationForm(raw: unknown): { fields: ElicitationField[]; omitted: string[] } {
+  const parsed = zElicitationSchema.safeParse(raw);
+  const properties = parsed.success ? parsed.data.properties : undefined;
+  if (!properties) return { fields: [], omitted: [] };
+  const required = new Set(parsed.success ? (parsed.data.required ?? []) : []);
+  const fields: ElicitationField[] = [];
+  const omitted: string[] = [];
+  for (const [key, value] of Object.entries(properties)) {
+    const field = elicitationField(key, value, required.has(key));
+    if (field) fields.push(field);
+    else omitted.push(key);
+  }
+  return { fields, omitted };
+}
 const zFsWriteParam = z.object({ path: z.string(), content: z.string() });
 const zTerminalIdParam = z.object({ terminalId: z.string() });
 const zTerminalCreateParam = z.object({
@@ -74,6 +139,7 @@ export interface AcpRequestHandlerOptions {
   transport: AcpJsonRpcTransport;
   vaultPath: string;
   onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
+  onElicitationRequest?: (req: ElicitationRequest) => Promise<ElicitationAnswer>;
   vaultIo?: VaultWriteIo;
   onPermissionUnreadable?: (summary: string) => void;
 }
@@ -86,12 +152,14 @@ export class AcpRequestHandler {
   private transport: AcpJsonRpcTransport;
   private vaultPath: string;
   onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
+  onElicitationRequest?: (req: ElicitationRequest) => Promise<ElicitationAnswer>;
   onPermissionUnreadable?: (summary: string) => void;
 
   constructor(options: AcpRequestHandlerOptions) {
     this.transport = options.transport;
     this.vaultPath = options.vaultPath;
     this.onPermissionRequest = options.onPermissionRequest;
+    this.onElicitationRequest = options.onElicitationRequest;
     this.onPermissionUnreadable = options.onPermissionUnreadable;
 
     this.fsDelegate = new FsDelegate({
@@ -170,8 +238,9 @@ export class AcpRequestHandler {
     if (this.terminalCapabilityMode === 'enabled') {
       caps.terminal = true;
     }
-    // We answer elicitation/create with an allow/decline banner (empty content),
-    // i.e. form mode only; url-mode elicitations are not advertised.
+    // Form mode only: the banner renders the schema's scalar and enum fields
+    // and answers with what the user typed. url mode is not advertised, though
+    // a link an agent sends anyway is still shown rather than auto-accepted.
     caps.elicitation = { form: {} };
     return caps;
   }
@@ -273,49 +342,56 @@ export class AcpRequestHandler {
       return Promise.resolve({ action: 'cancel' });
     }
 
-    const i18n = t();
     const message = typeof parsed.data.message === 'string' ? parsed.data.message : '';
-    const schemaText = this.stringifyElicitationSchema(parsed.data.requestedSchema ?? parsed.data.schema);
-    const req: PermissionRequest = {
+    const url = typeof parsed.data.url === 'string' ? parsed.data.url : '';
+    const { fields, omitted } = parseElicitationForm(parsed.data.requestedSchema ?? parsed.data.schema);
+    const req: ElicitationRequest = {
       sessionId: parsed.data.sessionId ?? '',
-      toolCall: {
-        toolCallId: parsed.data.elicitationId ?? `elicitation-${Date.now()}`,
-        status: 'pending',
-        title: message || schemaText || i18n.elicitation.title,
-        rawInput: { elicitation: true, ...(parsed.data.mode ? { mode: parsed.data.mode } : {}) },
-        kind: 'other',
-        locations: [],
-      },
-      options: [
-        { optionId: 'accept', kind: 'allow_once', name: i18n.elicitation.accept },
-        { optionId: 'decline', kind: 'reject_once', name: i18n.elicitation.decline },
-      ],
+      elicitationId: parsed.data.elicitationId ?? `elicitation-${Date.now()}`,
+      message,
+      fields,
+      omittedFields: omitted,
+      ...(url ? { url } : {}),
     };
 
-    // Route through the same permission callback chain as session/request_permission
-    // so elicitations reuse the banner queue and permission-tier handling
-    // instead of bouncing back as a -32601 auto-reject.
-    const handler = this.onPermissionRequest ?? ((r: PermissionRequest) => this.requestPermission(r));
+    // Nothing renderable means nobody can answer, and an accept with no content
+    // would read back at the agent as a question the user chose to answer blank.
+    // A url-mode request is different: accepting it reports the link was shown,
+    // which is the whole of what this client does for that mode. A schema that
+    // asks for no keys at all is a confirmation, and empty content is exactly
+    // the answer to it.
+    if (!req.url && fields.length === 0 && omitted.length > 0) {
+      const summary = `elicitation asks for input Co-Ober cannot render (${omitted.join(', ')})`;
+      console.error('[co-ober] unrenderable elicitation, declining it:', summary);
+      this.onPermissionUnreadable?.(summary);
+      return Promise.resolve({ action: 'decline' } satisfies ElicitationAnswer);
+    }
+
+    const handler = this.onElicitationRequest;
+    if (!handler) {
+      // No view is bound to answer: the honest reply is still "no answer",
+      // never a silently empty form.
+      console.warn('[co-ober] no elicitation handler is bound; declining');
+      return Promise.resolve({ action: 'decline' } satisfies ElicitationAnswer);
+    }
+
     return Promise.resolve(handler(req))
-      .then((decision: string) => {
-        if (decision === 'accept') return { action: 'accept', content: {} };
-        if (decision === 'decline') return { action: 'decline' };
-        return { action: 'cancel' };
+      .then((answer: ElicitationAnswer): ElicitationAnswer => {
+        if (answer.action !== 'accept') return answer;
+        // Echo only keys the agent actually asked for, so a caller that hands
+        // back more than the schema requested cannot inject answers.
+        const content: Record<string, string | number | boolean> = {};
+        for (const field of fields) {
+          const value = answer.content[field.key];
+          if (value !== undefined) content[field.key] = value;
+        }
+        return { action: 'accept', content };
       })
       .catch((error: unknown) => {
         console.error('[co-ober] elicitation handler failed, cancelling:', error);
-        return { action: 'cancel' };
+        return { action: 'cancel' } satisfies ElicitationAnswer;
       });
   };
-
-  private stringifyElicitationSchema(raw: unknown): string {
-    if (raw === undefined) return '';
-    try {
-      return JSON.stringify(raw).slice(0, ELICITATION_SCHEMA_MAX_CHARS);
-    } catch {
-      return '';
-    }
-  }
 
   private handleReadTextFile(params: Record<string, unknown>): Promise<unknown> {
     // ACP's read result carries only `content`: an in-band {content:'',error}

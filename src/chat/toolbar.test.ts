@@ -400,3 +400,81 @@ describe('InputToolbar keyboard-accessible dropdowns', () => {
     expect(selector.classList.contains('open')).toBe(false);
   });
 });
+
+describe('InputToolbar generic config chips', () => {
+  const budget = () => ({
+    id: 'reasoning_budget',
+    label: 'Reasoning',
+    value: 'low',
+    values: [
+      { value: 'low', label: 'Low' },
+      { value: 'high', label: 'High' },
+    ],
+  });
+
+  it('shows an agent-declared option the toolbar has no dedicated control for', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const toolbar = new InputToolbar(container, {});
+    expect(container.querySelector('.co-ober-extra-configs')).not.toBeNull();
+    expect(container.querySelectorAll('.co-ober-config-chip').length).toBe(0);
+
+    toolbar.updateExtraConfigs([budget()]);
+
+    const chip = container.querySelector('.co-ober-config-chip') as HTMLElement;
+    expect(chip.querySelector('.co-ober-config-chip-label')?.textContent).toBe('Reasoning: Low');
+    expect(chip.getAttribute('role')).toBe('button');
+    expect(chip.getAttribute('tabindex')).toBe('0');
+    expect(chip.getAttribute('aria-label')).toBe('Reasoning: Low (click to change)');
+  });
+
+  it('reports the choice it is making for the user, and wraps around', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const onConfigChange = vi.fn();
+    const toolbar = new InputToolbar(container, { onConfigChange });
+    toolbar.updateExtraConfigs([budget()]);
+
+    const chip = container.querySelector('.co-ober-config-chip') as HTMLElement;
+    chip.click();
+    expect(onConfigChange).toHaveBeenLastCalledWith('reasoning_budget', 'high');
+    expect(chip.querySelector('.co-ober-config-chip-label')?.textContent).toBe('Reasoning: High');
+    expect(chip.getAttribute('title')).toBe('Reasoning: High (click to change)');
+
+    pressKey(chip, ' ');
+    expect(onConfigChange).toHaveBeenLastCalledWith('reasoning_budget', 'low');
+    expect(chip.querySelector('.co-ober-config-chip-label')?.textContent).toBe('Reasoning: Low');
+  });
+
+  it('replaces the previous projection when the agent sends a new one', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const toolbar = new InputToolbar(container, {});
+    toolbar.updateExtraConfigs([budget(), { ...budget(), id: 'persona', label: 'Persona' }]);
+    expect(container.querySelectorAll('.co-ober-config-chip').length).toBe(2);
+
+    toolbar.updateExtraConfigs([{ id: 'persona', label: 'Persona', value: 'terse', values: [{ value: 'terse', label: 'Terse' }, { value: 'warm', label: 'Warm' }] }]);
+    const chips = container.querySelectorAll('.co-ober-config-chip');
+    expect(chips.length).toBe(1);
+    expect(chips[0].textContent).toBe('Persona: Terse');
+
+    toolbar.updateExtraConfigs([]);
+    expect(container.querySelectorAll('.co-ober-config-chip').length).toBe(0);
+  });
+
+  it('relables the chip on a locale switch without inventing the agent’s own words', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const toolbar = new InputToolbar(container, {});
+    toolbar.updateExtraConfigs([budget()]);
+
+    setLocale('zh');
+    toolbar.refreshLocale();
+
+    const chip = container.querySelector('.co-ober-config-chip') as HTMLElement;
+    // The option and value names come from the agent, so they stay as sent.
+    expect(chip.querySelector('.co-ober-config-chip-label')?.textContent).toBe('Reasoning: Low');
+    expect(chip.getAttribute('aria-label')).toBe('Reasoning：Low（点击切换）');
+    setLocale('en');
+  });
+});

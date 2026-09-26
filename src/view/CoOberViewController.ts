@@ -28,9 +28,10 @@ import { buildCustomAgentPrompt, getValidActiveCustomAgent } from '../agents/cus
 import { filterCommonModelOptions } from './modelFilter';
 import { applyDefaultSessionSettings } from './sessionDefaults';
 import { normalizeEffortLabel } from '../chat/effortLabel';
+import { projectGenericConfigOptions } from '../chat/configOptions';
 import { Mutex } from '../utils/mutex';
 import type { WelcomeView } from './welcomeView';
-import type { PermissionBanner } from './permissionBanner';
+import type { PermissionBanner, PermissionOrigin } from './permissionBanner';
 import type { InlineEditPanel } from './inlineEditPanel';
 import type { SideChatAsk } from './sideChatPanel';
 import { buildSystemPrompt } from '../context/injection';
@@ -821,17 +822,30 @@ export class CoOberViewController {
             )
           );
         }
-        const rt = this.findRuntimeBySession(req.sessionId);
-        const origin =
-          rt && rt !== this.activeRuntime
-            ? {
-                label: t().permission.originTab.replace('{index}', String(this.tabIndexOf(rt) + 1)),
-                onFocus: () => this.activateRuntime(rt),
-              }
-            : undefined;
-        return this.deps.permissionBanner.show(req, origin);
+        return this.deps.permissionBanner.show(req, this.originFor(req.sessionId));
+      },
+      onElicitationRequest: async (req) => {
+        // Auto-answering a question the agent asked the *user* is not a
+        // permission decision this client can make on their behalf: outside
+        // the safe tier nothing is shown, so the honest answer is a decline
+        // the reader is told about.
+        if (client.permissionMode !== 'safe') {
+          this.renderer.addError(t().elicitation.notInThisMode);
+          return { action: 'decline' };
+        }
+        return this.deps.permissionBanner.showElicitation(req, this.originFor(req.sessionId));
       },
     });
+  }
+
+  /** The banner affordance that points back at the tab which produced a request. */
+  private originFor(sessionId: string): PermissionOrigin | undefined {
+    const rt = this.findRuntimeBySession(sessionId);
+    if (!rt || rt === this.activeRuntime) return undefined;
+    return {
+      label: t().permission.originTab.replace('{index}', String(this.tabIndexOf(rt) + 1)),
+      onFocus: () => this.activateRuntime(rt),
+    };
   }
 
   private findRuntimeBySession(sessionId: string | null | undefined): SessionRuntime | undefined {
@@ -2281,6 +2295,7 @@ export class CoOberViewController {
       snapshot.currentModelId ?? modelConfig?.currentValue ?? this.deps.runtime.settings.defaultModel,
     );
     this.deps.toolbar.updateEffort(efforts, effortConfig?.currentValue ?? this.deps.runtime.settings.defaultEffort);
+    this.deps.toolbar.updateExtraConfigs(projectGenericConfigOptions(snapshot.configOptions));
     this.deps.toolbar.updatePermission(this.deps.runtime.settings.permissionMode);
     // Mirror the send-path rule (images are stripped unless supported) so the
     // attach button is only offered when an image could actually be sent.
@@ -2314,6 +2329,9 @@ export class CoOberViewController {
         );
       }
     }
+    // `opts` is the agent's whole config list, so anything outside the three
+    // dedicated controls is re-projected here rather than left unstored.
+    this.deps.toolbar.updateExtraConfigs(projectGenericConfigOptions(opts));
   }
 
   applyModeUpdate(modeId: string | null, modes: ModeOption[], rt: SessionRuntime = this.activeRuntime): void {

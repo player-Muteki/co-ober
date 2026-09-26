@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import { PermissionBanner } from './permissionBanner';
+import { setLocale } from '../i18n/index';
+import type { ElicitationAnswer } from '../types';
 import { installObsidianDomHelpers } from '../test/domHelpers';
 
 installObsidianDomHelpers();
@@ -285,5 +287,179 @@ describe('PermissionBanner', () => {
       banner.resolveExternally('e3');
       expect(await promise).toBe('reject_once');
     });
+  });
+});
+
+describe('PermissionBanner elicitations', () => {
+  const elicit = (over: Record<string, unknown> = {}) => ({
+    sessionId: 's1',
+    elicitationId: 'el-1',
+    message: 'Which environment?',
+    fields: [
+      { key: 'target', label: 'Target', required: true, kind: 'text' },
+      { key: 'retries', label: 'Retries', required: false, kind: 'number' },
+    ],
+    omittedFields: [],
+    ...over,
+  });
+
+  const buttons = (container: HTMLElement) => Array.from(container.querySelectorAll<HTMLButtonElement>('.perm-actions button'));
+
+  it('puts one labelled input against every field the agent asked for', () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    void banner.showElicitation(elicit() as any);
+
+    const rows = container.querySelectorAll('.perm-field');
+    expect(rows.length).toBe(2);
+    expect(rows[0].querySelector('.perm-field-label')?.textContent).toContain('Target');
+    expect(rows[0].querySelector('.perm-field-required')?.textContent).toBe(' *');
+    expect(rows[1].querySelector('.perm-field-label')?.textContent).toContain('Retries');
+    expect(rows[1].querySelector('.perm-field-required')).toBeNull();
+    expect(rows[0].querySelector('input[type=text]')).not.toBeNull();
+    expect(rows[1].querySelector('input[type=number]')).not.toBeNull();
+    // The label points at its own input, so clicking it focuses the answer.
+    expect(rows[0].querySelector('label')?.getAttribute('for')).toBe(rows[0].querySelector('input')?.id);
+    banner.dispose();
+  });
+
+  it('answers with what the user typed, parsed per field kind', () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    const promise = banner.showElicitation(elicit() as any);
+    (container.querySelectorAll('.perm-field input')[0] as HTMLInputElement).value = ' prod ';
+    (container.querySelectorAll('.perm-field input')[1] as HTMLInputElement).value = '3';
+    buttons(container)[0].click();
+
+    return expect(promise).resolves.toEqual({ action: 'accept', content: { target: 'prod', retries: 3 } });
+  });
+
+  it('keeps the form open and says what is missing when a required field is blank', async () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    let settled: ElicitationAnswer | null = null;
+    const promise = banner.showElicitation(elicit() as any).then((answer) => {
+      settled = answer;
+      return answer;
+    });
+    const hint = container.querySelector('.perm-elicit-hint') as HTMLElement;
+    expect(hint.hidden).toBe(true);
+
+    buttons(container)[0].click();
+    expect(hint.hidden).toBe(false);
+    expect(container.querySelector('.co-ober-permission-banner')).not.toBeNull();
+
+    await Promise.resolve();
+    expect(settled).toBe(null);
+
+    (container.querySelector('.perm-field input') as HTMLInputElement).value = 'dev';
+    buttons(container)[0].click();
+    await expect(promise).resolves.toEqual({ action: 'accept', content: { target: 'dev' } });
+  });
+
+  it('offers an enum as a choice the user has to make, never a default answer', async () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    const promise = banner.showElicitation({
+      ...elicit({
+        fields: [{ key: 'target', label: 'Target', required: true, kind: 'enum', values: [{ value: 'dev', label: 'Dev' }, { value: 'prod', label: 'Prod' }] }],
+      }),
+    } as any);
+
+    const select = container.querySelector('select.perm-field-input') as HTMLSelectElement;
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(['', 'dev', 'prod']);
+    expect(select.value).toBe('');
+
+    buttons(container)[0].click();
+    expect((container.querySelector('.perm-elicit-hint') as HTMLElement).hidden).toBe(false);
+
+    select.value = 'prod';
+    buttons(container)[0].click();
+    await expect(promise).resolves.toEqual({ action: 'accept', content: { target: 'prod' } });
+  });
+
+  it('reads a boolean field from its checkbox rather than its text', async () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    const promise = banner.showElicitation(
+      elicit({ fields: [{ key: 'force', label: 'Force', required: false, kind: 'boolean' }] }) as any,
+    );
+    const box = container.querySelector('input[type=checkbox]') as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    buttons(container)[0].click();
+    await expect(promise).resolves.toEqual({ action: 'accept', content: { force: false } });
+  });
+
+  it('names the parts of the request it cannot answer', () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    void banner.showElicitation(elicit({ omittedFields: ['window', 'assignee'] }) as any);
+
+    expect(container.querySelector('.perm-elicit-omitted')?.textContent).toContain('window, assignee');
+    banner.dispose();
+  });
+
+  it('shows a url-mode link as a link and answers that it was opened', async () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    const promise = banner.showElicitation(
+      elicit({ url: 'https://example.test/sign-in', fields: [] }) as any,
+    );
+
+    const link = container.querySelector('a.perm-elicit-url') as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('https://example.test/sign-in');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(buttons(container)[0].textContent).toBe('I opened it');
+
+    buttons(container)[0].click();
+    await expect(promise).resolves.toEqual({ action: 'accept', content: {} });
+  });
+
+  it('a declined question travels as a decline, not as a blank answer', () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    const promise = banner.showElicitation(elicit() as any);
+    buttons(container)[1].click();
+    return expect(promise).resolves.toEqual({ action: 'decline' });
+  });
+
+  it('cancels an unanswered question when the banner is retired, and when the agent settles it', () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    const dismissed = banner.showElicitation(elicit({ elicitationId: 'el-a' }) as any);
+    banner.dismiss();
+    const settled = banner.showElicitation(elicit({ elicitationId: 'el-b' }) as any);
+    banner.resolveExternally('el-b');
+
+    return Promise.all([dismissed, settled]).then(([a, b]) => {
+      expect(a).toEqual({ action: 'cancel' });
+      expect(b).toEqual({ action: 'cancel' });
+    });
+  });
+
+  it('leaves a half-filled question alone when the language changes', () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    void banner.showElicitation(elicit() as any);
+    const input = container.querySelector('.perm-field input') as HTMLInputElement;
+    input.value = 'half-typed';
+
+    setLocale('en');
+
+    // Redrawing would hand back an empty form; the same element is still there.
+    expect(container.querySelector('.perm-field input')).toBe(input);
+    expect((container.querySelector('.perm-field input') as HTMLInputElement).value).toBe('half-typed');
+    banner.dispose();
   });
 });

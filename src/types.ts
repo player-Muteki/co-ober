@@ -121,11 +121,44 @@ export interface PermissionRequest {
 
 export type ToolKind = 'read' | 'edit' | 'delete' | 'move' | 'search' | 'execute' | 'think' | 'fetch' | 'switch_mode' | 'apply_patch' | 'other';
 
+/** One primitive property of an elicitation's `requestedSchema`. */
+export interface ElicitationField {
+  key: string;
+  label: string;
+  description?: string;
+  kind: 'text' | 'number' | 'boolean' | 'enum';
+  required: boolean;
+  /** Choices of an enum field, in the order the agent offered them. */
+  values?: { value: string; label: string }[];
+}
+
+/**
+ * A question the agent asks mid-turn. `fields` holds what this client can put
+ * an input against; `omittedFields` names what it cannot, so the reader learns
+ * the answer will be partial instead of discovering it from the agent.
+ */
+export interface ElicitationRequest {
+  sessionId: string;
+  elicitationId: string;
+  message: string;
+  fields: ElicitationField[];
+  omittedFields: string[];
+  /** url mode: the answering happens on the page this link points at. */
+  url?: string;
+}
+
+export type ElicitationAnswer =
+  | { action: 'accept'; content: Record<string, string | number | boolean> }
+  | { action: 'decline' }
+  | { action: 'cancel' };
+
 export type ToolCallContent =
   | { type: 'content'; content: { type: 'text'; text: string } }
   | { type: 'content'; content: { type: 'image'; mimeType: string; data: string } }
   | { type: 'diff'; path: string; oldText?: string; newText?: string }
-  | { type: 'terminal'; terminalId: string };
+  | { type: 'terminal'; terminalId: string }
+  /** An item whose shape this client cannot render; `originalType` is the wire tag. */
+  | { type: 'unsupported'; originalType: string };
 
 /**
  * Content payload of a streamed message chunk. Only `text` chunks are

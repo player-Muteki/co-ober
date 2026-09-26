@@ -298,6 +298,14 @@ export class CoOberView extends ItemView {
           .then(() => this.controller.loadToolbarOptions())
           .catch((e: unknown) => this.reportSettingFailure(e));
       },
+      onConfigChange: (configId: string, value: string) => {
+        const client = this.plugin.getClient();
+        if (!this.controller?.getSessionId() || !client) return;
+        void client
+          .setConfigOption(this.controller.getSessionId()!, configId, value)
+          .then(() => this.controller.loadToolbarOptions())
+          .catch((e: unknown) => this.reportSettingFailure(e));
+      },
       onPermissionChange: (mode: string) => {
         this.plugin.settings.permissionMode = mode as import('../types').PermissionLevel;
         void this.plugin.savePluginData();

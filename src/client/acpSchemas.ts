@@ -11,16 +11,21 @@ export const zToolKindLenient = zToolKind.catch('other');
 // a null on a peripheral field must degrade to absent, not cost the frame.
 const zOpt = <T extends z.ZodTypeAny>(schema: T) => schema.nullish().transform((v) => v ?? undefined);
 // A content element we cannot render (resource_link, malformed terminal…)
-// must not drop the whole tool frame; it degrades to an empty text item so
-// the unsupported-content path surfaces it instead.
+// must not drop the whole tool frame, and must not vanish from it either: it
+// keeps its wire tag as `unsupported` so the card can say what it could not
+// show instead of degrading it into an empty text item nobody can see.
+const zUnsupportedContent = z
+  .object({ type: z.string().catch('') })
+  .transform((item) => ({ type: 'unsupported' as const, originalType: item.type }));
 const zToolCallContent = z
   .union([
     z.object({ type: z.literal('content'), content: z.object({ type: z.literal('text'), text: z.string() }) }),
     z.object({ type: z.literal('content'), content: z.object({ type: z.literal('image'), mimeType: z.string(), data: z.string() }) }),
     z.object({ type: z.literal('diff'), path: z.string(), oldText: z.string().optional(), newText: z.string().optional() }),
     z.object({ type: z.literal('terminal'), terminalId: z.string() }),
+    zUnsupportedContent,
   ])
-  .catch({ type: 'content' as const, content: { type: 'text' as const, text: '' } });
+  .catch({ type: 'unsupported' as const, originalType: '' });
 const zLocation = z.object({ path: z.string() });
 // Agents define config options beyond the three we render (and grow them
 // ahead of the spec); the rigid id/category/type enums once cost us the whole

@@ -25,6 +25,8 @@ import type {
   AgentCapabilities,
   ToolCallContent,
   TerminalOutputResult,
+  ElicitationRequest,
+  ElicitationAnswer,
 } from '../types';
 import type { OpencodeClient } from './index';
 import type { SessionMeta } from '../types';
@@ -208,8 +210,10 @@ export function parseSessionUpdate(
       return unwrapParsed(su, r, onDrop);
     }
     case 'compaction_summary_chunk':
-      // Known v2 frame feeding a summary the transcript does not paint; drop
-      // it here so it stays out of the unknown-kind warning, emitting nothing.
+      // Known v2 frame feeding a summary the transcript does not paint. It
+      // stays out of the unknown-kind warning, but the text it carried is
+      // still content that arrived and never reached the reader.
+      onDrop?.(su);
       return null;
     case 'state_update': {
       const r = zStateUpdate.safeParse(u);
@@ -457,6 +461,8 @@ export class AcpClient implements OpencodeClient {
   private warnedAmbiguousNoSid = false;
   onClose?: () => void;
   onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
+  /** The agent asked the user a question; the view answers it or declines. */
+  onElicitationRequest?: (req: ElicitationRequest) => Promise<ElicitationAnswer>;
   onPermissionUnreadable?: (summary: string) => void;
   /** An inbound frame could not be drawn; the conversation it belongs to says so. */
   onProtocolDrift?: (sessionId: string | null, kind: string) => void;
@@ -575,6 +581,7 @@ export class AcpClient implements OpencodeClient {
         transport,
         vaultPath: cwd,
         onPermissionRequest: this.onPermissionRequest,
+        onElicitationRequest: this.onElicitationRequest,
         vaultIo: this.vaultIo,
         onPermissionUnreadable: (summary) => this.onPermissionUnreadable?.(summary),
       });
@@ -1026,12 +1033,16 @@ export class AcpClient implements OpencodeClient {
     this.onReconnect = handlers.onReconnect ?? undefined;
     this.onReconnectFailed = handlers.onReconnectFailed ?? undefined;
     this.onPermissionRequest = handlers.onPermissionRequest ?? undefined;
+    this.onElicitationRequest = handlers.onElicitationRequest ?? undefined;
     this.onPermissionUnreadable = handlers.onPermissionUnreadable ?? undefined;
     this.onProtocolDrift = handlers.onProtocolDrift ?? undefined;
     this.onElicitationComplete = handlers.onElicitationComplete ?? undefined;
     if (this.requestHandler) {
       if (handlers.onPermissionRequest) {
         this.requestHandler.onPermissionRequest = handlers.onPermissionRequest;
+      }
+      if (handlers.onElicitationRequest) {
+        this.requestHandler.onElicitationRequest = handlers.onElicitationRequest;
       }
       this.requestHandler.onPermissionUnreadable = (summary) => this.onPermissionUnreadable?.(summary);
     }
