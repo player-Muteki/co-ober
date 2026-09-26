@@ -231,7 +231,7 @@ export default class CoOberPlugin extends Plugin {
     const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
     const coOberView = leaf?.view as CoOberView | undefined;
     if (coOberView) {
-      await coOberView.requestInlineEdit(selected, editor);
+      coOberView.requestInlineEdit(selected, editor);
     }
   }
 

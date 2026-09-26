@@ -3,7 +3,10 @@ import { t, onLocaleChange } from '../i18n/index';
 import { isImeComposing } from '../utils/ime';
 
 export interface InputCallbacks {
-  onSend: (text: string, refs?: ContextRef[]) => void;
+  // Returning false means the prompt was refused before it was accepted; the
+  // text then stays in the box, because a message the user watched disappear
+  // is worse than a send button that visibly did nothing.
+  onSend: (text: string, refs?: ContextRef[]) => boolean | void;
   onStop: () => void;
   // Returns true when something else (an outstanding permission banner) owns
   // Escape, so the key must not reach the stop-the-stream fallback below.
@@ -95,7 +98,10 @@ export class ChatInput {
   private send(): void {
     const text = this.textarea.value.trim();
     if (!text || this.disabled) return;
-    this.callbacks.onSend(text, []);
+    if (this.callbacks.onSend(text, []) === false) {
+      this.focus();
+      return;
+    }
     this.textarea.value = '';
   }
 

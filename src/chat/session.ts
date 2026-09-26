@@ -210,10 +210,13 @@ export class SessionRepository implements SessionStore {
   prune({ maxMessages, retentionDays, now = Date.now() }: SessionPruneOptions): void {
     const cutoffTime = now - retentionDays * MS_PER_DAY;
     const messageLimit = Math.max(1, maxMessages);
+    const exempt = this.exemptSessionIds();
 
     for (const [id, session] of this.sessions) {
-      // Pinned conversations are exempt from retention — the star means "keep".
-      if (id !== this.activeSessionId && !session.pinned && session.updatedAt < cutoffTime) {
+      // Retention may only touch conversations nobody is looking at: a tab
+      // that stayed in the background for a month is still an open chat, and
+      // its transcript must not be gone the moment it is switched to.
+      if (!exempt.has(id) && !session.pinned && session.updatedAt < cutoffTime) {
         this.sessions.delete(id);
         continue;
       }
@@ -240,15 +243,36 @@ export class SessionRepository implements SessionStore {
   }
 
   /**
+   * The conversations the user can still reach without opening the session
+   * list: the one in front and every tab that was left open. Losing either is
+   * indistinguishable from the app eating a chat.
+   */
+  private exemptSessionIds(): Set<string> {
+    const ids = new Set<string>();
+    if (this.activeSessionId) ids.add(this.activeSessionId);
+    for (const tab of this.openTabs) {
+      if (tab.sessionId) ids.add(tab.sessionId);
+    }
+    return ids;
+  }
+
+  /**
    * Base64 images persisted with the transcript are unbounded otherwise —
    * data.json bloat slows every save and eventually breaks it. On each prune,
    * strip whole image payloads (oldest message first) until the stored total
    * fits the budget; the text of the affected messages is untouched.
+   *
+   * Pinned and open-tab conversations are stripped last: a pinned star means
+   * "keep", and gutting the images of the chat currently on screen is a
+   * smaller harm than a save that fails for everyone.
    */
   private enforceStoredImageBudget(budgetBytes = STORED_IMAGE_BUDGET_BYTES): void {
-    const carriers: Array<{ msg: SerializedMessage; bytes: number }> = [];
+    const exempt = this.exemptSessionIds();
+    const protectedCarriers: Array<{ msg: SerializedMessage; bytes: number }> = [];
+    const freeCarriers: Array<{ msg: SerializedMessage; bytes: number }> = [];
     let total = 0;
-    for (const session of this.sessions.values()) {
+    for (const [id, session] of this.sessions) {
+      const sinks = exempt.has(id) || session.pinned ? protectedCarriers : freeCarriers;
       for (const msg of session.messages) {
         let bytes = 0;
         for (const block of msg.contentBlocks ?? []) {
@@ -257,16 +281,19 @@ export class SessionRepository implements SessionStore {
         for (const image of msg.images ?? []) bytes += image.data.length;
         if (bytes > 0) {
           total += bytes;
-          carriers.push({ msg, bytes });
+          sinks.push({ msg, bytes });
         }
       }
     }
     if (total <= budgetBytes) return;
-    carriers.sort((a, b) => a.msg.timestamp - b.msg.timestamp);
-    for (const { msg, bytes } of carriers) {
+    for (const carriers of [freeCarriers, protectedCarriers]) {
       if (total <= budgetBytes) break;
-      purgeImagePayload(msg);
-      total -= bytes;
+      carriers.sort((a, b) => a.msg.timestamp - b.msg.timestamp);
+      for (const { msg, bytes } of carriers) {
+        if (total <= budgetBytes) break;
+        purgeImagePayload(msg);
+        total -= bytes;
+      }
     }
   }
 }

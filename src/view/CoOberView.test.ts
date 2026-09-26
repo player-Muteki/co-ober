@@ -188,14 +188,15 @@ describe('CoOberView runtime session sync', () => {
     const view = createView(plugin);
     await view.onOpen();
 
-    await Reflect.get(view, 'send').call(view, 'hello', []);
+    const accepted = Reflect.get(view, 'sendFromComposer').call(view, 'hello');
+    expect(accepted).toBe(true);
+    await vi.waitFor(() => expect(client.sendMessage).toHaveBeenCalled());
 
     expect(plugin.initClient).toHaveBeenCalledTimes(1);
     expect(client.createSession).toHaveBeenCalledWith('/vault', []);
     expect(client.setMode).toHaveBeenCalledWith('runtime-session', 'plan');
     expect(client.setModel).toHaveBeenCalledWith('runtime-session', 'openai/gpt');
     expect(client.setConfigOption).toHaveBeenCalledWith('runtime-session', 'effort', 'medium');
-    expect(client.sendMessage).toHaveBeenCalled();
     expect(plugin.savePluginData).toHaveBeenCalled();
   });
 

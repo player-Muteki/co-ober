@@ -253,7 +253,7 @@ export class CoOberView extends ItemView {
     this.inputAreaEl = el.createDiv({ cls: 'co-ober-input-area' });
     this.input = new ChatInput(this.inputAreaEl, {
       onSend: (text: string) => {
-        void this.send(text);
+        return this.sendFromComposer(text);
       },
       onStop: () => {
         void this.stopGeneration();
@@ -943,8 +943,8 @@ export class CoOberView extends ItemView {
 
   // ── Sending ──
 
-  private async send(text: string): Promise<void> {
-    await this.controller.send(text, this.currentRefs);
+  private sendFromComposer(text: string): boolean {
+    return this.controller?.sendFromComposer(text, this.currentRefs) ?? false;
   }
 
   private async stopGeneration(): Promise<void> {
@@ -1121,9 +1121,11 @@ export class CoOberView extends ItemView {
 
   // ── Inline Edit ──
 
-  async requestInlineEdit(selected: string, editor: import('obsidian').Editor): Promise<void> {
+  requestInlineEdit(selected: string, editor: import('obsidian').Editor): void {
     const prompt = this.inlineEditPanel.request(selected, editor, this.controller.activeTabId());
-    await this.send(prompt);
+    // A refused edit leaves the panel's pending state alone, so deciding the
+    // banner and selecting the same text again is all the user has to do.
+    this.sendFromComposer(prompt);
   }
 
   // ── Context arc meter (in header) ──

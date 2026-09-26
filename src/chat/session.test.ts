@@ -426,6 +426,81 @@ describe('stored image budget', () => {
   });
 });
 
+describe('what retention may touch (0.2.5 stage 1)', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = 100 * DAY;
+  const stale = now - 31 * DAY;
+
+  function repositoryWith(shells: Array<{ tabId: string; sessionId: string | null }>, activeTabId: string | null, ids: string[]) {
+    const { repository } = createRepository();
+    repository.hydrate(ids.map((id) => createSession(id, stale, 2)), ids[0]);
+    repository.setTabShell(shells.map((tab) => ({ ...tab })), activeTabId);
+    return repository;
+  }
+
+  it('spares a conversation that is only open in a background tab', () => {
+    const repository = repositoryWith([{ tabId: 'tab-1', sessionId: 'front' }, { tabId: 'tab-2', sessionId: 'background' }], 'tab-1', [
+      'front',
+      'background',
+      'nobody',
+    ]);
+
+    repository.prune({ maxMessages: 200, retentionDays: 30, now });
+
+    expect(repository.get('background')).toBeDefined();
+    expect(repository.get('nobody')).toBeUndefined();
+  });
+
+  it('keeps the tab shell it is protecting intact while dropping the rest', () => {
+    const repository = repositoryWith([{ tabId: 'tab-1', sessionId: 'front' }, { tabId: 'tab-2', sessionId: 'background' }], 'tab-1', [
+      'front',
+      'background',
+    ]);
+
+    repository.prune({ maxMessages: 200, retentionDays: 30, now });
+
+    expect(repository.tabShell().openTabs.map((tab) => tab.sessionId)).toEqual(['front', 'background']);
+  });
+
+  it('strips images from conversations nobody has open before touching a pinned one', () => {
+    const { repository } = createRepository();
+    const pinned = imageBlockSessionFor('pinned', [imageBlockFor('P'.repeat(40), 1)]);
+    const stray = imageBlockSessionFor('stray', [imageBlockFor('S'.repeat(40), 2)]);
+    repository.hydrate([pinned, stray], 'stray');
+    repository.setPinned('pinned', true);
+    repository.setTabShell([{ tabId: 'tab-1', sessionId: 'stray' }], 'tab-1');
+
+    enforce(repository, 50);
+
+    expect(stray.messages[0].contentBlocks).toBeDefined();
+    expect(pinned.messages[0].contentBlocks).toBeUndefined();
+  });
+
+  it('still meets the budget when the only images left are in open tabs', () => {
+    const { repository } = createRepository();
+    const open = imageBlockSessionFor('open', [imageBlockFor('O'.repeat(40), 1)]);
+    repository.hydrate([open], 'open');
+    repository.setTabShell([{ tabId: 'tab-1', sessionId: 'open' }], 'tab-1');
+
+    enforce(repository, 10);
+
+    expect(repository.get('open')!.messages[0].contentBlocks).toBeUndefined();
+  });
+});
+
+function imageBlockSessionFor(id: string, messages: SerializedMessage[]): SerializedSession {
+  return { sessionId: id, title: id, messages, createdAt: 1, updatedAt: 1 };
+}
+
+function imageBlockFor(data: string, timestamp: number): SerializedMessage {
+  return { role: 'user', content: 'look', type: 'text', timestamp, contentBlocks: [{ type: 'image', mimeType: 'image/png', data }] };
+}
+
+function enforce(repository: SessionRepository, budgetBytes: number): void {
+  const method = Reflect.get(repository, 'enforceStoredImageBudget') as (b: number) => void;
+  method.call(repository, budgetBytes);
+}
+
 describe('SessionRepository tab shells', () => {
   it('starts with an empty strip and reports a copy', () => {
     const { repository } = createRepository();

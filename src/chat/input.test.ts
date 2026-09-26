@@ -48,6 +48,26 @@ describe('ChatInput', () => {
 		expect(callbacks.onSend).not.toHaveBeenCalled();
 	});
 
+	it('keeps the typed text when the send is refused before it is accepted', () => {
+		const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+		textarea.value = 'a paragraph I am still reading';
+		callbacks.onSend = vi.fn(() => false);
+
+		chatInput.triggerSend();
+
+		expect(callbacks.onSend).toHaveBeenCalledWith('a paragraph I am still reading', []);
+		expect(textarea.value).toBe('a paragraph I am still reading');
+	});
+
+	it('clears the box for a send that the callbacks simply ignore', () => {
+		const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+		textarea.value = 'accepted';
+
+		chatInput.triggerSend();
+
+		expect(textarea.value).toBe('');
+	});
+
 	it('triggerStop calls onStop', () => {
 		chatInput.triggerStop();
 		expect(callbacks.onStop).toHaveBeenCalled();

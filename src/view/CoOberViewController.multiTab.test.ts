@@ -14,7 +14,7 @@ import {
 } from '../constants';
 import { AcpStreamCapacityError } from '../client/AcpErrors';
 import { commandRegistry } from '../commands/registry';
-import type { AcpResponse, AvailableCommand, NormalizedUpdate, PromptPart, StoredDraft, TabShell, UsageInfo } from '../types';
+import type { AcpResponse, AvailableCommand, ContextRef, NormalizedUpdate, PromptPart, StoredDraft, TabShell, UsageInfo } from '../types';
 
 vi.mock('../opencode/NativeSessionReader', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../opencode/NativeSessionReader')>();
@@ -1753,6 +1753,139 @@ describe('CoOberViewController — what belongs to a tab stays in that tab (0.2.
       (copy.contentBlocks as Array<Record<string, unknown>>)[0].toolStatus = 'failed';
       expect(sourceMessage.contentBlocks[0].toolStatus).toBe('completed');
       expect(client.forkSession).toHaveBeenCalledWith('ses-a', '/vault');
+    });
+  });
+});
+
+describe('CoOberViewController — nothing typed is thrown away (0.2.5 stage 1)', () => {
+  let h: Harness;
+
+  beforeEach(() => {
+    h = createHarness();
+    commandRegistry.updateAcpCommands([]);
+    Notice.messages.length = 0;
+  });
+
+  function twoTabs(): [string, string] {
+    h.controller.restoreTabShells(
+      [{ tabId: 'tab-1', sessionId: 'ses-a' }, { tabId: 'tab-2', sessionId: 'ses-b' }],
+      'tab-1',
+    );
+    return h.controller.listTabIds() as [string, string];
+  }
+
+  function clientFor(overrides: Record<string, unknown> = {}) {
+    const client = createMockClient(overrides);
+    (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+    return client;
+  }
+
+  describe('the composer’s no', () => {
+    it('refuses synchronously, on the tab whose banner is waiting', () => {
+      const [tabA] = twoTabs();
+      const client = clientFor();
+      (h.deps.permissionBanner.currentSessionId as ReturnType<typeof vi.fn>).mockReturnValue('ses-a');
+
+      expect(h.controller.sendFromComposer('a paragraph I just typed', [])).toBe(false);
+
+      expect(client.sendMessage).not.toHaveBeenCalled();
+      expect(rtOf(h, tabA).promptQueue).toHaveLength(0);
+      expect(h.renderers.get(tabA)?.addSystemMessage).toHaveBeenCalledWith(t().permission.queueBlocked);
+    });
+
+    it('takes the message when no banner is waiting', async () => {
+      const [tabA] = twoTabs();
+      const client = clientFor();
+
+      expect(h.controller.sendFromComposer('plain question', [])).toBe(true);
+      await vi.waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(1));
+      expect(h.renderers.get(tabA)?.addSystemMessage).not.toHaveBeenCalledWith(t().permission.queueBlocked);
+    });
+
+    it('does not silence another tab’s send', () => {
+      const [, tabB] = twoTabs();
+      clientFor();
+      (h.deps.permissionBanner.currentSessionId as ReturnType<typeof vi.fn>).mockReturnValue('ses-a');
+      h.controller.switchToTab(tabB);
+
+      expect(h.controller.sendFromComposer('unrelated', [])).toBe(true);
+      expect(h.renderers.get(tabB)?.addSystemMessage).not.toHaveBeenCalledWith(t().permission.queueBlocked);
+    });
+  });
+
+  describe('a drain that runs into a banner', () => {
+    it('puts the whole merged run back in the queue it came from', async () => {
+      const [, tabB] = twoTabs();
+      const resolvers: Array<(r: AcpResponse) => void> = [];
+      clientFor({
+        sendMessage: vi.fn(() => new Promise<AcpResponse>((resolve) => { resolvers.push(resolve); })),
+      });
+      h.controller.switchToTab(tabB);
+      const running = h.controller.send('first', []);
+      await tick();
+      await h.controller.send('polish this', []);
+      await h.controller.send('and another thing', []);
+      expect(rtOf(h, tabB).promptQueue.map((e) => e.text)).toEqual(['polish this', 'and another thing']);
+
+      // The turn ends, and the banner the agent left behind is up before the
+      // queue gets its turn: draining into it would drop both prompts.
+      (h.deps.permissionBanner.currentSessionId as ReturnType<typeof vi.fn>).mockReturnValue('ses-b');
+      resolvers[0]({ stopReason: 'end_turn' } as AcpResponse);
+      await running;
+      await vi.waitFor(() =>
+        expect(rtOf(h, tabB).promptQueue.map((e) => e.text)).toEqual(['polish this', 'and another thing']),
+      );
+
+      expect(resolvers).toHaveLength(1);
+      expect(h.renderers.get(tabB)?.addSystemMessage).toHaveBeenCalledWith(t().permission.queueBlocked);
+
+      // Once the banner comes down, the run drains as the single merged turn
+      // it was meant to be.
+      (h.deps.permissionBanner.currentSessionId as ReturnType<typeof vi.fn>).mockReturnValue(null);
+      (Reflect.get(h.controller, 'tryDrainAnyQueue') as () => void).call(h.controller);
+      await vi.waitFor(() => expect(resolvers).toHaveLength(2));
+      expect(rtOf(h, tabB).promptQueue).toHaveLength(0);
+    });
+  });
+
+  describe('a reference that could not be read', () => {
+    it('is named in the tab that asked, not swallowed', async () => {
+      const [tabA, tabB] = twoTabs();
+      clientFor();
+      (h.deps.resolver.resolveNote as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+      await (Reflect.get(h.controller, 'buildParts') as (
+        text: string,
+        refs: ContextRef[],
+        history: string | undefined,
+        rt: unknown,
+      ) => Promise<unknown>).call(h.controller, 'question', [
+        { id: 'r1', type: 'note', name: 'gone', path: 'notes/gone.md' },
+      ], undefined, rtOf(h, tabA));
+
+      const message = t().input.refsUnread.replace('{paths}', '`notes/gone.md`');
+      expect(h.renderers.get(tabA)?.addSystemMessage).toHaveBeenCalledWith(message);
+      expect(h.renderers.get(tabB)?.addSystemMessage).not.toHaveBeenCalled();
+    });
+
+    it('says nothing when every reference was read', async () => {
+      const [tabA] = twoTabs();
+      clientFor();
+      (h.deps.resolver.resolveNote as ReturnType<typeof vi.fn>).mockResolvedValue({
+        name: 'there',
+        content: 'body',
+      });
+
+      await (Reflect.get(h.controller, 'buildParts') as (
+        text: string,
+        refs: ContextRef[],
+        history: string | undefined,
+        rt: unknown,
+      ) => Promise<unknown>).call(h.controller, 'question', [
+        { id: 'r1', type: 'note', name: 'there', path: 'notes/there.md' },
+      ], undefined, rtOf(h, tabA));
+
+      expect(h.renderers.get(tabA)?.addSystemMessage).not.toHaveBeenCalled();
     });
   });
 });

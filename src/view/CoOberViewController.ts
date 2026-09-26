@@ -145,7 +145,7 @@ export interface AgentCallConfig {
   history?: SerializedMessage[];
   onAfterResponse?: (response: AcpResponse | undefined) => Promise<void>;
   onFinally?: () => void;
-  retryFn?: (text: string, refs?: ContextRef[]) => Promise<void>;
+  retryFn?: (text: string, refs?: ContextRef[]) => Promise<unknown>;
   /** A drained turn replays the image parts it carried, not the live chips. */
   capturedImageParts?: PromptPart[];
 }
@@ -1643,6 +1643,7 @@ export class CoOberViewController {
             text,
             config.buildPartsWithRefs,
             config.history ? buildHistoryBlock(config.history) : undefined,
+            rt,
           )
         : [{ type: 'text' as const, text }];
       if (rt.state.sessionId !== sessionId || !rt.busy) return;
@@ -1953,18 +1954,34 @@ export class CoOberViewController {
     if (this.isActiveTab(rt)) this.deps.updateContextMeter(usage);
   }
 
+  /**
+   * The composer's way in, decided synchronously: a refusal has to happen
+   * before the input box is cleared, because the alternative is the user
+   * watching a paragraph they just typed turn into a line telling them to
+   * decide something first.
+   */
+  sendFromComposer(text: string, refs: ContextRef[]): boolean {
+    const rt = this.activeRuntime;
+    if (this.promptParkedFor(rt)) {
+      rt.renderer.addSystemMessage(t().permission.queueBlocked);
+      return false;
+    }
+    void this.send(text, refs, rt);
+    return true;
+  }
+
   async send(
     text: string,
     refs: ContextRef[],
     rt: SessionRuntime = this.activeRuntime,
     opts: { paintedHead?: boolean; imagesHead?: PromptPart[]; inlineEditHead?: InlineEditState } = {},
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (this.promptParkedFor(rt)) {
       // A queued prompt would be answered by the agent after the pending
       // request is decided anyway, so the reader is told to decide it first
       // rather than watching a message sit in a queue they cannot see.
       rt.renderer.addSystemMessage(t().permission.queueBlocked);
-      return;
+      return false;
     }
     // Claimed here, before the queue paths below return, so a turn that has to
     // wait keeps the selection it was asked about — and so a send from another
@@ -1973,14 +1990,14 @@ export class CoOberViewController {
     if (rt.busy) {
       rt.promptQueue.push({ text, refs, inlineEdit: inlineEdit ?? undefined });
       if (this.isActiveTab(rt)) this.updateQueueIndicator(rt);
-      return;
+      return true;
     }
     if (!this.streamSlotsFree(this.deps.runtime.getClient())) {
       // The shared stream budget is held by other tabs: wait in this tab's
       // queue instead of failing; the next release starts it.
       rt.promptQueue.push({ text, refs, inlineEdit: inlineEdit ?? undefined });
       if (this.isActiveTab(rt)) this.updateQueueIndicator(rt);
-      return;
+      return true;
     }
     const parsed = parseSlashCommand(text);
     if (parsed) {
@@ -1990,13 +2007,13 @@ export class CoOberViewController {
           rt.renderer.addUserMessage(text);
           rt.streamCtrl.saveMessage('user', text, 'text');
           await def.run(parsed.args, { tabId: rt.tabId });
-          return;
+          return true;
         }
         if (def.source === 'file' && def.template) {
           const { templateExpander } = await import('../commands/templateExpander');
           const expanded = templateExpander.buildPrompt(def, parsed.args);
           await this.sendTextToAgent(expanded, refs, rt);
-          return;
+          return true;
         }
       }
     }
@@ -2033,6 +2050,7 @@ export class CoOberViewController {
       },
       rt,
     );
+    return true;
   }
 
   private async sendTextToAgent(text: string, refs?: ContextRef[], rt: SessionRuntime = this.activeRuntime): Promise<void> {
@@ -2055,6 +2073,7 @@ export class CoOberViewController {
       // next release tick.
       if (!this.streamSlotsFree(this.deps.runtime.getClient())) break;
       const head = rt.promptQueue.shift()!;
+      const taken = [head];
       const headPainted = !!head.painted;
       let text = head.text;
       // Consecutive plain prompts pile up while the agent is busy; merge them
@@ -2068,12 +2087,26 @@ export class CoOberViewController {
           !rt.promptQueue[0].images &&
           !!rt.promptQueue[0].painted === headPainted
         ) {
-          text += `\n\n${rt.promptQueue.shift()!.text}`;
+          const followUp = rt.promptQueue.shift()!;
+          taken.push(followUp);
+          text += `\n\n${followUp.text}`;
         }
       }
       if (this.isActiveTab(rt)) this.updateQueueIndicator(rt);
       try {
-        await this.send(text, head.refs, rt, { paintedHead: headPainted, imagesHead: head.images, inlineEditHead: head.inlineEdit });
+        const accepted = await this.send(text, head.refs, rt, {
+          paintedHead: headPainted,
+          imagesHead: head.images,
+          inlineEditHead: head.inlineEdit,
+        });
+        if (!accepted) {
+          // A pending permission on this tab refused the turn: nothing was
+          // drawn and nothing was sent, so the whole merged run goes back exactly
+          // as it was. Draining past it would be the queue eating prompts the
+          // user typed while a banner had focus.
+          rt.promptQueue.unshift(...taken);
+          break;
+        }
       } catch (e) {
         // One failing queued command must not strand the rest of the queue.
         console.error('[co-ober] queued prompt failed:', e);
@@ -2207,7 +2240,12 @@ export class CoOberViewController {
     this.noteContentCache.delete(path);
   }
 
-  async buildParts(text: string, refs: ContextRef[], historyBlock?: string): Promise<PromptPart[]> {
+  async buildParts(
+    text: string,
+    refs: ContextRef[],
+    historyBlock?: string,
+    rt: SessionRuntime = this.activeRuntime,
+  ): Promise<PromptPart[]> {
     const parts: PromptPart[] = [];
 
     let vaultNotes: ContextRef[] = [];
@@ -2224,6 +2262,7 @@ export class CoOberViewController {
       this.deps.runtime.getClient()?.getAgentCapabilities?.()?.promptCapabilities?.embeddedContext !== false;
 
     const resolved: Array<{ name: string; content: string }> = [];
+    const unread: string[] = [];
     if (embedAllowed) {
       for (const ref of allRefs) {
         const cached = this.noteContentCache.get(ref.path);
@@ -2238,7 +2277,16 @@ export class CoOberViewController {
         if (result) {
           resolved.push(result);
           this.setCacheEntry(ref.path, result);
+        } else {
+          unread.push(ref.path);
         }
+      }
+      if (unread.length > 0) {
+        // The chip stayed on screen, so silence here would leave the reader
+        // believing the note went to the agent. It did not.
+        rt.renderer.addSystemMessage(
+          t().input.refsUnread.replace('{paths}', unread.map((p) => `\`${p}\``).join(', ')),
+        );
       }
     }
     const activeAgent = getValidActiveCustomAgent(
