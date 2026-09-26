@@ -257,6 +257,126 @@ describe('CoOberPlugin corrupted data recovery', () => {
     expect(Notice.messages.some((m) => m.includes('starting with defaults'))).toBe(true);
   });
 
+  describe('rolling backup', () => {
+    const DATA = '.obsidian/plugins/co-ober/data.json';
+    const BAK = '.obsidian/plugins/co-ober/data.json.bak';
+
+    function createBackupPlugin(options: { loadData: (() => Promise<unknown>)[]; backup: string | null; live?: string }) {
+      const files = new Map<string, string>();
+      files.set(DATA, options.live ?? '{"schemaVersion": 2, "sessions": [{"sess');
+      if (options.backup !== null) files.set(BAK, options.backup);
+      const rename = vi.fn(async (from: string, to: string) => {
+        files.set(to, files.get(from) ?? '');
+        files.delete(from);
+      });
+      const attempts = [...options.loadData];
+      const plugin = Object.create(CoOberPlugin.prototype) as CoOberPlugin;
+      Object.assign(plugin, {
+        app: {
+          vault: {
+            configDir: '.obsidian',
+            adapter: {
+              exists: vi.fn(async (path: string) => files.has(path)),
+              rename,
+              read: vi.fn(async (path: string) => files.get(path) ?? ''),
+              write: vi.fn(async (path: string, content: string) => {
+                files.set(path, content);
+              }),
+            },
+          },
+          workspace: { getLeavesOfType: vi.fn(() => []) },
+        },
+        manifest: { id: 'co-ober' },
+        settings: { ...DEFAULT_SETTINGS },
+        saveMutex: { runExclusive: (fn: () => Promise<unknown>) => fn() },
+        sessionStore: { hydrate: vi.fn(), hydrateTabShell: vi.fn(), prune: vi.fn(), snapshot: () => ({ sessions: [], activeSessionId: null }) },
+        loadData: vi.fn(async () => {
+          const next = attempts.shift();
+          if (!next) throw new Error('loadData called more times than the test allowed');
+          return next();
+        }),
+        registerView: vi.fn(),
+        deduplicateCoOberLeaves: vi.fn(),
+        addRibbonIcon: vi.fn(),
+        addSettingTab: vi.fn(),
+        addCommand: vi.fn(),
+      });
+      return { plugin, files, rename };
+    }
+
+    it('loads the last complete save instead of starting empty', async () => {
+      Notice.messages.length = 0;
+      const good = JSON.stringify({
+        schemaVersion: 2,
+        settings: { defaultModel: 'kept-model' },
+        sessions: [{ sessionId: 's1', title: 'kept', createdAt: 1, updatedAt: 2, messages: [] }],
+        activeSessionId: 's1',
+      });
+      const { plugin, files } = createBackupPlugin({
+        loadData: [() => Promise.reject(new Error('bad json')), () => Promise.resolve(JSON.parse(good))],
+        backup: good,
+      });
+
+      await plugin.onload();
+
+      // The truncated file is set aside rather than overwritten, and the
+      // conversations come back from the copy of the previous good save.
+      expect(plugin.sessionStore.hydrate).toHaveBeenCalledWith(
+        [expect.objectContaining({ sessionId: 's1' })],
+        's1',
+      );
+      expect(plugin.settings.defaultModel).toBe('kept-model');
+      expect([...files.keys()]).toContain(DATA);
+      expect(Notice.messages.some((m) => m.includes('last complete save'))).toBe(true);
+      expect(Notice.messages.some((m) => m.includes('starting with defaults'))).toBe(false);
+    });
+
+    it('keeps the defaults path when the backup will not parse either', async () => {
+      Notice.messages.length = 0;
+      const { plugin, files } = createBackupPlugin({
+        loadData: [() => Promise.reject(new Error('bad json'))],
+        backup: '{"schemaVersion": 2, "sessions": [',
+      });
+
+      await plugin.onload();
+
+      expect(plugin.sessionStore.hydrate).toHaveBeenCalledWith([], null);
+      expect([...files.keys()].some((p) => p.includes('.corrupt-'))).toBe(true);
+      expect(Notice.messages.some((m) => m.includes('starting with defaults'))).toBe(true);
+    });
+
+    it('refreshes the backup after a save that worked', async () => {
+      const { plugin, files } = createBackupPlugin({ loadData: [], backup: null, live: '' });
+      const saveSpy = vi.spyOn(Plugin.prototype, 'saveData').mockImplementation(async () => {
+        files.set(DATA, '{"schemaVersion":2,"sessions":[]}');
+      });
+
+      await plugin.savePluginData();
+
+      expect(files.get(BAK)).toBe('{"schemaVersion":2,"sessions":[]}');
+      saveSpy.mockRestore();
+    });
+
+    it('still saves when the backup cannot be written', async () => {
+      const { plugin, files } = createBackupPlugin({ loadData: [], backup: null, live: '' });
+      const saveSpy = vi.spyOn(Plugin.prototype, 'saveData').mockImplementation(async () => {
+        files.set(DATA, '{"schemaVersion":2,"sessions":[]}');
+      });
+      (plugin.app.vault.adapter.write as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('read-only volume'));
+      const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      await plugin.savePluginData();
+
+      expect(files.get(DATA)).toBe('{"schemaVersion":2,"sessions":[]}');
+      expect(consoleWarn).toHaveBeenCalledWith(
+        '[co-ober] could not refresh data.json backup:',
+        expect.any(Error),
+      );
+      consoleWarn.mockRestore();
+      saveSpy.mockRestore();
+    });
+  });
+
   it('surfaces a save failure once per throttle window', async () => {
     Notice.messages.length = 0;
     const saveSpy = vi.spyOn(Plugin.prototype, 'saveData').mockRejectedValue(new Error('disk full'));

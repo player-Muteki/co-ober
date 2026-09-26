@@ -118,8 +118,15 @@ export class DragDropManager {
 					// Budget against the encoded payload — that is what the app
 					// actually holds and persists (~4/3 of the file size).
 					const imageBytes = data.length;
-					if (this.pendingImageTotalBytes + imageBytes > DragDropManager.MAX_IMAGE_BYTES) {
+					if (imageBytes > DragDropManager.MAX_IMAGE_BYTES) {
 						new Notice(t().dragDrop.imageTooLarge.replace('{name}', file.name));
+						continue;
+					}
+					if (this.pendingImageTotalBytes + imageBytes > DragDropManager.MAX_IMAGE_BYTES) {
+						// The budget is cumulative, so naming this file as the one
+						// that is "too large" would send the user to shrink a 200 KB
+						// image while the real weight sits in the chips already staged.
+						new Notice(t().dragDrop.imageBudgetFull.replace('{name}', file.name));
 						continue;
 					}
 					this.pendingImageTotalBytes += imageBytes;
@@ -131,6 +138,10 @@ export class DragDropManager {
 					// with only a console line looked like a successful attach.
 					new Notice(t().dragDrop.readFailed.replace('{name}', file.name));
 				}
+			} else {
+				// Only notes and images have a pipeline here. Without this branch a
+				// dropped PDF looked accepted — the drop zone had already flashed.
+				new Notice(t().dragDrop.unsupportedType.replace('{name}', file.name));
 			}
 		}
 	}

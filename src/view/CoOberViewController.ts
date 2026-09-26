@@ -2049,7 +2049,7 @@ export class CoOberViewController {
             // The editor travels with the claim: the panel already gave its
             // pending state up when this turn took it, so Apply would have no
             // selection to write back to.
-            if (lastMsg) this.deps.inlineEditPanel.showDiffFromResponse(inlineEdit.original, lastMsg.content, inlineEdit.editor);
+            if (lastMsg) this.deps.inlineEditPanel.showDiffFromResponse(inlineEdit.original, lastMsg.content, inlineEdit.editor, inlineEdit.range);
           }
           void this.maybeAutoTitle(rt).catch((e) => console.error('[co-ober] auto title:', e));
         },

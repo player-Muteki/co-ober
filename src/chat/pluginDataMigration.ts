@@ -1,4 +1,4 @@
-import type { SerializedMessage, SerializedSession, TabShell } from '../types';
+import type { CoOberSettings, ContextRef, SerializedMessage, SerializedSession, StoredDraft, TabShell } from '../types';
 import type { SerializedSessionState } from './session';
 import { MAX_OPEN_TABS } from '../constants';
 
@@ -38,6 +38,35 @@ function sanitizeMessage(value: unknown): SerializedMessage | null {
   return { ...value, type, timestamp } as unknown as SerializedMessage;
 }
 
+/**
+ * The composer's unsent paragraph. It exists nowhere but data.json — not in a
+ * session, not in a note — so a migration that rebuilds a tab shell without it
+ * loses the text twice: once on this load, and once for good when the next
+ * save writes the shell it was given.
+ */
+function sanitizeDraft(value: unknown): StoredDraft | undefined {
+  if (!isRecord(value) || typeof value.text !== 'string') return undefined;
+  const draft: StoredDraft = { text: value.text };
+  if (Array.isArray(value.refs)) {
+    const refs = value.refs.flatMap((ref) => {
+      if (!isRecord(ref)) return [];
+      const { id, type, name, path } = ref;
+      if (typeof id !== 'string' || typeof name !== 'string' || typeof path !== 'string') return [];
+      if (type !== 'note' && type !== 'file') return [];
+      return [{ id, type, name, path } as Pick<ContextRef, 'id' | 'type' | 'name' | 'path'>];
+    });
+    if (refs.length > 0) draft.refs = refs;
+  }
+  if (Array.isArray(value.manual)) {
+    const manual = value.manual.filter((id): id is string => typeof id === 'string');
+    if (manual.length > 0) draft.manual = manual;
+  }
+  if (typeof value.images === 'number' && Number.isFinite(value.images) && value.images > 0) {
+    draft.images = Math.floor(value.images);
+  }
+  return draft;
+}
+
 function sanitizeSession(value: unknown): SerializedSession | null {
   if (!isRecord(value)) return null;
   if (typeof value.sessionId !== 'string' || value.sessionId.length === 0) return null;
@@ -54,11 +83,16 @@ function sanitizeSession(value: unknown): SerializedSession | null {
   } as unknown as SerializedSession;
 }
 
-/** Version of a persisted blob; anything pre-0.1.34 (or malformed) reads as 0. */
+/**
+ * Version of a persisted blob; anything pre-0.1.34 (or malformed) reads as 0.
+ * A number that is merely unusual — 3.5, 1e300 — still says "written by
+ * something newer than me", so it is returned as-is for the caller's
+ * too-new check rather than collapsed to 0 and migrated-and-restamped.
+ */
 export function readSchemaVersion(raw: unknown): number {
   if (!isRecord(raw)) return 0;
   const version = raw.schemaVersion;
-  return typeof version === 'number' && Number.isInteger(version) && version >= 0 ? version : 0;
+  return typeof version === 'number' && version > 0 ? version : 0;
 }
 
 /** v0→v1: sanitize sessions and messages so a truncated or hand-edited data.json cannot crash hydrate. */
@@ -76,11 +110,69 @@ export interface TabShellState {
   activeTabId: string | null;
 }
 
+const SETTINGS_ARRAY_FIELDS = ['syncRules', 'mcpServers', 'customSkills', 'customAgents', 'commonModels'] as const;
+const SETTINGS_NUMBER_FIELDS = [
+  'maxNoteSize',
+  'maxSessionMessages',
+  'sessionRetentionDays',
+  'maxOpenTabs',
+  'terminalTimeoutMs',
+  'terminalMaxOutputBytes',
+  'idleTimeoutMs',
+] as const;
+const SETTINGS_STRING_FIELDS = [
+  'opencodePath',
+  'defaultAgent',
+  'defaultModel',
+  'defaultEffort',
+  'defaultNoteFolder',
+  'systemPrompt',
+  'language',
+  'activeCustomAgentId',
+] as const;
+const SETTINGS_ENUM_FIELDS: Record<string, readonly string[]> = {
+  permissionMode: ['yolo', 'plan', 'safe', 'readonly'],
+  fsCapability: ['enabled', 'readonly', 'disabled'],
+  terminalCapability: ['enabled', 'disabled'],
+};
+
+/**
+ * Loading settings is a shallow merge over DEFAULT_SETTINGS, so a field the
+ * disk got wrong reaches the settings tab, the sync engine and the permission
+ * tier as the wrong type — `"syncRules": "edit"` is a string where a `.filter`
+ * runs, and one half-written data.json then takes the whole configuration down
+ * with it. Each typed field is checked at this boundary instead; anything else
+ * stored there is left alone.
+ */
+export function sanitizeLoadedSettings(raw: unknown, defaults: CoOberSettings): CoOberSettings {
+  const merged = { ...defaults, ...(isRecord(raw) ? raw : {}) } as CoOberSettings;
+  const fields = merged as unknown as Record<string, unknown>;
+  const fallbacks = defaults as unknown as Record<string, unknown>;
+  for (const key of SETTINGS_ARRAY_FIELDS) {
+    if (!Array.isArray(fields[key])) fields[key] = fallbacks[key];
+  }
+  for (const key of SETTINGS_NUMBER_FIELDS) {
+    const value = fields[key];
+    if (value !== undefined && !(typeof value === 'number' && Number.isFinite(value))) fields[key] = fallbacks[key];
+  }
+  for (const key of SETTINGS_STRING_FIELDS) {
+    const value = fields[key];
+    if (value !== undefined && typeof value !== 'string') fields[key] = fallbacks[key];
+  }
+  for (const [key, allowed] of Object.entries(SETTINGS_ENUM_FIELDS)) {
+    const value = fields[key];
+    if (value !== undefined && !allowed.includes(value as string)) fields[key] = fallbacks[key];
+  }
+  return merged;
+}
+
 /**
  * v1→v2: the persisted tabs are the tab strip's shape, so a damaged entry is
  * dropped rather than hydrated — a tab pointing at a session that no longer
  * exists would open as an empty panel the user cannot explain. With no stored
- * tabs (or a pre-v2 file) the active session becomes the single tab.
+ * tabs (or a pre-v2 file) the active session becomes the single tab. A shell's
+ * draft travels with it: rebuilding the entry without the field the save path
+ * wrote is how a typed-but-unsent paragraph disappears on restart.
  */
 export function migratePluginDataTabs(
   openTabs: unknown,
@@ -99,7 +191,8 @@ export function migratePluginDataTabs(
       if (sessionId !== null && typeof sessionId !== 'string') continue;
       if (typeof sessionId === 'string' && !survivingSessionIds.has(sessionId)) continue;
       seen.add(value.tabId);
-      list.push({ tabId: value.tabId, sessionId: sessionId ?? null });
+      const draft = sanitizeDraft(value.draft);
+      list.push(draft ? { tabId: value.tabId, sessionId: sessionId ?? null, draft } : { tabId: value.tabId, sessionId: sessionId ?? null });
     }
   } else if (fallbackActiveSessionId) {
     list.push({ tabId: 'tab-1', sessionId: fallbackActiveSessionId });

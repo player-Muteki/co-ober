@@ -80,6 +80,8 @@ const zh: Locale = {
     imageNotSupported: '当前 OpenCode Agent 不支持图片提示词',
     audioNotSupported: '不支持音频附件',
     imageTooLarge: '图片 "{name}" 超过待发送图片 10MB 上限',
+    imageBudgetFull: '未添加 “{name}”——已经在手的图片已占满 10MB 上限',
+    unsupportedType: '“{name}” 既不是笔记，也不是 Co-Ober 能使用的图片',
     readFailed: '无法将“{name}”读取为图片',
   },
 
@@ -386,6 +388,7 @@ const zh: Locale = {
     dataLoadFailed: '无法读取已保存的聊天数据，将以默认设置启动；不可读的文件已保留为 {file}',
     dataLoadFailedNoBackup: '无法读取已保存的聊天数据，且未能保留不可读文件；将以默认设置启动',
     dataLoadTooNew: '已保存的聊天数据来自更新版本的 Co-Ober（schema {version}），已另存为 {file}，并以默认设置启动',
+    dataRestoredFromBackup: '无法读取已保存的聊天数据——已改为加载上一次完整保存的副本',
     saveFailed: 'Co-Ober 保存聊天数据失败——最近的更改可能丢失',
   },
 
@@ -411,6 +414,7 @@ const zh: Locale = {
     apply: '应用',
     discard: '放弃',
     prompt: '请编辑并改进以下文本。只返回编辑后的文本，不要解释：\n\n{text}',
+    selectionMoved: '当初被选中的文字已不在原位——已拒绝“应用”，以免改写到别处',
   },
 
   acp: {

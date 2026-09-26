@@ -1314,9 +1314,10 @@ describe('CoOberViewController', () => {
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
       (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
       const editor = { replaceSelection: vi.fn() };
+      const range = { from: { line: 3, ch: 0 }, to: { line: 3, ch: 15 } };
       const showDiff = vi.fn();
       deps.inlineEditPanel = {
-        pendingState: { original: 'rough sentence', editor, tabId: controller.activeTabId() },
+        pendingState: { original: 'rough sentence', editor, tabId: controller.activeTabId(), range },
         clearState: vi.fn(),
         showDiffFromResponse: showDiff,
       } as unknown as MockDeps['inlineEditPanel'];
@@ -1328,8 +1329,10 @@ describe('CoOberViewController', () => {
       await controller.send('tighten this', []);
 
       // Before the claim travelled with the turn, the panel had already given
-      // its state up by the time the reply arrived, so no diff ever showed.
-      expect(showDiff).toHaveBeenCalledWith('rough sentence', 'a tighter sentence', editor);
+      // its state up by the time the reply arrived, so no diff ever showed. The
+      // range travels too: Apply has to land on the text that was asked about,
+      // not wherever the cursor drifted to while the model thought.
+      expect(showDiff).toHaveBeenCalledWith('rough sentence', 'a tighter sentence', editor, range);
     });
   });
 

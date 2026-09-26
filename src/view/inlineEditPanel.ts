@@ -1,5 +1,12 @@
-import type { Editor } from 'obsidian';
+import type { Editor, EditorPosition } from 'obsidian';
+import { Notice } from 'obsidian';
 import { t, onLocaleChange } from '../i18n/index';
+
+/** Where the selection lived when the edit was asked for. */
+export interface InlineEditRange {
+  from: EditorPosition;
+  to: EditorPosition;
+}
 
 export interface InlineEditState {
 	original: string;
@@ -8,6 +15,23 @@ export interface InlineEditState {
 	// may be painted over the selection; any other tab's send would show an
 	// unrelated answer here, and its Apply would rewrite this tab's text.
 	tabId: string;
+	/** Captured with `original`, so Apply can still find that text. */
+	range?: InlineEditRange;
+}
+
+/**
+ * The range `selected` was read from, when the editor will say. Comparing the
+ * text at those positions against `selected` is what makes the answer usable:
+ * a range that no longer holds that text is not the selection this edit is for.
+ */
+function selectionRange(editor: Editor, selected: string): InlineEditRange | undefined {
+  const selection = editor.listSelections?.()[0];
+  if (!selection) return undefined;
+  const { anchor, head } = selection;
+  const forward = anchor.line < head.line || (anchor.line === head.line && anchor.ch <= head.ch);
+  const range = { from: forward ? anchor : head, to: forward ? head : anchor };
+  if (typeof editor.getRange === 'function' && editor.getRange(range.from, range.to) !== selected) return undefined;
+  return range;
 }
 
 export class InlineEditPanel {
@@ -26,15 +50,25 @@ export class InlineEditPanel {
 
 	request(selected: string, editor: Editor, tabId: string): string {
 		this.clearState();
-		this.pendingState = { original: selected, editor, tabId };
+		this.pendingState = { original: selected, editor, tabId, range: selectionRange(editor, selected) };
 		return t().inlineEdit.prompt.replace('{text}', selected);
 	}
 
-	showDiffFromResponse(original: string, responseContent: string, editor?: Editor): void {
-		this.showDiff(original, this.extractContent(responseContent), editor);
+	showDiffFromResponse(original: string, responseContent: string, editor?: Editor, range?: InlineEditRange): void {
+		this.showDiff(original, this.extractContent(responseContent), editor, range);
 	}
 
-	showDiff(original: string, edited: string, editor: Editor | undefined = this.pendingState?.editor): void {
+	showDiff(
+		original: string,
+		edited: string,
+		editor: Editor | undefined = this.pendingState?.editor,
+		range?: InlineEditRange,
+	): void {
+		// A range is only usable with the editor it was read out of, so an
+		// explicitly handed editor falls back to the pending state's own range
+		// and a stranger editor gets none.
+		const target = editor ?? this.pendingState?.editor;
+		const targetRange = range ?? (target && target === this.pendingState?.editor ? this.pendingState?.range : undefined);
 		this.hideDiff();
 		const panel = this.containerEl.createDiv({ cls: 'co-ober-inline-edit-panel' });
 		this.el = panel;
@@ -72,7 +106,7 @@ export class InlineEditPanel {
 
 		const actions = panel.createDiv({ cls: 'co-ober-inline-edit-actions' });
 		const applyBtn = actions.createEl('button', { cls: 'mod-cta', text: t().inlineEdit.apply });
-		applyBtn.onclick = () => this.applyEdit(editor, edited);
+		applyBtn.onclick = () => this.applyEdit(target, edited, original, targetRange);
 		const discardBtn = actions.createEl('button', { text: t().inlineEdit.discard });
 		discardBtn.onclick = () => this.clearState();
 	}
@@ -88,9 +122,22 @@ export class InlineEditPanel {
 		if (discard) discard.textContent = t().inlineEdit.discard;
 	}
 
-	private applyEdit(editor: Editor | undefined, edited: string): void {
+	private applyEdit(editor: Editor | undefined, edited: string, original: string, range?: InlineEditRange): void {
 		if (!editor) return;
-		editor.replaceSelection(edited);
+		if (!range || typeof editor.getRange !== 'function' || typeof editor.replaceRange !== 'function') {
+			editor.replaceSelection(edited);
+			this.clearState();
+			return;
+		}
+		// The reply answers the text that was selected when it was asked for.
+		// Writing it wherever the cursor has drifted to in the meantime would
+		// rewrite a paragraph the user never asked about, so the edit is
+		// refused instead — visibly.
+		if (editor.getRange(range.from, range.to) !== original) {
+			new Notice(t().inlineEdit.selectionMoved);
+			return;
+		}
+		editor.replaceRange(edited, range.from, range.to);
 		this.clearState();
 	}
 

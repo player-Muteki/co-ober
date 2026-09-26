@@ -4,8 +4,10 @@ import {
   migratePluginDataTabs,
   PLUGIN_DATA_SCHEMA_VERSION,
   readSchemaVersion,
+  sanitizeLoadedSettings,
 } from './pluginDataMigration';
 import type { TabShellState } from './pluginDataMigration';
+import { DEFAULT_SETTINGS } from '../types';
 import { MAX_OPEN_TABS } from '../constants';
 
 function validMessage(overrides: Record<string, unknown> = {}) {
@@ -22,12 +24,21 @@ describe('readSchemaVersion', () => {
     expect(readSchemaVersion(null)).toBe(0);
     expect(readSchemaVersion('nope')).toBe(0);
     expect(readSchemaVersion({ schemaVersion: -1 })).toBe(0);
-    expect(readSchemaVersion({ schemaVersion: 1.5 })).toBe(0);
     expect(readSchemaVersion({ schemaVersion: '1' })).toBe(0);
   });
 
   it('reads a valid integer version', () => {
     expect(readSchemaVersion({ schemaVersion: PLUGIN_DATA_SCHEMA_VERSION })).toBe(PLUGIN_DATA_SCHEMA_VERSION);
+  });
+
+  it('reports an unusual number instead of reading it as legacy', () => {
+    // Collapsing these to 0 sent a file written by something newer through the
+    // v0 migration, which restamped it and dropped the fields only that build
+    // knows how to write.
+    expect(readSchemaVersion({ schemaVersion: PLUGIN_DATA_SCHEMA_VERSION + 1.5 })).toBe(PLUGIN_DATA_SCHEMA_VERSION + 1.5);
+    expect(readSchemaVersion({ schemaVersion: 1e300 })).toBe(1e300);
+    expect(readSchemaVersion({ schemaVersion: Number.POSITIVE_INFINITY })).toBe(Number.POSITIVE_INFINITY);
+    expect(readSchemaVersion({ schemaVersion: Number.NaN })).toBe(0);
   });
 });
 
@@ -160,5 +171,112 @@ describe('migratePluginDataTabs', () => {
     const state = migratePluginDataTabs([{ tabId: 'tab-1', sessionId: 's1' }], 'tab-gone', surviving, null);
     expect(state.activeTabId).toBeNull();
     expect(migratePluginDataTabs([], 'tab-1', surviving, null).activeTabId).toBeNull();
+  });
+
+  it('carries the unsent composer text a shell was saved with', () => {
+    const state = migratePluginDataTabs(
+      [
+        {
+          tabId: 'tab-1',
+          sessionId: 's1',
+          draft: {
+            text: 'half a sentence',
+            refs: [{ id: 'a.md', type: 'note', name: 'a', path: 'a.md', content: 'body' }],
+            manual: ['a.md'],
+            images: 2,
+          },
+        },
+      ],
+      'tab-1',
+      surviving,
+      null,
+    );
+
+    // The draft lives nowhere else: rebuilding the shell without it lost the
+    // paragraph on restart, and the next save then wiped it from the disk too.
+    expect(state.openTabs).toEqual([
+      {
+        tabId: 'tab-1',
+        sessionId: 's1',
+        draft: { text: 'half a sentence', refs: [{ id: 'a.md', type: 'note', name: 'a', path: 'a.md' }], manual: ['a.md'], images: 2 },
+      },
+    ]);
+  });
+
+  it('drops a draft it cannot read without dropping the tab', () => {
+    const state = migratePluginDataTabs(
+      [
+        { tabId: 'tab-1', sessionId: 's1', draft: 'typed it all out' },
+        { tabId: 'tab-2', sessionId: 's2', draft: { text: 7 } },
+        { tabId: 'tab-3', sessionId: 's1', draft: { text: 'ok', refs: [null, { id: 'x', type: 'weird', name: 'x', path: 'x' }] } },
+        { tabId: 'tab-4', sessionId: 's2', draft: { text: 'counts', images: -3 } },
+      ],
+      'tab-3',
+      surviving,
+      null,
+    );
+
+    expect(state.openTabs).toEqual([
+      { tabId: 'tab-1', sessionId: 's1' },
+      { tabId: 'tab-2', sessionId: 's2' },
+      { tabId: 'tab-3', sessionId: 's1', draft: { text: 'ok' } },
+      { tabId: 'tab-4', sessionId: 's2', draft: { text: 'counts' } },
+    ]);
+  });
+});
+
+describe('sanitizeLoadedSettings', () => {
+  it('replaces a stored field of the wrong type with the default instead of passing it through', () => {
+    const sanitized = sanitizeLoadedSettings(
+      {
+        syncRules: 'edit',
+        mcpServers: { name: 'x' },
+        customAgents: null,
+        commonModels: 5,
+        maxNoteSize: 'eight thousand',
+        maxOpenTabs: Number.NaN,
+        idleTimeoutMs: null,
+        language: 7,
+        permissionMode: 'do-anything',
+        fsCapability: 'yes-please',
+        terminalCapability: 'ask-later',
+        opencodePath: '/usr/bin/opencode',
+      },
+      DEFAULT_SETTINGS,
+    );
+
+    // A shallow merge hands these straight to the settings tab and the sync
+    // engine, where a string where a list is expected throws and takes the
+    // whole configuration with it.
+    expect(sanitized.syncRules).toEqual(DEFAULT_SETTINGS.syncRules);
+    expect(sanitized.mcpServers).toEqual([]);
+    expect(sanitized.customAgents).toEqual([]);
+    expect(sanitized.commonModels).toEqual(DEFAULT_SETTINGS.commonModels);
+    expect(sanitized.maxNoteSize).toBe(DEFAULT_SETTINGS.maxNoteSize);
+    expect(sanitized.maxOpenTabs).toBe(DEFAULT_SETTINGS.maxOpenTabs);
+    expect(sanitized.idleTimeoutMs).toBe(DEFAULT_SETTINGS.idleTimeoutMs);
+    expect(sanitized.language).toBe(DEFAULT_SETTINGS.language);
+    expect(sanitized.permissionMode).toBe(DEFAULT_SETTINGS.permissionMode);
+    expect(sanitized.fsCapability).toBe(DEFAULT_SETTINGS.fsCapability);
+    expect(sanitized.terminalCapability).toBe(DEFAULT_SETTINGS.terminalCapability);
+    expect(sanitized.opencodePath).toBe('/usr/bin/opencode');
+  });
+
+  it('keeps the fields it understands and the ones it has no opinion about', () => {
+    const sanitized = sanitizeLoadedSettings(
+      { syncRules: [], maxNoteSize: 100, autoConnect: false, sessionRetentionDays: 7, someFutureField: { a: 1 } },
+      DEFAULT_SETTINGS,
+    );
+
+    expect(sanitized.syncRules).toEqual([]);
+    expect(sanitized.maxNoteSize).toBe(100);
+    expect(sanitized.sessionRetentionDays).toBe(7);
+    expect(sanitized.autoConnect).toBe(false);
+    expect((sanitized as unknown as Record<string, unknown>).someFutureField).toEqual({ a: 1 });
+  });
+
+  it('survives settings that are not an object at all', () => {
+    expect(sanitizeLoadedSettings('all wrong', DEFAULT_SETTINGS)).toEqual(DEFAULT_SETTINGS);
+    expect(sanitizeLoadedSettings(undefined, DEFAULT_SETTINGS)).toEqual(DEFAULT_SETTINGS);
   });
 });

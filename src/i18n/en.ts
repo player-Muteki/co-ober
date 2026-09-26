@@ -78,6 +78,8 @@ const en = {
     imageNotSupported: 'This OpenCode agent does not support image prompts',
     audioNotSupported: 'Audio attachments are not supported',
     imageTooLarge: '"{name}" exceeds the 10 MB pending-image limit',
+    imageBudgetFull: '"{name}" was not added — the images already staged fill the 10 MB limit',
+    unsupportedType: '"{name}" is neither a note nor an image Co-Ober can use',
     readFailed: 'Could not read "{name}" as an image',
   },
 
@@ -384,6 +386,7 @@ const en = {
     dataLoadFailed: 'Could not read saved chat data; starting with defaults. The unreadable file was kept as {file}',
     dataLoadFailedNoBackup: 'Could not read saved chat data or set the unreadable file aside; starting with defaults',
     dataLoadTooNew: 'Saved chat data came from a newer Co-Ober version (schema {version}); it was kept as {file} and defaults were loaded',
+    dataRestoredFromBackup: 'Saved chat data could not be read — loaded the last complete save instead',
     saveFailed: 'Co-Ober failed to save chat data — recent changes may be lost',
   },
 
@@ -409,6 +412,7 @@ const en = {
     apply: 'Apply',
     discard: 'Discard',
     prompt: 'Please edit and improve the following text. Respond with ONLY the edited text, no explanations:\n\n{text}',
+    selectionMoved: 'The text this edit was for is no longer selected — Apply was refused so nothing was rewritten elsewhere',
   },
 
   acp: {

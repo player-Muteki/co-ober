@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
 import { InlineEditPanel } from './inlineEditPanel';
+import { Notice } from '../test/obsidianMock';
 import { installObsidianDomHelpers } from '../test/domHelpers';
 import { setLocale } from '../i18n';
 
@@ -108,6 +109,90 @@ describe('InlineEditPanel', () => {
 		const applyBtn = container.querySelector('.co-ober-inline-edit-actions .mod-cta') as HTMLButtonElement;
 		applyBtn.click();
 		expect(editor.replaceSelection).toHaveBeenCalledWith('new text');
+	});
+
+	it('applies to the selection it was asked about, not wherever the cursor is now', () => {
+		setLocale('en');
+		const container = document.createElement('div');
+		const panel = new InlineEditPanel(container);
+		const from = { line: 2, ch: 4 };
+		const to = { line: 2, ch: 12 };
+		const editor = {
+			replaceSelection: vi.fn(),
+			replaceRange: vi.fn(),
+			listSelections: vi.fn(() => [{ anchor: from, head: to }]),
+			getRange: vi.fn(() => 'old text'),
+		} as any;
+
+		panel.request('old text', editor, 'tab-1');
+		panel.showDiffFromResponse('old text', 'new text');
+		// The user moved on while the model thought; the cursor is elsewhere and
+		// the selection is gone, but the text asked about is still where it was.
+		editor.listSelections.mockReturnValue([{ anchor: { line: 9, ch: 0 }, head: { line: 9, ch: 0 } }]);
+
+		(container.querySelector('.co-ober-inline-edit-actions .mod-cta') as HTMLButtonElement).click();
+
+		expect(editor.replaceRange).toHaveBeenCalledWith('new text', from, to);
+		expect(editor.replaceSelection).not.toHaveBeenCalled();
+		expect(Notice.messages.some((m: string) => m.includes('no longer selected'))).toBe(false);
+	});
+
+	it('refuses rather than rewriting whatever is in the way now', () => {
+		setLocale('en');
+		Notice.messages.length = 0;
+		const container = document.createElement('div');
+		const panel = new InlineEditPanel(container);
+		const from = { line: 0, ch: 0 };
+		const to = { line: 0, ch: 8 };
+		let text = 'old text';
+		const editor = {
+			replaceSelection: vi.fn(),
+			replaceRange: vi.fn(),
+			listSelections: vi.fn(() => [{ anchor: from, head: to }]),
+			getRange: vi.fn(() => text),
+		} as any;
+
+		panel.request('old text', editor, 'tab-1');
+		panel.showDiff('old text', 'new text');
+		text = 'something the user typed since';
+
+		(container.querySelector('.co-ober-inline-edit-actions .mod-cta') as HTMLButtonElement).click();
+
+		expect(editor.replaceRange).not.toHaveBeenCalled();
+		expect(editor.replaceSelection).not.toHaveBeenCalled();
+		expect(Notice.messages.some((m: string) => m.includes('no longer selected'))).toBe(true);
+		// The refusal keeps the diff on screen: the answer is still worth reading.
+		expect(container.querySelector('.co-ober-inline-edit-panel')).not.toBeNull();
+	});
+
+	it('orders a backwards selection and gives up the range when it cannot trust it', () => {
+		setLocale('en');
+		const container = document.createElement('div');
+		const panel = new InlineEditPanel(container);
+		const early = { line: 1, ch: 7 };
+		const late = { line: 5, ch: 3 };
+		const reversed = {
+			replaceSelection: vi.fn(),
+			replaceRange: vi.fn(),
+			listSelections: () => [{ anchor: late, head: early }],
+			getRange: () => 'old text',
+		} as any;
+		panel.request('old text', reversed, 'tab-1');
+		expect(panel.pendingState?.range).toEqual({ from: early, to: late });
+
+		// An editor whose range does not hold what was handed in is not telling
+		// the truth about where the selection was; keep the old behaviour then.
+		const lying = {
+			replaceSelection: vi.fn(),
+			replaceRange: vi.fn(),
+			listSelections: () => [{ anchor: early, head: late }],
+			getRange: () => 'different',
+		} as any;
+		panel.request('old text', lying, 'tab-1');
+		expect(panel.pendingState?.range).toBeUndefined();
+		panel.showDiff('old text', 'new text');
+		(container.querySelector('.co-ober-inline-edit-actions .mod-cta') as HTMLButtonElement).click();
+		expect(lying.replaceSelection).toHaveBeenCalledWith('new text');
 	});
 
 	it('refreshes locale correctly', () => {

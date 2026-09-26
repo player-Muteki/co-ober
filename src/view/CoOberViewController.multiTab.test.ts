@@ -1624,7 +1624,7 @@ describe('CoOberViewController — what belongs to a tab stays in that tab (0.2.
 
       await h.controller.send('tighten this', [], rtOf(h, tabB));
 
-      expect(editPanel().showDiffFromResponse).toHaveBeenCalledWith('rough sentence', 'a tighter sentence', editor);
+      expect(editPanel().showDiffFromResponse).toHaveBeenCalledWith('rough sentence', 'a tighter sentence', editor, undefined);
     });
 
     it('waits in that tab’s queue, and a Stop leaves it there instead of the composer', async () => {
@@ -1679,7 +1679,7 @@ describe('CoOberViewController — what belongs to a tab stays in that tab (0.2.
       resolvers[1]({ stopReason: 'end_turn' } as AcpResponse);
       await tick();
 
-      expect(editPanel().showDiffFromResponse).toHaveBeenCalledWith('selected', 'polished', editor);
+      expect(editPanel().showDiffFromResponse).toHaveBeenCalledWith('selected', 'polished', editor, undefined);
     });
   });
 

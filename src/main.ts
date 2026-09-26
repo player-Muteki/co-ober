@@ -16,6 +16,7 @@ import {
   migratePluginDataSessions,
   migratePluginDataTabs,
   readSchemaVersion,
+  sanitizeLoadedSettings,
   PLUGIN_DATA_SCHEMA_VERSION,
   PluginDataTooNewError,
 } from './chat/pluginDataMigration';
@@ -56,18 +57,22 @@ export default class CoOberPlugin extends Plugin {
       // is not silently lost or downgraded.
       console.error('[co-ober] failed to load plugin data:', e);
       const tooNew = e instanceof PluginDataTooNewError;
-      const backupPath = await this.backupUnreadableData(tooNew ? 'newer' : 'corrupt');
-      this.settings = { ...DEFAULT_SETTINGS };
-      this.sessionStore.hydrate([], null);
-      new Notice(
-        backupPath && tooNew
-          ? t().notice.dataLoadTooNew
-              .replace('{version}', String((e as PluginDataTooNewError).foundVersion))
-              .replace('{file}', backupPath)
-          : backupPath
-            ? t().notice.dataLoadFailed.replace('{file}', backupPath)
-            : t().notice.dataLoadFailedNoBackup,
-      );
+      if (tooNew || !(await this.restoreFromRollingBackup())) {
+        const backupPath = await this.backupUnreadableData(tooNew ? 'newer' : 'corrupt');
+        this.settings = { ...DEFAULT_SETTINGS };
+        this.sessionStore.hydrate([], null);
+        new Notice(
+          backupPath && tooNew
+            ? t().notice.dataLoadTooNew
+                .replace('{version}', String((e as PluginDataTooNewError).foundVersion))
+                .replace('{file}', backupPath)
+            : backupPath
+              ? t().notice.dataLoadFailed.replace('{file}', backupPath)
+              : t().notice.dataLoadFailedNoBackup,
+        );
+      } else {
+        new Notice(t().notice.dataRestoredFromBackup);
+      }
     }
     setLocale(this.settings.language);
 
@@ -115,9 +120,9 @@ export default class CoOberPlugin extends Plugin {
       const restored = migratePluginDataSessions(data.sessions, data.activeSessionId);
       const surviving = new Set(restored.sessions.map((session) => session.sessionId));
       const tabs = migratePluginDataTabs(data.openTabs, data.activeTabId, surviving, restored.activeSessionId);
-      const settings = { ...DEFAULT_SETTINGS, ...(data.settings ?? {}) };
       // The autoConnect toggle did nothing before 0.1.34, so a stored false in
       // pre-schema data is the old default, not a choice: keep auto-connect.
+      const settings = sanitizeLoadedSettings(data.settings, DEFAULT_SETTINGS);
       if (storedVersion < 1 && settings.autoConnect === false) settings.autoConnect = true;
       return {
         schemaVersion: PLUGIN_DATA_SCHEMA_VERSION,
@@ -130,7 +135,7 @@ export default class CoOberPlugin extends Plugin {
     }
 
     return {
-      settings: { ...DEFAULT_SETTINGS, ...(saved as Partial<CoOberSettings>) },
+      settings: sanitizeLoadedSettings(saved, DEFAULT_SETTINGS),
       sessions: [],
       activeSessionId: null,
       openTabs: [],
@@ -169,6 +174,7 @@ export default class CoOberPlugin extends Plugin {
           retentionDays: this.settings.sessionRetentionDays ?? 30,
         });
         await super.saveData(this.buildPluginData());
+        await this.writeRollingBackup();
       });
       // A successful write ends the failure streak: drop the alarm and let
       // the next failure notify immediately.
@@ -191,7 +197,7 @@ export default class CoOberPlugin extends Plugin {
   }
 
   private async backupUnreadableData(kind: 'corrupt' | 'newer' = 'corrupt'): Promise<string | null> {
-    const dataPath = `${this.app.vault.configDir}/plugins/${this.manifest.id}/data.json`;
+    const dataPath = this.dataFilePath();
     const backupPath = `${dataPath.slice(0, -'.json'.length)}.${kind}-${Date.now()}.json`;
     try {
       const adapter = this.app.vault.adapter;
@@ -204,6 +210,51 @@ export default class CoOberPlugin extends Plugin {
     }
   }
 
+  private dataFilePath(): string {
+    return `${this.app.vault.configDir}/plugins/${this.manifest.id}/data.json`;
+  }
+
+  /**
+   * data.json is rewritten whole and not atomically, so a crash or a full disk
+   * mid-save costs every conversation the file held. Keeping the previous good
+   * copy next to it turns that event into "lose the last save" instead of
+   * "start with an empty plugin".
+   */
+  private async writeRollingBackup(): Promise<void> {
+    try {
+      const adapter = this.app.vault.adapter;
+      const dataPath = this.dataFilePath();
+      if (!(await adapter.exists(dataPath))) return;
+      await adapter.write(`${dataPath}.bak`, await adapter.read(dataPath));
+    } catch (e) {
+      console.warn('[co-ober] could not refresh data.json backup:', e);
+    }
+  }
+
+  /**
+   * Promote data.json.bak when the live file will not parse. The damaged file is
+   * set aside first, and the backup is only taken when it parses and the rename
+   * succeeded — anything else leaves the caller on the old defaults path with
+   * the bytes still on disk.
+   */
+  private async restoreFromRollingBackup(): Promise<boolean> {
+    try {
+      const adapter = this.app.vault.adapter;
+      const dataPath = this.dataFilePath();
+      const backupPath = `${dataPath}.bak`;
+      if (!(await adapter.exists(backupPath))) return false;
+      const raw = await adapter.read(backupPath);
+      JSON.parse(raw);
+      if (!(await this.backupUnreadableData('corrupt'))) return false;
+      await adapter.write(dataPath, raw);
+      await this.loadPluginData();
+      return true;
+    } catch (e) {
+      console.warn('[co-ober] no usable data.json backup to restore:', e);
+      return false;
+    }
+  }
+
   async loadPluginData(): Promise<void> {
     this.settings = DEFAULT_SETTINGS;
     this.sessionStore.hydrate([], null);
@@ -211,7 +262,7 @@ export default class CoOberPlugin extends Plugin {
     const pluginData = await this.loadData();
     if (!pluginData) return;
 
-    this.settings = { ...DEFAULT_SETTINGS, ...(pluginData.settings ?? {}) };
+    this.settings = sanitizeLoadedSettings(pluginData.settings, DEFAULT_SETTINGS);
     this.sessionStore.hydrate(pluginData.sessions ?? [], pluginData.activeSessionId ?? null);
     this.sessionStore.hydrateTabShell(pluginData.openTabs, pluginData.activeTabId);
   }

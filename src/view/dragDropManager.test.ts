@@ -269,8 +269,9 @@ describe('DragDropManager', () => {
       expect((Notice as any).messages).toContain('"large.png" exceeds the 10 MB pending-image limit');
     });
 
-    it('ignores unsupported file types', async () => {
+    it('says so when a dropped file has no pipeline', async () => {
       manager.setup();
+      (Notice as any).messages.length = 0;
 
       const file = new File(['data'], 'test.txt', { type: 'text/plain' });
       const dataTransfer = { files: [file] };
@@ -284,6 +285,8 @@ describe('DragDropManager', () => {
 
       expect(handlers.onAddNoteRef).not.toHaveBeenCalled();
       expect(handlers.onAddImagePart).not.toHaveBeenCalled();
+      // The drop zone flashed either way, so silence read as "attached".
+      expect((Notice as any).messages).toContain('"test.txt" is neither a note nor an image Co-Ober can use');
     });
 
     it('handles empty drop', async () => {
@@ -352,7 +355,9 @@ describe('DragDropManager', () => {
       await manager.handleFiles([second]);
 
       expect(handlers.onAddImagePart).toHaveBeenCalledTimes(1);
-      expect((Notice as any).messages).toContain('"second.png" exceeds the 10 MB pending-image limit');
+      // 2MB is not a large image; the weight sits in what is already staged. A
+      // message blaming this file sent users to shrink the wrong thing.
+      expect((Notice as any).messages).toContain('"second.png" was not added — the images already staged fill the 10 MB limit');
     });
 
     it('ignores an empty file list', async () => {
