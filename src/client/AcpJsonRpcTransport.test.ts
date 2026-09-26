@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PassThrough } from 'node:stream';
 import { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
-import { AcpInvalidParamsError } from './AcpErrors';
+import { AcpInvalidParamsError, AcpMethodNotFoundError, AcpResourceNotFoundError } from './AcpErrors';
 
 describe('AcpJsonRpcTransport', () => {
   let input: PassThrough;
@@ -310,6 +310,57 @@ describe('AcpJsonRpcTransport', () => {
       jsonrpc: '2.0',
       id: 103,
       error: { code: -32602, message: 'Missing required parameter: sessionId' },
+    });
+  });
+
+  it('answers a request for a capability that is switched off with -32601 (method not found)', async () => {
+    transport.start();
+
+    let sentMsg = '';
+    output.on('data', (chunk) => {
+      sentMsg += chunk.toString();
+    });
+
+    // -32000 is auth_required, which would send a spec-strict agent off to log
+    // in. A surface the reader closed mid-session is a method that no longer
+    // exists, so it answers -32601.
+    transport.onRequest('readTextFile', async () => {
+      throw new AcpMethodNotFoundError('File system access is disabled');
+    });
+
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: 104, method: 'readTextFile' }) + '\n');
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const responses = sentMsg.trim().split('\n').map((l) => JSON.parse(l));
+    expect(responses[0]).toEqual({
+      jsonrpc: '2.0',
+      id: 104,
+      error: { code: -32601, message: 'File system access is disabled' },
+    });
+  });
+
+  it('answers a request for a terminal that is gone with -32002 (resource not found)', async () => {
+    transport.start();
+
+    let sentMsg = '';
+    output.on('data', (chunk) => {
+      sentMsg += chunk.toString();
+    });
+
+    transport.onRequest('terminalKill', async () => {
+      throw new AcpResourceNotFoundError('Terminal not found: t404');
+    });
+
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: 105, method: 'terminalKill' }) + '\n');
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const responses = sentMsg.trim().split('\n').map((l) => JSON.parse(l));
+    expect(responses[0]).toEqual({
+      jsonrpc: '2.0',
+      id: 105,
+      error: { code: -32002, message: 'Terminal not found: t404' },
     });
   });
 

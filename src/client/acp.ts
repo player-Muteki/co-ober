@@ -883,9 +883,15 @@ export class AcpClient implements OpencodeClient {
   }
 
   // The spec's value is `anyOf`: a value id for a select, a real boolean for a
-  // toggle. Sending `true` as the string "true" makes the agent reject it.
+  // toggle. Sending `true` as the string "true" makes the agent reject it, and
+  // a bare `true` still leaves a schema-strict agent guessing which branch of
+  // the union it belongs to — so a boolean carries its `type` discriminator.
   async setConfigOption(id: string, configId: string, value: string | boolean): Promise<SessionConfigOption[]> {
-    const r = await this.requestWithFallback('setConfigOption', { sessionId: id, configId, value });
+    const params =
+      typeof value === 'boolean'
+        ? { sessionId: id, configId, value, type: 'boolean' }
+        : { sessionId: id, configId, value };
+    const r = await this.requestWithFallback('setConfigOption', params);
     const parsed = z.object({ configOptions: z.array(z.any()).optional() }).safeParse(r);
     const configOptions = parsed.success ? ((parsed.data.configOptions as SessionConfigOption[]) ?? []) : [];
     this.applyConfigOptions(configOptions, id);
@@ -987,7 +993,7 @@ export class AcpClient implements OpencodeClient {
         .catch(undefined),
       _meta: z.record(z.string(), z.unknown()).nullish().transform((m) => m ?? undefined),
     });
-    return this.requestWithFallback('prompt', { sessionId: id, prompt: parts }, 0, signal)
+    return this.requestWithFallback('prompt', { sessionId: id, prompt: parts.map(wirePromptPart) }, 0, signal)
       .then((res) => {
         const parsed = zAcpResponse.safeParse(res);
         if (!parsed.success) {
@@ -1398,6 +1404,22 @@ export class AcpClient implements OpencodeClient {
         });
     }, delay);
   }
+}
+
+/**
+ * Copy a prompt part down to the fields the ACP content schema actually
+ * carries. A part assembled upstream can hold a local label or an internal id
+ * that has no wire home; sending it verbatim asked the agent to parse keys its
+ * schema does not define, so the extra fields are dropped on the way out.
+ */
+export function wirePromptPart(part: PromptPart): PromptPart {
+  const out: PromptPart = { type: part.type };
+  if (typeof part.text === 'string') out.text = part.text;
+  if (typeof part.mimeType === 'string') out.mimeType = part.mimeType;
+  if (typeof part.data === 'string') out.data = part.data;
+  if (typeof part.uri === 'string') out.uri = part.uri;
+  if (typeof part.name === 'string') out.name = part.name;
+  return out;
 }
 
 export function buildMcpServers(servers: McpServerConfig[]): AcpMcpServer[] {

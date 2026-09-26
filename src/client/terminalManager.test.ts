@@ -155,6 +155,16 @@ describe('TerminalManager', () => {
 			const success = manager.kill('non-existent');
 			expect(success).toBe(false);
 		});
+
+		it('succeeds, not errors, when the terminal already exited on its own', () => {
+			const instance = manager.create({ command: 'echo' }, '/vault');
+			const proc = Reflect.get(manager, 'processes').get(instance.terminalId);
+			proc.emit('exit', 0, null);
+			// Killing what already finished is not a failure the agent should
+			// have to special-case; the outcome it wanted is already true.
+			expect(manager.kill(instance.terminalId)).toBe(true);
+			expect(manager.get(instance.terminalId)?.status).toBe('exited');
+		});
 	});
 
 	describe('release', () => {
@@ -185,17 +195,24 @@ describe('TerminalManager', () => {
 			await expect(second).resolves.toEqual({ exitCode: 0, signal: null });
 		});
 
-		it('answers both waiters with SIGTERM when the shared deadline expires', async () => {
+		it('leaves the command running and reports nothing exited when the shared deadline expires', async () => {
 			vi.useFakeTimers();
 			const localManager = new TerminalManager({ timeoutMs: 1000, maxOutputBytes: 1000 });
 			const instance = localManager.create({ command: 'sleep 5' }, '/vault');
+			const proc = Reflect.get(localManager, 'processes').get(instance.terminalId);
+			const killSpy = vi.spyOn(proc, 'kill');
 			const first = localManager.waitForExit(instance.terminalId);
 			const second = localManager.waitForExit(instance.terminalId);
 
 			vi.advanceTimersByTime(1500);
 
-			await expect(first).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' });
-			await expect(second).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' });
+			// A wait that ran out is an observation, not an order to stop the
+			// command: the timeout must neither signal the process nor claim a
+			// SIGTERM it never sent.
+			await expect(first).resolves.toEqual({ exitCode: null, signal: null });
+			await expect(second).resolves.toEqual({ exitCode: null, signal: null });
+			expect(killSpy).not.toHaveBeenCalled();
+			expect(localManager.get(instance.terminalId)?.status).toBe('running');
 			localManager.dispose();
 			vi.useRealTimers();
 		});

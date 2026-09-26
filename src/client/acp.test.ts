@@ -13,6 +13,7 @@ import {
   mergeAvailableCommands,
   terminalContentFrom,
   resetDropWarnings,
+  wirePromptPart,
 } from './acp';
 import { AcpRequestHandler } from './AcpRequestHandler';
 import { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
@@ -706,11 +707,13 @@ describe('a config answer that is a real value (0.2.6 stage 2)', () => {
     await client.setConfigOption('s1', 'verbose', true);
 
     // Stringifying it would send "true" where the agent expects true, and a
-    // spec-strict agent answers that with invalid params.
+    // bare true still leaves a schema-strict agent guessing which branch of the
+    // anyOf it is — so the request names the boolean type.
     expect(requestWithFallback).toHaveBeenCalledWith('setConfigOption', {
       sessionId: 's1',
       configId: 'verbose',
       value: true,
+      type: 'boolean',
     });
   });
 
@@ -1621,5 +1624,33 @@ describe('0.2.3 stage 1 per-connection drop warnings', () => {
     parseSessionUpdate(unknownFrame, (kind) => dropped.push(kind));
 
     expect(dropped).toEqual([unroutableKind, unroutableKind]);
+  });
+});
+
+describe('wirePromptPart trims to the schema a strict agent parses (0.2.7 stage 2)', () => {
+  it('drops a local label or internal id that has no wire home', () => {
+    const out = wirePromptPart({
+      type: 'resource_link',
+      uri: 'file:///a.md',
+      name: 'a.md',
+      // These belong to the reader’s own model, not the ACP content schema.
+      ...({ localLabel: 'Attachment', internalId: 42 } as Record<string, unknown>),
+    } as never);
+
+    expect(out).toEqual({ type: 'resource_link', uri: 'file:///a.md', name: 'a.md' });
+    expect(out).not.toHaveProperty('localLabel');
+    expect(out).not.toHaveProperty('internalId');
+  });
+
+  it('keeps a text part byte-for-byte', () => {
+    expect(wirePromptPart({ type: 'text', text: '  hi  ' })).toEqual({ type: 'text', text: '  hi  ' });
+  });
+
+  it('keeps an embedded image’s data and mime, dropping nothing it needs', () => {
+    expect(wirePromptPart({ type: 'image', mimeType: 'image/png', data: 'AAAA' })).toEqual({
+      type: 'image',
+      mimeType: 'image/png',
+      data: 'AAAA',
+    });
   });
 });

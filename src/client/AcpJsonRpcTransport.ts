@@ -1,5 +1,5 @@
 import { createInterface, type Interface } from 'readline';
-import { AcpTransportError, AcpTimeoutError, AcpProtocolError, AcpAbortError, AcpInvalidParamsError } from './AcpErrors';
+import { AcpTransportError, AcpTimeoutError, AcpProtocolError, AcpAbortError, AcpInvalidParamsError, AcpMethodNotFoundError, AcpResourceNotFoundError } from './AcpErrors';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 // ACP's ErrorCode table: -32603 is the implementation-defined failure, and
@@ -7,10 +7,20 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 // -32000 tells the agent it is logged out when it is not.
 const INTERNAL_ERROR = -32603;
 const INVALID_PARAMS = -32602;
+const METHOD_NOT_FOUND = -32601;
+const RESOURCE_NOT_FOUND = -32002;
 
 function errorPayload(err: unknown): { code: number; message: string } {
+  const code =
+    err instanceof AcpInvalidParamsError
+      ? INVALID_PARAMS
+      : err instanceof AcpMethodNotFoundError
+        ? METHOD_NOT_FOUND
+        : err instanceof AcpResourceNotFoundError
+          ? RESOURCE_NOT_FOUND
+          : INTERNAL_ERROR;
   return {
-    code: err instanceof AcpInvalidParamsError ? INVALID_PARAMS : INTERNAL_ERROR,
+    code,
     message: err instanceof Error ? err.message : String(err),
   };
 }

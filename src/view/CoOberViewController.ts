@@ -1210,11 +1210,16 @@ export class CoOberViewController {
   async cancelActiveGeneration(rt: SessionRuntime = this.activeRuntime): Promise<void> {
     const client = this.deps.runtime.getClient();
     if (!client || !rt.busy || !rt.state.sessionId) return;
+    const sessionId = rt.state.sessionId;
     try {
-      await client.cancel(rt.state.sessionId);
+      await client.cancel(sessionId);
     } catch (e) {
       console.error('[co-ober] cancel:', e);
     }
+    // The turn is over, so any question it left on screen can no longer be
+    // answered in the context that asked it. Give the agent its cancelled
+    // outcome now instead of a banner that outlives the stream behind it.
+    this.deps.permissionBanner.dismiss([sessionId]);
   }
 
   async compactSession(rt: SessionRuntime = this.activeRuntime): Promise<void> {

@@ -91,6 +91,32 @@ export class AcpInvalidParamsError extends Error {
   }
 }
 
+/**
+ * A method this client no longer serves because its capability surface was
+ * closed mid-session (fs writes turned off, the terminal tier dropped). The
+ * agent still holds the view it negotiated at initialize, so a generic
+ * internal error reads as "try again"; -32601 says the door is shut and the
+ * agent must stop routing through it.
+ */
+export class AcpMethodNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AcpMethodNotFoundError';
+  }
+}
+
+/**
+ * A referenced resource — a terminal id, a file the agent named — that this
+ * client does not have. Distinct from a malformed frame: the request was
+ * readable, the thing it points at is gone. -32002 Resource not found.
+ */
+export class AcpResourceNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AcpResourceNotFoundError';
+  }
+}
+
 const AUTH_REQUIRED_PATTERN =
   /\bauth(?:entication)?[\s_]+(?:required|needed)\b|\bnot authenticated\b|please (?:log ?in|sign ?in|authenticate)/i;
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { AcpRequestHandler, parseElicitationForm } from './AcpRequestHandler';
+import { AcpMethodNotFoundError, AcpResourceNotFoundError } from './AcpErrors';
 import type { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
 import type { CapabilityGrant, PermissionDecision, PermissionRequest, TerminalCreateParams } from '../types';
 
@@ -527,5 +528,68 @@ describe('terminal/create as the protocol writes it (0.2.6 stage 2)', () => {
     // parameter: command" would send the agent off to fix the wrong field.
     await expect(call(handler, 'handleTerminalCreate', { command: 'ls', args: 'origin' })).rejects.toThrow(/args/);
     handler.dispose();
+  });
+});
+
+describe('AcpRequestHandler capability-surface and not-found error shape (0.2.7 stage 2)', () => {
+  function handler(): AcpRequestHandler {
+    return new AcpRequestHandler({
+      transport: { onRequest: vi.fn(() => () => {}) } as unknown as AcpJsonRpcTransport,
+      vaultPath: '/mock/vault',
+      vaultIo: { writeText: async () => {} },
+    });
+  }
+
+  function callPrivate(h: AcpRequestHandler, method: string, params: Record<string, unknown>): Promise<unknown> {
+    const fn = Reflect.get(h, method) as (p: Record<string, unknown>) => Promise<unknown>;
+    return fn.call(h, params);
+  }
+
+  it('answers a closed file surface with method-not-found, not a permission error', async () => {
+    const h = handler();
+    h.setFsCapabilityMode('disabled');
+    await expect(callPrivate(h, 'handleReadTextFile', { path: 'a.md' })).rejects.toBeInstanceOf(AcpMethodNotFoundError);
+    await expect(callPrivate(h, 'handleWriteTextFile', { path: 'a.md', content: 'x' })).rejects.toBeInstanceOf(AcpMethodNotFoundError);
+    h.dispose();
+  });
+
+  it('answers a closed terminal surface with method-not-found', async () => {
+    const h = handler();
+    Reflect.set(h, 'terminalManager', { create: () => ({ terminalId: 't1', pid: 1 }), setConfig: vi.fn(), dispose: vi.fn() });
+    h.setTerminalCapabilityMode('disabled');
+    await expect(callPrivate(h, 'handleTerminalCreate', { command: 'ls' })).rejects.toBeInstanceOf(AcpMethodNotFoundError);
+    h.dispose();
+  });
+
+  it('answers a terminal the manager lost with resource-not-found', async () => {
+    const h = handler();
+    Reflect.set(h, 'terminalManager', {
+      dispose: vi.fn(),
+      kill: () => false,
+      release: () => false,
+      output: () => ({ error: 'Terminal not found: t404' }),
+      waitForExit: () => Promise.resolve(null),
+    });
+    await expect(callPrivate(h, 'handleTerminalKill', { terminalId: 't404' })).rejects.toBeInstanceOf(AcpResourceNotFoundError);
+    await expect(callPrivate(h, 'handleTerminalRelease', { terminalId: 't404' })).rejects.toBeInstanceOf(AcpResourceNotFoundError);
+    await expect(callPrivate(h, 'handleTerminalOutput', { terminalId: 't404' })).rejects.toBeInstanceOf(AcpResourceNotFoundError);
+    await expect(callPrivate(h, 'handleTerminalWaitForExit', { terminalId: 't404' })).rejects.toBeInstanceOf(AcpResourceNotFoundError);
+    h.dispose();
+  });
+
+  it('reports success, not not-found, when the manager handled the kill', async () => {
+    const h = handler();
+    Reflect.set(h, 'terminalManager', { kill: () => true, dispose: vi.fn() });
+    await expect(callPrivate(h, 'handleTerminalKill', { terminalId: 't1' })).resolves.toEqual({});
+    h.dispose();
+  });
+
+  it('keeps a missing terminalId as invalid-params, distinct from a gone terminal', async () => {
+    const h = handler();
+    Reflect.set(h, 'terminalManager', { kill: () => false, dispose: vi.fn() });
+    // No terminalId at all is a malformed frame; an unknown id is a real
+    // request for something that is not there. They must not share a code.
+    await expect(callPrivate(h, 'handleTerminalKill', {})).rejects.not.toBeInstanceOf(AcpResourceNotFoundError);
+    h.dispose();
   });
 });

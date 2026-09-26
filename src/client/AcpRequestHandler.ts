@@ -16,7 +16,7 @@ import { TerminalManager, TerminalError } from './terminalManager';
 import { z } from 'zod';
 import { REQUEST_DEFAULT_TIMEOUT_MS, REQUEST_DEFAULT_MAX_OUTPUT_BYTES, UNREADABLE_SUMMARY_MAX_CHARS } from '../constants';
 import { ACP_SERVER_REQUEST_ALIASES } from './AcpMethodNames';
-import { AcpInvalidParamsError } from './AcpErrors';
+import { AcpInvalidParamsError, AcpMethodNotFoundError, AcpResourceNotFoundError } from './AcpErrors';
 import { zToolKind, zRawJson } from './acpSchemas';
 
 // One dropped option is survivable; losing the whole request because a
@@ -484,7 +484,7 @@ export class AcpRequestHandler {
     // travel as JSON-RPC errors (the transport maps throws to -32603, unreadable
     // params to -32602).
     if (this.fsCapabilityMode === 'disabled' || !this.fsDelegate) {
-      return Promise.reject(new Error('File system access is disabled'));
+      return Promise.reject(new AcpMethodNotFoundError('File system access is disabled'));
     }
 
     const parsed = zFsPathParam.safeParse(params);
@@ -493,7 +493,7 @@ export class AcpRequestHandler {
     }
 
     return Promise.resolve(this.fsDelegate.readTextFile(parsed.data.path, parsed.data)).then((res) => {
-      if (res.error) throw new Error(res.error);
+      if (res.error) throw new AcpResourceNotFoundError(res.error);
       return { content: res.content };
     });
   }
@@ -502,7 +502,7 @@ export class AcpRequestHandler {
     // Same in-band trap as reads: {success:false} on an empty-result method
     // is indistinguishable from success at the agent.
     if (this.fsCapabilityMode !== 'enabled' || !this.fsDelegate) {
-      return Promise.reject(new Error('File system write access is disabled'));
+      return Promise.reject(new AcpMethodNotFoundError('File system write access is disabled'));
     }
 
     const parsed = zFsWriteParam.safeParse(params);
@@ -535,7 +535,7 @@ export class AcpRequestHandler {
     // error: an in-band {error} reads back at the agent as a terminal that was
     // created and has no id, which it then cannot kill, read or wait for.
     if (this.terminalCapabilityMode !== 'enabled' || !this.terminalManager) {
-      return Promise.reject(new Error('Terminal access is disabled'));
+      return Promise.reject(new AcpMethodNotFoundError('Terminal access is disabled'));
     }
 
     const parsed = zTerminalCreateParam.safeParse(params);
@@ -576,7 +576,7 @@ export class AcpRequestHandler {
 
   private handleTerminalOutput(params: Record<string, unknown>): Promise<unknown> {
     if (!this.terminalManager) {
-      return Promise.reject(new Error('Terminal manager not initialized'));
+      return Promise.reject(new AcpMethodNotFoundError('Terminal manager not initialized'));
     }
 
     const parsed = zTerminalIdParam.safeParse(params);
@@ -587,7 +587,7 @@ export class AcpRequestHandler {
     return Promise.resolve(this.terminalManager.output(parsed.data.terminalId)).then((res) => {
       // terminal/output's result is {output, truncated, exitStatus}; an
       // in-band error would be read as "the command printed nothing".
-      if (res.error) throw new Error(res.error);
+      if (res.error) throw new AcpResourceNotFoundError(res.error);
       return {
         output: res.output,
         truncated: res.truncated ?? false,
@@ -598,7 +598,7 @@ export class AcpRequestHandler {
 
   private handleTerminalKill(params: Record<string, unknown>): Promise<unknown> {
     if (!this.terminalManager) {
-      return Promise.reject(new Error('Terminal manager not initialized'));
+      return Promise.reject(new AcpMethodNotFoundError('Terminal manager not initialized'));
     }
 
     const parsed = zTerminalIdParam.safeParse(params);
@@ -609,14 +609,14 @@ export class AcpRequestHandler {
     // KillTerminalResponse is an empty object: there is no field in which a
     // refusal can travel, so a kill that found nothing has to be an error.
     if (!this.terminalManager.kill(parsed.data.terminalId)) {
-      return Promise.reject(new Error(`Terminal not found: ${parsed.data.terminalId}`));
+      return Promise.reject(new AcpResourceNotFoundError(`Terminal not found: ${parsed.data.terminalId}`));
     }
     return Promise.resolve({});
   }
 
   private handleTerminalRelease(params: Record<string, unknown>): Promise<unknown> {
     if (!this.terminalManager) {
-      return Promise.reject(new Error('Terminal manager not initialized'));
+      return Promise.reject(new AcpMethodNotFoundError('Terminal manager not initialized'));
     }
 
     const parsed = zTerminalIdParam.safeParse(params);
@@ -625,14 +625,14 @@ export class AcpRequestHandler {
     }
 
     if (!this.terminalManager.release(parsed.data.terminalId)) {
-      return Promise.reject(new Error(`Terminal not found: ${parsed.data.terminalId}`));
+      return Promise.reject(new AcpResourceNotFoundError(`Terminal not found: ${parsed.data.terminalId}`));
     }
     return Promise.resolve({});
   }
 
   private handleTerminalWaitForExit(params: Record<string, unknown>): Promise<unknown> {
     if (!this.terminalManager) {
-      return Promise.reject(new Error('Terminal manager not initialized'));
+      return Promise.reject(new AcpMethodNotFoundError('Terminal manager not initialized'));
     }
 
     const parsed = zTerminalIdParam.safeParse(params);
@@ -645,7 +645,7 @@ export class AcpRequestHandler {
       .then((result) => {
         // WaitForTerminalExitResponse says how the process ended; null means
         // there was no such terminal to end.
-        if (!result) throw new Error(`Terminal not found: ${parsed.data.terminalId}`);
+        if (!result) throw new AcpResourceNotFoundError(`Terminal not found: ${parsed.data.terminalId}`);
         return result;
       });
   }

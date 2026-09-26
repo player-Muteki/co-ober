@@ -149,9 +149,11 @@ export function addMcpServerBlock(containerEl: HTMLElement, server: McpServerCon
 
     const currentType = server.type ?? 'stdio';
 
-    // mcpCapabilities passed as parameter
-    const httpEnabled = mcpCapabilities?.http !== false;
-    const sseEnabled = mcpCapabilities?.sse !== false;
+    // mcpCapabilities passed as parameter. An agent that did not affirm a
+    // transport does not support it: defaulting http/sse to enabled offered the
+    // user a server type the agent would then reject.
+    const httpEnabled = mcpCapabilities?.http === true;
+    const sseEnabled = mcpCapabilities?.sse === true;
     const typeOptions = {
       stdio: 'stdio',
       http: httpEnabled ? 'http' : `http (${locale().settings.mcpHttpDisabled})`,

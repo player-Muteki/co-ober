@@ -2495,3 +2495,39 @@ describe('CoOberViewController — every answer belongs to the tab that asked (0
     });
   });
 });
+
+describe('cancelActiveGeneration answers its own banner (0.2.7 stage 2)', () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = createHarness();
+  });
+
+  it('cancels the stream and dismisses the pending question in that session', async () => {
+    const client = createMockClient();
+    (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+    const tabId = h.controller.activeTabId();
+    const rt = rtOf(h, tabId);
+    rt.state.sessionId = 'ses-a';
+    rt.busy = true;
+
+    await h.controller.cancelActiveGeneration(rt);
+
+    expect(client.cancel).toHaveBeenCalledWith('ses-a');
+    // The turn ended, so the banner that outlived it must resolve cancelled
+    // rather than stay clickable in a session that is no longer streaming.
+    expect(h.deps.permissionBanner.dismiss).toHaveBeenCalledWith(['ses-a']);
+  });
+
+  it('leaves the banner alone when there was nothing to cancel', async () => {
+    const client = createMockClient();
+    (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+    const rt = rtOf(h, h.controller.activeTabId());
+    rt.state.sessionId = 'ses-a';
+    rt.busy = false;
+
+    await h.controller.cancelActiveGeneration(rt);
+
+    expect(client.cancel).not.toHaveBeenCalled();
+    expect(h.deps.permissionBanner.dismiss).not.toHaveBeenCalled();
+  });
+});

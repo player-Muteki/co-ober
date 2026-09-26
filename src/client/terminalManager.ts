@@ -136,17 +136,25 @@ export class TerminalManager {
 	}
 
 	/**
-	 * Kill a running terminal process.
+	 * Kill a running terminal process. Killing is idempotent: a terminal that
+	 * already exited is not "not found" — the agent asked us to stop a command
+	 * that is already stopped, and answering that with an error would make a
+	 * routine cleanup race look like a lost terminal. Only an id we never had
+	 * returns false.
 	 */
 	kill(terminalId: string): boolean {
 		const proc = this.processes.get(terminalId);
 		const instance = this.terminals.get(terminalId);
 
-		if (!proc || !instance) {
+		if (!instance) {
 			return false;
 		}
 
 		if (instance.status !== 'running') {
+			return true;
+		}
+
+		if (!proc) {
 			return false;
 		}
 
@@ -200,9 +208,12 @@ export class TerminalManager {
 			const timeout = window.setTimeout(() => {
 				const waiter = this.exitWaiters.get(terminalId);
 				this.exitWaiters.delete(terminalId);
-				this.kill(terminalId);
+				// A wait that ran out is not an order to stop the command: the
+				// agent asked to observe an exit, not to cause one. Killing here
+				// both ended a process nobody asked us to end and then reported a
+				// SIGTERM we were the author of. Say nothing exited instead.
 				for (const r of waiter?.resolves ?? []) {
-					r({ exitCode: null, signal: 'SIGTERM' });
+					r({ exitCode: null, signal: null });
 				}
 			}, this.timeoutMs);
 
