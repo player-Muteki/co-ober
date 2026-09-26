@@ -258,6 +258,7 @@ export class CoOberView extends ItemView {
       onStop: () => {
         void this.stopGeneration();
       },
+      onEscape: () => this.controller?.answerPendingPrompt() ?? false,
       onCycleMode: (direction) => {
         if (direction === 1) this.toolbar.cycleMode();
         else this.toolbar.cycleModeReverse();

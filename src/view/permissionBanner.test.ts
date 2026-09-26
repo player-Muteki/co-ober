@@ -463,3 +463,115 @@ describe('PermissionBanner elicitations', () => {
     banner.dispose();
   });
 });
+
+function permission(overrides: Record<string, unknown> = {}): unknown {
+  return {
+    sessionId: 'session-a',
+    toolCall: {
+      toolCallId: 'tc-1',
+      status: 'pending',
+      rawInput: {},
+      title: 'Edit note',
+      kind: 'edit',
+      locations: [],
+    },
+    options: [
+      { optionId: 'yes', kind: 'allow_once', name: 'Allow once' },
+      { optionId: 'no', kind: 'reject_once', name: 'Reject once' },
+    ],
+    ...overrides,
+  };
+}
+
+describe('PermissionBanner keyboard access', () => {
+  it('takes the keyboard with it as the prompt appears', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const banner = new PermissionBanner(container);
+
+    void banner.show(permission() as any);
+    const first = container.querySelector('.perm-btn') as HTMLButtonElement;
+    expect(document.activeElement).toBe(first);
+    banner.dispose();
+    container.remove();
+  });
+
+  it('says on screen how the prompt can be answered by hand', () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    void banner.show(permission() as any);
+    const hint = container.querySelector('.perm-key-hint');
+    expect(hint?.textContent).toContain('Esc');
+    banner.dispose();
+  });
+
+  it('answers Escape as nobody answered, which is not a refusal', async () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+    const answered = banner.show(permission() as any);
+
+    expect(banner.cancelWithKeyboard()).toBe(true);
+    await expect(answered).resolves.toBeNull();
+    expect(container.querySelector('.co-ober-permission-banner')).toBeNull();
+    banner.dispose();
+  });
+
+  it('retires an elicitation on Escape as cancelled rather than declined', async () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+    const answered = banner.showElicitation({
+      sessionId: 'session-a',
+      elicitationId: 'el-1',
+      message: 'Which file?',
+      fields: [{ key: 'path', label: 'Path', kind: 'text', required: true }],
+      omittedFields: [],
+    } as any);
+
+    expect(banner.cancelWithKeyboard()).toBe(true);
+    await expect(answered).resolves.toEqual({ action: 'cancel' });
+    banner.dispose();
+  });
+
+  it('leaves Escape alone when nothing is waiting for it', () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    expect(banner.cancelWithKeyboard()).toBe(false);
+    expect(banner.currentSessionId()).toBeNull();
+    banner.dispose();
+  });
+
+  it('names the session the visible prompt belongs to, and the next one after it', () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    void banner.show(permission({ sessionId: 'session-a' }) as any);
+    void banner.show(permission({ sessionId: 'session-b' }) as any);
+    expect(banner.currentSessionId()).toBe('session-a');
+    expect(banner.isPending()).toBe(true);
+
+    banner.cancelWithKeyboard();
+    expect(banner.currentSessionId()).toBe('session-b');
+    expect(banner.isPending()).toBe(true);
+
+    banner.cancelWithKeyboard();
+    expect(banner.currentSessionId()).toBeNull();
+    expect(banner.isPending()).toBe(false);
+    banner.dispose();
+  });
+
+  it('answers Escape from the banner itself, without the caller asking', async () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+    const answered = banner.show(permission() as any);
+
+    const el = container.querySelector('.co-ober-permission-banner') as HTMLElement;
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    const stopped = !el.dispatchEvent(event);
+
+    expect(stopped).toBe(true);
+    await expect(answered).resolves.toBeNull();
+    banner.dispose();
+  });
+});

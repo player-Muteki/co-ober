@@ -5,6 +5,8 @@ import type {
 	ModeOption,
 	AvailableCommand,
 	PermissionRequest,
+	PermissionDecision,
+	CapabilityGrant,
 	ElicitationRequest,
 	ElicitationAnswer,
 	PermissionLevel,
@@ -23,11 +25,13 @@ export interface ClientHandlers {
   onClose?: () => void;
   onReconnect?: () => Promise<void>;
   onReconnectFailed?: () => void;
-  onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
+  onPermissionRequest?: (req: PermissionRequest) => Promise<PermissionDecision>;
   /** Ask the user to answer an elicitation the agent posed; the answer goes back verbatim. */
   onElicitationRequest?: (req: ElicitationRequest) => Promise<ElicitationAnswer>;
   /** Called when an inbound permission request fails schema validation and had to be cancelled. */
   onPermissionUnreadable?: (summary: string) => void;
+  /** This client let the agent write a file or run a command without asking anyone. */
+  onCapabilityGrant?: (grant: CapabilityGrant) => void;
   /** An inbound update frame was dropped without being drawn; the conversation says so. */
   onProtocolDrift?: (sessionId: string | null, kind: string) => void;
   /** The agent reported an outstanding elicitation was resolved outside this client. */

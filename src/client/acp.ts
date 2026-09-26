@@ -17,6 +17,8 @@ import type {
   SessionConfigOption,
   PermissionLevel,
   PermissionRequest,
+  PermissionDecision,
+  CapabilityGrant,
   AvailableCommand,
   ModelOption,
   ModeOption,
@@ -460,10 +462,12 @@ export class AcpClient implements OpencodeClient {
   /** No-sessionId frames with several delivery targets are dropped; warn once per connection. */
   private warnedAmbiguousNoSid = false;
   onClose?: () => void;
-  onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
+  onPermissionRequest?: (req: PermissionRequest) => Promise<PermissionDecision>;
   /** The agent asked the user a question; the view answers it or declines. */
   onElicitationRequest?: (req: ElicitationRequest) => Promise<ElicitationAnswer>;
   onPermissionUnreadable?: (summary: string) => void;
+  /** This client let the agent write a file or run a command without asking anyone. */
+  onCapabilityGrant?: (grant: CapabilityGrant) => void;
   /** An inbound frame could not be drawn; the conversation it belongs to says so. */
   onProtocolDrift?: (sessionId: string | null, kind: string) => void;
   /** Agent reported an outstanding elicitation resolved elsewhere. */
@@ -584,6 +588,9 @@ export class AcpClient implements OpencodeClient {
         onElicitationRequest: this.onElicitationRequest,
         vaultIo: this.vaultIo,
         onPermissionUnreadable: (summary) => this.onPermissionUnreadable?.(summary),
+        // A wrapper, not the field: the view binds these handlers after the
+        // connection exists, and a grant must reach whoever is listening then.
+        onCapabilityGrant: (grant) => this.onCapabilityGrant?.(grant),
       });
       this.requestHandler = requestHandler;
       // Before `initialize`, not after: the capabilities we advertise have to be
@@ -1038,6 +1045,7 @@ export class AcpClient implements OpencodeClient {
     this.onPermissionRequest = handlers.onPermissionRequest ?? undefined;
     this.onElicitationRequest = handlers.onElicitationRequest ?? undefined;
     this.onPermissionUnreadable = handlers.onPermissionUnreadable ?? undefined;
+    this.onCapabilityGrant = handlers.onCapabilityGrant ?? undefined;
     this.onProtocolDrift = handlers.onProtocolDrift ?? undefined;
     this.onElicitationComplete = handlers.onElicitationComplete ?? undefined;
     if (this.requestHandler) {
@@ -1048,6 +1056,7 @@ export class AcpClient implements OpencodeClient {
         this.requestHandler.onElicitationRequest = handlers.onElicitationRequest;
       }
       this.requestHandler.onPermissionUnreadable = (summary) => this.onPermissionUnreadable?.(summary);
+      this.requestHandler.onCapabilityGrant = (grant) => this.onCapabilityGrant?.(grant);
     }
   }
 

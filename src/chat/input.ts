@@ -5,6 +5,9 @@ import { isImeComposing } from '../utils/ime';
 export interface InputCallbacks {
   onSend: (text: string, refs?: ContextRef[]) => void;
   onStop: () => void;
+  // Returns true when something else (an outstanding permission banner) owns
+  // Escape, so the key must not reach the stop-the-stream fallback below.
+  onEscape?: () => boolean;
   onCycleMode?: (direction: 1 | -1) => void;
   onToggleMention: () => void;
   onToggleSlash: () => void;
@@ -38,7 +41,12 @@ export class ChatInput {
 
     this.keydownHandler = (e: KeyboardEvent) => {
       if (isImeComposing(e)) return;
-      if (e.key === 'Escape' && this.streaming) { e.preventDefault(); this.callbacks.onStop(); return; }
+      if (e.key === 'Escape') {
+        // A banner waiting for an answer claims Escape before the stream does;
+        // stopping the turn would silently decide the pending request.
+        if (this.callbacks.onEscape?.()) { e.preventDefault(); return; }
+        if (this.streaming) { e.preventDefault(); this.callbacks.onStop(); return; }
+      }
       if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); this.callbacks.onCycleMode?.(1); return; }
       if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); this.callbacks.onCycleMode?.(-1); return; }
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.send(); return; }

@@ -7,12 +7,17 @@ export interface CapabilityTierTarget {
 
 /**
  * Enforce the selected permission tier on client-side capabilities.
- * The readonly tier hard-disables agent file writes and terminal
- * execution regardless of the agent's own permission requests; other
- * tiers defer to the user's capability settings.
+ *
+ * `readonly` and `plan` both mean nothing of the user's may change, so this
+ * client closes its own mutating surfaces — file writes and command
+ * execution — no matter what the capability settings allow. The agent's own
+ * permission prompt is not a check this client can see before honouring an
+ * `fs/write_text_file` or `terminal/create` call, so the tier is the only gate
+ * on that path. `safe` and `yolo` defer to the settings, and every grant they
+ * let through is reported back into the transcript (see `onCapabilityGrant`).
  */
 export function applyPermissionTier(target: CapabilityTierTarget, mode: PermissionLevel, settings: CoOberSettings): void {
-  if (mode === 'readonly') {
+  if (mode === 'readonly' || mode === 'plan') {
     target.setFsCapabilityMode('readonly');
     target.setTerminalCapabilityMode('disabled');
     return;

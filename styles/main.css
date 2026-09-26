@@ -1374,6 +1374,12 @@
   margin-bottom: 6px;
 }
 
+.co-ober-permission-banner .perm-key-hint {
+  font-size: var(--font-smaller);
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
 .co-ober-permission-banner .perm-reject_once {
   background: var(--background-primary);
   color: var(--text-error);

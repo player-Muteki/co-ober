@@ -1,12 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { AcpRequestHandler, parseElicitationForm } from './AcpRequestHandler';
 import type { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
-import type { PermissionRequest } from '../types';
+import type { CapabilityGrant, PermissionDecision, PermissionRequest } from '../types';
 
 function makeHandler(options: {
-  onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
+  onPermissionRequest?: (req: PermissionRequest) => Promise<PermissionDecision>;
   onPermissionUnreadable?: (summary: string) => void;
-}): AcpRequestHandler {
+} = {}): AcpRequestHandler {
   const transport = { onRequest: vi.fn(() => () => {}) } as unknown as AcpJsonRpcTransport;
   return new AcpRequestHandler({
     transport,
@@ -135,6 +135,15 @@ describe('AcpRequestHandler permission outcomes', () => {
     errSpy.mockRestore();
     handler.dispose();
   });
+
+  it('reports cancelled, not a reject option, when nobody answered the prompt', async () => {
+    // Esc on the banner means "unanswered". Choosing reject-1 here would tell
+    // the agent the user refused, which is a decision nobody made.
+    const handler = makeHandler({ onPermissionRequest: async () => null });
+    const result = await ask(handler, { sessionId: 's1', toolCall: { title: 'edit' }, options: validOptions });
+    expect(result).toEqual({ outcome: { outcome: 'cancelled' } });
+    handler.dispose();
+  });
 });
 
 describe('AcpRequestHandler fs/terminal in-band errors', () => {
@@ -162,6 +171,76 @@ describe('AcpRequestHandler fs/terminal in-band errors', () => {
   it('surfaces an unknown terminal as a rejected request, not blank output', async () => {
     const handler = makeHandler({});
     await expect(callPrivate(handler, 'handleTerminalOutput', { terminalId: 'term-404' })).rejects.toThrow(/Terminal not found/);
+    handler.dispose();
+  });
+});
+
+describe('AcpRequestHandler unasked capability grants', () => {
+  function grantHandler(grants: CapabilityGrant[]): AcpRequestHandler {
+    const transport = { onRequest: vi.fn(() => () => {}) } as unknown as AcpJsonRpcTransport;
+    return new AcpRequestHandler({
+      transport,
+      vaultPath: '/mock/vault',
+      vaultIo: { writeText: async () => {} },
+      onCapabilityGrant: (grant) => grants.push(grant),
+    });
+  }
+
+  function call(handler: AcpRequestHandler, method: string, params: Record<string, unknown>): Promise<unknown> {
+    const fn = Reflect.get(handler, method) as (p: Record<string, unknown>) => Promise<unknown>;
+    return fn.call(handler, params);
+  }
+
+  it('records the note a write touched, as the user reads it', async () => {
+    const grants: CapabilityGrant[] = [];
+    const handler = grantHandler(grants);
+    await call(handler, 'handleWriteTextFile', { path: '/mock/vault/notes/idea.md', content: 'x', sessionId: 's1' });
+    expect(grants).toEqual([{ sessionId: 's1', kind: 'file-write', detail: 'notes/idea.md' }]);
+    handler.dispose();
+  });
+
+  it('records the command line a terminal ran, arguments included', async () => {
+    const grants: CapabilityGrant[] = [];
+    const handler = grantHandler(grants);
+    Reflect.set(handler, 'terminalManager', { create: () => ({ terminalId: 't1', pid: 42 }), dispose: vi.fn() });
+    await call(handler, 'handleTerminalCreate', { command: 'git', args: ['push', 'origin'], sessionId: 's2' });
+    expect(grants).toEqual([{ sessionId: 's2', kind: 'terminal', detail: 'git push origin' }]);
+    handler.dispose();
+  });
+
+  it('stays silent when the write it was asked for failed', async () => {
+    const grants: CapabilityGrant[] = [];
+    const transport = { onRequest: vi.fn(() => () => {}) } as unknown as AcpJsonRpcTransport;
+    const handler = new AcpRequestHandler({
+      transport,
+      vaultPath: '/mock/vault',
+      vaultIo: {
+        writeText: async () => {
+          throw new Error('vault locked');
+        },
+      },
+      onCapabilityGrant: (grant) => grants.push(grant),
+    });
+    await expect(call(handler, 'handleWriteTextFile', { path: 'a.md', content: 'x' })).rejects.toThrow('vault locked');
+    expect(grants).toEqual([]);
+    handler.dispose();
+  });
+
+  it('reports nothing when a refused capability was never honoured', async () => {
+    const grants: CapabilityGrant[] = [];
+    const handler = grantHandler(grants);
+    handler.setTerminalCapabilityMode('disabled');
+    const result = await call(handler, 'handleTerminalCreate', { command: 'rm', args: ['-rf', '/'] });
+    expect(result).toMatchObject({ error: expect.stringContaining('disabled') });
+    expect(grants).toEqual([]);
+    handler.dispose();
+  });
+
+  it('keeps a grant whose frame carried no session off the active transcript', async () => {
+    const grants: CapabilityGrant[] = [];
+    const handler = grantHandler(grants);
+    await call(handler, 'handleWriteTextFile', { path: '/mock/vault/a.md', content: 'x' });
+    expect(grants).toEqual([{ sessionId: undefined, kind: 'file-write', detail: 'a.md' }]);
     handler.dispose();
   });
 });

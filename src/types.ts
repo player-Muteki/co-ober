@@ -119,6 +119,25 @@ export interface PermissionRequest {
   options: PermissionOption[];
 }
 
+/**
+ * What the user made of a permission request: an offered option's id, or null
+ * when nobody answered it. `null` travels on the wire as `cancelled`, which is
+ * not the same claim as a refusal — walking away from a prompt is not pressing
+ * its reject button.
+ */
+export type PermissionDecision = string | null;
+
+/**
+ * A privilege this client granted the agent on its own side of the wire: the
+ * agent asked Co-Ober to write a file or run a command, and Co-Ober did it
+ * without the user being asked. `detail` names what was touched.
+ */
+export interface CapabilityGrant {
+  sessionId?: string;
+  kind: 'file-write' | 'terminal';
+  detail: string;
+}
+
 export type ToolKind = 'read' | 'edit' | 'delete' | 'move' | 'search' | 'execute' | 'think' | 'fetch' | 'switch_mode' | 'apply_patch' | 'other';
 
 /** One primitive property of an elicitation's `requestedSchema`. */

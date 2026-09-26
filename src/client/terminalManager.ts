@@ -45,9 +45,15 @@ function getBaseCommand(command: string): string {
 /**
  * Check whether a command the Agent wants to run is on the allowlist.
  *
- * Note: shell commands (sh, bash, cmd, powershell) are on the allowlist but
- * their arguments are NOT validated. In safe / plan permission modes the user
- * will be prompted before execution, which is the intended mitigation.
+ * This list is a name filter, not a decision: shells (sh, bash, cmd,
+ * powershell) are on it and their arguments are NOT validated, so `rm -rf` and
+ * `curl … | sh` both pass whatever this function returns. Nothing here prompts
+ * the user either — the prompt a command may get comes from the agent's own
+ * permission request before it reaches this client. What actually gates this
+ * surface is the tier: `readonly` and `plan` disable the terminal outright
+ * (see permissionTier.ts), and `safe`/`yolo` run it while the grant is written
+ * into the tab's transcript, so what ran unasked is at least readable
+ * afterwards.
  */
 function isAllowedCommand(command: string): boolean {
 	const base = getBaseCommand(command);

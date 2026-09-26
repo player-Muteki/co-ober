@@ -77,6 +77,23 @@ describe('ChatRenderer', () => {
       expect(noteBody()?.textContent).toContain('ACP protocol version 2');
     });
 
+    it('carries the detail a note was given, and keeps it across a locale switch', () => {
+      renderer.setSystemNote('grants', 'permission.granted', 2, 'git push origin');
+      expect(noteBody()?.textContent).toContain('git push origin');
+
+      setLocale('zh');
+      expect(noteBody()?.textContent).toContain('git push origin');
+      expect(noteBody()?.textContent).toContain('2');
+      setLocale('en');
+    });
+
+    it('keeps a note that has no detail free of an empty placeholder', () => {
+      renderer.setSystemNote('grants', 'permission.granted', 1, 'rm -rf build');
+      renderer.setSystemNote('droppedFrames', 'stream.droppedFrames', 3);
+      const bodies = container.querySelectorAll('.co-ober-msg.system .co-ober-msg-body');
+      expect(bodies[1].textContent).not.toContain('{detail}');
+    });
+
     it('takes its own line out and leaves the other notes standing', () => {
       renderer.setSystemNote('droppedFrames', 'stream.droppedFrames', 2);
       renderer.setSystemNote('protocolMismatch', 'stream.protocolMismatch', 2);

@@ -220,8 +220,8 @@ export class ChatRenderer {
    * and `{count}` carries the number, which also lets a language switch
    * relabel the line in place.
    */
-  /** Paint or replace a one-line note; `value` fills the message's `{count}` slot. */
-  setSystemNote(key: string, messageKey: string, value: number): void {
+  /** Paint or replace a one-line note; `value` fills `{count}`, `detail` fills `{detail}`. */
+  setSystemNote(key: string, messageKey: string, value: number, detail?: string): void {
     let wrap = this.systemNotes.get(key);
     // `clear()` and the stale-line sweeps take the element with them, and a
     // panel is not always in the document, so containment — not connectivity —
@@ -239,9 +239,16 @@ export class ChatRenderer {
     if (body) {
       body.dataset.i18nCount = messageKey;
       body.dataset.count = String(value);
-      body.textContent = (lookupLocaleString(messageKey) ?? '').replace('{count}', String(value));
+      if (detail === undefined) delete body.dataset.i18nDetail;
+      else body.dataset.i18nDetail = detail;
+      body.textContent = this.renderSystemNote(messageKey, value, detail);
     }
     this.scrollToBottom();
+  }
+
+  private renderSystemNote(messageKey: string, value: number, detail?: string): string {
+    const label = lookupLocaleString(messageKey) ?? '';
+    return label.replace('{count}', String(value)).replace('{detail}', detail ?? '');
   }
 
   /** Take a note out of the transcript once the condition it reported is gone. */
@@ -988,7 +995,11 @@ export class ChatRenderer {
     });
     this.container.querySelectorAll<HTMLElement>('[data-i18n-count]').forEach((el) => {
       const label = lookupLocaleString(el.dataset.i18nCount ?? '');
-      if (label !== undefined) el.textContent = label.replace('{count}', el.dataset.count ?? '');
+      if (label !== undefined) {
+        el.textContent = label
+          .replace('{count}', el.dataset.count ?? '')
+          .replace('{detail}', el.dataset.i18nDetail ?? '');
+      }
     });
     this.container.querySelectorAll<HTMLElement>('[data-i18n-kind]').forEach((el) => {
       el.textContent = getToolDisplayName(el.dataset.i18nKind ?? '');

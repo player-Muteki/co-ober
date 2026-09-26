@@ -37,6 +37,12 @@ export class SessionRuntime {
    */
   droppedFrames = 0;
   /**
+   * Client-side capabilities this agent got without anyone being asked — a file
+   * write or a command this client carried out on its own. Counted per tab,
+   * because the transcript that was edited by it is this conversation's.
+   */
+  unaskedGrants = 0;
+  /**
    * The /btw scratch thread this tab forked, if any. It is owned here rather
    * than by the view or the controller: a fork outliving the tab that asked
    * for it leaks a live session on the agent side.

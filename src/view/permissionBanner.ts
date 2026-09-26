@@ -1,4 +1,4 @@
-import type { ElicitationAnswer, ElicitationField, ElicitationRequest, PermissionRequest } from '../types';
+import type { ElicitationAnswer, ElicitationField, ElicitationRequest, PermissionDecision, PermissionRequest } from '../types';
 import { t, onLocaleChange, lookupLocaleString } from '../i18n/index';
 import { PERMISSION_MAX_LOCATIONS, PERMISSION_SUMMARY_MAX_KEYS, PERMISSION_TRUNCATE_LENGTH } from '../constants';
 
@@ -9,7 +9,7 @@ export interface PermissionOrigin {
 }
 
 type PendingPrompt =
-  | { kind: 'permission'; req: PermissionRequest; origin?: PermissionOrigin; resolve: (decision: string) => void }
+  | { kind: 'permission'; req: PermissionRequest; origin?: PermissionOrigin; resolve: (decision: PermissionDecision) => void }
   | { kind: 'elicitation'; req: ElicitationRequest; origin?: PermissionOrigin; resolve: (answer: ElicitationAnswer) => void };
 
 export class PermissionBanner {
@@ -32,7 +32,7 @@ export class PermissionBanner {
     this.settlePending();
   }
 
-  show(req: PermissionRequest, origin?: PermissionOrigin): Promise<string> {
+  show(req: PermissionRequest, origin?: PermissionOrigin): Promise<PermissionDecision> {
     return new Promise((resolve) => {
       // Concurrent requests queue up behind the visible one; force-rejecting
       // the previous request would punish work that was never shown.
@@ -60,6 +60,36 @@ export class PermissionBanner {
     this.containerEl.scrollTop = this.containerEl.scrollHeight;
   }
 
+  /**
+   * Answer the visible prompt as "nobody answered": the agent is told the
+   * request was cancelled, which is not the claim a reject button makes.
+   * Returns false when no prompt is on screen, so the caller can let the key
+   * carry on to whatever else it means (stopping the stream, for one).
+   */
+  cancelWithKeyboard(): boolean {
+    const pending = this.current;
+    if (!pending) return false;
+    this.showNext();
+    if (pending.kind === 'permission') pending.resolve(null);
+    else pending.resolve({ action: 'cancel' });
+    return true;
+  }
+
+  /** True while a prompt from any tab is waiting for an answer. */
+  isPending(): boolean {
+    return this.current !== null || this.queue.length > 0;
+  }
+
+  /**
+   * The session the visible prompt belongs to. The caller decides whether that
+   * is the tab the key press came from — a background tab's question stays
+   * untouched when the active tab answers its own.
+   */
+  currentSessionId(): string | null {
+    if (!this.current) return null;
+    return this.current.req.sessionId ?? null;
+  }
+
   private render(pending: PendingPrompt): void {
     if (this.el) {
       this.el.remove();
@@ -85,9 +115,29 @@ export class PermissionBanner {
 
     if (pending.kind === 'elicitation') {
       this.renderElicitation(banner, pending.req);
+      this.makeOperable(banner);
       return;
     }
     this.renderPermission(banner, pending.req);
+    this.makeOperable(banner);
+  }
+
+  /**
+   * A prompt the keyboard cannot reach is a prompt only the mouse can answer:
+   * it takes focus as it appears, and Esc retires it as "unanswered" rather
+   * than leaving the key to whatever the composer thinks it means.
+   */
+  private makeOperable(banner: HTMLDivElement): void {
+    banner.createDiv({ cls: 'perm-key-hint', text: t().permission.keyHint });
+    banner.tabIndex = 0;
+    banner.onkeydown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.cancelWithKeyboard();
+    };
+    const first = banner.querySelector<HTMLElement>('.perm-field-input, .perm-field-checkbox, .perm-btn');
+    if (typeof first?.focus === 'function') first.focus({ preventScroll: true });
   }
 
   private renderPermission(banner: HTMLDivElement, req: PermissionRequest): void {

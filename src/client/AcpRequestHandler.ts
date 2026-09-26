@@ -1,5 +1,7 @@
 import type {
   PermissionRequest,
+  PermissionDecision,
+  CapabilityGrant,
   FsCapabilityMode,
   TerminalCapabilityMode,
   TerminalCreateParams,
@@ -126,22 +128,30 @@ export function parseElicitationForm(raw: unknown): { fields: ElicitationField[]
   }
   return { fields, omitted };
 }
-const zFsWriteParam = z.object({ path: z.string(), content: z.string() });
+const zFsWriteParam = z.object({
+  path: z.string(),
+  content: z.string(),
+  // Required by the spec, and the only way a grant can be credited to the tab
+  // whose agent asked for it. Agents that omit it still get the write.
+  sessionId: z.string().optional(),
+});
 const zTerminalIdParam = z.object({ terminalId: z.string() });
 const zTerminalCreateParam = z.object({
   command: z.string(),
   args: z.array(z.string()).optional(),
   cwd: z.string().optional(),
   env: z.record(z.string(), z.string()).optional(),
+  sessionId: z.string().optional(),
 });
 
 export interface AcpRequestHandlerOptions {
   transport: AcpJsonRpcTransport;
   vaultPath: string;
-  onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
+  onPermissionRequest?: (req: PermissionRequest) => Promise<PermissionDecision>;
   onElicitationRequest?: (req: ElicitationRequest) => Promise<ElicitationAnswer>;
   vaultIo?: VaultWriteIo;
   onPermissionUnreadable?: (summary: string) => void;
+  onCapabilityGrant?: (grant: CapabilityGrant) => void;
 }
 
 export class AcpRequestHandler {
@@ -151,9 +161,10 @@ export class AcpRequestHandler {
   private terminalCapabilityMode: TerminalCapabilityMode = 'enabled';
   private transport: AcpJsonRpcTransport;
   private vaultPath: string;
-  onPermissionRequest?: (req: PermissionRequest) => Promise<string>;
+  onPermissionRequest?: (req: PermissionRequest) => Promise<PermissionDecision>;
   onElicitationRequest?: (req: ElicitationRequest) => Promise<ElicitationAnswer>;
   onPermissionUnreadable?: (summary: string) => void;
+  onCapabilityGrant?: (grant: CapabilityGrant) => void;
 
   constructor(options: AcpRequestHandlerOptions) {
     this.transport = options.transport;
@@ -161,6 +172,7 @@ export class AcpRequestHandler {
     this.onPermissionRequest = options.onPermissionRequest;
     this.onElicitationRequest = options.onElicitationRequest;
     this.onPermissionUnreadable = options.onPermissionUnreadable;
+    this.onCapabilityGrant = options.onCapabilityGrant;
 
     this.fsDelegate = new FsDelegate({
       vaultPath: this.vaultPath,
@@ -308,7 +320,12 @@ export class AcpRequestHandler {
     // our fallbacks (dismissed banner, synthesized reject_once) must not
     // fabricate a choice the agent never presented — an unmatched decision
     // means "no selectable outcome", i.e. cancelled.
-    const outcomeFor = (decision: string): unknown => {
+    const outcomeFor = (decision: PermissionDecision): unknown => {
+      if (decision === null) {
+        // Nobody answered (Esc, or a banner that went away). Say exactly that
+        // rather than guessing at a reject option the user never saw.
+        return { outcome: { outcome: 'cancelled' } };
+      }
       if (parsed.data.options.some((o) => o.optionId === decision)) {
         return { outcome: { outcome: 'selected', optionId: decision } };
       }
@@ -426,8 +443,22 @@ export class AcpRequestHandler {
 
     return Promise.resolve(this.fsDelegate.writeTextFile(parsed.data.path, parsed.data.content)).then((res) => {
       if (res.error || !res.success) throw new Error(res.error ?? 'Write failed');
+      // This write was never put in front of the user: the agent's own
+      // permission prompt (if any) covered its tool call, not this client's
+      // decision to let it reach the vault. Say what was touched.
+      this.onCapabilityGrant?.({
+        sessionId: parsed.data.sessionId,
+        kind: 'file-write',
+        detail: this.relativeToVault(parsed.data.path),
+      });
       return { success: true };
     });
+  }
+
+  /** Show a path the way the user reads it in their own vault. */
+  private relativeToVault(path: string): string {
+    const prefix = `${this.vaultPath.replace(/[/\\]+$/, '')}/`;
+    return path.startsWith(prefix) ? path.slice(prefix.length) : path;
   }
 
   private handleTerminalCreate(params: Record<string, unknown>): Promise<unknown> {
@@ -449,6 +480,14 @@ export class AcpRequestHandler {
 
     try {
       const instance = this.terminalManager.create(createParams, this.vaultPath);
+      // The allowlist is not a user decision: whatever this client let through
+      // here ran without anyone being asked, so it has to be readable after the
+      // fact — command and arguments included.
+      this.onCapabilityGrant?.({
+        sessionId: parsed.data.sessionId,
+        kind: 'terminal',
+        detail: [parsed.data.command, ...(parsed.data.args ?? [])].join(' '),
+      });
       return Promise.resolve({
         terminalId: instance.terminalId,
         pid: instance.pid,

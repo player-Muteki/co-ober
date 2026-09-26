@@ -167,6 +167,31 @@ describe('ChatInput', () => {
 			expect(callbacks.onStop).not.toHaveBeenCalled();
 		});
 
+		it('a waiting prompt takes Escape before the stream does', () => {
+			callbacks.onEscape = vi.fn(() => true);
+			chatInput.setStreaming(true);
+			const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+			textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+			expect(callbacks.onEscape).toHaveBeenCalled();
+			expect(callbacks.onStop).not.toHaveBeenCalled();
+		});
+
+		it('Escape falls through to stop when no prompt is waiting', () => {
+			callbacks.onEscape = vi.fn(() => false);
+			chatInput.setStreaming(true);
+			const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+			textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+			expect(callbacks.onStop).toHaveBeenCalled();
+		});
+
+		it('asks the prompt even when the tab is not streaming', () => {
+			callbacks.onEscape = vi.fn(() => true);
+			const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+			textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+			expect(callbacks.onEscape).toHaveBeenCalled();
+			expect(callbacks.onStop).not.toHaveBeenCalled();
+		});
+
 		it('@ triggers mention when at word boundary', () => {
 			const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
 			textarea.value = 'Hello ';

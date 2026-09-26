@@ -108,6 +108,9 @@ const zh: Locale = {
     moreLocations: '另有 {count} 处',
     unreadable: '权限请求无法解析，已取消。',
     originTab: '来自标签 {index} 的请求——点击切换',
+    keyHint: '回车选择 · Esc 表示未作答',
+    granted: 'Co-Ober 未经询问在本机执行了 {count} 次 Agent 请求——最近一次：{detail}',
+    queueBlocked: '请先回答上方的请求，再发送下一条消息。',
   },
 
   tabs: {

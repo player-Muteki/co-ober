@@ -86,7 +86,15 @@ function createHarness(): Harness {
       setImageAttachEnabled: noop,
     },
     inlineEditPanel: { clearState: noop, pendingState: null, showDiffFromResponse: noop },
-    permissionBanner: { dismiss: noop, show: vi.fn(), showElicitation: vi.fn(), resolveExternally: vi.fn() },
+    permissionBanner: {
+      dismiss: noop,
+      show: vi.fn(),
+      showElicitation: vi.fn(),
+      resolveExternally: vi.fn(),
+      currentSessionId: vi.fn(() => null),
+      cancelWithKeyboard: vi.fn(() => false),
+      isPending: vi.fn(() => false),
+    },
     mention: { clear: noop, listAllNotes: vi.fn(() => []), addRef: noop, hasRef: vi.fn(() => false), removeRef: noop },
     resolver: { resolveNote: vi.fn() },
     syncEngine: { process: vi.fn() },
@@ -1423,6 +1431,126 @@ describe('CoOberViewController — what survives a restart (0.2.2 stage 2)', () 
       h.controller.handleDisconnect();
 
       expect(h.renderers.get(tabA)?.clearSystemNote).toHaveBeenCalledWith('protocolMismatch');
+    });
+  });
+
+  describe('unasked capability grants', () => {
+    function twoTabs(): [string, string] {
+      h.controller.restoreTabShells(
+        [{ tabId: 'tab-1', sessionId: 'ses-a' }, { tabId: 'tab-2', sessionId: 'ses-b' }],
+        'tab-1',
+      );
+      return h.controller.listTabIds() as [string, string];
+    }
+
+    it('records the write in the tab whose agent asked for it', () => {
+      const [tabA, tabB] = twoTabs();
+      h.controller.noteCapabilityGrant({ sessionId: 'ses-b', kind: 'file-write', detail: 'notes/b.md' });
+
+      expect(rtOf(h, tabB).unaskedGrants).toBe(1);
+      expect(h.renderers.get(tabB)?.setSystemNote).toHaveBeenCalledWith('grants', 'permission.granted', 1, 'notes/b.md');
+      expect(h.renderers.get(tabA)?.setSystemNote).not.toHaveBeenCalled();
+    });
+
+    it('counts a whole line of grants into one note, newest detail first', () => {
+      const [tabA] = twoTabs();
+      h.controller.noteCapabilityGrant({ sessionId: 'ses-a', kind: 'terminal', detail: 'git push' });
+      h.controller.noteCapabilityGrant({ sessionId: 'ses-a', kind: 'terminal', detail: 'rm -rf build' });
+
+      expect(rtOf(h, tabA).unaskedGrants).toBe(2);
+      const note = h.renderers.get(tabA)?.setSystemNote;
+      expect(note).toHaveBeenCalledTimes(2);
+      expect(note).toHaveBeenLastCalledWith('grants', 'permission.granted', 2, 'rm -rf build');
+    });
+
+    it('gives a side chat’s grant to the tab that forked it', () => {
+      const [tabA] = twoTabs();
+      rtOf(h, tabA).sideChatSessionId = 'fork-1';
+      h.controller.noteCapabilityGrant({ sessionId: 'fork-1', kind: 'file-write', detail: 'scratch.md' });
+
+      expect(h.renderers.get(tabA)?.setSystemNote).toHaveBeenCalledWith('grants', 'permission.granted', 1, 'scratch.md');
+    });
+
+    it('falls back to the tab on screen when the frame names no session', () => {
+      const [tabA, tabB] = twoTabs();
+      h.controller.noteCapabilityGrant({ kind: 'terminal', detail: 'curl -s localhost' });
+
+      expect(h.renderers.get(tabA)?.setSystemNote).toHaveBeenCalledTimes(1);
+      expect(h.renderers.get(tabB)?.setSystemNote).not.toHaveBeenCalled();
+    });
+
+    it('reaches the tab through the handler the view binds to the client', () => {
+      const client = createMockClient();
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      const [, tabB] = twoTabs();
+
+      h.controller.bindClientHandlers();
+      const handlers = (client.setClientHandlers as ReturnType<typeof vi.fn>).mock.calls[0][0] as {
+        onCapabilityGrant: (grant: { sessionId?: string; kind: string; detail: string }) => void;
+      };
+      handlers.onCapabilityGrant({ sessionId: 'ses-b', kind: 'file-write', detail: 'notes/b.md' });
+
+      expect(h.renderers.get(tabB)?.setSystemNote).toHaveBeenCalledWith('grants', 'permission.granted', 1, 'notes/b.md');
+    });
+  });
+
+  describe('Escape and the waiting prompt', () => {
+    function twoTabs(): [string, string] {
+      h.controller.restoreTabShells(
+        [{ tabId: 'tab-1', sessionId: 'ses-a' }, { tabId: 'tab-2', sessionId: 'ses-b' }],
+        'tab-1',
+      );
+      return h.controller.listTabIds() as [string, string];
+    }
+
+    it('answers the prompt this tab is looking at', () => {
+      twoTabs();
+      const banner = h.deps.permissionBanner;
+      (banner.currentSessionId as ReturnType<typeof vi.fn>).mockReturnValue('ses-a');
+      (banner.cancelWithKeyboard as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+      expect(h.controller.answerPendingPrompt()).toBe(true);
+      expect(banner.cancelWithKeyboard).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves another tab’s prompt for that tab, and keeps stopping the stream here', () => {
+      const [tabA] = twoTabs();
+      const banner = h.deps.permissionBanner;
+      (banner.currentSessionId as ReturnType<typeof vi.fn>).mockReturnValue('ses-b');
+
+      expect(h.controller.answerPendingPrompt()).toBe(false);
+      expect(banner.cancelWithKeyboard).not.toHaveBeenCalled();
+      expect(tabA).toBeDefined();
+    });
+
+    it('does nothing when the key was pressed over an empty banner', () => {
+      twoTabs();
+      const banner = h.deps.permissionBanner;
+      expect(h.controller.answerPendingPrompt()).toBe(false);
+      expect(banner.cancelWithKeyboard).not.toHaveBeenCalled();
+    });
+
+    it('keeps a new message out of the queue while the tab has a prompt on screen', async () => {
+      const [tabA] = twoTabs();
+      const banner = h.deps.permissionBanner;
+      (banner.currentSessionId as ReturnType<typeof vi.fn>).mockReturnValue('ses-a');
+
+      await h.controller.send('next thought', []);
+
+      expect(rtOf(h, tabA).promptQueue).toHaveLength(0);
+      expect(h.renderers.get(tabA)?.addSystemMessage).toHaveBeenCalledWith(t().permission.queueBlocked);
+    });
+
+    it('lets another tab send while this one waits to be answered', async () => {
+      const [, tabB] = twoTabs();
+      const banner = h.deps.permissionBanner;
+      (banner.currentSessionId as ReturnType<typeof vi.fn>).mockReturnValue('ses-a');
+      const client = createMockClient();
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      await h.controller.send('unrelated', [], rtOf(h, tabB));
+
+      expect(h.renderers.get(tabB)?.addSystemMessage).not.toHaveBeenCalledWith(t().permission.queueBlocked);
     });
   });
 });

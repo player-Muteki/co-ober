@@ -1,4 +1,5 @@
 import type {
+  CapabilityGrant,
   NormalizedUpdate,
   ContextRef,
   PromptPart,
@@ -810,6 +811,9 @@ export class CoOberViewController {
       onPermissionUnreadable: () => {
         this.renderer.addError(t().permission.unreadable);
       },
+      onCapabilityGrant: (grant) => {
+        this.noteCapabilityGrant(grant);
+      },
       onProtocolDrift: (sessionId) => {
         this.noteProtocolDrift(sessionId);
       },
@@ -881,6 +885,40 @@ export class CoOberViewController {
     if (!rt) return;
     rt.droppedFrames += 1;
     rt.renderer.setSystemNote('droppedFrames', 'stream.droppedFrames', rt.droppedFrames);
+  }
+
+  /**
+   * `fs/write_text_file` and `terminal/create` are calls *this client* answers,
+   * so outside the tiers that hard-refuse them a note gets edited or a command
+   * runs without a banner ever appearing. The agent may have asked its own
+   * permission first; this client cannot see that, so the least it can do is
+   * record in the transcript whose file was touched what was actually done.
+   */
+  noteCapabilityGrant(grant: CapabilityGrant): void {
+    const rt = this.findOwningRuntime(grant.sessionId ?? null) ?? (this.runtimes.size > 0 ? this.activeRuntime : undefined);
+    if (!rt) return;
+    rt.unaskedGrants += 1;
+    rt.renderer.setSystemNote('grants', 'permission.granted', rt.unaskedGrants, grant.detail);
+  }
+
+  /**
+   * Escape answers the question this tab has on screen instead of stopping its
+   * turn: the agent is told nobody answered, which no reject button claims.
+   * Returns false when the visible prompt belongs to another tab, so the key
+   * keeps its usual meaning where the user typed it.
+   */
+  answerPendingPrompt(): boolean {
+    const sessionId = this.deps.permissionBanner.currentSessionId();
+    if (!sessionId) return false;
+    if (this.findOwningRuntime(sessionId) !== this.activeRuntime) return false;
+    return this.deps.permissionBanner.cancelWithKeyboard();
+  }
+
+  /** True while this tab has the request the banner is showing on screen. */
+  private promptParkedFor(rt: SessionRuntime): boolean {
+    const sessionId = this.deps.permissionBanner.currentSessionId();
+    if (!sessionId) return false;
+    return this.findOwningRuntime(sessionId) === rt;
   }
 
   /**
@@ -1875,6 +1913,13 @@ export class CoOberViewController {
     rt: SessionRuntime = this.activeRuntime,
     opts: { paintedHead?: boolean; imagesHead?: PromptPart[] } = {},
   ): Promise<void> {
+    if (this.promptParkedFor(rt)) {
+      // A queued prompt would be answered by the agent after the pending
+      // request is decided anyway, so the reader is told to decide it first
+      // rather than watching a message sit in a queue they cannot see.
+      rt.renderer.addSystemMessage(t().permission.queueBlocked);
+      return;
+    }
     if (rt.busy) {
       rt.promptQueue.push({ text, refs });
       if (this.isActiveTab(rt)) this.updateQueueIndicator(rt);

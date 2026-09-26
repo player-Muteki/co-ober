@@ -3,6 +3,7 @@ import type {
 	PromptPart,
 	SessionConfigOption,
 	PermissionRequest,
+	PermissionDecision,
 	ElicitationAnswer,
 	AvailableCommand,
 	ModelOption,
@@ -93,7 +94,7 @@ export class AgentRuntime implements OpencodeClient {
 
   setClientHandlers(handlers: ClientHandlers): void {
     const permissionHandler =
-      handlers.onPermissionRequest ?? ((req: PermissionRequest): Promise<string> => this.requestPermission(req));
+      handlers.onPermissionRequest ?? ((req: PermissionRequest): Promise<PermissionDecision> => this.requestPermission(req));
     // Nobody having answered is a decline, never an accept: the agent must not
     // be told the user agreed just because no banner was bound yet.
     const elicitationHandler =

@@ -110,6 +110,9 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): MockDeps {
       show: vi.fn(),
       showElicitation: vi.fn(),
       resolveExternally: vi.fn(),
+      currentSessionId: vi.fn(() => null),
+      cancelWithKeyboard: vi.fn(() => false),
+      isPending: vi.fn(() => false),
     } as unknown as ControllerDeps['permissionBanner'],
     mention: {
       clear: noop,

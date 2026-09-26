@@ -106,6 +106,9 @@ const en = {
     moreLocations: '+{count} more',
     unreadable: 'Permission request was unreadable and was cancelled.',
     originTab: 'Request from tab {index} — click to switch',
+    keyHint: 'Enter to choose · Esc leaves it unanswered',
+    granted: 'Co-Ober carried out {count} agent request(s) on this machine without a prompt — last: {detail}',
+    queueBlocked: 'Answer the request above before sending another message.',
   },
 
   tabs: {
