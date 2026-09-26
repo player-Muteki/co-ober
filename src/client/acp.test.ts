@@ -1212,6 +1212,43 @@ describe('sendMessage flow', () => {
     expect(client.getSessionSnapshotFor('s2').currentModelId).toBe('replayed');
   });
 
+  it('forgets the metadata of a session the agent closed', async () => {
+    const client = new AcpClient('opencode');
+    Reflect.set(client, 'transport', { request: vi.fn().mockResolvedValue({}) });
+    Reflect.set(client, 'sessionId_', 's1');
+    client.sendMessage('s1', [], vi.fn()).catch(() => {});
+
+    dispatch(client, {
+      sessionId: 's1',
+      update: { sessionUpdate: 'current_mode_update', currentModeId: 'plan', availableModes: [{ id: 'plan', name: 'Plan' }] },
+    });
+    expect(client.getSessionSnapshotFor('s1').currentModeId).toBe('plan');
+
+    await client.closeSession('s1');
+
+    // The agent dropped the session; what it last reported for it is true of
+    // nothing, and a reopened session must not look like it still had them.
+    expect(client.getSessionSnapshotFor('s1').currentModeId).toBeNull();
+    expect(client.getSessionSnapshotFor('s1').availableModes).toEqual([]);
+  });
+
+  it('clears per-session metadata when the connection goes away', async () => {
+    const client = new AcpClient('opencode');
+    Reflect.set(client, 'transport', { request: vi.fn().mockResolvedValue({}), dispose: vi.fn() });
+    Reflect.set(client, 'sessionId_', 's1');
+    client.sendMessage('s1', [], vi.fn()).catch(() => {});
+
+    dispatch(client, {
+      sessionId: 's1',
+      update: { sessionUpdate: 'current_model_update', currentModelId: 'gone-model', availableModels: [] },
+    });
+    expect(client.getSessionSnapshotFor('s1').currentModelId).toBe('gone-model');
+
+    await Reflect.get(client, 'disposeConnection').call(client, new Error('gone'));
+
+    expect(client.getSessionSnapshotFor('s1').currentModelId).toBeNull();
+  });
+
   it('routes replay updates to the replay handler when no stream is active', async () => {
     const client = new AcpClient('opencode');
     const replay = vi.fn();

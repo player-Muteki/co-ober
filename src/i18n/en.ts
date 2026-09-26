@@ -103,10 +103,6 @@ const en = {
 
   permission: {
     title: 'Permission: {title}',
-    allowOnce: 'Allow Once',
-    allowAlways: 'Allow Always',
-    rejectOnce: 'Reject',
-    rejectAlways: 'Reject Always',
     moreLocations: '+{count} more',
     unreadable: 'Permission request was unreadable and was cancelled.',
     originTab: 'Request from tab {index} — click to switch',
@@ -189,6 +185,7 @@ const en = {
   copy: {
     button: 'Copy',
     copied: 'Copied',
+    failed: 'Copy failed',
     transcript: 'Conversation copied to the clipboard',
   },
 
@@ -341,16 +338,12 @@ const en = {
   },
 
   toolbar: {
-    send: 'Send',
-    stop: 'Stop',
     sendAria: 'Send message',
     stopAria: 'Stop generation',
     attachImage: 'Attach image',
     attachImageUnsupported: 'This agent does not support image prompts',
     applyFailed: 'Setting failed; reverted to the agent-side value',
-    modelTitle: 'Model',
     agentTitle: 'Agent mode',
-    effortTitle: 'Thinking effort',
     noModels: 'No models',
     effort: {
       default: 'Default',
@@ -407,7 +400,6 @@ const en = {
     processExited: 'OpenCode process exited with code {code}',
     unknownCode: 'unknown',
     stdinNotWritable: 'OpenCode process stdin is not writable',
-    requestTimeout: 'Request timeout (5 minutes)',
     superseded: 'ACP connection was superseded by a newer connection attempt',
     disconnected: 'Disconnected',
     invalidSessionId: 'Server did not return a valid session ID',

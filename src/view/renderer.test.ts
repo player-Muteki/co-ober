@@ -3,7 +3,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { ChatRenderer, formatMessageUsage, currencySymbol, contextPercentage } from './renderer';
 import { closeImagePreview } from './imagePreview';
 import { installObsidianDomHelpers } from '../test/domHelpers';
-import { setLocale } from '../i18n/index';
+import { setLocale, t } from '../i18n/index';
 
 installObsidianDomHelpers();
 
@@ -965,7 +965,7 @@ describe('ChatRenderer', () => {
   });
 
   describe('copy button reset timer', () => {
-    it('leaves a detached button untouched when the reset timer fires', () => {
+    it('leaves a detached button untouched when the reset timer fires', async () => {
       Object.defineProperty(globalThis, 'navigator', {
         value: { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } },
         configurable: true,
@@ -978,6 +978,7 @@ describe('ChatRenderer', () => {
         const btn = host.querySelector('.co-ober-text-copy-btn') as HTMLButtonElement;
 
         btn.click();
+        for (let i = 0; i < 5; i++) await Promise.resolve();
         expect(btn.textContent).toBe('Copied');
 
         // Transcript torn down (session switch / rerender) before the revert fires.
@@ -988,6 +989,41 @@ describe('ChatRenderer', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    it('withholds "Copied" until the clipboard write resolves', async () => {
+      let settle: () => void = () => {};
+      Object.defineProperty(globalThis, 'navigator', {
+        value: { clipboard: { writeText: vi.fn(() => new Promise<void>((resolve) => { settle = resolve; })) } },
+        configurable: true,
+      });
+      const host = document.createElement('div');
+      container.appendChild(host);
+      renderer.addTextCopyButton(host, 'markdown body');
+      const btn = host.querySelector('.co-ober-text-copy-btn') as HTMLButtonElement;
+
+      btn.click();
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      expect(btn.textContent).toBe('Copy');
+
+      settle();
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      expect(btn.textContent).toBe('Copied');
+    });
+
+    it('says the copy failed instead of claiming it succeeded', async () => {
+      Object.defineProperty(globalThis, 'navigator', {
+        value: { clipboard: { writeText: vi.fn().mockRejectedValue(new Error('permission denied')) } },
+        configurable: true,
+      });
+      const host = document.createElement('div');
+      container.appendChild(host);
+      renderer.addTextCopyButton(host, 'markdown body');
+      const btn = host.querySelector('.co-ober-text-copy-btn') as HTMLButtonElement;
+
+      btn.click();
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      expect(btn.textContent).toBe(t().copy.failed);
     });
   });
 

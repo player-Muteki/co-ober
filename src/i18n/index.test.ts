@@ -39,7 +39,6 @@ describe('i18n locale switching', () => {
     expect(t().sync.ruleFailed).toContain('{error}');
     expect(t().inlineEdit.prompt).toContain('{text}');
     expect(t().acp.stdinNotWritable).toBeTruthy();
-    expect(t().acp.requestTimeout).toBeTruthy();
     expect(t().session.defaultTitle).toContain('{time}');
     expect(t().settings.diagnostics.runtimeDetail).toContain('{modes}');
     expect(t().settings.diagnostics.runtimeDetail).toContain('{models}');

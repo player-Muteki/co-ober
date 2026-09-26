@@ -715,6 +715,10 @@ export class CoOberViewController {
   async dispose(): Promise<void> {
     this.unsubscribeLocale?.();
     this.unsubscribeLocale = null;
+    // The client belongs to the plugin and outlives this view; leaving the
+    // handlers bound let a frame arriving after close reach a dead renderer
+    // and a banner whose container is gone.
+    this.deps.runtime.getClient()?.setClientHandlers({});
     for (const rt of this.runtimes.values()) this.dropQueuedPrompts(rt);
     for (const rt of this.runtimes.values()) this.endSideChat(rt);
     for (const rt of this.runtimes.values()) await rt.streamCtrl.dispose();
@@ -910,6 +914,12 @@ export class CoOberViewController {
     this.deps.updateContextMeter(null);
     this.deps.input.setStreaming(false);
     this.deps.toolbar.setSending(false);
+    // Nothing is negotiated any more, so the bar must stop offering the dead
+    // agent's models, modes and config choices: switching to them cannot work.
+    this.deps.toolbar.updateAgents([], undefined);
+    this.deps.toolbar.updateModels([], undefined);
+    this.deps.toolbar.updateEffort(this.builtInEfforts(), this.deps.runtime.settings.defaultEffort);
+    this.deps.toolbar.updateExtraConfigs([]);
     this.deps.welcomeView.updateStatus(false);
     this.noteProtocolMismatch();
     this.callbacks.onShowReconnectBtn();
@@ -2169,7 +2179,9 @@ export class CoOberViewController {
     for (let i = session.messages.length - 1; i >= 0; i--) {
       const msg = session.messages[i];
       if (msg.role === 'assistant' && msg.type !== 'thinking') {
-        void navigator.clipboard.writeText(msg.content);
+        // Nothing is claimed on success, so only the rejection needs saying:
+        // the reader otherwise pastes from a clipboard that was never written.
+        navigator.clipboard?.writeText(msg.content).catch(() => this.renderer.addError(t().copy.failed));
         break;
       }
     }
@@ -2232,9 +2244,12 @@ export class CoOberViewController {
       rt.renderer.addSystemMessage(t().export.noSession);
       return;
     }
-    void navigator.clipboard.writeText(buildTranscriptMarkdown(session)).then(() => {
-      rt.renderer.addSystemMessage(t().copy.transcript);
-    });
+    // The confirmation is only earned by a write that resolved; a rejected
+    // clipboard promise used to leave "Conversation copied" on screen anyway.
+    navigator.clipboard?.writeText(buildTranscriptMarkdown(session)).then(
+      () => rt.renderer.addSystemMessage(t().copy.transcript),
+      () => rt.renderer.addSystemMessage(t().copy.failed),
+    );
   }
 
   private exportTimestamp(): string {
@@ -2248,6 +2263,17 @@ export class CoOberViewController {
   }
 
   // ── Toolbar sync ──
+
+  /** The client's own reasoning vocabulary, used when no agent has offered one. */
+  private builtInEfforts(): { value: string; label: string }[] {
+    const ef = t().toolbar.effort;
+    return [
+      { value: 'default', label: ef.default },
+      { value: 'low', label: ef.low },
+      { value: 'medium', label: ef.medium },
+      { value: 'high', label: ef.high },
+    ];
+  }
 
   /**
    * Project a tab's session metadata onto its state — and onto the single
@@ -2274,15 +2300,9 @@ export class CoOberViewController {
     const models = this.filterCommonModelOptions(
       snapshot.availableModels.map((model) => ({ value: model.modelId, label: model.name })),
     );
-    const ef = t().toolbar.effort;
     const efforts = effortConfig && effortConfig.options.length > 0
       ? effortConfig.options.map((o) => ({ value: o.value, label: normalizeEffortLabel(o.value, o.name) }))
-      : [
-          { value: 'default', label: ef.default },
-          { value: 'low', label: ef.low },
-          { value: 'medium', label: ef.medium },
-          { value: 'high', label: ef.high },
-        ];
+      : this.builtInEfforts();
 
     rt.state.currentModelId = snapshot.currentModelId ?? modelConfig?.currentValue ?? null;
     if (!this.isActiveTab(rt)) return;

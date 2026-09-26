@@ -105,10 +105,6 @@ const zh: Locale = {
 
   permission: {
     title: '权限：{title}',
-    allowOnce: '允许一次',
-    allowAlways: '总是允许',
-    rejectOnce: '拒绝',
-    rejectAlways: '总是拒绝',
     moreLocations: '另有 {count} 处',
     unreadable: '权限请求无法解析，已取消。',
     originTab: '来自标签 {index} 的请求——点击切换',
@@ -191,6 +187,7 @@ const zh: Locale = {
   copy: {
     button: '复制',
     copied: '已复制',
+    failed: '复制失败',
     transcript: '对话已复制到剪贴板',
   },
 
@@ -343,16 +340,12 @@ const zh: Locale = {
   },
 
   toolbar: {
-    send: '发送',
-    stop: '停止',
     sendAria: '发送消息',
     stopAria: '停止生成',
     attachImage: '添加图片',
     attachImageUnsupported: '当前 Agent 不支持图片提示词',
     applyFailed: '设置失败，已回退为智能体侧当前值',
-    modelTitle: '模型',
     agentTitle: 'Agent 模式',
-    effortTitle: '思考强度',
     noModels: '无可用模型',
     effort: {
       default: '默认',
@@ -409,7 +402,6 @@ const zh: Locale = {
     processExited: 'OpenCode 进程已退出，退出码：{code}',
     unknownCode: '未知',
     stdinNotWritable: 'OpenCode 进程 stdin 不可写',
-    requestTimeout: '请求超时（5 分钟）',
     superseded: 'ACP 连接已被新的连接取代',
     disconnected: '连接已断开',
     invalidSessionId: '服务端未返回有效的会话 ID',

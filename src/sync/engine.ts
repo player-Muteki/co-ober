@@ -12,7 +12,13 @@ export interface SyncFailure {
 export class SyncEngine {
   private mutex = new Mutex();
 
-  constructor(private vault: Vault, private rules: SyncRule[]) {}
+  /**
+   * `readRules` is consulted for every turn instead of the list being captured
+   * once: the settings tab replaces `settings.syncRules` wholesale when a rule
+   * is added or deleted, so a captured array kept writing notes for rules the
+   * reader had already removed and never saw the new ones.
+   */
+  constructor(private vault: Vault, private readRules: () => SyncRule[]) {}
 
   private isTFile(file: unknown): file is TFile {
     return file instanceof TFile;
@@ -21,7 +27,7 @@ export class SyncEngine {
   async process(ctx: import('./templates').SyncContext): Promise<SyncFailure[]> {
     return this.mutex.runExclusive(async () => {
       const failures: SyncFailure[] = [];
-      for (const rule of this.rules) {
+      for (const rule of this.readRules()) {
         if (!ruleMatches(rule, ctx)) continue;
         try {
           const note = buildSyncNote(ctx, rule.folder, rule.filenameTemplate, rule.template);

@@ -837,6 +837,9 @@ export class AcpClient implements OpencodeClient {
 
   async closeSession(id: string): Promise<void> {
     this.loadedSessionIds.delete(id);
+    // The agent has dropped this session, so the commands, models and config
+    // options it last reported for it are no longer true of anything.
+    this.sessionMeta.delete(id);
     try {
       await this.requestWithFallback('closeSession', { sessionId: id });
     } catch (e) {
@@ -1272,6 +1275,10 @@ export class AcpClient implements OpencodeClient {
     this.replaySessionId = null;
     this.normalizers.clear();
     this.loadedSessionIds.clear();
+    // Per-session metadata belongs to the agent this connection talked to;
+    // keeping it made a reopened session look as if it still had the old turn's
+    // commands, models and config options.
+    this.sessionMeta.clear();
     this.warnedAmbiguousNoSid = false;
     // Nothing was negotiated any more: a later note must not quote the version
     // an agent answered with three connections ago.

@@ -24,7 +24,7 @@ describe('SyncEngine', () => {
       folder: 'sync',
       filenameTemplate: '{{tool}}-{{date}}-{{shortId}}',
     };
-    const engine = new SyncEngine(vault, [rule]);
+    const engine = new SyncEngine(vault, () => [rule]);
 
     await engine.process({ toolCallId: '1', toolName: 'write', toolStatus: 'completed', content: 'hello' });
 
@@ -46,7 +46,7 @@ describe('SyncEngine', () => {
       folder: 'sync',
       filenameTemplate: 'write-test',
     };
-    const engine = new SyncEngine(vault, [rule]);
+    const engine = new SyncEngine(vault, () => [rule]);
 
     await engine.process({ toolCallId: '1', toolName: 'write', toolStatus: 'completed', content: 'updated' });
 
@@ -63,7 +63,7 @@ describe('SyncEngine', () => {
       folder: 'sync',
       filenameTemplate: 'test',
     };
-    const engine = new SyncEngine(vault, [rule]);
+    const engine = new SyncEngine(vault, () => [rule]);
 
     await engine.process({ toolCallId: '1', toolName: 'write', toolStatus: 'completed' });
 
@@ -80,7 +80,7 @@ describe('SyncEngine', () => {
       folder: 'sync',
       filenameTemplate: 'test',
     };
-    const engine = new SyncEngine(vault, [rule]);
+    const engine = new SyncEngine(vault, () => [rule]);
 
     await engine.process({ toolCallId: '1', toolName: 'write', toolStatus: 'completed' });
 
@@ -96,7 +96,7 @@ describe('SyncEngine', () => {
       folder: 'a/b/c',
       filenameTemplate: 'test',
     };
-    const engine = new SyncEngine(vault, [rule]);
+    const engine = new SyncEngine(vault, () => [rule]);
 
     await engine.process({ toolCallId: '1', toolName: 'write', toolStatus: 'completed' });
 
@@ -104,6 +104,35 @@ describe('SyncEngine', () => {
     expect(vault.createFolder).toHaveBeenNthCalledWith(1, 'a');
     expect(vault.createFolder).toHaveBeenNthCalledWith(2, 'a/b');
     expect(vault.createFolder).toHaveBeenNthCalledWith(3, 'a/b/c');
+  });
+
+  it('follows the live rule list, so a deleted rule stops writing notes', async () => {
+    const vault = createMockVault();
+    const kept: SyncRule = {
+      id: 'a',
+      enabled: true,
+      toolName: 'write',
+      folder: 'sync',
+      filenameTemplate: 'a',
+    };
+    const added: SyncRule = {
+      id: 'b',
+      enabled: true,
+      toolName: 'write',
+      folder: 'sync',
+      filenameTemplate: 'b',
+    };
+    // The settings tab replaces settings.syncRules wholesale on every edit, so
+    // an array captured at construction time is stale from the first deletion.
+    let rules: SyncRule[] = [kept];
+    const engine = new SyncEngine(vault, () => rules);
+
+    await engine.process({ toolCallId: '1', toolName: 'write', toolStatus: 'completed', content: 'x' });
+    rules = [added];
+    await engine.process({ toolCallId: '2', toolName: 'write', toolStatus: 'completed', content: 'y' });
+
+    const paths = (vault.create as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0]);
+    expect(paths).toEqual(['sync/a', 'sync/b']);
   });
 
   it('should handle errors gracefully', async () => {
@@ -118,7 +147,7 @@ describe('SyncEngine', () => {
       folder: 'sync',
       filenameTemplate: 'test',
     };
-    const engine = new SyncEngine(vault, [rule]);
+    const engine = new SyncEngine(vault, () => [rule]);
 
     await engine.process({ toolCallId: '1', toolName: 'write', toolStatus: 'completed' });
 

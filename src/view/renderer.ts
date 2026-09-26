@@ -654,17 +654,35 @@ export class ChatRenderer {
       btn.className = 'co-ober-copy-btn';
       btn.textContent = t().copy.button;
       btn.dataset.i18nText = 'copy.button';
-      btn.onclick = () => {
-        const text = codeEl.textContent || '';
-        void navigator.clipboard.writeText(text);
-        btn.textContent = t().copy.copied;
-        window.setTimeout(() => {
-          if (btn.isConnected) btn.textContent = t().copy.button;
-        }, COPY_BUTTON_RESET_MS);
-      };
+      this.bindCopyButton(btn, () => codeEl.textContent || '');
       pre.classList.add('co-ober-code-block');
       pre.appendChild(btn);
     });
+  }
+
+  /**
+   * The button only says "Copied" once the write has resolved. A rejected
+   * clipboard promise (permission, focus, no clipboard at all) used to be
+   * swallowed behind a label claiming the text was there.
+   */
+  private bindCopyButton(btn: HTMLButtonElement, readText: () => string): void {
+    btn.onclick = () => {
+      if (!navigator.clipboard) {
+        this.flashCopyLabel(btn, t().copy.failed);
+        return;
+      }
+      navigator.clipboard.writeText(readText()).then(
+        () => this.flashCopyLabel(btn, t().copy.copied),
+        () => this.flashCopyLabel(btn, t().copy.failed),
+      );
+    };
+  }
+
+  private flashCopyLabel(btn: HTMLButtonElement, label: string): void {
+    btn.textContent = label;
+    window.setTimeout(() => {
+      if (btn.isConnected) btn.textContent = t().copy.button;
+    }, COPY_BUTTON_RESET_MS);
   }
 
   // ============================================
@@ -1196,13 +1214,7 @@ export class ChatRenderer {
     btn.className = 'co-ober-text-copy-btn';
     btn.textContent = t().copy.button;
     btn.dataset.i18nText = 'copy.button';
-    btn.onclick = () => {
-      void navigator.clipboard.writeText(markdown);
-      btn.textContent = t().copy.copied;
-      window.setTimeout(() => {
-        if (btn.isConnected) btn.textContent = t().copy.button;
-      }, COPY_BUTTON_RESET_MS);
-    };
+    this.bindCopyButton(btn, () => markdown);
     textEl.appendChild(btn);
   }
 

@@ -168,7 +168,9 @@ describe('AcpClient generation fencing', () => {
 
     await client.disconnect();
     notify!(agentChunk('ghost'));
-    expect(client.getSessionInfo()?.title).toBe('live');
+    // The late frame never landed, and what the old agent reported for its
+    // session left with the connection instead of waiting to be read back.
+    expect(client.getSessionInfo()).toBeNull();
   });
 
   it('forwards replay updates to loadSession while no prompt stream is active', async () => {

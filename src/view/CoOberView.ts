@@ -157,7 +157,7 @@ export class CoOberView extends ItemView {
     // Init core modules
     this.mention = new ContextMention(this.plugin.app);
     this.resolver = new ContextResolver(this.plugin.app.vault, this.plugin.settings.maxNoteSize);
-    this.syncEngine = new SyncEngine(this.plugin.app.vault, this.plugin.settings.syncRules);
+    this.syncEngine = new SyncEngine(this.plugin.app.vault, () => this.plugin.settings.syncRules);
     this.sessionStore = this.plugin.sessionStore;
 
     // Register file-based commands from .opencode/commands/*.md

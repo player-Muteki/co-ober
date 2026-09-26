@@ -288,6 +288,46 @@ describe('CoOberViewController', () => {
       expect(deps.welcomeView.updateStatus).toHaveBeenCalledWith(false);
       expect(callbacks.onShowReconnectBtn).toHaveBeenCalled();
     });
+
+    it('withdraws the models, modes and config choices of the dead agent', () => {
+      Object.assign(deps.toolbar, {
+        updateAgents: vi.fn(),
+        updateModels: vi.fn(),
+        updateEffort: vi.fn(),
+        updateExtraConfigs: vi.fn(),
+      });
+
+      controller.handleDisconnect();
+
+      expect(deps.toolbar.updateAgents).toHaveBeenCalledWith([], undefined);
+      expect(deps.toolbar.updateModels).toHaveBeenCalledWith([], undefined);
+      expect(deps.toolbar.updateEffort).toHaveBeenCalledWith(
+        [
+          { value: 'default', label: t().toolbar.effort.default },
+          { value: 'low', label: t().toolbar.effort.low },
+          { value: 'medium', label: t().toolbar.effort.medium },
+          { value: 'high', label: t().toolbar.effort.high },
+        ],
+        deps.runtime.settings.defaultEffort,
+      );
+      expect(deps.toolbar.updateExtraConfigs).toHaveBeenCalledWith([]);
+    });
+  });
+
+  describe('dispose', () => {
+    it('unbinds the view from a client that outlives it', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      controller.bindClientHandlers();
+      const setHandlers = client.setClientHandlers as ReturnType<typeof vi.fn>;
+      expect(setHandlers.mock.calls.at(-1)![0].onPermissionRequest).toBeTypeOf('function');
+
+      await controller.dispose();
+
+      // The agent may still send frames: with no handlers left, the client
+      // answers them from its own tier instead of reaching a torn-down banner.
+      expect(setHandlers.mock.calls.at(-1)![0]).toEqual({});
+    });
   });
 
   describe('reconnect', () => {
@@ -2207,12 +2247,28 @@ describe('CoOberViewController', () => {
           { role: 'assistant', content: 'answer', type: 'text' },
         ],
       });
-      const writeText = vi.fn();
+      const writeText = vi.fn().mockResolvedValue(undefined);
       Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
 
       controller.copyLastAssistantMessage();
 
       expect(writeText).toHaveBeenCalledWith('answer');
+    });
+
+    it('reports a refused clipboard write instead of leaving the reader to paste nothing', async () => {
+      controller.state.sessionId = 'test';
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue({
+        messages: [{ role: 'assistant', content: 'answer', type: 'text' }],
+      });
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
+        configurable: true,
+      });
+
+      controller.copyLastAssistantMessage();
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+
+      expect(deps.renderer.addError).toHaveBeenCalledWith(t().copy.failed);
     });
   });
 
@@ -2282,6 +2338,47 @@ describe('CoOberViewController', () => {
     it('reports when there is nothing to copy', () => {
       controller.copyTranscript();
       expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().export.noSession);
+    });
+
+    it('waits for the write before claiming the conversation was copied', async () => {
+      controller.state.sessionId = 'cp-2';
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue({
+        sessionId: 'cp-2',
+        title: 'Chat',
+        messages: [{ role: 'user', content: 'hi there', type: 'text', timestamp: 1 }],
+      });
+      const pending = deferred<void>();
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: vi.fn(() => pending.promise) },
+        configurable: true,
+      });
+
+      controller.copyTranscript();
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(t().copy.transcript);
+
+      pending.resolve();
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().copy.transcript);
+    });
+
+    it('says the transcript copy failed when the clipboard refuses it', async () => {
+      controller.state.sessionId = 'cp-3';
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue({
+        sessionId: 'cp-3',
+        title: 'Chat',
+        messages: [{ role: 'user', content: 'hi there', type: 'text', timestamp: 1 }],
+      });
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
+        configurable: true,
+      });
+
+      controller.copyTranscript();
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().copy.failed);
+      expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(t().copy.transcript);
     });
   });
 
