@@ -1,3 +1,24 @@
+## 0.2.6 - 2026-09-26
+
+No new capabilities. This release keeps what was already written, answers the protocol closer to the shape it arrives in, and makes the client own the things it claimed.
+
+### Changed
+- **A restart does not eat the paragraph**: an unsent draft travels with the tab shell it was typed in and comes back with it, so a parked conversation is not a lost one.
+- **A data file from the future is refused, not rewritten**: a schema version newer than this build is left alone instead of being read as `0` and saved over. Each successful save leaves a rolling `data.json.bak`, and a corrupt `data.json` is repaired from it with the damaged copy set aside rather than replaced by defaults.
+- **Half-written settings are caught at the door**: every typed field is checked when data loads, so one truncated value can no longer poison the sync rules or the permission tier.
+- **An edit that moved is refused**: an inline edit remembers the exact range it was asked for and will not Apply once those characters have shifted underneath it.
+- **The protocol shapes this client honors**: `terminal/create` takes the `env` list as the `{name, value}` pairs actually sent and treats the agent's own `outputByteLimit` as a real ceiling; a request this client could not read answers `-32602` naming the field that failed (rather than `-32000`, which tells a good agent to go log in); `rawInput`/`rawOutput` carry any JSON, so a tool that answered with a string keeps its frame; and a boolean config option stays a boolean instead of becoming the model named *true*.
+- **A closed tab stops speaking for itself**: closing a tab answers its queued and visible prompts in that tab's name, a disposed view no longer re-binds handlers, reconnects or reclaims the screen, and a renewed session settles in the tab that asked for it.
+- **The strings say what the code does**: Auto Connect, custom instructions, the system-prompt setting, session retention, the capability tiers, the idle timeout and the reconnect hint are rewritten in English and Chinese to match what actually happens, and the settings rows and README lines that advertised what nothing reads — compaction markers, per-agent model and mode defaults — are gone.
+
+### Fixed
+- **A turn cut off by a lost connection admits it**: the tab whose reply was in flight says the reply was not completed, on the screen that turn belongs to, instead of leaving a half answer looking finished.
+- **A parked turn keeps its shape**: a run parked for stream capacity keeps its inline edit and its already-painted bubble, and a manual reconnect drains it; `/compact` waits behind a pending permission banner instead of talking over it.
+- **A command that never started says why**: a spawn failure writes its reason into the output the agent reads back and settles whoever was waiting with a null exit code, rather than looking like a command that ran and exited cleanly.
+- **A slash command that vanishes names itself**: a command file that cannot be read and a file with no frontmatter each report themselves once per distinct set — with a count when the list runs long — instead of disappearing from the `/` popover as a plugin bug.
+- **Defaults the agent declined are reported, not fatal**: a session still opens when the mode, model or thinking-effort request is refused, and the transcript names what did not land.
+- **An agent that never asked for images is not sent one**: a client that reported capabilities without naming image support no longer receives an image part, and a notice that arrives with nothing to say counts itself among that tab's dropped frames.
+
 ## 0.2.5 - 2026-09-26
 
 No new capabilities. This release keeps what the reader already typed, reads the protocol closer to the way it is written, and says its failures in sentences rather than in stack traces.
