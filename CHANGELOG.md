@@ -1,3 +1,24 @@
+## 0.2.3 - 2026-09-26
+
+No new capabilities — this release is about telling the truth: what Co-Ober advertised to the agent, what it answered back, what it drew and what it claims it did.
+
+### Added
+- **Elicitations are answered instead of invented**: when an agent asks for input, the common cases become real form fields you can fill, a link-mode ask shows the link it wants you to open, an ask with nothing to fill is treated as a confirmation, and anything Co-Ober cannot present is declined or cancelled out loud — where every ask used to come back as an empty accept the agent read as consent.
+- **Settings beyond model and mode reach the toolbar**: config options an agent exposes that are neither model, mode nor effort now appear as keyboard-operable chips that write back through `session/set_config_option`, instead of being stored where nothing could show them.
+- **The negotiated protocol version is visible**: when the agent speaks a different ACP version than Co-Ober expected, every open tab carries a dismissible note saying so, rather than the mismatch existing only in a console nobody opens.
+
+### Changed
+- **What we advertise is what we honor**: the permission tier you stored now reaches the request handler before `initialize` announces our filesystem and terminal capabilities, so the agent is never promised a write path that will be refused, and nested capability groups are no longer silently dropped while parsing.
+- **Tool cards say what they could not draw**: image content inside a tool result is rendered when it survives parsing, and a content item Co-Ober cannot show is named in the card instead of vanishing and leaving text it was standing next to erased with it. Frames that could not be drawn — compaction summaries included — count toward the tab's dropped-frame note.
+- **A copy button only says "Copied" once the clipboard took it**: transcript and message copies wait for the write and report failure when it fails, and a save that would not survive a restart no longer passes silently.
+- **Deleting a sync rule stops its notes**: the engine reads the current rule list at the moment it works, so a rule removed mid-session cannot keep writing files.
+- **Disconnect withdraws what the dead agent reported**: models, modes and config chips leave the toolbar with the connection, and the client's handlers are unbound when the view closes, so nothing keeps reporting for an agent that is gone.
+
+### Fixed
+- **Per-session metadata dies with its session**: commands, models and config options an agent reported are dropped when that session closes and when the connection goes away, instead of being read back against the next agent to answer.
+- **Frame-drop warnings restart per connection**: a warning that already fired in one connection no longer silences the next one's drift.
+- **Locale keys nothing renders are gone**.
+
 ## 0.2.2 - 2026-09-25
 
 Everything here is on our side of the wire: each tab is made to speak only for itself, and a conversation is made to say what it could not do.
