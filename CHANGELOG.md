@@ -1,3 +1,25 @@
+## 0.2.5 - 2026-09-26
+
+No new capabilities. This release keeps what the reader already typed, reads the protocol closer to the way it is written, and says its failures in sentences rather than in stack traces.
+
+### Changed
+- **An open tab is not a discardable buffer**: transcript retention exempts every tab that is still open, and the pending-image budget gives up the chats nobody has in front of them before it touches the one being read — a conversation you can see no longer gets emptied to make room for another.
+- **A banner that blocks a send keeps the paragraph**: refusing an input returns before the textarea is cleared, so the text is still there to fix, and a queued run whose tab turns parked mid-drain is put back whole instead of losing its head.
+- **Unreadable references answer in the tab that asked**: a note reference that could not be read reports itself to the conversation that requested it, not to whichever one is on screen.
+- **Grouped config options arrive**: an agent that nests its choices under groups has those groups flattened into the model and mode dropdowns with the group folded into the label, instead of the options being dropped on the floor.
+- **A line range is honored**: `fs/read_text_file` reads `line` and `limit` rather than returning the whole file and calling it a day, and the byte cap is applied to the window that was asked for.
+- **Terminal failures are failures**: `terminal/*` that cannot do the job answers with a JSON-RPC error the agent can branch on, instead of an in-band `{error}` object that looks like a successful call with strange content.
+- **A resume is judged by silence**: `session/resume` uses the same idle deadline as a load, so a session replaying a long history is measured by whether it is still talking rather than by a fixed window — and each replayed update resets the clock.
+- **An error reads like a sentence**: timeouts name the method and the window, a conversation that went away on the agent side says so, a dead process reports its exit status, and anything unrecognized is kept verbatim behind a label, so translating the message never costs the detail needed to report the bug.
+- **README matches the client**: the offline agent list drops a mode nothing could ever start, and the settings and shortcut tables gain the `Alt + 1..9` tab switching, Default Thinking Effort and Max Open Tabs that were already there.
+
+### Fixed
+- **A sync rule pinned to one path says that it replaced the note**, and stays quiet when the note already held exactly what was written; a body that outgrows the vault is clipped with a marker instead of written whole.
+- **A dropped image that will not read reports itself**: every other branch of the drop path announced what happened, so a failed read looked like a successful attachment.
+- **One bad element no longer takes the list with it**: `availableCommands` keeps the commands that parsed, and the first frame of a tool call keeps its `rawOutput` so the card can show what came back.
+- **A synchronous handler that throws still gets an id**: the reply is sent instead of leaving the agent waiting on a request that already failed.
+- **Listeners leave with the surface that owned them**: the image lightbox detaches its keydown from the document that was given it and closes when the view closes, and the toolbar listens for outside clicks on its own document and stops listening once it is disposed.
+
 ## 0.2.4 - 2026-09-26
 
 No new capabilities. This release puts up the second wall the code said was there, and stops discarding work the protocol allowed us to keep.
