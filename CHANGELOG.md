@@ -1,3 +1,23 @@
+## 0.2.4 - 2026-09-26
+
+No new capabilities. This release puts up the second wall the code said was there, and stops discarding work the protocol allowed us to keep.
+
+### Changed
+- **`plan` and `readonly` now mean what they said**: both close this client's own mutating surfaces — file writes and command execution — no matter what the capability settings allow, where previously only `readonly` did and `plan` silently deferred to them.
+- **A change made without asking is recorded where it happened**: an `fs/write_text_file` or `terminal/create` this client carries out on the agent's word — which never has to ask permission to make it — writes the path or the command line into the transcript of the tab whose agent did it, and the terminal manager's comment now describes what actually gates it.
+- **The permission banner works from the keyboard**: focus lands on the first option when a prompt appears, Esc answers the prompt instead of being swallowed by "stop the stream" (the agent is told nobody answered, which no reject button claims), and a tab sitting on a pending prompt holds new messages out of its queue until it is decided.
+- **What belongs to a tab stays in that tab**: unreadable permission and elicitation reports, elicitation refusals and reconnect failures are painted into the conversation they name rather than whichever one is on screen, and a connection lost with several tabs open marks each one that had a session.
+
+### Fixed
+- **Frames the protocol allows no longer fail our own parser**: the SDK requires only `content` on a message chunk, so chunks that arrive without a `messageId` are grouped under a stable synthetic id and stream as they should, and a single unrecognized config option now drops itself instead of taking the whole model list with it.
+- **Frames with nowhere to go are counted**: an update that normalized fine but lost its stream — including the closing frames that arrive just after you press Stop — adds to that tab's "frames not rendered" note rather than vanishing.
+- **A subprocess that dies is reported as dead**: a teardown that throws now still announces the loss and schedules the reconnect, instead of leaving the Send button lit for a process that no longer exists.
+- **Stop survives a reload**: the *Interrupted* badge is written into the stored answer, so a half reply no longer comes back looking like one the model finished on purpose.
+- **An inline edit is answered by the turn that asked for it**: the selection is claimed by its own tab, waits in that tab's queue with its editor if the turn has to wait, refuses to merge with a plain prompt or dissolve into the composer — and the preview diff now actually appears, where the state was cleared before the reply was read.
+- **A fork owns its transcript**: branching copies message blocks instead of sharing them, so a tool call settling in one conversation cannot rewrite the other one's record.
+- **The context meter follows the tab**: switching tabs re-projects that conversation's token numbers instead of leaving the previous tab's on the arc.
+- **README stops misreporting itself**: the Obsidian floor matches the manifest, Auto Connect's real default is stated, and the permission tiers are described as four — with the two that override the capability settings named.
+
 ## 0.2.3 - 2026-09-26
 
 No new capabilities — this release is about telling the truth: what Co-Ober advertised to the agent, what it answered back, what it drew and what it claims it did.
