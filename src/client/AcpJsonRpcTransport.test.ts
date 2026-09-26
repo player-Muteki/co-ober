@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PassThrough } from 'node:stream';
 import { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
+import { AcpInvalidParamsError } from './AcpErrors';
 
 describe('AcpJsonRpcTransport', () => {
   let input: PassThrough;
@@ -280,7 +281,36 @@ describe('AcpJsonRpcTransport', () => {
       .trim()
       .split('\n')
       .map((l) => JSON.parse(l));
-    expect(responses[0]).toEqual({ jsonrpc: '2.0', id: 101, error: { code: -32000, message: 'Something went wrong' } });
+    // -32000 is ACP's auth_required; borrowing it for "our handler failed"
+    // told the agent to authenticate instead of fixing the call.
+    expect(responses[0]).toEqual({ jsonrpc: '2.0', id: 101, error: { code: -32603, message: 'Something went wrong' } });
+  });
+
+  it('answers an unreadable request with -32602 (invalid params)', async () => {
+    transport.start();
+
+    let sentMsg = '';
+    output.on('data', (chunk) => {
+      sentMsg += chunk.toString();
+    });
+
+    transport.onRequest('badParams', async () => {
+      throw new AcpInvalidParamsError('Missing required parameter: sessionId');
+    });
+
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: 103, method: 'badParams' }) + '\n');
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const responses = sentMsg
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l));
+    expect(responses[0]).toEqual({
+      jsonrpc: '2.0',
+      id: 103,
+      error: { code: -32602, message: 'Missing required parameter: sessionId' },
+    });
   });
 
   it('answers a request whose handler threw before it returned a promise', async () => {
@@ -309,7 +339,7 @@ describe('AcpJsonRpcTransport', () => {
     expect(responses[0]).toEqual({
       jsonrpc: '2.0',
       id: 102,
-      error: { code: -32000, message: 'could not parse the frame' },
+      error: { code: -32603, message: 'could not parse the frame' },
     });
   });
 

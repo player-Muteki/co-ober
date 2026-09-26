@@ -341,6 +341,18 @@ describe('DragDropManager', () => {
       expect((Notice as any).messages).toContain('This OpenCode agent does not support image prompts');
     });
 
+    it('rejects images when the agent named other capabilities but not images', async () => {
+      // ACP defaults an unstated prompt capability to false, so an agent that
+      // answers `{ audio: true }` has answered "no images".
+      manager = new DragDropManager(dropZone, overlayContainer, handlers as any, () => ({ promptCapabilities: { audio: true } }));
+      const file = new File(['image-data'], 'pasted.png', { type: 'image/png' });
+
+      await manager.handleFiles([file]);
+
+      expect(handlers.onAddImagePart).not.toHaveBeenCalled();
+      expect((Notice as any).messages).toContain('This OpenCode agent does not support image prompts');
+    });
+
     it('does not track bytes for rejected images across multiple calls', async () => {
       mockSizedImageReader();
       (Notice as any).messages.length = 0;

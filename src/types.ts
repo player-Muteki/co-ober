@@ -38,7 +38,9 @@ export interface SessionConfigOption {
   name: string;
   category?: string;
   type: string;
-  currentValue: string;
+  // A select option's current value is an id; a boolean toggle's is a real
+  // boolean. Collapsing the second into '' is how a toggle read as "off".
+  currentValue: string | boolean;
   options: { value: string; name: string; description?: string }[];
 }
 
@@ -294,6 +296,8 @@ export interface TerminalCreateParams {
 	args?: string[];
 	cwd?: string;
 	env?: Record<string, string>;
+	/** ACP's per-request ceiling on retained output, already capped by our own setting. */
+	outputByteLimit?: number;
 }
 
 export interface TerminalOutputResult {
@@ -314,6 +318,8 @@ export interface TerminalInstance {
 	output: string;
 	/** Set once ring-trimming has discarded earlier output. */
 	outputTruncated?: boolean;
+	/** The agent's requested byte ceiling for this terminal, capped by our setting. */
+	outputByteLimit?: number;
 	exitCode: number | null;
 	signal: string | null;
 	createdAt: number;

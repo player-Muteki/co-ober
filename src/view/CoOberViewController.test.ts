@@ -2032,6 +2032,23 @@ describe('CoOberViewController', () => {
         'xhigh',
       );
     });
+
+    it('selects nothing on a dropdown whose option is a boolean toggle', () => {
+      // SessionConfigBoolean carries a real boolean. Rendering it as the model
+      // name "true" would claim a model the agent never offered.
+      controller.applyConfigOptions([
+        {
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          type: 'select',
+          currentValue: true,
+          options: [{ value: 'gpt-4', name: 'GPT-4' }],
+        },
+      ]);
+
+      expect(deps.toolbar.updateModels).toHaveBeenCalledWith([{ value: 'gpt-4', label: 'GPT-4' }], undefined);
+    });
   });
 
   describe('applyConfigOptions generic projection', () => {
@@ -2726,6 +2743,47 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
 
       const parts = client.sendMessage.mock.calls[0][1] as Array<{ type: string }>;
       expect(parts.some((p) => p.type === 'image')).toBe(false);
+    });
+
+    it('treats a capability the agent reported without naming as denied', async () => {
+      // ACP defaults each prompt capability to false. An agent that answered
+      // with `{ promptCapabilities: { audio: true } }` said no to images, and
+      // sending one anyway costs the turn at the agent.
+      const client = createMockClient({
+        getAgentCapabilities: vi.fn(() => ({ promptCapabilities: { audio: true } })),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      controller.state.sessionId = 'local-1';
+      callbacks.getPendingImageParts = () => [{ type: 'image', mimeType: 'image/png', data: 'AAA' }];
+
+      await controller.send('look', []);
+
+      const parts = client.sendMessage.mock.calls[0][1] as Array<{ type: string }>;
+      expect(parts.some((p) => p.type === 'image')).toBe(false);
+    });
+
+    it('sends the image once the agent says it takes images', async () => {
+      const client = createMockClient({
+        getAgentCapabilities: vi.fn(() => ({ promptCapabilities: { image: true } })),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      controller.state.sessionId = 'local-1';
+      callbacks.getPendingImageParts = () => [{ type: 'image', mimeType: 'image/png', data: 'AAA' }];
+
+      await controller.send('look', []);
+
+      const parts = client.sendMessage.mock.calls[0][1] as Array<{ type: string }>;
+      expect(parts.some((p) => p.type === 'image')).toBe(true);
+    });
+
+    it('keeps the note reference for an agent that never reported capabilities', async () => {
+      const client = createMockClient({ getAgentCapabilities: vi.fn(() => null) });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      controller.state.sessionId = 'local-1';
+
+      await controller.buildParts('question', [noteRef('a.md')]);
+
+      expect(deps.resolver.resolveNote).toHaveBeenCalled();
     });
   });
 

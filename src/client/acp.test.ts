@@ -355,6 +355,19 @@ describe('parseSessionUpdate drop reporting', () => {
     expect(dropped).toEqual(['compaction_summary_chunk']);
   });
 
+  it('counts a notice that arrived with nothing to say', () => {
+    const dropped: string[] = [];
+    expect(
+      parseSessionUpdate({ sessionUpdate: 'notice_update', level: 'warning', message: '' }, (kind) => dropped.push(kind)),
+    ).toBeNull();
+    expect(
+      parseSessionUpdate({ sessionUpdate: 'notice', severity: 'error', title: '', description: '' }, (kind) =>
+        dropped.push(kind),
+      ),
+    ).toBeNull();
+    expect(dropped).toEqual(['notice_update', 'notice']);
+  });
+
   it('stays silent about a frame it drew', () => {
     const dropped: string[] = [];
     expect(
@@ -672,6 +685,47 @@ describe('extractConfigMeta', () => {
     expect(meta.currentModeId).toBe('build');
     expect(meta.availableModes).toHaveLength(1);
     expect(meta.availableModes[0].id).toBe('build');
+  });
+
+  it('does not read a boolean toggle as a model id, and keeps the option', () => {
+    const verbose = { id: 'verbose', name: 'Verbose', type: 'boolean', currentValue: true, options: [] };
+    const meta = extractConfigMeta([verbose]);
+
+    expect(meta.currentModelId).toBeNull();
+    expect(meta.currentModeId).toBeNull();
+    expect(meta.configOptions).toEqual([verbose]);
+  });
+});
+
+describe('a config answer that is a real value (0.2.6 stage 2)', () => {
+  it('sends a boolean toggle as the boolean the agent declared', async () => {
+    const client = new AcpClient('opencode');
+    const requestWithFallback = vi.fn().mockResolvedValue({ configOptions: [] });
+    Reflect.set(client, 'requestWithFallback', requestWithFallback);
+
+    await client.setConfigOption('s1', 'verbose', true);
+
+    // Stringifying it would send "true" where the agent expects true, and a
+    // spec-strict agent answers that with invalid params.
+    expect(requestWithFallback).toHaveBeenCalledWith('setConfigOption', {
+      sessionId: 's1',
+      configId: 'verbose',
+      value: true,
+    });
+  });
+
+  it('sends a selected value id unchanged', async () => {
+    const client = new AcpClient('opencode');
+    const requestWithFallback = vi.fn().mockResolvedValue({ configOptions: [] });
+    Reflect.set(client, 'requestWithFallback', requestWithFallback);
+
+    await client.setConfigOption('s1', 'model', 'gpt-4');
+
+    expect(requestWithFallback).toHaveBeenCalledWith('setConfigOption', {
+      sessionId: 's1',
+      configId: 'model',
+      value: 'gpt-4',
+    });
   });
 });
 

@@ -59,7 +59,7 @@ export interface OpencodeClient {
 
   setMode(sessionId: SessionId, modeId: string): Promise<void>;
   setModel(sessionId: SessionId, modelId: string): Promise<void>;
-  setConfigOption(sessionId: SessionId, configId: string, value: string): Promise<SessionConfigOption[]>;
+  setConfigOption(sessionId: SessionId, configId: string, value: string | boolean): Promise<SessionConfigOption[]>;
 
   sendMessage(sessionId: SessionId, parts: PromptPart[], onChunk: (chunk: NormalizedUpdate) => void): Promise<AcpResponse>;
   cancel(sessionId: SessionId): Promise<void>;

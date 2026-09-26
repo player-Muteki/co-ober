@@ -78,13 +78,29 @@ export function isSessionMissingError(err: unknown): boolean {
   return false;
 }
 
+/**
+ * A request whose params this client could not read at all. Answering one with
+ * a generic internal error tells the agent something went wrong on our side;
+ * -32602 says the frame was the problem, which is what lets an agent stop
+ * retrying the same call.
+ */
+export class AcpInvalidParamsError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AcpInvalidParamsError';
+  }
+}
+
 const AUTH_REQUIRED_PATTERN =
   /\bauth(?:entication)?[\s_]+(?:required|needed)\b|\bnot authenticated\b|please (?:log ?in|sign ?in|authenticate)/i;
 
 /** Classify a protocol error as "the agent wants authenticate() first" (ACP auth_required). */
 export function isAuthRequiredError(err: unknown): boolean {
   if (!(err instanceof AcpProtocolError)) return false;
-  if (err.code === -32001) return true;
+  // -32000 IS ACP's auth_required; the -32001 this used to test does not exist
+  // in the schema. Sloppy agents reuse -32000 for anything, so a message that
+  // names a missing session still wins.
+  if (err.code === -32000 && !isSessionMissingError(err)) return true;
   if (AUTH_REQUIRED_PATTERN.test(err.message)) return true;
   if (err.data !== undefined) {
     try {

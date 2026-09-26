@@ -16,7 +16,8 @@ import { TerminalManager, TerminalError } from './terminalManager';
 import { z } from 'zod';
 import { REQUEST_DEFAULT_TIMEOUT_MS, REQUEST_DEFAULT_MAX_OUTPUT_BYTES, UNREADABLE_SUMMARY_MAX_CHARS } from '../constants';
 import { ACP_SERVER_REQUEST_ALIASES } from './AcpMethodNames';
-import { zToolKind } from './acpSchemas';
+import { AcpInvalidParamsError } from './AcpErrors';
+import { zToolKind, zRawJson } from './acpSchemas';
 
 // One dropped option is survivable; losing the whole request because a
 // single field is malformed means the user never sees a prompt that was
@@ -34,7 +35,10 @@ const zPermissionParams = z
         toolCallId: z.string().optional(),
         title: z.string().catch(''),
         status: z.string().optional(),
-        rawInput: z.record(z.string(), z.unknown()).optional(),
+        // rawInput is untyped in ACP; forcing a record here failed the whole
+        // request, which answered the prompt with "cancelled" for a question
+        // the user never got to read.
+        rawInput: zRawJson,
         // An agent-minted kind we do not know must not cost the user the
         // whole prompt — degrade it to 'other'.
         kind: zToolKind.catch('other').optional(),
@@ -145,13 +149,59 @@ const zFsWriteParam = z.object({
   sessionId: z.string().optional(),
 });
 const zTerminalIdParam = z.object({ terminalId: z.string() });
+const zTerminalEnvVar = z.object({ name: z.string(), value: z.string() });
 const zTerminalCreateParam = z.object({
   command: z.string(),
   args: z.array(z.string()).optional(),
-  cwd: z.string().optional(),
-  env: z.record(z.string(), z.string()).optional(),
+  // ACP types cwd as ["string","null"]: an explicit null is the agent saying
+  // "run wherever you like", not a broken frame.
+  cwd: z.string().nullish(),
+  // CreateTerminalRequest.env is an EnvVariable[] — {name,value} per entry — not
+  // a map. Reading it as a map rejected every spec-legal terminal request. Both
+  // spellings are accepted now; see terminalEnvOf.
+  env: z.unknown().nullish(),
   sessionId: z.string().optional(),
+  // The agent's own ceiling on retained output. Ignoring it would hand back
+  // more than it asked for and report a longer answer than it expected.
+  outputByteLimit: z.number().int().nonnegative().nullish(),
 });
+
+/**
+ * Flatten the two env spellings onto the map `child_process` wants. One
+ * malformed entry removes only itself: a request that carries three usable
+ * variables and one junk entry runs with those three.
+ */
+function terminalEnvOf(value: unknown): Record<string, string> | undefined {
+  if (Array.isArray(value)) {
+    const env: Record<string, string> = {};
+    for (const item of value) {
+      const parsed = zTerminalEnvVar.safeParse(item);
+      if (parsed.success) env[parsed.data.name] = parsed.data.value;
+    }
+    return env;
+  }
+  if (typeof value === 'object' && value !== null) {
+    const env: Record<string, string> = {};
+    for (const [name, raw] of Object.entries(value)) {
+      if (typeof raw === 'string') env[name] = raw;
+    }
+    return env;
+  }
+  return undefined;
+}
+
+/**
+ * Say which field the frame actually failed on. A rejection that names a
+ * parameter the agent did send ("Missing required parameter: command" for a
+ * request whose `env` was the problem) sends a well-behaved agent off to fix
+ * the wrong thing, so the agent's own error is what belongs here.
+ */
+function invalidParams(error: z.ZodError, fallback: string): AcpInvalidParamsError {
+  const issue = error.issues[0];
+  if (!issue) return new AcpInvalidParamsError(fallback);
+  const where = issue.path.length > 0 ? issue.path.join('.') : 'params';
+  return new AcpInvalidParamsError(`Invalid ${where}: ${issue.message}`);
+}
 
 export interface AcpRequestHandlerOptions {
   transport: AcpJsonRpcTransport;
@@ -431,14 +481,15 @@ export class AcpRequestHandler {
   private handleReadTextFile(params: Record<string, unknown>): Promise<unknown> {
     // ACP's read result carries only `content`: an in-band {content:'',error}
     // would read back at the agent as a valid empty file, so failures must
-    // travel as JSON-RPC errors (the transport maps throws to -32000).
+    // travel as JSON-RPC errors (the transport maps throws to -32603, unreadable
+    // params to -32602).
     if (this.fsCapabilityMode === 'disabled' || !this.fsDelegate) {
       return Promise.reject(new Error('File system access is disabled'));
     }
 
     const parsed = zFsPathParam.safeParse(params);
     if (!parsed.success) {
-      return Promise.reject(new Error('Missing required parameter: path'));
+      return Promise.reject(invalidParams(parsed.error, 'Missing required parameter: path'));
     }
 
     return Promise.resolve(this.fsDelegate.readTextFile(parsed.data.path, parsed.data)).then((res) => {
@@ -456,7 +507,7 @@ export class AcpRequestHandler {
 
     const parsed = zFsWriteParam.safeParse(params);
     if (!parsed.success) {
-      return Promise.reject(new Error('Missing required parameter: path or content'));
+      return Promise.reject(invalidParams(parsed.error, 'Missing required parameter: path or content'));
     }
 
     return Promise.resolve(this.fsDelegate.writeTextFile(parsed.data.path, parsed.data.content)).then((res) => {
@@ -489,14 +540,15 @@ export class AcpRequestHandler {
 
     const parsed = zTerminalCreateParam.safeParse(params);
     if (!parsed.success) {
-      return Promise.reject(new Error('Missing required parameter: command'));
+      return Promise.reject(invalidParams(parsed.error, 'Missing required parameter: command'));
     }
 
     const createParams: TerminalCreateParams = {
       command: parsed.data.command,
       args: parsed.data.args,
-      cwd: parsed.data.cwd,
-      env: parsed.data.env,
+      cwd: parsed.data.cwd ?? undefined,
+      env: terminalEnvOf(parsed.data.env),
+      outputByteLimit: parsed.data.outputByteLimit ?? undefined,
     };
 
     try {
@@ -529,7 +581,7 @@ export class AcpRequestHandler {
 
     const parsed = zTerminalIdParam.safeParse(params);
     if (!parsed.success) {
-      return Promise.reject(new Error('Missing required parameter: terminalId'));
+      return Promise.reject(invalidParams(parsed.error, 'Missing required parameter: terminalId'));
     }
 
     return Promise.resolve(this.terminalManager.output(parsed.data.terminalId)).then((res) => {
@@ -551,7 +603,7 @@ export class AcpRequestHandler {
 
     const parsed = zTerminalIdParam.safeParse(params);
     if (!parsed.success) {
-      return Promise.reject(new Error('Missing required parameter: terminalId'));
+      return Promise.reject(invalidParams(parsed.error, 'Missing required parameter: terminalId'));
     }
 
     // KillTerminalResponse is an empty object: there is no field in which a
@@ -569,7 +621,7 @@ export class AcpRequestHandler {
 
     const parsed = zTerminalIdParam.safeParse(params);
     if (!parsed.success) {
-      return Promise.reject(new Error('Missing required parameter: terminalId'));
+      return Promise.reject(invalidParams(parsed.error, 'Missing required parameter: terminalId'));
     }
 
     if (!this.terminalManager.release(parsed.data.terminalId)) {
@@ -585,7 +637,7 @@ export class AcpRequestHandler {
 
     const parsed = zTerminalIdParam.safeParse(params);
     if (!parsed.success) {
-      return Promise.reject(new Error('Missing required parameter: terminalId'));
+      return Promise.reject(invalidParams(parsed.error, 'Missing required parameter: terminalId'));
     }
 
     return this.terminalManager

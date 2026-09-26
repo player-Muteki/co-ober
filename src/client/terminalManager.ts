@@ -105,6 +105,7 @@ export class TerminalManager {
 			pid: null,
 			status: 'running',
 			output: '',
+			outputByteLimit: params.outputByteLimit,
 			exitCode: null,
 			signal: null,
 			createdAt: Date.now(),
@@ -262,32 +263,11 @@ export class TerminalManager {
 		}
 
 		proc.stdout?.on('data', (chunk: Buffer | string) => {
-			const text = typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
-			const term = this.terminals.get(terminalId);
-			if (!term) return;
-
-			// Truncate output to maxOutputBytes
-			const maxBytes = this.maxOutputBytes;
-			if (term.output.length + text.length > maxBytes) {
-				term.output = term.output.slice(-Math.floor(maxBytes * 0.75)) + text;
-				term.outputTruncated = true;
-			} else {
-				term.output += text;
-			}
+			this.appendOutput(terminalId, typeof chunk === 'string' ? chunk : chunk.toString('utf-8'));
 		});
 
 		proc.stderr?.on('data', (chunk: Buffer | string) => {
-			const text = typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
-			const term = this.terminals.get(terminalId);
-			if (!term) return;
-
-			const maxBytes = this.maxOutputBytes;
-			if (term.output.length + text.length > maxBytes) {
-				term.output = term.output.slice(-Math.floor(maxBytes * 0.75)) + text;
-				term.outputTruncated = true;
-			} else {
-				term.output += text;
-			}
+			this.appendOutput(terminalId, typeof chunk === 'string' ? chunk : chunk.toString('utf-8'));
 		});
 
 		proc.on('error', (_err: unknown) => {
@@ -311,6 +291,33 @@ export class TerminalManager {
 			this.processes.delete(terminalId);
 			this.resolveExitWaiter(terminalId);
 		});
+	}
+
+	private appendOutput(terminalId: string, text: string): void {
+		const term = this.terminals.get(terminalId);
+		if (!term) return;
+
+		const maxBytes = this.outputLimitFor(term);
+		const combined = term.output + text;
+		if (combined.length > maxBytes) {
+			// Keep the tail and drop the head: what an agent reads next is how
+			// the command ended. One oversized chunk used to sail past the
+			// ceiling untouched, so the limit was a floor, not a ceiling.
+			term.output = combined.slice(combined.length - maxBytes);
+			term.outputTruncated = true;
+		} else {
+			term.output = combined;
+		}
+	}
+
+	/**
+	 * The agent's `outputByteLimit` is a ceiling it wants honoured, our setting
+	 * a ceiling we must never exceed — so the smaller of the two wins.
+	 */
+	private outputLimitFor(term: TerminalInstance): number {
+		const requested = term.outputByteLimit;
+		if (typeof requested !== 'number' || !Number.isFinite(requested) || requested <= 0) return this.maxOutputBytes;
+		return Math.min(requested, this.maxOutputBytes);
 	}
 
 	private resolveExitWaiter(terminalId: string): void {

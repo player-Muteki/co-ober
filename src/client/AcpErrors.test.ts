@@ -125,7 +125,9 @@ describe('isSessionMissingError', () => {
 
 describe('isAuthRequiredError', () => {
   it('matches the auth_required protocol code and phrasings', () => {
-    expect(isAuthRequiredError(new AcpProtocolError('nope', 'session/new', -32001))).toBe(true);
+    // -32001 is not an ACP code at all; the schema's auth_required is -32000.
+    expect(isAuthRequiredError(new AcpProtocolError('nope', 'session/new', -32001))).toBe(false);
+    expect(isAuthRequiredError(new AcpProtocolError('nope', 'session/new', -32000))).toBe(true);
     expect(isAuthRequiredError(new AcpProtocolError('auth_required', 'session/new', -32602))).toBe(true);
     expect(isAuthRequiredError(new AcpProtocolError('Authentication needed', 'session/new'))).toBe(true);
     expect(isAuthRequiredError(new AcpProtocolError('please log in first', 'session/new'))).toBe(true);

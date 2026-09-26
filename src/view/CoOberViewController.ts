@@ -29,10 +29,11 @@ import { buildCustomAgentPrompt, getValidActiveCustomAgent } from '../agents/cus
 import { filterCommonModelOptions } from './modelFilter';
 import { applyDefaultSessionSettings } from './sessionDefaults';
 import { normalizeEffortLabel } from '../chat/effortLabel';
-import { projectGenericConfigOptions } from '../chat/configOptions';
+import { projectGenericConfigOptions, selectValueOf } from '../chat/configOptions';
 import { Mutex } from '../utils/mutex';
 import { safeClone } from '../utils/clone';
 import { humanizeError } from '../utils/errorText';
+import { supportsPromptCapability } from '../utils/agentCapabilities';
 import type { WelcomeView } from './welcomeView';
 import type { PermissionBanner, PermissionOrigin } from './permissionBanner';
 import type { InlineEditPanel, InlineEditState } from './inlineEditPanel';
@@ -1655,7 +1656,7 @@ export class CoOberViewController {
       if (rt.state.sessionId !== sessionId || !rt.busy) return;
       // Capabilities can change across reconnects; re-check before sending.
       const caps = c.getAgentCapabilities?.();
-      parts.push(...(caps?.promptCapabilities?.image === false ? [] : imageParts));
+      parts.push(...(supportsPromptCapability(caps, 'image') ? imageParts : []));
       const response = await c.sendMessage(sessionId, parts, (ch: NormalizedUpdate) => {
         if (rt.genId !== currentGen || !rt.busy || rt.state.sessionId !== sessionId) return;
         rt.streamCtrl.handleChunk(ch);
@@ -2264,8 +2265,10 @@ export class CoOberViewController {
 
     // Agents that report no embedded-context support get the plain user text;
     // inlined note bodies are skipped instead of bloating the prompt.
-    const embedAllowed =
-      this.deps.runtime.getClient()?.getAgentCapabilities?.()?.promptCapabilities?.embeddedContext !== false;
+    const embedAllowed = supportsPromptCapability(
+      this.deps.runtime.getClient()?.getAgentCapabilities?.(),
+      'embeddedContext',
+    );
 
     const resolved: Array<{ name: string; content: string }> = [];
     const unread: string[] = [];
@@ -2446,23 +2449,23 @@ export class CoOberViewController {
       ? effortConfig.options.map((o) => ({ value: o.value, label: normalizeEffortLabel(o.value, o.name) }))
       : this.builtInEfforts();
 
-    rt.state.currentModelId = snapshot.currentModelId ?? modelConfig?.currentValue ?? null;
+    rt.state.currentModelId = snapshot.currentModelId ?? selectValueOf(modelConfig) ?? null;
     if (!this.isActiveTab(rt)) return;
     this.deps.toolbar.updateAgents(
       agents,
-      snapshot.currentModeId ?? modeConfig?.currentValue ?? this.deps.runtime.settings.defaultAgent,
+      snapshot.currentModeId ?? selectValueOf(modeConfig) ?? this.deps.runtime.settings.defaultAgent,
     );
     this.deps.toolbar.updateModels(
       models,
-      snapshot.currentModelId ?? modelConfig?.currentValue ?? this.deps.runtime.settings.defaultModel,
+      snapshot.currentModelId ?? selectValueOf(modelConfig) ?? this.deps.runtime.settings.defaultModel,
     );
-    this.deps.toolbar.updateEffort(efforts, effortConfig?.currentValue ?? this.deps.runtime.settings.defaultEffort);
+    this.deps.toolbar.updateEffort(efforts, selectValueOf(effortConfig) ?? this.deps.runtime.settings.defaultEffort);
     this.deps.toolbar.updateExtraConfigs(projectGenericConfigOptions(snapshot.configOptions));
     this.deps.toolbar.updatePermission(this.deps.runtime.settings.permissionMode);
     // Mirror the send-path rule (images are stripped unless supported) so the
     // attach button is only offered when an image could actually be sent.
     const caps = c.getAgentCapabilities?.();
-    this.deps.toolbar.setImageAttachEnabled(caps?.promptCapabilities?.image !== false);
+    this.deps.toolbar.setImageAttachEnabled(supportsPromptCapability(caps, 'image'));
     // The slash menu is a shared surface too: activating a tab, reconnecting or
     // switching sessions all re-project its own command list onto it.
     commandRegistry.updateAcpCommands(rt.state.availableCommands);
@@ -2475,19 +2478,19 @@ export class CoOberViewController {
       if (opt.id === 'model') {
         this.deps.toolbar.updateModels(
           this.filterCommonModelOptions(opt.options.map((o) => ({ value: o.value, label: o.name }))),
-          opt.currentValue,
+          selectValueOf(opt),
         );
       }
       if (opt.id === 'effort') {
         this.deps.toolbar.updateEffort(
           opt.options.map((o) => ({ value: o.value, label: normalizeEffortLabel(o.value, o.name) })),
-          opt.currentValue,
+          selectValueOf(opt),
         );
       }
       if (opt.id === 'mode') {
         this.deps.toolbar.updateAgents(
           opt.options.map((o) => ({ value: o.value, label: o.name })),
-          opt.currentValue,
+          selectValueOf(opt),
         );
       }
     }

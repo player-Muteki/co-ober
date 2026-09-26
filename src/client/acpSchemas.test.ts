@@ -609,3 +609,82 @@ describe('what a grouped agent says (0.2.5 stage 2)', () => {
     if (r.success) expect(r.data.rawOutput).toEqual({ text: 'the body' });
   });
 });
+
+describe('frames the protocol allows and we threw away (0.2.6 stage 2)', () => {
+  const toolFrame = (extra: Record<string, unknown>) => ({
+    sessionUpdate: 'tool_call',
+    toolCallId: 't1',
+    title: 'Run ls',
+    ...extra,
+  });
+
+  it.each([
+    ['a string', 'total 12'],
+    ['a number', 42],
+    ['a boolean', true],
+    ['an array', ['a', 'b']],
+  ])('keeps %s where the agent put it in rawInput', (_label, value) => {
+    const r = zToolCall.safeParse(toolFrame({ rawInput: value }));
+
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.rawInput).toEqual({ value });
+  });
+
+  it('reads an explicit null on rawOutput as no output, not as a broken frame', () => {
+    const r = zToolCallUpdate.safeParse({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 't1',
+      status: 'completed',
+      rawInput: null,
+      rawOutput: null,
+    });
+
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.rawInput).toBeUndefined();
+      expect(r.data.rawOutput).toBeUndefined();
+    }
+  });
+
+  it('accepts a tool frame that carries neither raw field', () => {
+    expect(zToolCall.safeParse(toolFrame({ status: 'pending' })).success).toBe(true);
+  });
+
+  it('keeps an agent clearing a tool title with null', () => {
+    const r = zToolCallUpdate.safeParse({ sessionUpdate: 'tool_call_update', toolCallId: 't1', title: null });
+
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.title).toBeUndefined();
+  });
+
+  it('keeps a mode whose description is null, and a session info update that clears its title', () => {
+    const modes = zCurrentModeUpdate.safeParse({
+      sessionUpdate: 'current_mode_update',
+      currentModeId: 'build',
+      availableModes: [{ id: 'build', name: 'Build', description: null }],
+    });
+    const info = zSessionInfoUpdate.safeParse({ sessionUpdate: 'session_info_update', title: null });
+
+    expect(modes.success).toBe(true);
+    if (modes.success) expect(modes.data.availableModes?.[0].description).toBeUndefined();
+    expect(info.success).toBe(true);
+    if (info.success) expect(info.data.title).toBeUndefined();
+  });
+
+  it('keeps a usage update that reports no cost', () => {
+    const r = zUsageUpdate.safeParse({ sessionUpdate: 'usage_update', used: 100, size: 1000, cost: null });
+
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.cost).toBeUndefined();
+  });
+
+  it('keeps a boolean config option as the boolean it is', () => {
+    const r = zConfigOptionUpdate.safeParse({
+      sessionUpdate: 'config_option_update',
+      configOptions: [{ id: 'verbose', name: 'Verbose', type: 'boolean', currentValue: true, options: [] }],
+    });
+
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.configOptions[0].currentValue).toBe(true);
+  });
+});

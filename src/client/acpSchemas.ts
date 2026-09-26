@@ -10,6 +10,18 @@ export const zToolKindLenient = zToolKind.catch('other');
 // Agents send explicit nulls where `.optional()` only forgives omission;
 // a null on a peripheral field must degrade to absent, not cost the frame.
 const zOpt = <T extends z.ZodTypeAny>(schema: T) => schema.nullish().transform((v) => v ?? undefined);
+// rawInput/rawOutput carry no type at all in ACP — any JSON is a legal payload.
+// Requiring an object cost the whole frame (and on a permission request it also
+// cancelled the prompt the user never saw), so anything that is not an object
+// is kept under `value`: the card can still print what the agent sent.
+export const zRawJson = z
+  .unknown()
+  .nullish()
+  .transform((value): Record<string, unknown> | undefined => {
+    if (value === undefined || value === null) return undefined;
+    if (typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
+    return { value };
+  });
 // A content element we cannot render (resource_link, malformed terminal…)
 // must not drop the whole tool frame, and must not vanish from it either: it
 // keeps its wire tag as `unsupported` so the card can say what it could not
@@ -75,7 +87,9 @@ const zConfigOption = z.object({
   name: z.string(),
   category: z.string().optional(),
   type: z.string(),
-  currentValue: z.string().catch(''),
+  // SessionConfigBoolean carries a real boolean here, and a select carries a
+  // value id. Reading both as a string turned every toggle's state into ''.
+  currentValue: z.union([z.string(), z.boolean()]).catch(''),
   // Boolean-toggle options legitimately carry no choices; a missing or
   // malformed options array must not drop the whole config frame.
   options: z.array(z.unknown()).transform(flattenConfigOptions).catch([]),
@@ -92,7 +106,7 @@ const zConfigOptions = z.array(z.unknown()).transform((items) => {
   }
   return readable;
 });
-const zModeOption = z.object({ id: z.string(), name: z.string(), description: z.string().optional() });
+const zModeOption = z.object({ id: z.string(), name: z.string(), description: zOpt(z.string()) });
 const zModelOption = z.object({ modelId: z.string(), name: z.string() });
 // ACP carries the expected-argument hint in `input.hint`; dropping it here is
 // what made agent commands render bare in the slash menu.
@@ -158,11 +172,11 @@ export const zToolCall = z.object({
   name: z.string().nullish().transform((n) => n ?? undefined),
   kind: zToolKindLenient.optional(),
   status: zOpt(z.string()),
-  rawInput: zOpt(z.record(z.string(), z.unknown())),
+  rawInput: zRawJson,
   // An agent that answers a tool call in one frame — output and all — is
   // within the spec; only accepting rawOutput on the update frame threw the
   // first frame's result away, leaving the card forever without an output.
-  rawOutput: zOpt(z.record(z.string(), z.unknown())),
+  rawOutput: zRawJson,
   locations: zOpt(z.array(zLocation)),
   content: zOpt(z.array(zToolCallContent)),
 });
@@ -174,10 +188,12 @@ export const zToolCallUpdate = z.object({
   // zToolCall's status: never let a terminal-looking patch drop.
   status: zOpt(z.string()),
   kind: zToolKindLenient.optional(),
-  title: z.string().optional(),
+  // title is ["string","null"] on the wire: an agent clearing a title with an
+  // explicit null is within spec, and must not cost the update frame.
+  title: zOpt(z.string()),
   name: z.string().nullish().transform((n) => n ?? undefined),
-  rawInput: zOpt(z.record(z.string(), z.unknown())),
-  rawOutput: zOpt(z.record(z.string(), z.unknown())),
+  rawInput: zRawJson,
+  rawOutput: zRawJson,
   content: zOpt(z.array(zToolCallContent)),
   locations: zOpt(z.array(zLocation)),
 });
@@ -222,7 +238,9 @@ export const zCurrentModelUpdate = z.object({
 export const zSessionInfoUpdate = z.object({
   sessionUpdate: z.literal('session_info_update'),
   sessionId: z.string().optional(),
-  title: z.string().optional(),
+  // Both nullable on the wire; an agent that clears the title with null still
+  // means the update to say so.
+  title: zOpt(z.string()),
   cwd: z.string().optional(),
   // v2-alpha folds config option delivery into session info. A shape we do
   // not understand must not cost us the title update, so drop it silently.
@@ -236,7 +254,7 @@ export const zUsageUpdate = z.object({
   inputTokens: z.number().optional(),
   outputTokens: z.number().optional(),
   thoughtTokens: z.number().optional(),
-  cost: zCost.optional(),
+  cost: zOpt(zCost),
 });
 // `notice` and `compaction` updates are agent-side extensions (ACP RFDs
 // #2004/#2002) that are not in the v1 contract yet. Agents already emit

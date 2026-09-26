@@ -1,7 +1,19 @@
 import { createInterface, type Interface } from 'readline';
-import { AcpTransportError, AcpTimeoutError, AcpProtocolError, AcpAbortError } from './AcpErrors';
+import { AcpTransportError, AcpTimeoutError, AcpProtocolError, AcpAbortError, AcpInvalidParamsError } from './AcpErrors';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+// ACP's ErrorCode table: -32603 is the implementation-defined failure, and
+// -32000 means "authenticate first". Answering every handler failure with
+// -32000 tells the agent it is logged out when it is not.
+const INTERNAL_ERROR = -32603;
+const INVALID_PARAMS = -32602;
+
+function errorPayload(err: unknown): { code: number; message: string } {
+  return {
+    code: err instanceof AcpInvalidParamsError ? INVALID_PARAMS : INTERNAL_ERROR,
+    message: err instanceof Error ? err.message : String(err),
+  };
+}
 
 interface PendingRequest {
   method: string;
@@ -246,15 +258,13 @@ export class AcpJsonRpcTransport {
         try {
           started = Promise.resolve(handler((msg as { params?: unknown }).params));
         } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : String(err);
-          this.send({ jsonrpc: '2.0', id, error: { code: -32000, message } });
+          this.send({ jsonrpc: '2.0', id, error: errorPayload(err) });
           return;
         }
         started
           .then((result) => this.send({ jsonrpc: '2.0', id, result }))
           .catch((err: unknown) => {
-            const message = err instanceof Error ? err.message : String(err);
-            this.send({ jsonrpc: '2.0', id, error: { code: -32000, message } });
+            this.send({ jsonrpc: '2.0', id, error: errorPayload(err) });
           });
       } else {
         // A server→client request we cannot answer still needs a response,

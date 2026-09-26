@@ -15,6 +15,16 @@ export interface ExtraConfigOption {
 const DEDICATED_CONFIG_IDS = new Set(['model', 'mode', 'effort']);
 
 /**
+ * A dropdown can only select a value id. A boolean toggle's current value is a
+ * real boolean, and it has no choices to select from, so it never reaches one
+ * of the three dedicated controls — read it as "nothing selected" instead of
+ * letting `true` be pasted into a model name.
+ */
+export function selectValueOf(opt: SessionConfigOption | undefined): string | undefined {
+  return typeof opt?.currentValue === 'string' ? opt.currentValue : undefined;
+}
+
+/**
  * An agent may declare config options beyond the three Co-Ober renders itself
  * (reasoning budget, persona, context window…). Before this they were stored on
  * the session and never shown, so the reader could not tell the agent had
@@ -29,7 +39,7 @@ export function projectGenericConfigOptions(options: SessionConfigOption[]): Ext
     .map((opt) => ({
       id: opt.id,
       label: opt.name,
-      value: opt.currentValue,
+      value: String(opt.currentValue),
       values: opt.options.map((o) => ({ value: o.value, label: o.name })),
     }));
 }

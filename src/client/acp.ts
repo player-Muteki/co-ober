@@ -199,6 +199,9 @@ export function parseSessionUpdate(
     case 'notice_update': {
       const r = zNoticeUpdate.safeParse(u);
       if (!r.success) onDrop?.(su);
+      // A notice that parsed but carries no message is still content that
+      // arrived and cannot be shown; it counts as dropped, not as a silent gap.
+      if (r.success && !r.data.message) onDrop?.(su);
       return r.success && r.data.message ? r.data : null;
     }
     case 'notice': {
@@ -210,7 +213,10 @@ export function parseSessionUpdate(
         return null;
       }
       const message = [r.data.title, r.data.description].filter(Boolean).join(' — ');
-      if (!message) return null;
+      if (!message) {
+        onDrop?.(su);
+        return null;
+      }
       return { sessionUpdate: 'notice_update', level: r.data.severity, message };
     }
     case 'compaction_update': {
@@ -306,7 +312,9 @@ export function extractConfigMeta(
 
   const modelOption = configOptions.find((opt) => opt.id === 'model');
   if (modelOption) {
-    meta.currentModelId = modelOption.currentValue;
+    // A boolean currentValue is not a model id; claiming one would put the
+    // word "true" in the model selector.
+    meta.currentModelId = typeof modelOption.currentValue === 'string' ? modelOption.currentValue : null;
     meta.availableModels = modelOption.options.map((opt) => ({
       modelId: opt.value,
       name: opt.name,
@@ -315,7 +323,7 @@ export function extractConfigMeta(
 
   const modeOption = configOptions.find((opt) => opt.id === 'mode');
   if (modeOption) {
-    meta.currentModeId = modeOption.currentValue;
+    meta.currentModeId = typeof modeOption.currentValue === 'string' ? modeOption.currentValue : null;
     meta.availableModes = modeOption.options.map((opt) => ({
       id: opt.value,
       name: opt.name,
@@ -874,7 +882,9 @@ export class AcpClient implements OpencodeClient {
     this.metaFor(id).currentModelId = modelId;
   }
 
-  async setConfigOption(id: string, configId: string, value: string): Promise<SessionConfigOption[]> {
+  // The spec's value is `anyOf`: a value id for a select, a real boolean for a
+  // toggle. Sending `true` as the string "true" makes the agent reject it.
+  async setConfigOption(id: string, configId: string, value: string | boolean): Promise<SessionConfigOption[]> {
     const r = await this.requestWithFallback('setConfigOption', { sessionId: id, configId, value });
     const parsed = z.object({ configOptions: z.array(z.any()).optional() }).safeParse(r);
     const configOptions = parsed.success ? ((parsed.data.configOptions as SessionConfigOption[]) ?? []) : [];

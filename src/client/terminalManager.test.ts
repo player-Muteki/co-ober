@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { EventEmitter } from 'node:events';
 import { TerminalManager } from './terminalManager';
 
 // Mock child_process
@@ -91,6 +92,53 @@ describe('TerminalManager', () => {
 
 			expect(result.output).toBe('');
 			expect(result.error).toContain('Terminal not found');
+		});
+	});
+
+	describe('output budget', () => {
+		function lastProc(): { stdout: EventEmitter; stderr: EventEmitter } {
+			const results = vi.mocked(spawn).mock.results;
+			return results[results.length - 1].value;
+		}
+
+		it('caps one oversized chunk at the agent\'s own ceiling', () => {
+			const instance = manager.create({ command: 'echo', outputByteLimit: 100 }, '/vault');
+			lastProc().stdout.emit('data', 'x'.repeat(500));
+
+			const result = manager.output(instance.terminalId);
+			expect(result.output).toHaveLength(100);
+			expect(result.truncated).toBe(true);
+		});
+
+		it('never keeps more than this client\'s own setting allows', () => {
+			const instance = manager.create({ command: 'echo', outputByteLimit: 5000 }, '/vault');
+			lastProc().stdout.emit('data', 'x'.repeat(1500));
+
+			expect(manager.output(instance.terminalId).output).toHaveLength(1000);
+		});
+
+		it('keeps the tail of the stream, not the head', () => {
+			const instance = manager.create({ command: 'echo', outputByteLimit: 100 }, '/vault');
+			const proc = lastProc();
+			proc.stdout.emit('data', 'a'.repeat(90));
+			proc.stderr.emit('data', 'b'.repeat(30));
+
+			expect(manager.output(instance.terminalId).output).toBe('a'.repeat(70) + 'b'.repeat(30));
+		});
+
+		it('decodes a buffer chunk as text', () => {
+			const instance = manager.create({ command: 'echo' }, '/vault');
+			lastProc().stdout.emit('data', Buffer.from('héllo'));
+
+			expect(manager.output(instance.terminalId).output).toBe('héllo');
+		});
+
+		it('spawns with the environment the agent asked for', () => {
+			manager.create({ command: 'git', env: { GIT_AUTHOR_NAME: 'qs' } }, '/vault');
+
+			expect(spawn).toHaveBeenCalledWith('git', [], expect.objectContaining({
+				env: expect.objectContaining({ GIT_AUTHOR_NAME: 'qs' }),
+			}));
 		});
 	});
 

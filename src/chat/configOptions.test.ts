@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { projectGenericConfigOptions } from './configOptions';
+import { projectGenericConfigOptions, selectValueOf } from './configOptions';
 import type { SessionConfigOption } from '../types';
 
 const option = (over: Partial<SessionConfigOption>): SessionConfigOption => ({
@@ -43,5 +43,22 @@ describe('projectGenericConfigOptions', () => {
 
   it('says nothing when the agent declared no extra options', () => {
     expect(projectGenericConfigOptions([])).toEqual([]);
+  });
+});
+
+describe('selectValueOf', () => {
+  it('reads a selected value id', () => {
+    expect(selectValueOf(option({ currentValue: 'b' }))).toBe('b');
+  });
+
+  it('says nothing is selected for a boolean toggle rather than selecting "true"', () => {
+    // A dropdown selects value ids. Pasting a toggle's `true` into the model
+    // field would name a model that does not exist.
+    expect(selectValueOf(option({ type: 'boolean', currentValue: true }))).toBeUndefined();
+    expect(selectValueOf(option({ type: 'boolean', currentValue: false }))).toBeUndefined();
+  });
+
+  it('says nothing for an option that is not there', () => {
+    expect(selectValueOf(undefined)).toBeUndefined();
   });
 });

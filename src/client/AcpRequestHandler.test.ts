@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { AcpRequestHandler, parseElicitationForm } from './AcpRequestHandler';
 import type { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
-import type { CapabilityGrant, PermissionDecision, PermissionRequest } from '../types';
+import type { CapabilityGrant, PermissionDecision, PermissionRequest, TerminalCreateParams } from '../types';
 
 function makeHandler(options: {
   onPermissionRequest?: (req: PermissionRequest) => Promise<PermissionDecision>;
@@ -454,6 +454,78 @@ describe('a terminal answer the protocol can read (0.2.5 stage 2)', () => {
       truncated: false,
       exitStatus: { exitCode: 0 },
     });
+    handler.dispose();
+  });
+});
+
+describe('terminal/create as the protocol writes it (0.2.6 stage 2)', () => {
+  function call(handler: AcpRequestHandler, method: string, params: Record<string, unknown>): Promise<unknown> {
+    const fn = Reflect.get(handler, method) as (p: Record<string, unknown>) => Promise<unknown>;
+    return fn.call(handler, params);
+  }
+
+  function createHandler() {
+    const create = vi.fn((_params: TerminalCreateParams) => ({ terminalId: 't1', pid: 7 }));
+    const handler = makeHandler({});
+    handler.setTerminalCapabilityMode('enabled');
+    Reflect.set(handler, 'terminalManager', { dispose: vi.fn(), create });
+    return { handler, create };
+  }
+
+  it('accepts env in the spec shape — one {name,value} per entry', async () => {
+    const { handler, create } = createHandler();
+    await call(handler, 'handleTerminalCreate', {
+      command: 'git',
+      env: [
+        { name: 'GIT_AUTHOR_NAME', value: 'qs' },
+        { name: 'LC_ALL', value: 'C' },
+      ],
+    });
+
+    expect(create.mock.calls[0][0]).toMatchObject({ env: { GIT_AUTHOR_NAME: 'qs', LC_ALL: 'C' } });
+    handler.dispose();
+  });
+
+  it('still accepts the map shape some agents send', async () => {
+    const { handler, create } = createHandler();
+    await call(handler, 'handleTerminalCreate', { command: 'git', env: { LC_ALL: 'C' } });
+
+    expect(create.mock.calls[0][0]).toMatchObject({ env: { LC_ALL: 'C' } });
+    handler.dispose();
+  });
+
+  it('keeps the usable variables when one entry is unreadable', async () => {
+    const { handler, create } = createHandler();
+    await call(handler, 'handleTerminalCreate', {
+      command: 'git',
+      env: [{ name: 'KEEP', value: '1' }, { name: 42 }, 'nope', { value: 'nameless' }],
+    });
+
+    expect(create.mock.calls[0][0]).toMatchObject({ env: { KEEP: '1' } });
+    handler.dispose();
+  });
+
+  it('runs with no env at all when the agent omitted it', async () => {
+    const { handler, create } = createHandler();
+    await call(handler, 'handleTerminalCreate', { command: 'ls', cwd: null });
+
+    expect(create.mock.calls[0][0]).toMatchObject({ env: undefined, cwd: undefined });
+    handler.dispose();
+  });
+
+  it('passes the agent\'s own output ceiling to the manager', async () => {
+    const { handler, create } = createHandler();
+    await call(handler, 'handleTerminalCreate', { command: 'ls', outputByteLimit: 2048 });
+
+    expect(create.mock.calls[0][0]).toMatchObject({ outputByteLimit: 2048 });
+    handler.dispose();
+  });
+
+  it('names the field a create actually failed on', async () => {
+    const { handler } = createHandler();
+    // The command was there; `args` was not. Saying "Missing required
+    // parameter: command" would send the agent off to fix the wrong field.
+    await expect(call(handler, 'handleTerminalCreate', { command: 'ls', args: 'origin' })).rejects.toThrow(/args/);
     handler.dispose();
   });
 });

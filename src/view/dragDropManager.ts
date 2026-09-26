@@ -1,6 +1,7 @@
 import { Notice } from 'obsidian';
 import type { AgentCapabilities, ContextRef } from '../types';
 import { t, onLocaleChange } from '../i18n/index';
+import { supportsPromptCapability } from '../utils/agentCapabilities';
 
 export interface DragDropHandlers {
 	onAddNoteRef: (ref: ContextRef) => void;
@@ -108,7 +109,7 @@ export class DragDropManager {
 				// No audio prompt pipeline exists; tell the user instead of silently dropping.
 				new Notice(t().dragDrop.audioNotSupported);
 			} else if (file.type.startsWith('image/')) {
-				if (this.getAgentCapabilities()?.promptCapabilities?.image === false) {
+				if (!supportsPromptCapability(this.getAgentCapabilities(), 'image')) {
 					new Notice(t().dragDrop.imageNotSupported);
 					continue;
 				}
