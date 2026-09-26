@@ -287,8 +287,6 @@ export interface CustomAgentDefinition {
 	description: string;
 	instructions: string;
 	skillIds: string[];
-	modeId?: string;
-	modelId?: string;
 }
 
 export interface TerminalCreateParams {

@@ -150,6 +150,12 @@ export interface AgentCallConfig {
   retryFn?: (text: string, refs?: ContextRef[]) => Promise<unknown>;
   /** A drained turn replays the image parts it carried, not the live chips. */
   capturedImageParts?: PromptPart[];
+  /**
+   * The selection this turn was asked to rewrite. It travels with the turn so a
+   * prompt that loses the stream race can be re-queued still carrying it — the
+   * answer belongs to that selection and to no other.
+   */
+  inlineEdit?: InlineEditState;
 }
 
 export class CoOberViewController {
@@ -158,6 +164,7 @@ export class CoOberViewController {
   private activeRuntime!: SessionRuntime;
   private tabSeq = 0;
   private persistFailed = false;
+  private disposed = false;
   private unsubscribeLocale: (() => void) | null = null;
   queueIndicatorEl: HTMLDivElement | null = null;
 
@@ -262,6 +269,10 @@ export class CoOberViewController {
   }
 
   private activateRuntime(rt: SessionRuntime): void {
+    // A banner's origin label outlives the question it points at: clicking it
+    // after its tab was closed would take the focus to a runtime no longer on
+    // the strip, and paint a dead transcript over the one the user is reading.
+    if (this.runtimes.get(rt.tabId) !== rt) return;
     if (this.activeRuntime === rt) return;
     const prev = this.activeRuntime;
     prev?.renderer.setActive(false);
@@ -283,11 +294,32 @@ export class CoOberViewController {
     this.persistTabShell();
   }
 
+  /** Every session a tab can be asked about: its conversation and its scratch thread. */
+  private sessionsOf(rt: SessionRuntime): string[] {
+    return [rt.state.sessionId, rt.sideChatSessionId].filter((id): id is string => typeof id === 'string' && id !== '');
+  }
+
+  /**
+   * A default the agent refused is said in the tab that asked for the session.
+   * The session exists and works without it, so this is a note rather than an
+   * error — but silence would leave the reader believing their saved model,
+   * agent or effort is in force when the agent turned it down.
+   */
+  private reportMissedDefaults(rt: SessionRuntime, missed: string[]): void {
+    if (missed.length === 0) return;
+    rt.renderer.addSystemMessage(t().session.defaultsNotApplied.replace('{items}', missed.join(', ')));
+  }
+
   /** Close one tab: cancels only its own stream, disposes only its panel. */
   async closeTab(tabId: string): Promise<void> {
     const rt = this.runtimes.get(tabId);
     if (!rt) return;
     const client = this.deps.runtime.getClient();
+    // Its question leaves with it. Left on the shared banner it would sit there
+    // unanswered, the agent's hold would never be released, and every tab's
+    // idle timer would be deferred by a prompt nobody can reach any more.
+    const sessions = this.sessionsOf(rt);
+    if (sessions.length > 0) this.deps.permissionBanner.dismiss(sessions);
     if (rt.busy) {
       ++rt.genId;
       rt.busy = false;
@@ -721,6 +753,7 @@ export class CoOberViewController {
   }
 
   async dispose(): Promise<void> {
+    this.disposed = true;
     this.unsubscribeLocale?.();
     this.unsubscribeLocale = null;
     // The client belongs to the plugin and outlives this view; leaving the
@@ -747,6 +780,7 @@ export class CoOberViewController {
     }
 
     const connected = await this.deps.runtime.initClient();
+    if (this.disposed) return false;
     this.setConnectedFlags(connected);
     if (!connected) {
       this.handleDisconnect();
@@ -775,6 +809,10 @@ export class CoOberViewController {
   }
 
   bindClientHandlers(): void {
+    // Every reconnect route ends here, so this is where a view the user already
+    // closed has to stop: taking the handlers back handed it permission prompts
+    // and streaming frames meant for whoever is on screen now.
+    if (this.disposed) return;
     const client = this.deps.runtime.getClient();
     if (!client) return;
     client.setClientHandlers({
@@ -1011,6 +1049,9 @@ export class CoOberViewController {
   async reconnect(): Promise<void> {
     try {
       const connected = await this.deps.runtime.initClient();
+      // A view closed while the agent was starting has no screen left to
+      // reconnect, and binding its handlers would steal the next turn's frames.
+      if (this.disposed) return;
       if (!connected) throw new Error(t().reconnect.failed);
       this.bindClientHandlers();
       for (const rt of this.runtimes.values()) {
@@ -1027,6 +1068,10 @@ export class CoOberViewController {
       this.setConnectedFlags(true);
       this.deps.welcomeView.updateStatus(true);
       this.callbacks.onHideReconnectBtn();
+      // handleDisconnect keeps the queues on purpose, so a manual reconnect is
+      // the only thing that can release them; without this a prompt parked
+      // before the crash waited for a turn that would never come.
+      this.tryDrainAnyQueue();
     } catch (e) {
       console.error('[co-ober] reconnect failed:', e);
       throw e;
@@ -1104,6 +1149,15 @@ export class CoOberViewController {
   }
 
   async compactSession(rt: SessionRuntime = this.activeRuntime): Promise<void> {
+    // Compacting is a turn like any other, so it waits behind this tab's
+    // unanswered question: cancelling the pending turn here would answer the
+    // agent's request by walking past the banner, and a compact message that
+    // loses the stream race cannot be re-queued (it was never painted), so it
+    // would fail outright.
+    if (this.promptParkedFor(rt)) {
+      rt.renderer.addSystemMessage(t().permission.queueBlocked);
+      return;
+    }
     // Cancel any active generation, then send /compact through the ACP agent
     await this.cancelActiveGeneration(rt);
     await this.sendTextToAgent('/compact', undefined, rt);
@@ -1147,12 +1201,14 @@ export class CoOberViewController {
     if (!adopt) this.activateRuntime(rt);
     else this.resetRuntimeView(rt);
 
+    let missedDefaults: string[] = [];
     try {
       await this.sessionMutex.runExclusive(async () => {
         const sid = await c.createSession(this.getVaultCwd(), this.deps.runtime.settings.mcpServers);
         rt.state.sessionId = sid;
-        await applyDefaultSessionSettings(c, sid, this.deps.runtime.settings);
+        missedDefaults = await applyDefaultSessionSettings(c, sid, this.deps.runtime.settings);
       });
+      this.reportMissedDefaults(rt, missedDefaults);
       if (rt.state.sessionId) {
         this.deps.sessionStore.getOrCreate(rt.state.sessionId);
         if (this.isActiveTab(rt)) this.deps.sessionStore.setActive(rt.state.sessionId);
@@ -1222,12 +1278,14 @@ export class CoOberViewController {
       if (rt.state.sessionId) return rt.state.sessionId;
     }
 
+    let missedDefaults: string[] = [];
     try {
       await this.sessionMutex.runExclusive(async () => {
         const sid = await client.createSession(this.getVaultCwd(), this.deps.runtime.settings.mcpServers);
         rt.state.sessionId = sid;
-        await applyDefaultSessionSettings(client, sid, this.deps.runtime.settings);
+        missedDefaults = await applyDefaultSessionSettings(client, sid, this.deps.runtime.settings);
       });
+      this.reportMissedDefaults(rt, missedDefaults);
       if (rt.state.sessionId) {
         this.deps.sessionStore.getOrCreate(rt.state.sessionId);
         if (this.isActiveTab(rt)) this.deps.sessionStore.setActive(rt.state.sessionId);
@@ -1386,9 +1444,15 @@ export class CoOberViewController {
     };
   }
 
-  /** Close and release one tab's side session; the panel's onClose hook calls this. */
+  /**
+   * Close and release one tab's side session; the panel's onClose hook calls this.
+   * The in-flight turn is cancelled before the id is let go: a fork dropped
+   * silently kept answering to a panel that was already removed, and view close
+   * reaches this before the panel itself gets a chance to abort.
+   */
   endSideChat(rt: SessionRuntime = this.activeRuntime): void {
     const sideId = rt.sideChatSessionId;
+    if (sideId) this.abortSideChat(rt.tabId);
     rt.sideChatSessionId = null;
     if (!sideId) return;
     const client = this.deps.runtime.getClient();
@@ -1469,7 +1533,8 @@ export class CoOberViewController {
       this.renderer.addSystemMessage(t().rewind.busy);
       return;
     }
-    const sessionId = this.state.sessionId;
+    const rt = this.activeRuntime;
+    const sessionId = rt.state.sessionId;
     if (!sessionId) return;
     const session = this.deps.sessionStore.get(sessionId);
     if (!session) return;
@@ -1494,46 +1559,57 @@ export class CoOberViewController {
     // confirmed; otherwise a failed renew would silently drop context.
     let renewed: string | null;
     try {
-      renewed = await this.renewAgentSession();
+      renewed = await this.renewAgentSession(rt);
     } catch (e) {
       console.error('[co-ober] rewind session renew:', e);
       renewed = null;
     }
     if (!renewed) {
-      this.renderer.addSystemMessage(t().rewind.renewFailed);
+      rt.renderer.addSystemMessage(t().rewind.renewFailed);
       return;
     }
     session.messages.splice(idx);
     session.updatedAt = Date.now();
     await this.deps.sessionStore.save();
 
-    this.resetConversationView();
-    await this.restoreSession();
-    await this.executeAgentCall(text, [], {
-      buildPartsWithRefs: [],
-      history,
-      retryFn: (t2, r) => this.send(t2, r ?? []),
-    });
+    this.resetRuntimeView(rt);
+    await this.restoreSession(rt);
+    await this.executeAgentCall(
+      text,
+      [],
+      {
+        buildPartsWithRefs: [],
+        history,
+        retryFn: (t2, r) => this.send(t2, r ?? [], rt),
+      },
+      rt,
+    );
   }
 
   /** Rotate to a fresh agent session while keeping the local transcript under the new id. */
-  private async renewAgentSession(): Promise<string | null> {
+  private async renewAgentSession(rt: SessionRuntime = this.activeRuntime): Promise<string | null> {
     const client = this.deps.runtime.getClient();
     if (!client) return null;
-    const oldId = this.state.sessionId;
+    const oldId = rt.state.sessionId;
+    let missedDefaults: string[] = [];
     const newId = await this.sessionMutex.runExclusive(async () => {
       const sid = await client.createSession(this.getVaultCwd(), this.deps.runtime.settings.mcpServers);
-      await applyDefaultSessionSettings(client, sid, this.deps.runtime.settings);
+      missedDefaults = await applyDefaultSessionSettings(client, sid, this.deps.runtime.settings);
       return sid;
     });
+    this.reportMissedDefaults(rt, missedDefaults);
     if (oldId && client.getAgentCapabilities()?.sessionCapabilities?.close) {
       client.closeSession(oldId).catch((e) => console.error('[co-ober] close rewound session:', e));
     }
     if (oldId) this.deps.sessionStore.rekey(oldId, newId);
-    this.state.sessionId = newId;
-    this.deps.sessionStore.setActive(newId);
+    // Take the await with the tab that asked, not with "whichever is on screen
+    // when the agent answers": a switch mid-rewind would otherwise move this
+    // conversation's new session into another tab and leave this one pointing
+    // at a session that was just closed.
+    rt.state.sessionId = newId;
+    if (rt === this.activeRuntime) this.deps.sessionStore.setActive(newId);
     await this.deps.sessionStore.save();
-    this.loadToolbarOptions();
+    this.loadToolbarOptions(rt);
     return newId;
   }
 
@@ -1642,6 +1718,7 @@ export class CoOberViewController {
       rt.streamCtrl.saveMessage('user', text, 'text', undefined, images.length > 0 ? images : undefined);
     rt.renderer.addAssistantPlaceholder();
 
+    let parkedForCapacity = false;
     try {
       await this.syncRuntimeSession(sessionId, undefined, rt);
       if (rt.state.sessionId !== sessionId || !rt.busy) return;
@@ -1684,8 +1761,11 @@ export class CoOberViewController {
       }
     } catch (e: unknown) {
       if (!rt.state.isConnected && !(e instanceof AcpProcessExitError)) {
-        // A disconnect surfaces its own banner; keep a trace of the swallowed turn error.
+        // The reconnect button and its line land on the screen the reader is
+        // looking at; a background tab would otherwise lose its turn with
+        // nothing but a console line. Say it where that turn lives.
         console.warn('[co-ober] turn error swallowed while disconnected:', e);
+        rt.renderer.addError(t().error.connectionLostMidTurn);
         return;
       }
       if (e instanceof AcpStreamCapacityError && config.addUserMessage !== false) {
@@ -1693,7 +1773,14 @@ export class CoOberViewController {
         // where another tab can claim the last slot first. Any conversational
         // turn that loses re-queues intact — its bubble and images are already
         // committed to this attempt — instead of failing on a race.
-        rt.promptQueue.unshift({ text, refs, painted: true, images: imageParts });
+        parkedForCapacity = true;
+        rt.promptQueue.unshift({
+          text,
+          refs,
+          painted: true,
+          images: imageParts,
+          inlineEdit: config.inlineEdit,
+        });
         rt.capacityParked = true;
         if (active()) this.updateQueueIndicator(rt);
         return;
@@ -1736,7 +1823,11 @@ export class CoOberViewController {
           rt.unread = true;
         }
         this.notifyTabsChanged();
-        config.onFinally?.();
+        // A turn that never ran has nothing to report: stamping the footer here
+        // prints the *previous* turn's usage as this one's, and an inline edit
+        // would be offered the previous answer as its diff — pressing Apply
+        // would write the wrong characters into the wrong selection.
+        if (!parkedForCapacity) config.onFinally?.();
         // Shared budget freed — any tab's parked head can now start.
         void this.tryDrainAnyQueue();
         // The agent may have rewritten its todo list this turn; resync the
@@ -2034,6 +2125,7 @@ export class CoOberViewController {
         addUserMessage: opts.paintedHead ? false : undefined,
         saveMessage: opts.paintedHead ? false : undefined,
         capturedImageParts: opts.imagesHead,
+        inlineEdit: inlineEdit ?? undefined,
         retryFn: (t, r) => this.send(t, r ?? refs, rt),
         onFinally: () => {
           if (rt.state.usage) {
@@ -2532,12 +2624,16 @@ export class CoOberViewController {
   /** Tear one tab's screen down without touching any other tab's turn. */
   private resetRuntimeView(rt: SessionRuntime): void {
     const active = this.isActiveTab(rt);
+    // Read before the scratch thread is released: its question belongs to this
+    // tab too, and only this tab's. Leaving another tab's prompt standing would
+    // answer a question its reader is about to be shown.
+    const sessions = this.sessionsOf(rt);
     // The scratch thread was forked from this tab's conversation, so it is
     // this tab's to release — whether or not it is the one on screen.
     this.endSideChat(rt);
     this.callbacks.onCloseSideChat?.(rt.tabId);
+    this.deps.permissionBanner.dismiss(sessions);
     if (active) {
-      this.deps.permissionBanner.dismiss();
       this.deps.welcomeView.hide();
     }
     // The pending inline edit is the asking tab's, not the tab on screen: a

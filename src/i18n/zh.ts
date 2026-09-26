@@ -64,6 +64,7 @@ const zh: Locale = {
     notSaved: 'Co-Ober 未能把这段对话写入磁盘 — 在下一次保存成功之前，它只存在于这个窗口里。',
     truncated: '[前面 {count} 条消息已省略]',
     imagePurged: '[为节省空间已移除存储的图片]',
+    defaultsNotApplied: '会话已创建，但 Co-Ober 无法应用：{items}',
   },
 
   reconnect: {
@@ -71,8 +72,6 @@ const zh: Locale = {
     connecting: '连接中…',
     failed: '连接失败',
   },
-
-  newMessages: '新消息',
 
   dragOverlay: '拖放以附加',
 
@@ -168,7 +167,7 @@ const zh: Locale = {
     timeout: '请求超时',
     processExit: 'OpenCode 进程已退出',
     reconnected: '连接已恢复，之前的请求已中断。',
-    reconnectFailed: '多次重连后仍无法联系 Agent，请点击“连接”重试。',
+    reconnectFailed: '多次重连后仍无法联系 Agent，请点击“重新连接”重试。',
     timedOut: 'Agent 未在 {ms} 毫秒内响应“{method}”，它可能仍在处理。',
     sessionMissing: '这个会话在 Agent 侧已不存在，请新建会话后继续。',
     processExited: 'Agent 进程已退出（{detail}），请求被中断。',
@@ -177,6 +176,7 @@ const zh: Locale = {
     agentError: 'Agent 拒绝了请求：{detail}',
     fileMissing: '无法读取文件：{detail}',
     accessDenied: '该操作被拒绝：{detail}',
+    connectionLostMidTurn: '这一轮回复进行中时连接断开了，回复未完成。',
     unknown: '出现未知错误',
   },
 
@@ -192,7 +192,6 @@ const zh: Locale = {
   },
 
   message: {
-    compacted: '会话已压缩。',
     jumpToLatest: '跳转到最新消息',
   },
 
@@ -390,6 +389,8 @@ const zh: Locale = {
     dataLoadTooNew: '已保存的聊天数据来自更新版本的 Co-Ober（schema {version}），已另存为 {file}，并以默认设置启动',
     dataRestoredFromBackup: '无法读取已保存的聊天数据——已改为加载上一次完整保存的副本',
     saveFailed: 'Co-Ober 保存聊天数据失败——最近的更改可能丢失',
+    commandFilesUnreadable: 'Co-Ober 无法读取 {files}；修好这些文件之前，对应的斜杠命令不会出现',
+    commandFilesShapeless: '{files} 没有 frontmatter，因此没有被注册为斜杠命令',
   },
 
   usage: {
@@ -447,7 +448,7 @@ const zh: Locale = {
     },
     autostart: {
       name: '在 Co-Ober 中自动连接',
-      desc: '仅在 Co-Ober 用户操作时连接 OpenCode，不在 Obsidian 启动时连接',
+      desc: '在 Co-Ober 面板打开时、或你在其中操作时连接 OpenCode；Obsidian 启动时恢复这个面板同样算“打开”',
     },
     diagnostics: {
       heading: '诊断',
@@ -486,10 +487,11 @@ const zh: Locale = {
       id: 'ID',
       idDesc: '设置和会话引用的稳定本地标识',
       duplicateId: '自定义 Agent ID 已存在：{id}',
+      emptyId: '自定义 Agent ID 不能为空——已保留原来的 ID。',
       name: '名称',
       description: '描述',
       instructions: '指令',
-      instructionsDesc: '此 Agent 启用时注入的提示词指令',
+      instructionsDesc: '此 Agent 启用时，Co-Ober 会把这段指令拼在你每条消息前面',
       skills: '技能 ID',
       skillsDesc: '用英文逗号分隔要包含的已启用技能 ID',
     },
@@ -506,6 +508,7 @@ const zh: Locale = {
       id: 'ID',
       idDesc: '自定义 Agent 引用的稳定本地标识',
       duplicateId: '自定义技能 ID 已存在：{id}',
+      emptyId: '自定义技能 ID 不能为空——已保留原来的 ID。',
       name: '名称',
       description: '描述',
       instructions: '指令',
@@ -528,7 +531,7 @@ const zh: Locale = {
     systemPrompt: {
       heading: '系统提示词',
       name: '自定义系统提示词',
-      desc: '注入 Agent 的额外指令',
+      desc: 'Co-Ober 会把这段指令拼在你每条发送的消息前面；不会改动 Agent 自身的系统提示词',
       placeholder: '输入自定义系统提示词...',
     },
     notes: {
@@ -546,7 +549,7 @@ const zh: Locale = {
       unnamed: '未命名服务器',
       enabled: '启用',
       name: '名称',
-      nameDesc: '传递给 OpenCode 的唯一服务器名称',
+      nameDesc: '传给 OpenCode 的服务器名称——Co-Ober 不会校验它与其他服务器是否重名',
       command: '命令',
       commandDesc: '可执行命令，例如 npx 或 uvx',
       args: '参数',
@@ -581,14 +584,14 @@ const zh: Locale = {
       maxMessages: '每个会话最大消息数',
       maxMessagesDesc: '会话超过此限制时自动截断（默认 200）',
       retentionDays: '会话保留天数',
-      retentionDaysDesc: '删除超过此天数的不活跃会话；置顶与当前会话不会被删除（默认 30）',
+      retentionDaysDesc: '删除超过此天数的不活跃会话；置顶会话和所有还开在标签页里的会话不会被删除（默认 30）',
       maxOpenTabs: '最多打开标签数',
       maxOpenTabsDesc: '同时以标签形式打开的对话数量（2-12，默认 6）',
     },
     fsCapability: {
       heading: '文件系统访问',
       mode: 'FS 能力模式',
-      modeDesc: '控制 OpenCode Agent 的文件系统访问权限',
+      modeDesc: '控制 OpenCode Agent 的文件系统访问权限；只读与规划权限模式会无视此处设置并关闭写入',
       enabled: '读写 — Agent 可以读写 Vault 文件',
       readonly: '只读 — Agent 只能读取 Vault 文件',
       disabled: '禁用 — 无文件系统访问权限',
@@ -596,7 +599,7 @@ const zh: Locale = {
     terminalCapability: {
       heading: '终端访问',
       mode: '终端能力模式',
-      modeDesc: '允许 OpenCode Agent 执行终端命令',
+      modeDesc: '允许 OpenCode Agent 执行终端命令；只读与规划权限模式会无视此处设置并关闭执行',
       enabled: '启用 — Agent 可以运行命令',
       disabled: '禁用 — 无终端访问权限',
       timeout: '命令超时（毫秒）',
@@ -606,11 +609,11 @@ const zh: Locale = {
     },
     idleTimeout: {
       name: '空闲超时（毫秒）',
-      desc: '等待 Agent 响应的最大时间（默认 300000，设为 0 禁用）',
+      desc: '两段响应之间允许的最长静默，超过就取消本轮（默认 300000，设为 0 禁用）；有权限提示待决时倒计时暂停',
     },
     defaultEffort: {
       name: '默认思考强度',
-      desc: '创建新会话时应用的推理强度',
+      desc: 'Co-Ober 为每个新会话请求的推理强度；Agent 拒绝时对话记录里会说明',
     },
     mcpType: '类型',
     mcpUrlDesc: '服务器 URL',

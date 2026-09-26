@@ -20,7 +20,7 @@ Most Obsidian AI plugins need third-party API keys (ongoing token costs) or midd
 
 **`@mention` Notes**: Type `@` to reference any note in your vault. The agent reads and understands your existing knowledge base, then answers, summarizes, or creates content based on it.
 
-**Auto-Save Output as Notes**: AI-generated content saves directly to your local Vault via the sync engine. No manual copy-paste.
+**Tool Output as Notes**: Sync rules write the results of the agent's tool calls (a file write, a search) straight into vault notes. No manual copy-paste for those. Your chat reply itself is only saved as a note when you ask the agent to write one.
 
 **Model & Mode Switching**: Switch AI models and Agent modes (`build` / `plan`, or whatever the connected runtime offers) in the toolbar. Mode cycles on click; model opens a hover dropdown.
 
@@ -86,11 +86,11 @@ Most Obsidian AI plugins need third-party API keys (ongoing token costs) or midd
 | Common Models | Models shown in the chat toolbar when selected in Settings | — |
 | Custom Agents & Skills | Local prompt profiles and reusable skill instructions injected into chat prompts | — |
 | Permission Mode | `safe` (confirm all) / `readonly` / `plan` (both close client file writes and commands) / `yolo` (auto-approve all, grants noted) | `safe` |
-| Custom System Prompt | Additional instructions injected into the agent | — |
+| Custom System Prompt | Instructions Co-Ober prepends to each message you send; the agent's own system prompt is untouched | — |
 | Default Sync Folder | Folder where sync notes are created | `opencode-sync` |
 | Max Note Reference Size | Maximum bytes when reading a referenced note | `8000` |
 | Max Messages per Session | Truncate session when exceeded | `200` |
-| Session Retention Days | Remove empty sessions older than this | `30` |
+| Session Retention Days | Delete inactive conversations older than this; pinned sessions and anything open in a tab are exempt | `30` |
 | Max Open Tabs | How many conversations can be open in tabs at once (2–12) | `6` |
 | Sync Rules | Map tool call results to vault notes (tool → folder → filename template) | — |
 | MCP Servers | Local stdio MCP server definitions (name → command → args) passed to new OpenCode sessions | — |
@@ -152,7 +152,7 @@ Sessions are stored in Obsidian's plugin data. If sessions disappear after resta
 
 ### Sync rules not creating notes
 
-- Ensure the target folder exists in your vault
+- The target folder is created when it is missing — check the path is not already taken by a file of the same name
 - Check that the sync rule is enabled in Settings
 - Verify the tool name matches the agent's tool call (e.g., `edit`, `write`)
 
@@ -258,7 +258,7 @@ Licensed under the [MIT License](LICENSE).
 
 **`@提及` 笔记**：输入 `@` 即可引用 Vault 中的任意笔记。Agent 能读取并理解你现有的知识库，然后基于笔记内容进行回答、总结或创作。
 
-**输出自动保存为笔记**：AI 生成的内容通过同步引擎直接保存到本地 Vault，无需手动复制粘贴。
+**工具输出保存为笔记**：同步规则会把 Agent 工具调用的结果（例如一次写文件、一次检索）直接写入 Vault 笔记，这类内容无需手动复制。聊天回复本身只有在你要求 Agent 写笔记时才会成为笔记。
 
 **模型与模式切换**：在界面中直接切换 AI 模型和 Agent 模式（离线时为 `build` / `plan`，完整列表来自已连接的运行时）。
 
@@ -324,11 +324,11 @@ Licensed under the [MIT License](LICENSE).
 | 常用模型 | 在设置中勾选后显示在聊天工具栏中的模型 | — |
 | 自定义 Agent 与技能 | 本地提示词配置和可复用技能指令，会注入对话提示词 | — |
 | 权限模式 | `safe`（逐一确认）/ `readonly` / `plan`（两者都关闭本客户端的写入与命令）/ `yolo`（全部自动批准，并记录放行） | `safe` |
-| 自定义系统提示词 | 注入 Agent 的额外指令 | — |
+| 自定义系统提示词 | Co-Ober 拼在你每条消息前面的指令；不会改动 Agent 自身的系统提示词 | — |
 | 默认同步文件夹 | 同步笔记的创建位置 | `opencode-sync` |
 | 最大笔记引用大小 | 引用笔记时的最大字节数 | `8000` |
 | 每会话最大消息数 | 超出后截断 | `200` |
-| 会话保留天数 | 超出天数的空会话将被清除 | `30` |
+| 会话保留天数 | 超过此天数的不活跃会话会被清除；置顶的以及还开在标签页里的不受影响 | `30` |
 | 最大标签页数 | 同时可以打开的会话标签页数量（2–12） | `6` |
 | 同步规则 | 将工具调用结果映射为 Vault 笔记（工具 → 文件夹 → 文件名模板） | — |
 | MCP 服务器 | 本地 stdio/http/sse MCP 服务器定义，用于新建 OpenCode 会话 | — |
@@ -390,7 +390,7 @@ Licensed under the [MIT License](LICENSE).
 
 ### 同步规则没有创建笔记
 
-- 确保目标文件夹在 Vault 中存在
+- 目标文件夹缺失时会自动创建——请确认该路径没有被同名文件占用
 - 检查设置中该同步规则是否已启用
 - 确认工具名称与 Agent 的工具调用匹配（如 `edit`、`write`）
 

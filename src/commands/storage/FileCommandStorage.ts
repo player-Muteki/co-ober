@@ -1,6 +1,16 @@
 import { type SlashCommandDef, type CommandSource } from '../registry';
 import { parseCommandFile } from './FrontmatterParser';
-import { type Vault, TFile, type TAbstractFile } from 'obsidian';
+import { type Vault, TFile, type TAbstractFile, Notice } from 'obsidian';
+import { t } from '../../i18n/index';
+
+/** How many paths fit in one notice before the rest become a count. */
+const MAX_LISTED_COMMAND_FILES = 3;
+
+function listForNotice(paths: string[]): string {
+  const shown = paths.slice(0, MAX_LISTED_COMMAND_FILES);
+  const rest = paths.length - shown.length;
+  return rest > 0 ? `${shown.join(', ')} (+${rest})` : shown.join(', ');
+}
 
 /**
  * Scan `.opencode/commands/*.md` and `.opencode/{command,commands}/**\/*.md`
@@ -25,6 +35,7 @@ export class FileCommandStorage implements CommandSource {
   private baseDir: string;
   /** Store the latest defs so load() can return synchronously. */
   private cached: SlashCommandDef[] = [];
+  private lastReported = '';
 
   constructor(vault: Vault, baseDir: string = '.opencode') {
     this.vault = vault;
@@ -33,13 +44,20 @@ export class FileCommandStorage implements CommandSource {
 
   async load(): Promise<SlashCommandDef[]> {
     const defs: SlashCommandDef[] = [];
+    const unreadable: string[] = [];
+    const shapeless: string[] = [];
     const files = this.collectFiles();
 
     for (const file of files) {
       try {
         const raw = await this.vault.read(file);
         const parsed = parseCommandFile(raw);
-        if (!parsed) continue;
+        // A file with no frontmatter block is not a command, and the popover
+        // just lost an entry the user can see on disk. Say which.
+        if (!parsed) {
+          shapeless.push(file.path);
+          continue;
+        }
 
         const name = file.basename;
         // Skip non-user-invocable commands
@@ -68,11 +86,30 @@ export class FileCommandStorage implements CommandSource {
         });
       } catch (e) {
         console.error(`[co-ober] failed to read command file ${file.path}:`, e);
+        unreadable.push(file.path);
       }
     }
 
+    this.reportSkipped(unreadable, shapeless);
     this.cached = defs;
     return defs;
+  }
+
+  /**
+   * A command that goes missing from the / popover looks like a plugin bug, not
+   * like a broken file, so name the files — once per distinct set, because the
+   * watcher rescans on every edit and the same broken file must not shout again.
+   */
+  private reportSkipped(unreadable: string[], shapeless: string[]): void {
+    const signature = `${unreadable.join('|')}#${shapeless.join('|')}`;
+    if (signature === this.lastReported) return;
+    this.lastReported = signature;
+    if (unreadable.length > 0) {
+      new Notice(t().notice.commandFilesUnreadable.replace('{files}', listForNotice(unreadable)));
+    }
+    if (shapeless.length > 0) {
+      new Notice(t().notice.commandFilesShapeless.replace('{files}', listForNotice(shapeless)));
+    }
   }
 
   watch(onChange: () => void): () => void {

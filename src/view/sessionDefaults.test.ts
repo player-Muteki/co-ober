@@ -22,6 +22,24 @@ describe('applyDefaultSessionSettings', () => {
     expect(client.setConfigOption).toHaveBeenCalledWith('session-1', 'effort', 'high');
   });
 
+  it('reports the defaults the agent refused instead of failing the session', async () => {
+    const client = {
+      setMode: vi.fn().mockRejectedValue(new Error('agent not found')),
+      setModel: vi.fn().mockResolvedValue(undefined),
+      setConfigOption: vi.fn().mockRejectedValue(new Error('no such config option')),
+    };
+    const settings = {
+      defaultAgent: 'docs',
+      defaultModel: 'openai/gpt',
+      defaultEffort: 'high',
+    } as CoOberSettings;
+
+    const missed = await applyDefaultSessionSettings(client, 'session-1', settings);
+
+    expect(client.setModel).toHaveBeenCalled();
+    expect(missed).toEqual(['Default Agent', 'Default Thinking Effort']);
+  });
+
   it('does not apply empty defaults or default effort', async () => {
     const client = {
       setMode: vi.fn().mockResolvedValue(undefined),

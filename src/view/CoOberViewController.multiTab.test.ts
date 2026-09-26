@@ -87,7 +87,7 @@ function createHarness(): Harness {
     },
     inlineEditPanel: { clearState: noop, pendingState: null, showDiffFromResponse: noop },
     permissionBanner: {
-      dismiss: noop,
+      dismiss: vi.fn(),
       show: vi.fn(),
       showElicitation: vi.fn(),
       resolveExternally: vi.fn(),
@@ -104,6 +104,7 @@ function createHarness(): Harness {
       setActive: vi.fn(),
       save: vi.fn().mockResolvedValue(undefined),
       remove: vi.fn(),
+      rekey: vi.fn(),
       list: vi.fn(() => []),
       append: vi.fn(),
       rename: vi.fn(() => true),
@@ -1886,6 +1887,224 @@ describe('CoOberViewController — nothing typed is thrown away (0.2.5 stage 1)'
       ], undefined, rtOf(h, tabA));
 
       expect(h.renderers.get(tabA)?.addSystemMessage).not.toHaveBeenCalled();
+    });
+  });
+});
+
+type ExecAgentCall = (text: string, refs: ContextRef[], config: Record<string, unknown>, rt: SessionRuntime) => Promise<void>;
+
+describe('CoOberViewController — closed means closed (0.2.6 stage 3)', () => {
+  let h: Harness;
+
+  beforeEach(() => {
+    h = createHarness();
+    commandRegistry.updateAcpCommands([]);
+    Notice.messages.length = 0;
+  });
+
+  function twoTabs(): [string, string] {
+    h.controller.restoreTabShells(
+      [{ tabId: 'tab-1', sessionId: 'ses-a' }, { tabId: 'tab-2', sessionId: 'ses-b' }],
+      'tab-1',
+    );
+    return h.controller.listTabIds() as [string, string];
+  }
+
+  function clientFor(overrides: Record<string, unknown> = {}) {
+    const client = createMockClient(overrides);
+    (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+    return client;
+  }
+
+  function execCall(h: Harness): ExecAgentCall {
+    return Reflect.get(h.controller, 'executeAgentCall') as ExecAgentCall;
+  }
+
+  describe('a side chat left behind', () => {
+    it('cancels the side session before releasing its id', () => {
+      const [tabA] = twoTabs();
+      const client = clientFor();
+      const rt = rtOf(h, tabA);
+      rt.sideChatSessionId = 'side-1';
+
+      h.controller.endSideChat(rt);
+
+      expect(client.cancel).toHaveBeenCalledWith('side-1');
+      expect(rt.sideChatSessionId).toBeNull();
+    });
+
+    it('cancels a background tab’s side chat when the view closes', async () => {
+      const [, tabB] = twoTabs();
+      const client = clientFor();
+      rtOf(h, tabB).sideChatSessionId = 'side-b';
+
+      await h.controller.dispose();
+
+      expect(client.cancel).toHaveBeenCalledWith('side-b');
+    });
+  });
+
+  describe('a view the reader already closed', () => {
+    it('does not take the client handlers back', async () => {
+      const client = clientFor();
+      await h.controller.dispose();
+      (client.setClientHandlers as ReturnType<typeof vi.fn>).mockClear();
+
+      h.controller.bindClientHandlers();
+
+      expect(client.setClientHandlers).not.toHaveBeenCalled();
+    });
+
+    it('answers no connection once the agent finished starting', async () => {
+      const client = clientFor({ isConnected: vi.fn(() => false) });
+      (h.deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      await h.controller.dispose();
+      (client.setClientHandlers as ReturnType<typeof vi.fn>).mockClear();
+
+      await expect(h.controller.ensureClientConnected()).resolves.toBe(false);
+      expect(client.setClientHandlers).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('closing a tab', () => {
+    it('answers that tab’s prompts and nobody else’s', async () => {
+      const [tabA] = twoTabs();
+      clientFor();
+      const dismiss = h.deps.permissionBanner.dismiss as ReturnType<typeof vi.fn>;
+
+      await h.controller.closeTab(tabA);
+
+      expect(dismiss).toHaveBeenCalledTimes(1);
+      expect(Array.from(dismiss.mock.calls[0][0] as Iterable<string>)).toEqual(['ses-a']);
+    });
+
+    it('carries a closed tab out of the screen it once owned', async () => {
+      const [tabA, tabB] = twoTabs();
+      const rtA = rtOf(h, tabA);
+      clientFor();
+      await h.controller.closeTab(tabA);
+      const activate = Reflect.get(h.controller, 'activateRuntime') as (rt: SessionRuntime) => void;
+      vi.mocked(rtA.renderer.setActive).mockClear();
+
+      activate.call(h.controller, rtA);
+
+      expect(h.controller.activeTabId()).toBe(tabB);
+      expect(rtA.renderer.setActive).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a turn that lost the race for a stream', () => {
+    it('goes back with its selection and signs nothing', async () => {
+      const [tabA] = twoTabs();
+      const inlineEdit = { from: 0, to: 3, original: 'abc' };
+      const onFinally = vi.fn();
+      const client = clientFor({
+        activeStreamCount: vi.fn(() => MAX_CONCURRENT_STREAMS),
+        sendMessage: vi.fn().mockRejectedValue(new AcpStreamCapacityError(MAX_CONCURRENT_STREAMS)),
+      });
+      const rt = rtOf(h, tabA);
+
+      await execCall(h).call(h.controller, 'rewrite this', [], { onFinally, inlineEdit }, rt);
+
+      expect(rt.capacityParked).toBe(true);
+      expect(rt.promptQueue.map((e) => e.text)).toEqual(['rewrite this']);
+      expect(rt.promptQueue[0].inlineEdit).toBe(inlineEdit);
+      expect(onFinally).not.toHaveBeenCalled();
+      expect(client.sendMessage).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('a manual reconnect', () => {
+    it('releases the queue a crash left parked', async () => {
+      const [tabA] = twoTabs();
+      const client = clientFor();
+      const rt = rtOf(h, tabA);
+      rt.promptQueue.push({ text: 'queued while down', refs: [] });
+      rt.capacityParked = true;
+      (h.deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      await h.controller.reconnect();
+
+      await vi.waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(1));
+      expect(rt.promptQueue).toHaveLength(0);
+    });
+  });
+
+  describe('a fresh session for a rewind', () => {
+    it('lands in the tab that asked, not the one on screen', async () => {
+      const [tabA, tabB] = twoTabs();
+      const client = clientFor({ createSession: vi.fn().mockResolvedValue('fresh-session') });
+      const renew = Reflect.get(h.controller, 'renewAgentSession') as (rt: SessionRuntime) => Promise<string | null>;
+
+      const newId = await renew.call(h.controller, rtOf(h, tabB));
+
+      expect(newId).toBe('fresh-session');
+      expect(rtOf(h, tabB).state.sessionId).toBe('fresh-session');
+      expect(rtOf(h, tabA).state.sessionId).toBe('ses-a');
+      expect(client.createSession).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('/compact beside a pending prompt', () => {
+    it('waits its turn like any other message', async () => {
+      const [tabA] = twoTabs();
+      const client = clientFor();
+      (h.deps.permissionBanner.currentSessionId as ReturnType<typeof vi.fn>).mockReturnValue('ses-a');
+
+      await h.controller.compactSession(rtOf(h, tabA));
+
+      expect(h.renderers.get(tabA)?.addSystemMessage).toHaveBeenCalledWith(t().permission.queueBlocked);
+      expect(client.sendMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a turn eaten by a lost connection', () => {
+    it('says so in the tab whose turn it was', async () => {
+      const [, tabB] = twoTabs();
+      // The link drops while this turn is in flight, and the tab is in the
+      // background: the line belongs in its own transcript.
+      const rtB = rtOf(h, tabB);
+      const client = createMockClient({
+        isConnected: vi.fn(() => true),
+        sendMessage: vi.fn().mockImplementation(() => {
+          rtB.state.isConnected = false;
+          return Promise.reject(new Error('pipe closed'));
+        }),
+      });
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      await execCall(h).call(h.controller, 'lost turn', [], { addUserMessage: false, saveMessage: false }, rtB);
+
+      expect(h.renderers.get(tabB)?.addError).toHaveBeenCalledWith(t().error.connectionLostMidTurn);
+    });
+  });
+
+  describe('defaults the agent declined', () => {
+    it('still creates the session, and names what did not land', async () => {
+      const tab = h.controller.activeTabId();
+      const rt = rtOf(h, tab);
+      rt.state.sessionId = null;
+      clientFor({ setConfigOption: vi.fn().mockRejectedValue(new Error('no such option')) });
+      (h.deps.runtime.settings as unknown as Record<string, unknown>).defaultEffort = 'high';
+
+      const sid = await h.controller.ensureRuntimeSession(rt);
+
+      expect(sid).toBe('new-session');
+      expect(h.renderers.get(tab)?.addSystemMessage).toHaveBeenCalledWith(
+        t().session.defaultsNotApplied.replace('{items}', 'Default Thinking Effort'),
+      );
+    });
+
+    it('says nothing when every default landed', async () => {
+      const tab = h.controller.activeTabId();
+      const rt = rtOf(h, tab);
+      rt.state.sessionId = null;
+      clientFor();
+
+      const sid = await h.controller.ensureRuntimeSession(rt);
+
+      expect(sid).toBe('new-session');
+      expect(h.renderers.get(tab)?.addSystemMessage).not.toHaveBeenCalled();
     });
   });
 });

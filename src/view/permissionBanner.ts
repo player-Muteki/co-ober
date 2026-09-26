@@ -29,7 +29,7 @@ export class PermissionBanner {
 
   dispose(): void {
     this.unsubscribeLocale();
-    this.settlePending();
+    this.dismiss();
   }
 
   show(req: PermissionRequest, origin?: PermissionOrigin): Promise<PermissionDecision> {
@@ -320,24 +320,38 @@ export class PermissionBanner {
     this.current = null;
   }
 
-  /** Drop the banner UI and settle every outstanding request, so the agent never blocks. */
-  private settlePending(): void {
-    const outstanding = this.current ? [this.current, ...this.queue.splice(0)] : this.queue.splice(0);
-    this.dismissInternal();
-    for (const pending of outstanding) {
-      if (pending.kind === 'permission') {
-        const reject = pending.req.options.find((o) => o.kind === 'reject_once' || o.kind === 'reject_always');
-        pending.resolve(reject?.optionId ?? 'reject_once');
-      } else {
-        // Retiring a form the user never submitted is "nobody answered", not a
-        // refusal the agent should report back as the user's decision.
-        pending.resolve({ action: 'cancel' });
-      }
+  /**
+   * Drop the banner UI and settle every outstanding request the caller scopes,
+   * so the agent never blocks. An answer this client gives on the user's behalf
+   * is "nobody answered": a reject option is a claim about what the user chose,
+   * and a queued prompt — often from a tab that is no longer on screen — was
+   * never shown to them at all. Passing `sessionIds` narrows the sweep to one
+   * tab's questions, so closing or resetting a tab cannot answer for the others.
+   */
+  dismiss(sessionIds?: Iterable<string>): void {
+    const scope = sessionIds ? new Set(sessionIds) : null;
+    const inScope = (pending: PendingPrompt): boolean => {
+      if (!scope) return true;
+      const sessionId = pending.req.sessionId;
+      return typeof sessionId === 'string' && scope.has(sessionId);
+    };
+    for (let i = this.queue.length - 1; i >= 0; i--) {
+      const queued = this.queue[i];
+      if (!inScope(queued)) continue;
+      this.queue.splice(i, 1);
+      this.cancelUnanswered(queued);
+    }
+    while (this.current && inScope(this.current)) {
+      const visible = this.current;
+      // Retires this banner and draws whatever the sweep left behind.
+      this.showNext();
+      this.cancelUnanswered(visible);
     }
   }
 
-  dismiss(): void {
-    this.settlePending();
+  private cancelUnanswered(pending: PendingPrompt): void {
+    if (pending.kind === 'permission') pending.resolve(null);
+    else pending.resolve({ action: 'cancel' });
   }
 
   /**

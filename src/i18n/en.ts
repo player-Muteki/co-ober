@@ -62,6 +62,7 @@ const en = {
     notSaved: 'Co-Ober could not write this conversation to disk — it only exists in this window until the next successful save.',
     truncated: '[{count} earlier messages truncated]',
     imagePurged: '[stored images were removed to free space]',
+    defaultsNotApplied: 'The session was created, but Co-Ober could not apply: {items}',
   },
 
   reconnect: {
@@ -69,8 +70,6 @@ const en = {
     connecting: 'Reconnecting…',
     failed: 'Reconnect (failed)',
   },
-
-  newMessages: 'New messages',
 
   dragOverlay: 'Drop to attach',
 
@@ -166,7 +165,7 @@ const en = {
     timeout: 'Request timed out',
     processExit: 'OpenCode process exited',
     reconnected: 'Connection restored. The previous request was interrupted.',
-    reconnectFailed: 'The agent could not be reached after repeated reconnect attempts. Click "Connect" to retry.',
+    reconnectFailed: 'The agent could not be reached after repeated reconnect attempts. Click "Reconnect" to retry.',
     timedOut: 'The agent did not answer "{method}" within {ms} ms. It may still be working.',
     sessionMissing: 'This conversation no longer exists on the agent side. Start a new session to continue.',
     processExited: 'The agent process exited ({detail}) and the request was interrupted.',
@@ -175,6 +174,7 @@ const en = {
     agentError: 'The agent refused: {detail}',
     fileMissing: 'A file could not be read: {detail}',
     accessDenied: 'That operation was refused: {detail}',
+    connectionLostMidTurn: 'The connection to the agent was lost while this turn was in flight; the reply was not completed.',
     unknown: 'Something went wrong',
   },
 
@@ -190,7 +190,6 @@ const en = {
   },
 
   message: {
-    compacted: 'Session compacted.',
     jumpToLatest: 'Jump to latest message',
   },
 
@@ -388,6 +387,8 @@ const en = {
     dataLoadTooNew: 'Saved chat data came from a newer Co-Ober version (schema {version}); it was kept as {file} and defaults were loaded',
     dataRestoredFromBackup: 'Saved chat data could not be read — loaded the last complete save instead',
     saveFailed: 'Co-Ober failed to save chat data — recent changes may be lost',
+    commandFilesUnreadable: 'Co-Ober could not read {files}; those slash commands are missing until the file is fixed',
+    commandFilesShapeless: '{files} has no frontmatter, so it was not registered as a slash command',
   },
 
   usage: {
@@ -445,7 +446,7 @@ const en = {
     },
     autostart: {
       name: 'Auto-connect in Co-Ober',
-      desc: 'Connect to OpenCode from Co-Ober user actions, never during Obsidian startup',
+      desc: 'Connect when a Co-Ober panel opens or when you act in it. Obsidian restoring this panel at startup counts as opening it.',
     },
     diagnostics: {
       heading: 'Diagnostics',
@@ -484,10 +485,11 @@ const en = {
       id: 'ID',
       idDesc: 'Stable local identifier used by settings and sessions',
       duplicateId: 'Custom agent ID already exists: {id}',
+      emptyId: 'A custom agent ID cannot be empty — the previous ID was kept.',
       name: 'Name',
       description: 'Description',
       instructions: 'Instructions',
-      instructionsDesc: 'Prompt instructions injected when this agent is active',
+      instructionsDesc: 'Instructions Co-Ober prepends to every message you send while this agent is active',
       skills: 'Skill IDs',
       skillsDesc: 'Comma-separated IDs of enabled skills to include',
     },
@@ -504,6 +506,7 @@ const en = {
       id: 'ID',
       idDesc: 'Stable local identifier referenced by custom agents',
       duplicateId: 'Custom skill ID already exists: {id}',
+      emptyId: 'A custom skill ID cannot be empty — the previous ID was kept.',
       name: 'Name',
       description: 'Description',
       instructions: 'Instructions',
@@ -526,7 +529,7 @@ const en = {
     systemPrompt: {
       heading: 'System Prompt',
       name: 'Custom System Prompt',
-      desc: 'Additional instructions injected into the agent system prompt',
+      desc: "Instructions Co-Ober prepends to every message you send; the agent's own system prompt is untouched",
       placeholder: 'Enter custom system prompt instructions...',
     },
     notes: {
@@ -544,7 +547,7 @@ const en = {
       unnamed: 'Unnamed server',
       enabled: 'Enabled',
       name: 'Name',
-      nameDesc: 'Unique server name passed to OpenCode',
+      nameDesc: 'Server name passed to OpenCode — Co-Ober does not check it against the other servers',
       command: 'Command',
       commandDesc: 'Executable command, for example npx or uvx',
       args: 'Arguments',
@@ -579,14 +582,14 @@ const en = {
       maxMessages: 'Max Messages per Session',
       maxMessagesDesc: 'Truncate sessions when they exceed this limit (default 200)',
       retentionDays: 'Session Retention Days',
-      retentionDaysDesc: 'Delete inactive sessions older than this; pinned and the current session are never deleted (default 30)',
+      retentionDaysDesc: 'Delete inactive sessions older than this; pinned sessions and every conversation open in a tab are never deleted (default 30)',
       maxOpenTabs: 'Max Open Tabs',
       maxOpenTabsDesc: 'How many conversations can be open in tabs at once (2-12, default 6)',
     },
     fsCapability: {
       heading: 'File System Access',
       mode: 'FS Capability Mode',
-      modeDesc: 'Control file system access for OpenCode agent',
+      modeDesc: 'Control file system access for OpenCode agent; the Readonly and Plan permission modes close writes here no matter what is selected',
       enabled: 'Read & Write — agent can read and write vault files',
       readonly: 'Read Only — agent can only read vault files',
       disabled: 'Disabled — no file system access',
@@ -594,7 +597,7 @@ const en = {
     terminalCapability: {
       heading: 'Terminal Access',
       mode: 'Terminal Capability Mode',
-      modeDesc: 'Allow OpenCode agent to execute terminal commands',
+      modeDesc: 'Allow OpenCode agent to execute terminal commands; the Readonly and Plan permission modes close this no matter what is selected',
       enabled: 'Enabled — agent can run commands',
       disabled: 'Disabled — no terminal access',
       timeout: 'Command Timeout (ms)',
@@ -604,11 +607,11 @@ const en = {
     },
     idleTimeout: {
       name: 'Idle Timeout (ms)',
-      desc: 'Maximum time to wait for agent response before timeout (default 300000, 0 to disable)',
+      desc: 'Longest silence allowed between two response chunks before the turn is cancelled (default 300000, 0 to disable); a pending permission prompt pauses the countdown',
     },
     defaultEffort: {
       name: 'Default Thinking Effort',
-      desc: 'Reasoning effort applied to each newly created session',
+      desc: 'Reasoning effort Co-Ober asks each new session for; the transcript says so when the agent declines it',
     },
     mcpType: 'Type',
     mcpUrlDesc: 'Server URL',

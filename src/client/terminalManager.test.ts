@@ -235,3 +235,59 @@ describe('TerminalManager', () => {
 		});
 	});
 });
+
+describe('TerminalManager — a command that never started (0.2.6 stage 3)', () => {
+	let manager: TerminalManager;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		manager = new TerminalManager({
+			timeoutMs: 5000,
+			maxOutputBytes: 1000,
+		});
+	});
+
+	afterEach(() => {
+		manager.dispose();
+	});
+
+	function lastProc(): { emit: (event: string, ...args: unknown[]) => void } {
+		const results = vi.mocked(spawn).mock.results;
+		return results[results.length - 1].value as unknown as {
+			emit: (event: string, ...args: unknown[]) => void;
+		};
+	}
+
+	it('writes the errno code into the output the agent reads back', () => {
+		const instance = manager.create({ command: 'echo' }, '/vault');
+		lastProc().emit('error', Object.assign(new Error('spawn echo failed'), { code: 'ENOENT' }));
+
+		const result = manager.output(instance.terminalId);
+		expect(result.output).toContain('Command failed to start: ENOENT');
+		expect(result.error).toBeUndefined();
+	});
+
+	it('falls back to the raw message when the error carries no code', () => {
+		const instance = manager.create({ command: 'echo' }, '/vault');
+		lastProc().emit('error', new Error('posix_spawnp failed'));
+
+		expect(manager.output(instance.terminalId).output).toContain('posix_spawnp failed');
+	});
+
+	it('marks the terminal exited instead of leaving it running forever', () => {
+		const instance = manager.create({ command: 'echo' }, '/vault');
+		lastProc().emit('error', Object.assign(new Error('nope'), { code: 'EACCES' }));
+
+		expect(instance.status).toBe('exited');
+		expect(instance.exitCode).toBeNull();
+	});
+
+	it('answers a waiter whose command never started', async () => {
+		const instance = manager.create({ command: 'sleep 5' }, '/vault');
+		const waiter = manager.waitForExit(instance.terminalId);
+
+		lastProc().emit('error', Object.assign(new Error('nope'), { code: 'ENOENT' }));
+
+		await expect(waiter).resolves.toEqual({ exitCode: null, signal: null });
+	});
+});

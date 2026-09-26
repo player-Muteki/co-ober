@@ -73,7 +73,7 @@ describe('PermissionBanner', () => {
     expect(container.querySelector('.co-ober-permission-banner')).toBeNull();
   });
 
-  it('dismiss() resolves the pending request with a reject option so the agent never blocks', async () => {
+  it('dismiss() answers the pending request as nobody-answered, so the agent never blocks', async () => {
     const container = document.createElement('div');
     const banner = new PermissionBanner(container);
 
@@ -96,11 +96,13 @@ describe('PermissionBanner', () => {
 
     banner.dismiss();
 
-    expect(await promise).toBe('no');
+    // A reject option is a claim about what the user chose. Retiring a banner
+    // they never answered says "nobody answered" — the same answer Esc gives.
+    expect(await promise).toBeNull();
     expect(container.querySelector('.co-ober-permission-banner')).toBeNull();
   });
 
-  it('dismiss() falls back to reject_once when the request has no reject option', async () => {
+  it('dismiss() answers a request with no reject option the same way', async () => {
     const container = document.createElement('div');
     const banner = new PermissionBanner(container);
 
@@ -120,7 +122,7 @@ describe('PermissionBanner', () => {
 
     banner.dismiss();
 
-    expect(await promise).toBe('reject_once');
+    expect(await promise).toBeNull();
   });
 
   it('a second concurrent show() queues behind the visible request', async () => {
@@ -161,7 +163,7 @@ describe('PermissionBanner', () => {
     expect(container.querySelector('.co-ober-permission-banner')).toBeNull();
   });
 
-  it('dismiss() settles every queued request with a reject', async () => {
+  it('dismiss() settles every queued request as unanswered', async () => {
     const container = document.createElement('div');
     const banner = new PermissionBanner(container);
 
@@ -181,9 +183,82 @@ describe('PermissionBanner', () => {
 
     banner.dismiss();
 
-    expect(await first).toBe('reject_once');
-    expect(await second).toBe('reject_once');
+    expect(await first).toBeNull();
+    expect(await second).toBeNull();
     expect(container.querySelector('.co-ober-permission-banner')).toBeNull();
+  });
+
+  it('dismiss(sessionIds) answers one tab prompts and leaves another on screen', async () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    const mine = banner.show({
+      sessionId: 'ses-mine',
+      id: 'req-s1',
+      message: 'Mine?',
+      toolCall: { toolCallId: 's1', status: 'pending', rawInput: {}, title: 'Mine?', kind: 'edit', locations: [] },
+      options: [{ optionId: 'yes1', name: 'Yes1', kind: 'allow_once' }],
+    } as any);
+
+    const theirs = banner.show({
+      sessionId: 'ses-theirs',
+      id: 'req-s2',
+      message: 'Theirs?',
+      toolCall: { toolCallId: 's2', status: 'pending', rawInput: {}, title: 'Theirs?', kind: 'edit', locations: [] },
+      options: [{ optionId: 'yes2', name: 'Yes2', kind: 'allow_once' }],
+    } as any);
+
+    banner.dismiss(['ses-mine']);
+
+    // The tab that went away gets its honest answer...
+    expect(await mine).toBeNull();
+    // ...and the tab still on screen keeps the question it was never asked to drop.
+    expect(banner.isPending()).toBe(true);
+    expect(container.querySelector('.co-ober-permission-banner')?.textContent).toContain('Theirs?');
+
+    banner.dismiss();
+    expect(await theirs).toBeNull();
+  });
+
+  it('dismiss(sessionIds) promotes the next unscoped request into view', async () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    const first = banner.show({
+      sessionId: 'ses-a',
+      id: 'req-p1',
+      message: 'Asking tab?',
+      toolCall: { toolCallId: 'p1', status: 'pending', rawInput: {}, title: 'Asking tab?', kind: 'edit', locations: [] },
+      options: [{ optionId: 'yes1', name: 'Yes1', kind: 'allow_once' }],
+    } as any);
+
+    const queuedOther = banner.show({
+      sessionId: 'ses-b',
+      id: 'req-p2',
+      message: 'Other tab?',
+      toolCall: { toolCallId: 'p2', status: 'pending', rawInput: {}, title: 'Other tab?', kind: 'edit', locations: [] },
+      options: [{ optionId: 'yes2', name: 'Yes2', kind: 'allow_once' }],
+    } as any);
+
+    const queuedSame = banner.show({
+      sessionId: 'ses-a',
+      id: 'req-p3',
+      message: 'Again, asking tab?',
+      toolCall: { toolCallId: 'p3', status: 'pending', rawInput: {}, title: 'Again, asking tab?', kind: 'edit', locations: [] },
+      options: [{ optionId: 'yes3', name: 'Yes3', kind: 'allow_once' }],
+    } as any);
+
+    banner.dismiss(['ses-a']);
+
+    // Both of the closing tab's prompts settle, visible one first, and the
+    // other tab's queued question is what the user is left looking at.
+    expect(await first).toBeNull();
+    expect(await queuedSame).toBeNull();
+    expect(container.querySelector('.co-ober-permission-banner')?.textContent).toContain('Other tab?');
+    expect(banner.currentSessionId()).toBe('ses-b');
+
+    banner.dismiss();
+    expect(await queuedOther).toBeNull();
   });
 
   it('shows exactly one banner while requests queue', async () => {    const container = document.createElement('div');

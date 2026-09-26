@@ -351,7 +351,10 @@ export function addSyncRuleBlock(containerEl: HTMLElement, rule: SyncRule, setti
   }
 
 export function renameCustomAgent(currentId: string, nextId: string, settings: CoOberSettings, save: () => Promise<void>, labels: Locale['settings']): boolean {
-    if (!nextId) return false;
+    if (!nextId) {
+      new Notice(labels.customAgents.emptyId);
+      return false;
+    }
     if (nextId !== currentId && settings.customAgents.some((item) => item.id === nextId)) {
       new Notice(labels.customAgents.duplicateId.replace('{id}', nextId));
       return false;
@@ -364,7 +367,10 @@ export function renameCustomAgent(currentId: string, nextId: string, settings: C
   }
 
 export function renameCustomSkill(currentId: string, nextId: string, settings: CoOberSettings, save: () => Promise<void>, labels: Locale['settings']): boolean {
-    if (!nextId) return false;
+    if (!nextId) {
+      new Notice(labels.customSkills.emptyId);
+      return false;
+    }
     if (nextId !== currentId && settings.customSkills.some((item) => item.id === nextId)) {
       new Notice(labels.customSkills.duplicateId.replace('{id}', nextId));
       return false;

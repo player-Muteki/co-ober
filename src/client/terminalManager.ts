@@ -270,7 +270,11 @@ export class TerminalManager {
 			this.appendOutput(terminalId, typeof chunk === 'string' ? chunk : chunk.toString('utf-8'));
 		});
 
-		proc.on('error', (_err: unknown) => {
+		proc.on('error', (err: unknown) => {
+			// A command that never started is not a command that exited cleanly:
+			// the reason goes into the output the agent reads back, because the
+			// protocol has no field for it and a null exit code says nothing.
+			this.appendOutput(terminalId, `Command failed to start: ${spawnReasonOf(err)}\n`);
 			const term = this.terminals.get(terminalId);
 			if (term) {
 				term.status = 'exited';
@@ -331,4 +335,12 @@ export class TerminalManager {
 			resolve(instance ? { exitCode: instance.exitCode, signal: instance.signal } : null);
 		}
 	}
+}
+
+/** Node puts the reason a spawn refused on `code`; without it, say what we got. */
+function spawnReasonOf(err: unknown): string {
+	const code = (err as NodeJS.ErrnoException | null)?.code;
+	if (typeof code === 'string' && code) return code;
+	const message = (err as Error | null)?.message;
+	return typeof message === 'string' && message ? message : String(err);
 }

@@ -124,6 +124,46 @@ describe('CoOberSettingsTab locale refresh', () => {
     expect(plugin.settings.customSkills.map((skill) => skill.id)).toEqual(['writer', 'editor']);
   });
 
+  it('says so when an ID rename is cleared out and springs the field back', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    plugin.settings.customSkills.push({ id: 'writer', enabled: true, name: 'Writer', description: '', instructions: 'Write.' });
+    plugin.settings.customAgents.push({
+      id: 'planner',
+      enabled: true,
+      name: 'Planner',
+      description: '',
+      instructions: 'Plan.',
+      skillIds: ['writer'],
+    });
+    const tab = new CoOberSettingsTab(plugin);
+
+    tab.display();
+    vi.mocked(plugin.savePluginData).mockClear();
+    Notice.messages.length = 0;
+    const inputs = [...tab.containerEl.querySelectorAll('input')];
+    const agentIdInput = inputs.find((input) => input.value === 'planner');
+    const skillIdInput = inputs.filter((input) => input.value === 'writer').at(-1);
+    expect(agentIdInput).toBeDefined();
+    expect(skillIdInput).toBeDefined();
+
+    agentIdInput!.value = '   ';
+    agentIdInput!.dispatchEvent(new Event('change'));
+    skillIdInput!.value = '';
+    skillIdInput!.dispatchEvent(new Event('change'));
+    await flushPromises();
+
+    expect(Notice.messages).toEqual([
+      'A custom agent ID cannot be empty — the previous ID was kept.',
+      'A custom skill ID cannot be empty — the previous ID was kept.',
+    ]);
+    expect(plugin.settings.customAgents[0].id).toBe('planner');
+    expect(plugin.settings.customSkills[0].id).toBe('writer');
+    expect(agentIdInput!.value).toBe('planner');
+    expect(skillIdInput!.value).toBe('writer');
+    expect(plugin.savePluginData).not.toHaveBeenCalled();
+  });
+
   it('loads agents and models into settings and saves common model choices', async () => {
     setLocale('en');
     const refreshedView = { refreshLocale: vi.fn(), loadToolbarOptions: vi.fn() };
