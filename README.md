@@ -30,7 +30,7 @@ Most Obsidian AI plugins need third-party API keys (ongoing token costs) or midd
 
 **Sync Engine**: Tool call results (file edits, writes) are written back to Vault notes based on configurable sync rules with filename templates.
 
-**Permission Modes**: Choose your control level: `yolo` (auto-approve all), `plan` (approve safe operations), or `safe` (confirm every action). Permission cycles on click with color-coded borders.
+**Permission Modes**: Choose your control level: `safe` (confirm every action in a banner), `readonly` or `plan` (this client refuses file writes and command execution, whatever the capability settings allow), or `yolo` (auto-approve everything). Cycles on click with color-coded borders; in `safe` and `yolo`, a client-side change the agent performed without asking is recorded in the transcript.
 
 **Auto-Reconnect**: Recovers automatically when the OpenCode process crashes.
 
@@ -41,7 +41,7 @@ Most Obsidian AI plugins need third-party API keys (ongoing token costs) or midd
 ## Requirements
 
 - [OpenCode CLI](https://opencode.ai) installed and accessible
-- Obsidian v1.7.0+
+- Obsidian v1.8.0+
 - Desktop only (macOS, Linux, Windows)
 
 ## Installation
@@ -84,7 +84,7 @@ Most Obsidian AI plugins need third-party API keys (ongoing token costs) or midd
 | Default Model | Model selected for new OpenCode sessions | — |
 | Common Models | Models shown in the chat toolbar when selected in Settings | — |
 | Custom Agents & Skills | Local prompt profiles and reusable skill instructions injected into chat prompts | — |
-| Permission Mode | `yolo` (auto-approve all) / `plan` (approve safe ops) / `safe` (confirm all) | `safe` |
+| Permission Mode | `safe` (confirm all) / `readonly` / `plan` (both close client file writes and commands) / `yolo` (auto-approve all, grants noted) | `safe` |
 | Custom System Prompt | Additional instructions injected into the agent | — |
 | Default Sync Folder | Folder where sync notes are created | `opencode-sync` |
 | Max Note Reference Size | Maximum bytes when reading a referenced note | `8000` |
@@ -94,9 +94,9 @@ Most Obsidian AI plugins need third-party API keys (ongoing token costs) or midd
 | MCP Servers | Local stdio MCP server definitions (name → command → args) passed to new OpenCode sessions | — |
 | Language | UI language (`en` / `zh`) | `en` |
 | Auto Scroll | Keep the chat pinned to new streaming output until the user scrolls away | `true` |
-| Auto Connect | Stored setting for connection behavior; the current view opens a connection when Co-Ober is opened | `false` |
-| File System Capability | Controls ACP file delegate access: `enabled` / `readonly` / `disabled` | `enabled` |
-| Terminal Capability | Controls ACP terminal delegate access: `enabled` / `disabled` | `enabled` |
+| Auto Connect | Open a connection when the Co-Ober view opens; off leaves the manual connect button | `true` |
+| File System Capability | Controls ACP file delegate access: `enabled` / `readonly` / `disabled` (ignored while `readonly`/`plan` permission mode is active) | `enabled` |
+| Terminal Capability | Controls ACP terminal delegate access: `enabled` / `disabled` (ignored while `readonly`/`plan` permission mode is active) | `enabled` |
 | Terminal Timeout | Maximum terminal wait time before the spawned command is terminated (ms) | `30000` |
 | Terminal Max Output | Maximum terminal output retained per terminal (bytes) | `100000` |
 | Idle Timeout | Maximum time (ms) to wait for agent response before timeout | `300000` |
@@ -265,7 +265,7 @@ Licensed under the [MIT License](LICENSE).
 
 **同步引擎**：工具调用结果（文件编辑、写入）根据可配置的同步规则和文件名模板，自动写回 Vault 笔记。
 
-**权限模式**：选择控制级别：`yolo`（全部自动批准）/ `plan`（批准安全操作）/ `safe`（逐一确认）。
+**权限模式**：选择控制级别：`safe`（每次操作都在横幅中确认）/ `readonly` 或 `plan`（无论能力设置如何，本客户端都拒绝写文件与执行命令）/ `yolo`（全部自动批准）。点击循环并显示不同颜色的边框；在 `safe` 与 `yolo` 下，agent 未经询问就完成的本地改动会记录在对话里。
 
 **自动重连**：OpenCode 进程崩溃后自动恢复连接。
 
@@ -276,7 +276,7 @@ Licensed under the [MIT License](LICENSE).
 ## 系统要求
 
 - 已安装并可访问 [OpenCode CLI](https://opencode.ai)
-- Obsidian v1.7.0+
+- Obsidian v1.8.0+
 - 仅桌面端（macOS、Linux、Windows）
 
 ## 安装方式
@@ -319,7 +319,7 @@ Licensed under the [MIT License](LICENSE).
 | 默认模型 | 新建 OpenCode 会话时选择的模型 | — |
 | 常用模型 | 在设置中勾选后显示在聊天工具栏中的模型 | — |
 | 自定义 Agent 与技能 | 本地提示词配置和可复用技能指令，会注入对话提示词 | — |
-| 权限模式 | `yolo`（全部自动批准）/ `plan`（批准安全操作）/ `safe`（逐一确认） | `safe` |
+| 权限模式 | `safe`（逐一确认）/ `readonly` / `plan`（两者都关闭本客户端的写入与命令）/ `yolo`（全部自动批准，并记录放行） | `safe` |
 | 自定义系统提示词 | 注入 Agent 的额外指令 | — |
 | 默认同步文件夹 | 同步笔记的创建位置 | `opencode-sync` |
 | 最大笔记引用大小 | 引用笔记时的最大字节数 | `8000` |
@@ -329,9 +329,9 @@ Licensed under the [MIT License](LICENSE).
 | MCP 服务器 | 本地 stdio/http/sse MCP 服务器定义，用于新建 OpenCode 会话 | — |
 | 界面语言 | UI 语言（`en` / `zh`） | `en` |
 | 自动滚动 | 流式输出时保持滚动到底部，用户手动上滑后暂停 | `true` |
-| 自动连接 | 已保存的连接行为设置；当前打开 Co-Ober 视图时会建立连接 | `false` |
-| 文件系统能力 | 控制 ACP 文件委托访问：`enabled` / `readonly` / `disabled` | `enabled` |
-| 终端能力 | 控制 ACP 终端委托访问：`enabled` / `disabled` | `enabled` |
+| 自动连接 | 打开 Co-Ober 视图时自动建立连接；关闭后仅保留手动连接按钮 | `true` |
+| 文件系统能力 | 控制 ACP 文件委托访问：`enabled` / `readonly` / `disabled`（权限模式为 `readonly`/`plan` 时该项不再生效） | `enabled` |
+| 终端能力 | 控制 ACP 终端委托访问：`enabled` / `disabled`（权限模式为 `readonly`/`plan` 时该项不再生效） | `enabled` |
 | 终端超时 | 等待终端命令完成的最长时间，超时后终止（毫秒） | `30000` |
 | 终端最大输出 | 每个终端保留的最大输出字节数 | `100000` |
 | 空闲超时 | 等待 Agent 响应的最大时间（毫秒） | `300000` |

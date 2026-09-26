@@ -4,6 +4,10 @@ import { t, onLocaleChange } from '../i18n/index';
 export interface InlineEditState {
 	original: string;
 	editor: Editor;
+	// The conversation that asked for the edit. Its reply is the only one that
+	// may be painted over the selection; any other tab's send would show an
+	// unrelated answer here, and its Apply would rewrite this tab's text.
+	tabId: string;
 }
 
 export class InlineEditPanel {
@@ -20,19 +24,18 @@ export class InlineEditPanel {
 		this.clearState();
 	}
 
-	request(selected: string, editor: Editor): string {
+	request(selected: string, editor: Editor, tabId: string): string {
 		this.clearState();
-		this.pendingState = { original: selected, editor };
+		this.pendingState = { original: selected, editor, tabId };
 		return t().inlineEdit.prompt.replace('{text}', selected);
 	}
 
-	showDiffFromResponse(original: string, responseContent: string): void {
-		this.showDiff(original, this.extractContent(responseContent));
+	showDiffFromResponse(original: string, responseContent: string, editor?: Editor): void {
+		this.showDiff(original, this.extractContent(responseContent), editor);
 	}
 
-	showDiff(original: string, edited: string): void {
+	showDiff(original: string, edited: string, editor: Editor | undefined = this.pendingState?.editor): void {
 		this.hideDiff();
-		const editor = this.pendingState?.editor;
 		const panel = this.containerEl.createDiv({ cls: 'co-ober-inline-edit-panel' });
 		this.el = panel;
 

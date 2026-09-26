@@ -5,7 +5,7 @@ import type { CapabilityGrant, PermissionDecision, PermissionRequest } from '../
 
 function makeHandler(options: {
   onPermissionRequest?: (req: PermissionRequest) => Promise<PermissionDecision>;
-  onPermissionUnreadable?: (summary: string) => void;
+  onPermissionUnreadable?: (summary: string, sessionId?: string) => void;
 } = {}): AcpRequestHandler {
   const transport = { onRequest: vi.fn(() => () => {}) } as unknown as AcpJsonRpcTransport;
   return new AcpRequestHandler({
@@ -93,7 +93,21 @@ describe('AcpRequestHandler permission outcomes', () => {
     // '' and malformed options are dropped, not fatal.
     const result = await ask(handler, { sessionId: 's1', toolCall: 'not-an-object', options: validOptions });
     expect(result).toEqual({ outcome: { outcome: 'cancelled' } });
-    expect(unreadable).toHaveBeenCalledWith(expect.stringContaining('toolCall'));
+    // The session rides along, so the report lands in the tab that asked.
+    expect(unreadable).toHaveBeenCalledWith(expect.stringContaining('toolCall'), 's1');
+    errSpy.mockRestore();
+    handler.dispose();
+  });
+
+  it('names no session when the frame it could not read carried none', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const unreadable = vi.fn();
+    const handler = makeHandler({ onPermissionUnreadable: unreadable });
+    await ask(handler, { toolCall: 'not-an-object', options: validOptions });
+
+    // Nothing to attribute it to: the view keeps the report off some other
+    // tab's transcript rather than guessing.
+    expect(unreadable).toHaveBeenCalledWith(expect.stringContaining('toolCall'), undefined);
     errSpy.mockRestore();
     handler.dispose();
   });
@@ -118,7 +132,7 @@ describe('AcpRequestHandler permission outcomes', () => {
     const result = await ask(handler, { sessionId: 's1', toolCall: { title: 'x' }, options: [{ nope: true }] });
     expect(result).toEqual({ outcome: { outcome: 'cancelled' } });
     expect(seen).not.toHaveBeenCalled();
-    expect(unreadable).toHaveBeenCalledWith(expect.stringContaining('no selectable options'));
+    expect(unreadable).toHaveBeenCalledWith(expect.stringContaining('no selectable options'), 's1');
     errSpy.mockRestore();
     handler.dispose();
   });

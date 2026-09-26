@@ -13,12 +13,13 @@ describe('InlineEditPanel', () => {
 		const panel = new InlineEditPanel(container);
 
 		const mockEditor = { replaceSelection: vi.fn() } as any;
-		const prompt = panel.request('text to edit', mockEditor);
+		const prompt = panel.request('text to edit', mockEditor, 'tab-1');
 
 		expect(prompt).toBe('Please edit and improve the following text. Respond with ONLY the edited text, no explanations:\n\ntext to edit');
 		expect(panel.pendingState).toEqual({
 			original: 'text to edit',
 			editor: mockEditor,
+			tabId: 'tab-1',
 		});
 	});
 
@@ -48,7 +49,7 @@ describe('InlineEditPanel', () => {
 		const panel = new InlineEditPanel(container);
 
 		const mockEditor = { replaceSelection: vi.fn() } as any;
-		panel.request('old text', mockEditor);
+		panel.request('old text', mockEditor, 'tab-1');
 		panel.showDiff('old text', 'new text');
 
 		const applyBtn = container.querySelector('.co-ober-inline-edit-actions .mod-cta') as HTMLButtonElement;
@@ -66,7 +67,7 @@ describe('InlineEditPanel', () => {
 		const panel = new InlineEditPanel(container);
 
 		const mockEditor = { replaceSelection: vi.fn() } as any;
-		panel.request('old text', mockEditor);
+		panel.request('old text', mockEditor, 'tab-1');
 		panel.showDiff('old text', 'new text');
 
 		const discardBtn = container.querySelector('.co-ober-inline-edit-actions button:not(.mod-cta)') as HTMLButtonElement;
@@ -76,6 +77,37 @@ describe('InlineEditPanel', () => {
 		expect(mockEditor.replaceSelection).not.toHaveBeenCalled();
 		expect(panel.pendingState).toBeNull();
 		expect(container.querySelector('.co-ober-inline-edit-panel')).toBeNull();
+	});
+
+	it('keeps the tab that asked for the edit, and a second request replaces the first', () => {
+		setLocale('en');
+		const panel = new InlineEditPanel(document.createElement('div'));
+		const editorA = { replaceSelection: vi.fn() } as any;
+		const editorB = { replaceSelection: vi.fn() } as any;
+
+		panel.request('selection A', editorA, 'tab-1');
+		expect(panel.pendingState).toEqual({ original: 'selection A', editor: editorA, tabId: 'tab-1' });
+
+		panel.request('selection B', editorB, 'tab-2');
+		expect(panel.pendingState).toEqual({ original: 'selection B', editor: editorB, tabId: 'tab-2' });
+	});
+
+	it('paints a diff onto the editor it was handed, after the tab claimed the state', () => {
+		setLocale('en');
+		const container = document.createElement('div');
+		const panel = new InlineEditPanel(container);
+		const editor = { replaceSelection: vi.fn() } as any;
+
+		// The send claims (and so clears) the pending state before the reply
+		// arrives; the diff still has to know which selection to rewrite.
+		panel.request('old text', editor, 'tab-1');
+		panel.clearState();
+		panel.showDiffFromResponse('old text', '```\nnew text\n```', editor);
+
+		expect(container.querySelector('.diff-line.added')?.textContent).toBe('+new text');
+		const applyBtn = container.querySelector('.co-ober-inline-edit-actions .mod-cta') as HTMLButtonElement;
+		applyBtn.click();
+		expect(editor.replaceSelection).toHaveBeenCalledWith('new text');
 	});
 
 	it('refreshes locale correctly', () => {

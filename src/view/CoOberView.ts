@@ -1122,7 +1122,7 @@ export class CoOberView extends ItemView {
   // ── Inline Edit ──
 
   async requestInlineEdit(selected: string, editor: import('obsidian').Editor): Promise<void> {
-    const prompt = this.inlineEditPanel.request(selected, editor);
+    const prompt = this.inlineEditPanel.request(selected, editor, this.controller.activeTabId());
     await this.send(prompt);
   }
 

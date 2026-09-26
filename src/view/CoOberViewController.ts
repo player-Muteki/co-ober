@@ -31,9 +31,10 @@ import { applyDefaultSessionSettings } from './sessionDefaults';
 import { normalizeEffortLabel } from '../chat/effortLabel';
 import { projectGenericConfigOptions } from '../chat/configOptions';
 import { Mutex } from '../utils/mutex';
+import { safeClone } from '../utils/clone';
 import type { WelcomeView } from './welcomeView';
 import type { PermissionBanner, PermissionOrigin } from './permissionBanner';
-import type { InlineEditPanel } from './inlineEditPanel';
+import type { InlineEditPanel, InlineEditState } from './inlineEditPanel';
 import type { SideChatAsk } from './sideChatPanel';
 import { buildSystemPrompt } from '../context/injection';
 import { expandWikilinkRefs } from '../context/wikilinks';
@@ -268,6 +269,10 @@ export class CoOberViewController {
     this.deps.onActiveTabChanged?.(prev?.tabId ?? null, rt.tabId);
     if (rt.sessionId) this.deps.sessionStore.setActive(rt.sessionId);
     this.loadToolbarOptions();
+    // The context meter is one shared surface too: a background turn updates
+    // its own tab's numbers only, so re-project them on the way in rather
+    // than leaving the previous tab's figures on the arc.
+    this.deps.updateContextMeter(rt.state.usage);
     this.updateQueueIndicator();
     // A tab restored from disk is only painted once the user actually looks
     // at it; until then its panel stays empty and cheap.
@@ -805,11 +810,11 @@ export class CoOberViewController {
         }
       },
       onReconnectFailed: () => {
-        this.renderer.addError(t().error.reconnectFailed);
+        this.noteConnectionLost(t().error.reconnectFailed);
         this.handleDisconnect();
       },
-      onPermissionUnreadable: () => {
-        this.renderer.addError(t().permission.unreadable);
+      onPermissionUnreadable: (summary, sessionId) => {
+        this.rendererFor(sessionId).addError(t().permission.unreadable);
       },
       onCapabilityGrant: (grant) => {
         this.noteCapabilityGrant(grant);
@@ -838,7 +843,7 @@ export class CoOberViewController {
         // the safe tier nothing is shown, so the honest answer is a decline
         // the reader is told about.
         if (client.permissionMode !== 'safe') {
-          this.renderer.addError(t().elicitation.notInThisMode);
+          this.rendererFor(req.sessionId).addError(t().elicitation.notInThisMode);
           return { action: 'decline' };
         }
         return this.deps.permissionBanner.showElicitation(req, this.originFor(req.sessionId));
@@ -871,6 +876,31 @@ export class CoOberViewController {
       if (rt.state.sessionId === sessionId || rt.sideChatSessionId === sessionId) return rt;
     }
     return undefined;
+  }
+
+  /**
+   * Where a connection-level line about this session gets drawn. A background
+   * conversation's trouble has to appear in its own transcript: the tab on
+   * screen did nothing wrong, and its reader would be told about another
+   * conversation while their own carries nothing.
+   */
+  private rendererFor(sessionId: string | null | undefined): ChatRenderer {
+    return this.findOwningRuntime(sessionId ?? null)?.renderer ?? this.renderer;
+  }
+
+  /**
+   * Losing the agent takes every conversation's backend at once, so each tab
+   * that had one says so in its own transcript. A tab that never opened a
+   * session has nothing to have lost, and the screen the reader is on carries
+   * the line when no tab does.
+   */
+  private noteConnectionLost(message: string): void {
+    const owned = [...this.runtimes.values()].filter((rt) => !!rt.state.sessionId);
+    if (owned.length === 0) {
+      this.renderer.addError(message);
+      return;
+    }
+    for (const rt of owned) rt.renderer.addError(message);
   }
 
   /**
@@ -919,6 +949,19 @@ export class CoOberViewController {
     const sessionId = this.deps.permissionBanner.currentSessionId();
     if (!sessionId) return false;
     return this.findOwningRuntime(sessionId) === rt;
+  }
+
+  /**
+   * Take the selection this tab asked to have rewritten. A pending edit from
+   * another tab is left where it is: its own turn still has to answer it, and
+   * painting this tab's reply over that selection would edit text the user
+   * never asked about.
+   */
+  private claimInlineEdit(rt: SessionRuntime): InlineEditState | null {
+    const pending = this.deps.inlineEditPanel.pendingState;
+    if (!pending || pending.tabId !== rt.tabId) return null;
+    this.deps.inlineEditPanel.clearState();
+    return pending;
   }
 
   /**
@@ -1270,7 +1313,10 @@ export class CoOberViewController {
       this.activateRuntime(rt);
       const forked = this.deps.sessionStore.getOrCreate(forkedId);
       if (source && forked.messages.length === 0) {
-        forked.messages.push(...source.messages.map((m) => ({ ...m })));
+        // A branch must own its transcript: StreamController mutates tool
+        // blocks in place as calls settle, so a shallow copy would let the
+        // fork's finishing turn rewrite the sibling conversation's record.
+        forked.messages.push(...source.messages.map((m) => safeClone(m)));
         forked.title = source.title;
         forked.updatedAt = Date.now();
       }
@@ -1911,7 +1957,7 @@ export class CoOberViewController {
     text: string,
     refs: ContextRef[],
     rt: SessionRuntime = this.activeRuntime,
-    opts: { paintedHead?: boolean; imagesHead?: PromptPart[] } = {},
+    opts: { paintedHead?: boolean; imagesHead?: PromptPart[]; inlineEditHead?: InlineEditState } = {},
   ): Promise<void> {
     if (this.promptParkedFor(rt)) {
       // A queued prompt would be answered by the agent after the pending
@@ -1920,15 +1966,19 @@ export class CoOberViewController {
       rt.renderer.addSystemMessage(t().permission.queueBlocked);
       return;
     }
+    // Claimed here, before the queue paths below return, so a turn that has to
+    // wait keeps the selection it was asked about — and so a send from another
+    // tab can neither pick it up nor answer it.
+    const inlineEdit = opts.inlineEditHead ?? this.claimInlineEdit(rt);
     if (rt.busy) {
-      rt.promptQueue.push({ text, refs });
+      rt.promptQueue.push({ text, refs, inlineEdit: inlineEdit ?? undefined });
       if (this.isActiveTab(rt)) this.updateQueueIndicator(rt);
       return;
     }
     if (!this.streamSlotsFree(this.deps.runtime.getClient())) {
       // The shared stream budget is held by other tabs: wait in this tab's
       // queue instead of failing; the next release starts it.
-      rt.promptQueue.push({ text, refs });
+      rt.promptQueue.push({ text, refs, inlineEdit: inlineEdit ?? undefined });
       if (this.isActiveTab(rt)) this.updateQueueIndicator(rt);
       return;
     }
@@ -1950,9 +2000,6 @@ export class CoOberViewController {
         }
       }
     }
-    const inlineEdit = this.deps.inlineEditPanel.pendingState;
-    if (inlineEdit) this.deps.inlineEditPanel.clearState();
-
     await this.executeAgentCall(
       text,
       refs,
@@ -1973,18 +2020,13 @@ export class CoOberViewController {
             });
             this.persistTurnUsage(rt.state.usage, rt);
           }
-          if (inlineEdit && this.deps.inlineEditPanel.pendingState === inlineEdit) {
+          if (inlineEdit) {
             const session = this.deps.sessionStore.get(rt.state.sessionId ?? '');
-            if (session) {
-              const lastMsg = session.messages
-                .slice()
-                .reverse()
-                .find((m) => m.role === 'assistant');
-              if (lastMsg) {
-                this.deps.inlineEditPanel.showDiffFromResponse(inlineEdit.original, lastMsg.content);
-              }
-            }
-            this.deps.inlineEditPanel.pendingState = null;
+            const lastMsg = session?.messages.slice().reverse().find((m) => m.role === 'assistant');
+            // The editor travels with the claim: the panel already gave its
+            // pending state up when this turn took it, so Apply would have no
+            // selection to write back to.
+            if (lastMsg) this.deps.inlineEditPanel.showDiffFromResponse(inlineEdit.original, lastMsg.content, inlineEdit.editor);
           }
           void this.maybeAutoTitle(rt).catch((e) => console.error('[co-ober] auto title:', e));
         },
@@ -2031,7 +2073,7 @@ export class CoOberViewController {
       }
       if (this.isActiveTab(rt)) this.updateQueueIndicator(rt);
       try {
-        await this.send(text, head.refs, rt, { paintedHead: headPainted, imagesHead: head.images });
+        await this.send(text, head.refs, rt, { paintedHead: headPainted, imagesHead: head.images, inlineEditHead: head.inlineEdit });
       } catch (e) {
         // One failing queued command must not strand the rest of the queue.
         console.error('[co-ober] queued prompt failed:', e);
@@ -2071,6 +2113,9 @@ export class CoOberViewController {
     rt.renderer.finalizeCurrentThinking();
     // Append "Interrupted" indicator to the current assistant response
     rt.renderer.appendInterruptIndicator();
+    // ...and into the transcript message, so a reload doesn't replay a
+    // half-finished answer as though the model had stopped there on purpose.
+    rt.streamCtrl.persistInterruptMarker();
     rt.renderer.flushTextRender().catch(() => {});
     rt.busy = false;
     rt.state.isStreaming = false;
@@ -2437,9 +2482,14 @@ export class CoOberViewController {
     this.endSideChat(rt);
     this.callbacks.onCloseSideChat?.(rt.tabId);
     if (active) {
-      this.deps.inlineEditPanel.clearState();
       this.deps.permissionBanner.dismiss();
       this.deps.welcomeView.hide();
+    }
+    // The pending inline edit is the asking tab's, not the tab on screen: a
+    // background reset must not erase another tab's selection, and this tab's
+    // own must go with its transcript — the editor it points at is gone.
+    if (this.deps.inlineEditPanel.pendingState?.tabId === rt.tabId) {
+      this.deps.inlineEditPanel.clearState();
     }
     rt.renderer.clear();
     rt.streamCtrl.reset();
@@ -2473,8 +2523,11 @@ function queuePreview(text: string): string {
   return collapsed.length > QUEUE_PREVIEW_MAX ? `${collapsed.slice(0, QUEUE_PREVIEW_MAX - 1)}…` : collapsed;
 }
 
-function isPlainPrompt(entry: { text: string; refs: ContextRef[] }): boolean {
-  return entry.refs.length === 0 && parseSlashCommand(entry.text) === null;
+function isPlainPrompt(entry: { text: string; refs: ContextRef[]; inlineEdit?: unknown }): boolean {
+  // A turn asked about a selection is not plain: merging it into a following
+  // prompt would answer two questions with one diff, and handing it back to the
+  // composer would drop the selection it belongs to.
+  return entry.refs.length === 0 && parseSlashCommand(entry.text) === null && !entry.inlineEdit;
 }
 
 /** Session-title candidate from the first user message; empty for slash commands. */

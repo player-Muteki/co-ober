@@ -471,7 +471,7 @@ export class AcpClient implements OpencodeClient {
   onPermissionRequest?: (req: PermissionRequest) => Promise<PermissionDecision>;
   /** The agent asked the user a question; the view answers it or declines. */
   onElicitationRequest?: (req: ElicitationRequest) => Promise<ElicitationAnswer>;
-  onPermissionUnreadable?: (summary: string) => void;
+  onPermissionUnreadable?: (summary: string, sessionId?: string) => void;
   /** This client let the agent write a file or run a command without asking anyone. */
   onCapabilityGrant?: (grant: CapabilityGrant) => void;
   /** An inbound frame could not be drawn; the conversation it belongs to says so. */
@@ -593,7 +593,7 @@ export class AcpClient implements OpencodeClient {
         onPermissionRequest: this.onPermissionRequest,
         onElicitationRequest: this.onElicitationRequest,
         vaultIo: this.vaultIo,
-        onPermissionUnreadable: (summary) => this.onPermissionUnreadable?.(summary),
+        onPermissionUnreadable: (summary, sessionId) => this.onPermissionUnreadable?.(summary, sessionId),
         // A wrapper, not the field: the view binds these handlers after the
         // connection exists, and a grant must reach whoever is listening then.
         onCapabilityGrant: (grant) => this.onCapabilityGrant?.(grant),
@@ -1071,7 +1071,7 @@ export class AcpClient implements OpencodeClient {
       if (handlers.onElicitationRequest) {
         this.requestHandler.onElicitationRequest = handlers.onElicitationRequest;
       }
-      this.requestHandler.onPermissionUnreadable = (summary) => this.onPermissionUnreadable?.(summary);
+      this.requestHandler.onPermissionUnreadable = (summary, sessionId) => this.onPermissionUnreadable?.(summary, sessionId);
       this.requestHandler.onCapabilityGrant = (grant) => this.onCapabilityGrant?.(grant);
     }
   }

@@ -28,8 +28,12 @@ export interface ClientHandlers {
   onPermissionRequest?: (req: PermissionRequest) => Promise<PermissionDecision>;
   /** Ask the user to answer an elicitation the agent posed; the answer goes back verbatim. */
   onElicitationRequest?: (req: ElicitationRequest) => Promise<ElicitationAnswer>;
-  /** Called when an inbound permission request fails schema validation and had to be cancelled. */
-  onPermissionUnreadable?: (summary: string) => void;
+  /**
+   * Called when an inbound permission request fails schema validation and had to be
+   * cancelled. The session id is whatever the frame still revealed, so the line can
+   * land in the conversation the request belonged to rather than the tab on screen.
+   */
+  onPermissionUnreadable?: (summary: string, sessionId?: string) => void;
   /** This client let the agent write a file or run a command without asking anyone. */
   onCapabilityGrant?: (grant: CapabilityGrant) => void;
   /** An inbound update frame was dropped without being drawn; the conversation says so. */

@@ -143,6 +143,67 @@ describe('StreamController', () => {
     expect(deps.sessionStore.append).not.toHaveBeenCalled();
   });
 
+  describe('stamps an interrupt into the transcript, not only the live DOM', () => {
+    let session: {
+      messages: Array<{ content: string; type: string; contentBlocks?: Array<{ type: string; text?: string }> }>;
+      updatedAt: number;
+    };
+
+    beforeEach(() => {
+      setLocale('en');
+      session = { messages: [], updatedAt: 0 };
+      deps.sessionStore.get.mockReturnValue(session);
+    });
+
+    const answerSoFar = (messageId: string, accumulatedText: string) =>
+      controller.handleChunk({
+        kind: 'message_chunk', role: 'agent', messageId, chunkText: '', accumulatedText,
+      });
+
+    it('appends the badge to the message this turn was writing', () => {
+      answerSoFar('m1', 'half an answer');
+      controller.persistInterruptMarker();
+
+      expect(session.messages[0].content).toBe('half an answer\n\n*Interrupted*');
+      expect(session.messages[0].contentBlocks?.[0]?.text).toBe('half an answer\n\n*Interrupted*');
+    });
+
+    it('stamps once, however many stops land on the same message', () => {
+      answerSoFar('m1', 'text');
+      controller.persistInterruptMarker();
+      controller.persistInterruptMarker();
+
+      expect(session.messages[0].content).toBe('text\n\n*Interrupted*');
+    });
+
+    it('leaves an older finished answer alone when this turn wrote nothing', () => {
+      answerSoFar('m1', 'the first answer');
+      controller.beginTurn();
+      controller.persistInterruptMarker();
+
+      expect(session.messages[0].content).toBe('the first answer');
+    });
+
+    it('skips a message the prune already took out of the transcript', () => {
+      answerSoFar('m1', 'text');
+      session.messages.length = 0;
+      controller.persistInterruptMarker();
+
+      expect(session.messages).toHaveLength(0);
+    });
+
+    it('schedules a save so the stamped message reaches disk', async () => {
+      answerSoFar('m1', 'text');
+      await vi.advanceTimersByTimeAsync(1000);
+      deps.sessionStore.save.mockClear();
+
+      controller.persistInterruptMarker();
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(deps.sessionStore.save).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('persists a visible placeholder once per message and type for non-image, non-text chunks', () => {
     setLocale('en');
     controller.handleChunk({

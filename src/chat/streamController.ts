@@ -75,6 +75,9 @@ export class StreamController {
   // Agent images already written to the transcript, keyed per payload, so a
   // redelivered frame cannot duplicate the (heavy) base64 in data.json.
   private persistedImages = new Set<string>();
+  // The transcript message this turn's chunks landed on, so a Stop can stamp
+  // its marker into that message instead of an older answer.
+  private lastTurnMessage: SerializedMessage | null = null;
 
   constructor(deps: StreamControllerDeps) {
     this.deps = deps;
@@ -270,6 +273,7 @@ export class StreamController {
     this.toolBlocks.clear();
     this.unsupportedChunks.clear();
     this.persistedImages.clear();
+    this.lastTurnMessage = null;
     this.deps.state.resetStreamingState();
   }
 
@@ -283,6 +287,32 @@ export class StreamController {
     this.pendingToolBuffer = [];
     this.currentContentBlocks = [];
     this.toolBlocks.clear();
+    this.lastTurnMessage = null;
+  }
+
+  /**
+   * The "Interrupted" badge lives in the live DOM only, so a reload showed a
+   * half-finished answer as though it were complete. Stamp it into the
+   * transcript message this turn was writing to — never onto an older,
+   * finished answer, which is why this tracks the turn's own message rather
+   * than scanning the transcript backwards.
+   */
+  persistInterruptMarker(): void {
+    const sessionId = this.deps.getSessionId();
+    const msg = this.lastTurnMessage;
+    if (!sessionId || !msg) return;
+    const session = this.deps.sessionStore.get(sessionId);
+    if (!session?.messages.includes(msg)) return;
+    const marker = `*${t().interrupted.badge}*`;
+    if (msg.content.trimEnd().endsWith(marker)) return;
+    msg.content = `${msg.content}\n\n${marker}`;
+    for (const block of msg.contentBlocks ?? []) {
+      if (block.type === msg.type && block.text !== undefined) {
+        block.text = `${block.text}\n\n${marker}`;
+      }
+    }
+    session.updatedAt = Date.now();
+    this.scheduleSave();
   }
 
   /**
@@ -361,6 +391,7 @@ export class StreamController {
       };
       session.messages.push(message);
       this.assistantMessages.set(key, message);
+      this.lastTurnMessage = message;
       // Insertion-ordered map: evicting the oldest reference keeps a very
       // long session from retaining every assistant message forever.
       if (this.assistantMessages.size > MAX_TRACKED_ASSISTANT_MESSAGES) {
@@ -380,6 +411,7 @@ export class StreamController {
         this.saveAssistantChunk(messageId, accumulatedText, type);
         return;
       }
+      this.lastTurnMessage = msg;
       msg.content = accumulatedText;
       // Update contentBlocks text
       if (msg.contentBlocks) {

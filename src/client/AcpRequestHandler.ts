@@ -150,8 +150,17 @@ export interface AcpRequestHandlerOptions {
   onPermissionRequest?: (req: PermissionRequest) => Promise<PermissionDecision>;
   onElicitationRequest?: (req: ElicitationRequest) => Promise<ElicitationAnswer>;
   vaultIo?: VaultWriteIo;
-  onPermissionUnreadable?: (summary: string) => void;
+  onPermissionUnreadable?: (summary: string, sessionId?: string) => void;
   onCapabilityGrant?: (grant: CapabilityGrant) => void;
+}
+
+/**
+ * The session a rejected frame was talking about, read straight off the params:
+ * a schema that failed as a whole often still carries the one field that says
+ * whose conversation it was.
+ */
+function sessionIdOf(params: Record<string, unknown>): string | undefined {
+  return typeof params.sessionId === 'string' && params.sessionId ? params.sessionId : undefined;
 }
 
 export class AcpRequestHandler {
@@ -163,7 +172,7 @@ export class AcpRequestHandler {
   private vaultPath: string;
   onPermissionRequest?: (req: PermissionRequest) => Promise<PermissionDecision>;
   onElicitationRequest?: (req: ElicitationRequest) => Promise<ElicitationAnswer>;
-  onPermissionUnreadable?: (summary: string) => void;
+  onPermissionUnreadable?: (summary: string, sessionId?: string) => void;
   onCapabilityGrant?: (grant: CapabilityGrant) => void;
 
   constructor(options: AcpRequestHandlerOptions) {
@@ -296,7 +305,7 @@ export class AcpRequestHandler {
         .join('; ')
         .slice(0, UNREADABLE_SUMMARY_MAX_CHARS);
       console.error('[co-ober] unreadable permission request, cancelling it:', summary);
-      this.onPermissionUnreadable?.(summary);
+      this.onPermissionUnreadable?.(summary, sessionIdOf(params));
       return Promise.resolve({ outcome: { outcome: 'cancelled' } });
     }
     const req: PermissionRequest = {
@@ -311,7 +320,7 @@ export class AcpRequestHandler {
     if (req.options.length === 0) {
       const summary = 'permission request carries no selectable options';
       console.error('[co-ober] unactionable permission request, cancelling it:', summary);
-      this.onPermissionUnreadable?.(summary);
+      this.onPermissionUnreadable?.(summary, req.sessionId);
       return Promise.resolve({ outcome: { outcome: 'cancelled' } });
     }
 
@@ -355,7 +364,7 @@ export class AcpRequestHandler {
         .join('; ')
         .slice(0, UNREADABLE_SUMMARY_MAX_CHARS);
       console.error('[co-ober] unreadable elicitation request, cancelling it:', summary);
-      this.onPermissionUnreadable?.(summary);
+      this.onPermissionUnreadable?.(summary, sessionIdOf(params));
       return Promise.resolve({ action: 'cancel' });
     }
 
@@ -380,7 +389,7 @@ export class AcpRequestHandler {
     if (!req.url && fields.length === 0 && omitted.length > 0) {
       const summary = `elicitation asks for input Co-Ober cannot render (${omitted.join(', ')})`;
       console.error('[co-ober] unrenderable elicitation, declining it:', summary);
-      this.onPermissionUnreadable?.(summary);
+      this.onPermissionUnreadable?.(summary, req.sessionId || undefined);
       return Promise.resolve({ action: 'decline' } satisfies ElicitationAnswer);
     }
 

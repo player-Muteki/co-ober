@@ -903,7 +903,7 @@ function setPendingInlineEdit(
     inlineEditPanel = new InlineEditPanel(view.contentEl);
     Reflect.set(view, 'inlineEditPanel', inlineEditPanel);
   }
-  inlineEditPanel.pendingState = { original, editor: editor as any };
+  inlineEditPanel.pendingState = { original, editor: editor as any, tabId: 'tab-1' };
 }
 
 function click(view: CoOberView, selector: string): void {

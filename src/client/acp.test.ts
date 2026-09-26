@@ -1044,7 +1044,7 @@ describe('AcpRequestHandler elicitation handling', () => {
 
     expect(result).toEqual({ action: 'decline' });
     expect(answer).not.toHaveBeenCalled();
-    expect(unreadable).toHaveBeenCalledWith(expect.stringContaining('grid'));
+    expect(unreadable).toHaveBeenCalledWith(expect.stringContaining('grid'), 's1');
     consoleSpy.mockRestore();
     handler.dispose();
   });

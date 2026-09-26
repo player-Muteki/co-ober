@@ -1,6 +1,7 @@
 import { ChatState } from './chatState';
 import type { StreamController } from './streamController';
 import type { ChatRenderer } from '../view/renderer';
+import type { InlineEditState } from '../view/inlineEditPanel';
 import type { ContextRef, PromptPart } from '../types';
 
 /**
@@ -18,9 +19,11 @@ export class SessionRuntime {
    * Prompts waiting for this tab's turn. `painted` marks one whose user bubble
    * and persisted message already exist (it was already sent once), and
    * `images` carries the parts captured then — a re-parked turn must neither
-   * draw nor eat anything twice.
+   * draw nor eat anything twice. `inlineEdit` is the selected text the prompt
+   * was asked about: parked with the turn that owns it, because the answer is
+   * meant for that selection and no other tab's.
    */
-  promptQueue: Array<{ text: string; refs: ContextRef[]; painted?: boolean; images?: PromptPart[] }> = [];
+  promptQueue: Array<{ text: string; refs: ContextRef[]; painted?: boolean; images?: PromptPart[]; inlineEdit?: InlineEditState }> = [];
   /** Turn content captured for a user-initiated retry (see retryTurn). */
   pendingRetry: { text: string; imageParts: PromptPart[] } | null = null;
   /** Transcript has been painted into this tab's panel (lazy-restore marker). */

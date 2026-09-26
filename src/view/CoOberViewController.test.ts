@@ -1291,6 +1291,46 @@ describe('CoOberViewController', () => {
       expect(addToolCall).toHaveBeenCalledWith('call-ghost', 'Search', 'search', {}, undefined);
       expect(updateToolCall).toHaveBeenCalledWith('call-ghost', 'failed');
     });
+
+    it('stamps the interrupt into the stored answer, not only onto the live panel', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      controller.state.sessionId = 'test-session';
+      Reflect.set(controller, 'busy', true);
+      controller.state.isStreaming = true;
+      const stamp = vi.spyOn(activeRt(controller).streamCtrl, 'persistInterruptMarker');
+
+      await controller.stopGeneration();
+
+      // The badge lives in the transcript too, so a reload still says the
+      // answer was cut short instead of replaying it as a finished turn.
+      expect(stamp).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('an inline edit asked for by this tab', () => {
+    it('shows the diff of the reply that answered it', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      const editor = { replaceSelection: vi.fn() };
+      const showDiff = vi.fn();
+      deps.inlineEditPanel = {
+        pendingState: { original: 'rough sentence', editor, tabId: controller.activeTabId() },
+        clearState: vi.fn(),
+        showDiffFromResponse: showDiff,
+      } as unknown as MockDeps['inlineEditPanel'];
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue({
+        messages: [{ role: 'assistant', content: 'a tighter sentence', type: 'text', timestamp: 2 }],
+        updatedAt: 2,
+      });
+
+      await controller.send('tighten this', []);
+
+      // Before the claim travelled with the turn, the panel had already given
+      // its state up by the time the reply arrived, so no diff ever showed.
+      expect(showDiff).toHaveBeenCalledWith('rough sentence', 'a tighter sentence', editor);
+    });
   });
 
   describe('switchSession', () => {

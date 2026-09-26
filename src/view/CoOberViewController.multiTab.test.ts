@@ -14,7 +14,7 @@ import {
 } from '../constants';
 import { AcpStreamCapacityError } from '../client/AcpErrors';
 import { commandRegistry } from '../commands/registry';
-import type { AcpResponse, AvailableCommand, NormalizedUpdate, PromptPart, StoredDraft, TabShell } from '../types';
+import type { AcpResponse, AvailableCommand, NormalizedUpdate, PromptPart, StoredDraft, TabShell, UsageInfo } from '../types';
 
 vi.mock('../opencode/NativeSessionReader', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../opencode/NativeSessionReader')>();
@@ -1551,6 +1551,208 @@ describe('CoOberViewController — what survives a restart (0.2.2 stage 2)', () 
       await h.controller.send('unrelated', [], rtOf(h, tabB));
 
       expect(h.renderers.get(tabB)?.addSystemMessage).not.toHaveBeenCalledWith(t().permission.queueBlocked);
+    });
+  });
+});
+
+describe('CoOberViewController — what belongs to a tab stays in that tab (0.2.4 stage 3)', () => {
+  let h: Harness;
+
+  beforeEach(() => {
+    h = createHarness();
+    commandRegistry.updateAcpCommands([]);
+    Notice.messages.length = 0;
+    panel = { pendingState: null, clearState: vi.fn(), showDiffFromResponse: vi.fn() };
+    (h.deps as { inlineEditPanel: unknown }).inlineEditPanel = panel;
+  });
+
+  function twoTabs(): [string, string] {
+    h.controller.restoreTabShells(
+      [{ tabId: 'tab-1', sessionId: 'ses-a' }, { tabId: 'tab-2', sessionId: 'ses-b' }],
+      'tab-1',
+    );
+    return h.controller.listTabIds() as [string, string];
+  }
+
+  interface EditPanelMock {
+    pendingState: { original: string; editor: unknown; tabId: string } | null;
+    clearState: ReturnType<typeof vi.fn>;
+    showDiffFromResponse: ReturnType<typeof vi.fn>;
+  }
+  /**
+   * Spies of its own: the shared harness mock is one `noop` wired to a dozen
+   * deps, so counting its calls would count setStreaming as clearState.
+   */
+  let panel: EditPanelMock;
+  function editPanel(): EditPanelMock {
+    return panel;
+  }
+  function clientFor(overrides: Record<string, unknown> = {}) {
+    const client = createMockClient(overrides);
+    (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+    return client;
+  }
+
+  describe('the selection a tab asked about', () => {
+    it('is not picked up by another tab’s send', async () => {
+      const [tabA, tabB] = twoTabs();
+      clientFor();
+      const editor = { replaceSelection: vi.fn() };
+      editPanel().pendingState = { original: 'text selected in B', editor, tabId: tabB };
+
+      await h.controller.send('something else entirely', [], rtOf(h, tabA));
+
+      expect(editPanel().clearState).not.toHaveBeenCalled();
+      expect(editPanel().showDiffFromResponse).not.toHaveBeenCalled();
+      expect(editPanel().pendingState).toEqual({ original: 'text selected in B', editor, tabId: tabB });
+    });
+
+    it('is answered by the turn that asked, onto the editor it named', async () => {
+      const [, tabB] = twoTabs();
+      clientFor();
+      const editor = { replaceSelection: vi.fn() };
+      editPanel().pendingState = { original: 'rough sentence', editor, tabId: tabB };
+      (h.deps.sessionStore.get as ReturnType<typeof vi.fn>).mockImplementation((id: string) =>
+        id === 'ses-b'
+          ? {
+              sessionId: id,
+              messages: [{ role: 'assistant', content: 'a tighter sentence', type: 'text', timestamp: 2 }],
+              updatedAt: 2,
+            }
+          : { sessionId: id, messages: [], updatedAt: 0 },
+      );
+
+      await h.controller.send('tighten this', [], rtOf(h, tabB));
+
+      expect(editPanel().showDiffFromResponse).toHaveBeenCalledWith('rough sentence', 'a tighter sentence', editor);
+    });
+
+    it('waits in that tab’s queue, and a Stop leaves it there instead of the composer', async () => {
+      const [, tabB] = twoTabs();
+      const resolvers: Array<(r: AcpResponse) => void> = [];
+      clientFor({ sendMessage: vi.fn(() => new Promise<AcpResponse>((resolve) => { resolvers.push(resolve); })) });
+      (h.deps.input as unknown as { textareaEl: unknown }).textareaEl = { value: '', dispatchEvent: vi.fn() };
+      h.controller.switchToTab(tabB);
+      void h.controller.send('first', []);
+      await tick();
+      const editor = { replaceSelection: vi.fn() };
+      editPanel().pendingState = { original: 'selected', editor, tabId: tabB };
+
+      await h.controller.send('polish this', []);
+
+      const queued = rtOf(h, tabB).promptQueue;
+      expect(queued).toHaveLength(1);
+      expect(queued[0].inlineEdit).toEqual({ original: 'selected', editor, tabId: tabB });
+
+      await h.controller.stopGeneration();
+
+      // A selection-carrying turn is not a plain prompt: the textarea cannot
+      // hold an editor, so it waits in its tab rather than dissolving there.
+      expect((h.deps.input.textareaEl as { value: string }).value).toBe('');
+      expect(rtOf(h, tabB).promptQueue).toHaveLength(1);
+    });
+
+    it('drains a parked selection as its own turn, not welded to the prompt behind it', async () => {
+      const [, tabB] = twoTabs();
+      const resolvers: Array<(r: AcpResponse) => void> = [];
+      clientFor({ sendMessage: vi.fn(() => new Promise<AcpResponse>((resolve) => { resolvers.push(resolve); })) });
+      h.controller.switchToTab(tabB);
+      const running = h.controller.send('first', []);
+      await tick();
+      const editor = { replaceSelection: vi.fn() };
+      editPanel().pendingState = { original: 'selected', editor, tabId: tabB };
+
+      await h.controller.send('polish this', []);
+      await h.controller.send('and another thing', []);
+      expect(rtOf(h, tabB).promptQueue.map((e) => e.text)).toEqual(['polish this', 'and another thing']);
+
+      resolvers[0]({ stopReason: 'end_turn' } as AcpResponse);
+      await running;
+      await tick();
+
+      expect(rtOf(h, tabB).promptQueue.map((e) => e.text)).toEqual(['and another thing']);
+      (h.deps.sessionStore.get as ReturnType<typeof vi.fn>).mockImplementation((id: string) => ({
+        sessionId: id,
+        messages: [{ role: 'assistant', content: 'polished', type: 'text', timestamp: 3 }],
+        updatedAt: 3,
+      }));
+      resolvers[1]({ stopReason: 'end_turn' } as AcpResponse);
+      await tick();
+
+      expect(editPanel().showDiffFromResponse).toHaveBeenCalledWith('selected', 'polished', editor);
+    });
+  });
+
+  describe('events that name a session', () => {
+    it('paint the tab whose conversation they are about, not the one on screen', async () => {
+      const [tabA, tabB] = twoTabs();
+      const client = clientFor();
+      h.controller.bindClientHandlers();
+      const handlers = (client.setClientHandlers as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
+
+      handlers.onPermissionUnreadable('options: required', 'ses-b');
+
+      expect(h.renderers.get(tabB)?.addError).toHaveBeenCalledWith(t().permission.unreadable);
+      expect(h.renderers.get(tabA)?.addError).not.toHaveBeenCalled();
+    });
+
+    it('gives a lost connection to every tab that had one', async () => {
+      const [tabA, tabB] = twoTabs();
+      const client = clientFor();
+      h.controller.bindClientHandlers();
+      const handlers = (client.setClientHandlers as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
+
+      handlers.onReconnectFailed();
+
+      expect(h.renderers.get(tabA)?.addError).toHaveBeenCalledWith(t().error.reconnectFailed);
+      expect(h.renderers.get(tabB)?.addError).toHaveBeenCalledWith(t().error.reconnectFailed);
+    });
+  });
+
+  it('re-projects the context meter for the tab coming forward', () => {
+    const [tabA, tabB] = twoTabs();
+    const usage = { totalTokens: 42, inputTokens: 20, outputTokens: 22 } as UsageInfo;
+    rtOf(h, tabB).state.usage = usage;
+    const meter = h.deps.updateContextMeter as ReturnType<typeof vi.fn>;
+    meter.mockClear();
+
+    h.controller.switchToTab(tabB);
+
+    expect(meter).toHaveBeenLastCalledWith(usage);
+    expect(tabA).toBeDefined();
+  });
+
+  describe('a fork’s transcript', () => {
+    it('shares no message object with the conversation it came from', async () => {
+      const sourceMessage = {
+        role: 'assistant',
+        content: 'answer',
+        type: 'text',
+        timestamp: 1,
+        contentBlocks: [{ type: 'tool_use', toolCallId: 't1', toolTitle: 'Write', toolKind: 'edit', toolStatus: 'completed' }],
+      };
+      const sessions = new Map<string, Record<string, unknown>>([
+        ['ses-a', { sessionId: 'ses-a', title: 'Note A', messages: [sourceMessage], updatedAt: 1 }],
+      ]);
+      (h.deps.sessionStore.get as ReturnType<typeof vi.fn>).mockImplementation((id: string) => sessions.get(id));
+      (h.deps.sessionStore.getOrCreate as ReturnType<typeof vi.fn>).mockImplementation((id: string) => {
+        if (!sessions.has(id)) sessions.set(id, { sessionId: id, messages: [], updatedAt: 0 });
+        return sessions.get(id)!;
+      });
+      const client = clientFor({
+        forkSession: vi.fn().mockResolvedValue('forked-session'),
+        getAgentCapabilities: vi.fn(() => ({ sessionCapabilities: { fork: true } })),
+      });
+
+      await h.controller.forkSession('ses-a');
+
+      const forked = sessions.get('forked-session')!;
+      const copy = (forked.messages as Array<Record<string, unknown>>)[0];
+      expect(copy).toBeDefined();
+      expect(copy).not.toBe(sourceMessage);
+      (copy.contentBlocks as Array<Record<string, unknown>>)[0].toolStatus = 'failed';
+      expect(sourceMessage.contentBlocks[0].toolStatus).toBe('completed');
+      expect(client.forkSession).toHaveBeenCalledWith('ses-a', '/vault');
     });
   });
 });
