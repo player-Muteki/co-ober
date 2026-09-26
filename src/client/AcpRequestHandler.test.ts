@@ -244,8 +244,9 @@ describe('AcpRequestHandler unasked capability grants', () => {
     const grants: CapabilityGrant[] = [];
     const handler = grantHandler(grants);
     handler.setTerminalCapabilityMode('disabled');
-    const result = await call(handler, 'handleTerminalCreate', { command: 'rm', args: ['-rf', '/'] });
-    expect(result).toMatchObject({ error: expect.stringContaining('disabled') });
+    // CreateTerminalResponse has no error field; a refusal that travelled in
+    // band read back as a terminal created with no id.
+    await expect(call(handler, 'handleTerminalCreate', { command: 'rm', args: ['-rf', '/'] })).rejects.toThrow(/disabled/);
     expect(grants).toEqual([]);
     handler.dispose();
   });
@@ -331,5 +332,128 @@ describe('parseElicitationForm', () => {
     for (const raw of [{ type: 'object' }, {}, 'nonsense', undefined, null, { properties: 'nope' }]) {
       expect(parseElicitationForm(raw)).toEqual({ fields: [], omitted: [] });
     }
+  });
+});
+
+describe('the window an agent asked to read (0.2.5 stage 2)', () => {
+  function call(handler: AcpRequestHandler, method: string, params: Record<string, unknown>): Promise<unknown> {
+    const fn = Reflect.get(handler, method) as (p: Record<string, unknown>) => Promise<unknown>;
+    return fn.call(handler, params);
+  }
+
+  function windowHandler() {
+    const handler = makeHandler({});
+    handler.setFsCapabilityMode('enabled');
+    const readTextFile = vi.fn(
+      (
+        _path: string,
+        _window?: { line?: number; limit?: number },
+      ) => ({ content: 'windowed' }),
+    );
+    Reflect.set(handler, 'fsDelegate', { readTextFile });
+    return { handler, readTextFile };
+  }
+
+  it('hands line and limit down to the reader', async () => {
+    const { handler, readTextFile } = windowHandler();
+    const result = await call(handler, 'handleReadTextFile', {
+      path: '/mock/vault/notes/a.md',
+      line: 500,
+      limit: 40,
+    });
+
+    expect(readTextFile).toHaveBeenCalledWith('/mock/vault/notes/a.md', { path: '/mock/vault/notes/a.md', line: 500, limit: 40 });
+    expect(result).toEqual({ content: 'windowed' });
+    handler.dispose();
+  });
+
+  it('asks for the whole file when the agent did not name a window', async () => {
+    const { handler, readTextFile } = windowHandler();
+    await call(handler, 'handleReadTextFile', { path: '/mock/vault/a.md' });
+
+    expect(readTextFile).toHaveBeenCalledWith('/mock/vault/a.md', { path: '/mock/vault/a.md', line: undefined, limit: undefined });
+    handler.dispose();
+  });
+
+  it('degrades a window it cannot read to no window, not to a wrong line', async () => {
+    const { handler, readTextFile } = windowHandler();
+    await call(handler, 'handleReadTextFile', { path: '/mock/vault/a.md', line: 'fifth', limit: -3 });
+
+    const window = readTextFile.mock.calls[0][1] as { line?: number; limit?: number };
+    expect(window.line).toBeUndefined();
+    expect(window.limit).toBeUndefined();
+    handler.dispose();
+  });
+});
+
+describe('a terminal answer the protocol can read (0.2.5 stage 2)', () => {
+  function call(handler: AcpRequestHandler, method: string, params: Record<string, unknown>): Promise<unknown> {
+    const fn = Reflect.get(handler, method) as (p: Record<string, unknown>) => Promise<unknown>;
+    return fn.call(handler, params);
+  }
+
+  function terminalHandler(manager: Record<string, unknown>) {
+    const handler = makeHandler({});
+    handler.setTerminalCapabilityMode('enabled');
+    Reflect.set(handler, 'terminalManager', { dispose: vi.fn(), ...manager });
+    return handler;
+  }
+
+  it('answers a create with the id and nothing else', async () => {
+    const handler = terminalHandler({ create: () => ({ terminalId: 't1', pid: 7 }) });
+    expect(await call(handler, 'handleTerminalCreate', { command: 'ls', sessionId: 's1' })).toMatchObject({ terminalId: 't1' });
+    handler.dispose();
+  });
+
+  it('answers a create that could not start with an error, not an id-less success', async () => {
+    const handler = terminalHandler({
+      create: () => {
+        throw new Error('ENOENT: no such file, spawn ls');
+      },
+    });
+    await expect(call(handler, 'handleTerminalCreate', { command: 'ls' })).rejects.toThrow(/ENOENT/);
+    handler.dispose();
+  });
+
+  it('answers kill with the empty object the response type allows', async () => {
+    const kill = vi.fn(() => true);
+    const handler = terminalHandler({ kill });
+    expect(await call(handler, 'handleTerminalKill', { terminalId: 't1' })).toEqual({});
+    expect(kill).toHaveBeenCalledWith('t1');
+    handler.dispose();
+  });
+
+  it('says a kill found no terminal as a refusal', async () => {
+    const handler = terminalHandler({ kill: () => false });
+    await expect(call(handler, 'handleTerminalKill', { terminalId: 't-404' })).rejects.toThrow(/t-404/);
+    handler.dispose();
+  });
+
+  it('says a release found no terminal as a refusal', async () => {
+    const handler = terminalHandler({ release: () => true });
+    expect(await call(handler, 'handleTerminalRelease', { terminalId: 't1' })).toEqual({});
+    handler.dispose();
+  });
+
+  it('answers wait_for_exit with how the process ended', async () => {
+    const handler = terminalHandler({ waitForExit: async () => ({ exitCode: 1, signal: null }) });
+    expect(await call(handler, 'handleTerminalWaitForExit', { terminalId: 't1' })).toEqual({ exitCode: 1, signal: null });
+    handler.dispose();
+  });
+
+  it('refuses to report an exit for a terminal it never had', async () => {
+    const handler = terminalHandler({ waitForExit: async () => null });
+    await expect(call(handler, 'handleTerminalWaitForExit', { terminalId: 't-404' })).rejects.toThrow(/t-404/);
+    handler.dispose();
+  });
+
+  it('passes the exit status through with the output', async () => {
+    const handler = terminalHandler({ output: () => ({ output: 'done\n', truncated: false, exitStatus: { exitCode: 0 } }) });
+    expect(await call(handler, 'handleTerminalOutput', { terminalId: 't1' })).toEqual({
+      output: 'done\n',
+      truncated: false,
+      exitStatus: { exitCode: 0 },
+    });
+    handler.dispose();
   });
 });

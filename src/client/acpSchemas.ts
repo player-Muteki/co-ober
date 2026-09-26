@@ -27,6 +27,45 @@ const zToolCallContent = z
   ])
   .catch({ type: 'unsupported' as const, originalType: '' });
 const zLocation = z.object({ path: z.string() });
+const zConfigSelectOption = z.object({
+  value: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+});
+const zConfigSelectGroup = z.object({
+  group: z.string(),
+  name: z.string(),
+  options: z.array(z.unknown()),
+});
+// `SessionConfigSelectOptions` is a union: a flat list of values, or a list of
+// groups whose headers are not themselves selectable. Reading only the first
+// member of that union cost every grouped agent its whole dropdown — each
+// element failed the value check, the array was caught to [] and the model,
+// mode and effort selectors rendered empty. Flatten the groups, carrying the
+// group name into the option's description so the header still reads as the
+// thing it is.
+const flattenConfigOptions = (items: unknown[]): z.infer<typeof zConfigSelectOption>[] => {
+  const readable: z.infer<typeof zConfigSelectOption>[] = [];
+  for (const item of items) {
+    const flat = zConfigSelectOption.safeParse(item);
+    if (flat.success) {
+      readable.push(flat.data);
+      continue;
+    }
+    const group = zConfigSelectGroup.safeParse(item);
+    if (!group.success) continue;
+    for (const child of group.data.options) {
+      const option = zConfigSelectOption.safeParse(child);
+      if (!option.success) continue;
+      const { description, ...rest } = option.data;
+      readable.push({
+        ...rest,
+        description: description ? `${group.data.name} · ${description}` : group.data.name,
+      });
+    }
+  }
+  return readable;
+};
 // Agents define config options beyond the three we render (and grow them
 // ahead of the spec); the rigid id/category/type enums once cost us the whole
 // config_option_update frame — including the model list — because one unknown
@@ -39,7 +78,7 @@ const zConfigOption = z.object({
   currentValue: z.string().catch(''),
   // Boolean-toggle options legitimately carry no choices; a missing or
   // malformed options array must not drop the whole config frame.
-  options: z.array(z.object({ value: z.string(), name: z.string(), description: z.string().optional() })).catch([]),
+  options: z.array(z.unknown()).transform(flattenConfigOptions).catch([]),
 });
 // One option this client cannot read — an id-less or type-less entry, or
 // something that is not an object at all — may only remove itself. Parsing the
@@ -61,6 +100,17 @@ const zAvailableCommand = z.object({
   name: z.string(),
   description: z.string(),
   input: z.object({ hint: z.string().optional() }).nullish(),
+});
+// Same rule as one unreadable config option: a command this client cannot
+// parse may remove only itself. Without the element-by-element pass a single
+// malformed entry still cleared the whole slash menu for the tab.
+const zAvailableCommands = z.array(z.unknown()).transform((items) => {
+  const readable: z.infer<typeof zAvailableCommand>[] = [];
+  for (const item of items) {
+    const parsed = zAvailableCommand.safeParse(item);
+    if (parsed.success) readable.push(parsed.data);
+  }
+  return readable;
 });
 const zCost = z.object({ amount: z.number(), currency: z.string() });
 // Chunk content is deliberately permissive: text is the only shape the
@@ -109,6 +159,10 @@ export const zToolCall = z.object({
   kind: zToolKindLenient.optional(),
   status: zOpt(z.string()),
   rawInput: zOpt(z.record(z.string(), z.unknown())),
+  // An agent that answers a tool call in one frame — output and all — is
+  // within the spec; only accepting rawOutput on the update frame threw the
+  // first frame's result away, leaving the card forever without an output.
+  rawOutput: zOpt(z.record(z.string(), z.unknown())),
   locations: zOpt(z.array(zLocation)),
   content: zOpt(z.array(zToolCallContent)),
 });
@@ -153,7 +207,7 @@ export const zConfigOptionUpdate = z.object({
 });
 export const zAvailableCommandsUpdate = z.object({
   sessionUpdate: z.literal('available_commands_update'),
-  availableCommands: z.array(zAvailableCommand),
+  availableCommands: zAvailableCommands,
 });
 export const zCurrentModeUpdate = z.object({
   sessionUpdate: z.literal('current_mode_update'),

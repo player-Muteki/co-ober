@@ -283,6 +283,36 @@ describe('AcpJsonRpcTransport', () => {
     expect(responses[0]).toEqual({ jsonrpc: '2.0', id: 101, error: { code: -32000, message: 'Something went wrong' } });
   });
 
+  it('answers a request whose handler threw before it returned a promise', async () => {
+    transport.start();
+
+    let sentMsg = '';
+    output.on('data', (chunk) => {
+      sentMsg += chunk.toString();
+    });
+
+    // A handler that throws on the way in never produces a promise, so the
+    // rejection path above cannot run: without this answer the id hangs and
+    // the agent waits for a reply that will never come.
+    transport.onRequest('syncThrow', (() => {
+      throw new Error('could not parse the frame');
+    }) as never);
+
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: 102, method: 'syncThrow' }) + '\n');
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const responses = sentMsg
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l));
+    expect(responses[0]).toEqual({
+      jsonrpc: '2.0',
+      id: 102,
+      error: { code: -32000, message: 'could not parse the frame' },
+    });
+  });
+
   it('answers unregistered string-id server→client requests with -32601, echoing the string id', async () => {
     transport.start();
 

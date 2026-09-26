@@ -28,6 +28,13 @@ export interface FsDelegateOptions {
 	vaultIo?: VaultWriteIo;
 }
 
+export interface FsReadWindow {
+	/** 1-based line to start reading from, as `ReadTextFileRequest.line` means it. */
+	line?: number;
+	/** Maximum number of lines to read; 0 means an empty window. */
+	limit?: number;
+}
+
 export class FsDelegate {
 	private vaultPath: string;
 	private maxBytes: number;
@@ -46,9 +53,10 @@ export class FsDelegate {
 	/**
 	 * Read a text file within the vault boundary.
 	 * @param filePath - Absolute or relative path to read
+	 * @param window - Line window the agent asked for; absent means the whole file
 	 * @returns File content or error message
 	 */
-	readTextFile(filePath: string): FsReadResult {
+	readTextFile(filePath: string, window: FsReadWindow = {}): FsReadResult {
 		try {
 			const resolvedPath = this.resolveWithinVault(filePath);
 			if (!resolvedPath) {
@@ -64,12 +72,28 @@ export class FsDelegate {
 				return { content: '', error: `Path is a directory: ${filePath}` };
 			}
 
-			if (stat.size > this.maxBytes) {
-				const content = this.readLimited(resolvedPath, this.maxBytes);
-				return { content: `${content}\n${TRUNCATION_MARKER}` };
+			if (window.line === undefined && window.limit === undefined) {
+				if (stat.size > this.maxBytes) {
+					const content = this.readLimited(resolvedPath, this.maxBytes);
+					return { content: `${content}\n${TRUNCATION_MARKER}` };
+				}
+
+				const content = readFileSync(resolvedPath, 'utf-8');
+				return { content };
 			}
 
-			const content = readFileSync(resolvedPath, 'utf-8');
+			// A window is a request for particular lines. Answering it with the
+			// head bytes of the file would have the agent rewrite line 1 while it
+			// believes it read line 500, so slice by line first and only then
+			// apply the byte ceiling to what was actually asked for.
+			const lines = readFileSync(resolvedPath, 'utf-8').split('\n');
+			const start = Math.max(0, (window.line ?? 1) - 1);
+			const count = window.limit ?? lines.length;
+			let content = lines.slice(start, start + Math.max(0, count)).join('\n');
+			if (Buffer.byteLength(content, 'utf-8') > this.maxBytes) {
+				const clipped = Buffer.from(content, 'utf-8').subarray(0, this.maxBytes).toString('utf-8');
+				content = `${clipped.replace(/\uFFFD+$/, '')}\n${TRUNCATION_MARKER}`;
+			}
 			return { content };
 		} catch (e) {
 			const message = e instanceof Error ? e.message : String(e);

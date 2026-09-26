@@ -744,12 +744,33 @@ export class AcpClient implements OpencodeClient {
     mcpServers: McpServerConfig[] = [],
     onReplayUpdate?: (u: NormalizedUpdate) => void,
   ): Promise<void> {
+    return this.replayBoundedLoad(
+      'loadSession',
+      {
+        sessionId: id,
+        cwd: this.resolveCwd(cwd),
+        mcpServers: buildMcpServers(mcpServers),
+      },
+      id,
+      onReplayUpdate,
+    );
+  }
+
+  /**
+   * session/load and session/resume both stream a replay back, and a big
+   * history stays alive far past the fixed per-request timeout. The deadline is
+   * idle-based instead — every replay update refreshes it, so only a stalled
+   * load ever expires, and a long tail of updates is never cut off mid-note.
+   */
+  private async replayBoundedLoad(
+    logicalMethod: AcpLogicalMethod,
+    params: Record<string, unknown>,
+    id: string,
+    onReplayUpdate?: (u: NormalizedUpdate) => void,
+  ): Promise<void> {
     // A replay reset while this same session streams would wipe its
     // accumulated text — other sessions keep their own normalizer instances.
     if (!this.activeStreams.has(id)) this.normalizers.delete(id);
-    // A big history keeps the load alive far past the fixed per-request
-    // timeout; the deadline is idle-based instead — every replay update
-    // refreshes it, so only a stalled load ever expires.
     const userReplay = onReplayUpdate ?? null;
     let touchReplayDeadline: () => void = () => {};
     this.replayHandler = (u) => {
@@ -762,7 +783,7 @@ export class AcpClient implements OpencodeClient {
       const arm = () => {
         if (idleTimer !== null) window.clearTimeout(idleTimer);
         idleTimer = window.setTimeout(
-          () => reject(new AcpTimeoutError('session/load', ACP_LOAD_SESSION_IDLE_TIMEOUT_MS)),
+          () => reject(new AcpTimeoutError(logicalMethod, ACP_LOAD_SESSION_IDLE_TIMEOUT_MS)),
           ACP_LOAD_SESSION_IDLE_TIMEOUT_MS,
         );
       };
@@ -770,18 +791,7 @@ export class AcpClient implements OpencodeClient {
       arm();
     });
     try {
-      const r = await Promise.race([
-        this.requestWithFallback(
-          'loadSession',
-          {
-            sessionId: id,
-            cwd: this.resolveCwd(cwd),
-            mcpServers: buildMcpServers(mcpServers),
-          },
-          0,
-        ),
-        idleDeadline,
-      ]);
+      const r = await Promise.race([this.requestWithFallback(logicalMethod, params, 0), idleDeadline]);
       this.applySessionSnapshot(r as Record<string, unknown>, id);
       this.loadedSessionIds.add(id);
       this.sessionId_ = id;
@@ -831,21 +841,15 @@ export class AcpClient implements OpencodeClient {
   }
 
   async resumeSession(id: string, cwd?: string, onReplayUpdate?: (u: NormalizedUpdate) => void): Promise<void> {
-    if (!this.activeStreams.has(id)) this.normalizers.delete(id);
-    this.replayHandler = onReplayUpdate ?? null;
-    this.replaySessionId = id;
-    try {
-      const r = await this.requestWithFallback('resumeSession', { sessionId: id, cwd: this.resolveCwd(cwd) });
-      this.applySessionSnapshot(r as Record<string, unknown>, id);
-      this.loadedSessionIds.add(id);
-      this.sessionId_ = id;
-    } catch (e) {
-      if (isSessionMissingError(e)) throw new AcpSessionMissingError(id, e);
-      throw e;
-    } finally {
-      this.replayHandler = null;
-      this.replaySessionId = null;
-    }
+    // Resume replays too, wherever the agent supports it; judging that stream
+    // by the fixed per-request timeout cut long histories off mid-replay while
+    // still reporting a successful load.
+    return this.replayBoundedLoad(
+      'resumeSession',
+      { sessionId: id, cwd: this.resolveCwd(cwd) },
+      id,
+      onReplayUpdate,
+    );
   }
 
   async closeSession(id: string): Promise<void> {

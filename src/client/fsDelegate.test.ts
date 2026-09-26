@@ -157,3 +157,58 @@ describe('toVaultRelativePath', () => {
 		expect(result).toBe('folder/subfolder/file.md');
 	});
 });
+
+describe('the lines an agent pointed at (0.2.5 stage 2)', () => {
+	let delegate: FsDelegate;
+
+	const file = (text: string) => {
+		(existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
+		(statSync as ReturnType<typeof vi.fn>).mockReturnValue({ isDirectory: () => false, size: text.length });
+		(readFileSync as ReturnType<typeof vi.fn>).mockReturnValue(text);
+	};
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		delegate = new FsDelegate({ vaultPath: '/vault', maxBytes: 8000 });
+	});
+
+	it('starts where the line said, not where the file began', () => {
+		file('one\ntwo\nthree\nfour');
+
+		expect(delegate.readTextFile('a.md', { line: 3 }).content).toBe('three\nfour');
+	});
+
+	it('stops after the number of lines it was given', () => {
+		file('one\ntwo\nthree\nfour');
+
+		expect(delegate.readTextFile('a.md', { line: 2, limit: 2 }).content).toBe('two\nthree');
+	});
+
+	it('honours a window of no lines as the empty answer it asked for', () => {
+		file('one\ntwo');
+
+		expect(delegate.readTextFile('a.md', { line: 1, limit: 0 }).content).toBe('');
+	});
+
+	it('says nothing was there when the line is past the end', () => {
+		file('one\ntwo');
+
+		expect(delegate.readTextFile('a.md', { line: 500 }).content).toBe('');
+	});
+
+	it('caps the window it was asked for, and marks that it did', () => {
+		const narrow = new FsDelegate({ vaultPath: '/vault', maxBytes: 8 });
+		file('aaaaaaaaaaaa\nbbbbbbbbbbbb');
+
+		const result = narrow.readTextFile('a.md', { line: 1 });
+
+		expect(result.content).toContain('truncated');
+		expect(result.content.startsWith('aaaaaaaa')).toBe(true);
+	});
+
+	it('still reads the whole file when no window was named', () => {
+		file('one\ntwo\nthree');
+
+		expect(delegate.readTextFile('a.md').content).toBe('one\ntwo\nthree');
+	});
+});

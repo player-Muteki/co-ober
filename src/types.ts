@@ -192,7 +192,7 @@ export type SessionUpdate =
   | { sessionUpdate: 'agent_message_chunk'; messageId?: string; content: ChunkContent }
   | { sessionUpdate: 'agent_thought_chunk'; messageId?: string; content: ChunkContent }
   | { sessionUpdate: 'user_message_chunk'; messageId?: string; content: ChunkContent }
-  | { sessionUpdate: 'tool_call'; toolCallId: string; title: string; name?: string; kind?: ToolKind; status?: string; rawInput?: Record<string, unknown>; locations?: { path: string }[]; content?: ToolCallContent[] }
+  | { sessionUpdate: 'tool_call'; toolCallId: string; title: string; name?: string; kind?: ToolKind; status?: string; rawInput?: Record<string, unknown>; rawOutput?: Record<string, unknown>; locations?: { path: string }[]; content?: ToolCallContent[] }
   | { sessionUpdate: 'tool_call_update'; toolCallId: string; status?: string; kind?: ToolKind; title?: string; name?: string; locations?: { path: string }[]; rawInput?: Record<string, unknown>; rawOutput?: Record<string, unknown>; content?: ToolCallContent[] }
   | { sessionUpdate: 'plan'; entries: { content: string; status: string; priority: string }[] }
   | { sessionUpdate: 'config_option_update'; configOptions: SessionConfigOption[] }

@@ -594,6 +594,73 @@ describe('0.1.40 stage 2 protocol pack', () => {
   });
 });
 
+describe('a resume that replays for a long time (0.2.5 stage 2)', () => {
+  beforeEach(() => {
+    FakeSubprocess.instances.length = 0;
+    FakeTransport.instances.length = 0;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function connectedPendingClient() {
+    const client = new AcpClient('opencode', '/vault');
+    const connecting = client.connect();
+    await tick();
+    const transport = FakeTransport.instances[0];
+    transport.deferred.resolve({ agentCapabilities: {} });
+    await connecting;
+    let resolve!: (v: unknown) => void;
+    let reject!: (e: unknown) => void;
+    const promise = new Promise<unknown>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    transport.deferred = { promise, resolve, reject };
+    return { client, transport };
+  }
+
+  it('judges a stalled session/resume by the idle window, as a load is judged', async () => {
+    const { client, transport } = await connectedPendingClient();
+    vi.useFakeTimers();
+    const requestsBefore = transport.requests.length;
+
+    const resuming = client.resumeSession('ses_big', '/vault', () => {});
+    let failure: unknown = null;
+    resuming.catch((e: unknown) => (failure = e));
+
+    await vi.advanceTimersByTimeAsync(ACP_LOAD_SESSION_IDLE_TIMEOUT_MS + 1000);
+    expect(failure).toBeInstanceOf(AcpTimeoutError);
+    expect((failure as Error).message).toMatch(/timed out/);
+    // The bounded race is the only difference from a load; the request itself
+    // is still the plain resume the agent advertised.
+    expect(transport.requests.slice(requestsBefore).map((r) => r.method)).toContain('session/resume');
+  });
+
+  it('lets a replay update keep the resume alive past the window it started in', async () => {
+    const { client, transport } = await connectedPendingClient();
+    vi.useFakeTimers();
+    const notify = transport.notifications.get('session/update')!;
+    const onReplay = vi.fn();
+
+    const resuming = client.resumeSession('ses_big', '/vault', onReplay);
+    let failure: unknown = null;
+    resuming.catch((e: unknown) => (failure = e));
+
+    await vi.advanceTimersByTimeAsync(25_000);
+    notify({
+      update: { sessionUpdate: 'agent_message_chunk', messageId: 'm1', content: { type: 'text', text: 'chunk' } },
+    });
+    await vi.advanceTimersByTimeAsync(25_000);
+    expect(failure).toBe(null);
+
+    transport.deferred.resolve({ sessionId: 'ses_big' });
+    await expect(resuming).resolves.toBeUndefined();
+    expect(onReplay).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('0.2.3 stage 1 negotiation honesty', () => {
   beforeEach(() => {
     FakeSubprocess.instances.length = 0;

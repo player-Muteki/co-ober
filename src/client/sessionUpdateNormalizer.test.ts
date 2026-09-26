@@ -582,3 +582,36 @@ describe('SessionUpdateNormalizer chunks without messageId', () => {
     expect(after.accumulatedText).toBe('whole');
   });
 });
+
+describe('a tool call that answers itself in one frame (0.2.5 stage 2)', () => {
+  it('keeps the rawOutput the first frame carried', () => {
+    const normalizer = new SessionUpdateNormalizer();
+    const snapshot = normalizer.normalize({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'tc-1',
+      title: 'Read notes/idea.md',
+      status: 'completed',
+      rawOutput: { text: 'the body' },
+    } as SessionUpdate) as Extract<NormalizedUpdate, { kind: 'tool_call_snapshot' }>;
+
+    expect(snapshot.rawOutput).toEqual({ text: 'the body' });
+  });
+
+  it('still merges a later frame’s output into it', () => {
+    const normalizer = new SessionUpdateNormalizer();
+    normalizer.normalize({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'tc-1',
+      title: 'Write',
+      rawOutput: { bytes: 3 },
+    } as SessionUpdate);
+    const after = normalizer.normalize({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'tc-1',
+      status: 'completed',
+      rawOutput: { path: 'a.md' },
+    } as SessionUpdate) as Extract<NormalizedUpdate, { kind: 'tool_call_snapshot' }>;
+
+    expect(after.rawOutput).toEqual({ bytes: 3, path: 'a.md' });
+  });
+});

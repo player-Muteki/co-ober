@@ -528,3 +528,84 @@ describe('permissive chunk content and plan entries', () => {
     if (r.success) expect(r.data.configOptions[0].options).toEqual([]);
   });
 });
+
+describe('what a grouped agent says (0.2.5 stage 2)', () => {
+  const selectFrame = (options: unknown[]) => ({
+    sessionUpdate: 'config_option_update',
+    configOptions: [{ id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: 'gpt-4', options }],
+  });
+
+  it('flattens a grouped option list, so the dropdown still has its values', () => {
+    const r = zConfigOptionUpdate.safeParse(
+      selectFrame([
+        {
+          group: 'openai',
+          name: 'OpenAI',
+          options: [
+            { value: 'gpt-4', name: 'GPT-4' },
+            { value: 'o1', name: 'o1', description: 'reasons first' },
+          ],
+        },
+      ]),
+    );
+    expect(r.success).toBe(true);
+    if (r.success) {
+      // The header is not a choice; its name travels with each value it held.
+      expect(r.data.configOptions[0].options).toEqual([
+        { value: 'gpt-4', name: 'GPT-4', description: 'OpenAI' },
+        { value: 'o1', name: 'o1', description: 'OpenAI · reasons first' },
+      ]);
+    }
+  });
+
+  it('reads a flat list exactly as it always did', () => {
+    const r = zConfigOptionUpdate.safeParse(selectFrame([{ value: 'gpt-4', name: 'GPT-4' }]));
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.configOptions[0].options).toEqual([{ value: 'gpt-4', name: 'GPT-4' }]);
+  });
+
+  it('lets one unreadable value cost only itself inside a group', () => {
+    const r = zConfigOptionUpdate.safeParse(
+      selectFrame([
+        {
+          group: 'anthropic',
+          name: 'Anthropic',
+          options: [{ value: 'claude' }, { value: 'claude-2', name: 'Claude 2' }],
+        },
+      ]),
+    );
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.configOptions[0].options).toEqual([{ value: 'claude-2', name: 'Claude 2', description: 'Anthropic' }]);
+    }
+  });
+
+  it('keeps the commands a frame can read when one command is malformed', () => {
+    const r = zAvailableCommandsUpdate.safeParse({
+      sessionUpdate: 'available_commands_update',
+      availableCommands: [
+        { name: 'compact', description: 'summarise' },
+        { description: 'a command with no name' },
+        'not an object at all',
+        { name: 'model', description: 'switch', input: { hint: '<id>' } },
+      ],
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.availableCommands.map((c) => c.name)).toEqual(['compact', 'model']);
+      expect(r.data.availableCommands[1].input).toEqual({ hint: '<id>' });
+    }
+  });
+
+  it('keeps the output an agent answered a tool call with in the first frame', () => {
+    const r = zToolCall.safeParse({
+      sessionUpdate: 'tool_call',
+      toolCallId: 't1',
+      title: 'Read notes/idea.md',
+      status: 'completed',
+      rawOutput: { text: 'the body' },
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.rawOutput).toEqual({ text: 'the body' });
+  });
+});

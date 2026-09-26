@@ -239,7 +239,18 @@ export class AcpJsonRpcTransport {
     } else if (hasMethod && id !== undefined) {
       const handler = this.requestHandlers.get(msg.method as string);
       if (handler) {
-        handler((msg as { params?: unknown }).params)
+        // A handler that throws before it ever returns a promise would leave
+        // this id unanswered, and an unanswered request is the agent waiting
+        // forever. Anything that cannot be started is still a failed request.
+        let started: Promise<unknown>;
+        try {
+          started = Promise.resolve(handler((msg as { params?: unknown }).params));
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          this.send({ jsonrpc: '2.0', id, error: { code: -32000, message } });
+          return;
+        }
+        started
           .then((result) => this.send({ jsonrpc: '2.0', id, result }))
           .catch((err: unknown) => {
             const message = err instanceof Error ? err.message : String(err);

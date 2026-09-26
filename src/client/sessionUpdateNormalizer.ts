@@ -131,6 +131,7 @@ export class SessionUpdateNormalizer {
           toolKind: raw.kind ?? 'other',
           status: normalizeToolStatus(raw.status, 'pending'),
           rawInput: raw.rawInput,
+          rawOutput: raw.rawOutput,
           locations: raw.locations,
           contents: raw.content ? [...raw.content] : [],
         };

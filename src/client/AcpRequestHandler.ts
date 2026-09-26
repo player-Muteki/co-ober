@@ -59,7 +59,16 @@ const zPermissionParams = z
   })
   .passthrough();
 
-const zFsPathParam = z.object({ path: z.string() });
+// `line` (1-based) and `limit` are part of ReadTextFileRequest: an agent
+// asking for line 500 must not be handed the bytes at the top of the file and
+// then rewrite the note from them. A malformed window is no window at all, so
+// it degrades to a full read rather than to a wrong one.
+const zWindowBound = z.number().int().min(0).nullish().catch(null).transform((v) => v ?? undefined);
+const zFsPathParam = z.object({
+  path: z.string(),
+  line: zWindowBound,
+  limit: zWindowBound,
+});
 
 const zElicitationParams = z
   .object({
@@ -432,7 +441,7 @@ export class AcpRequestHandler {
       return Promise.reject(new Error('Missing required parameter: path'));
     }
 
-    return Promise.resolve(this.fsDelegate.readTextFile(parsed.data.path)).then((res) => {
+    return Promise.resolve(this.fsDelegate.readTextFile(parsed.data.path, parsed.data)).then((res) => {
       if (res.error) throw new Error(res.error);
       return { content: res.content };
     });
@@ -471,13 +480,16 @@ export class AcpRequestHandler {
   }
 
   private handleTerminalCreate(params: Record<string, unknown>): Promise<unknown> {
+    // CreateTerminalResponse has one field, terminalId, and no place for an
+    // error: an in-band {error} reads back at the agent as a terminal that was
+    // created and has no id, which it then cannot kill, read or wait for.
     if (this.terminalCapabilityMode !== 'enabled' || !this.terminalManager) {
-      return Promise.resolve({ error: 'Terminal access is disabled' });
+      return Promise.reject(new Error('Terminal access is disabled'));
     }
 
     const parsed = zTerminalCreateParam.safeParse(params);
     if (!parsed.success) {
-      return Promise.resolve({ error: 'Missing required parameter: command' });
+      return Promise.reject(new Error('Missing required parameter: command'));
     }
 
     const createParams: TerminalCreateParams = {
@@ -506,66 +518,83 @@ export class AcpRequestHandler {
         e instanceof TerminalError
           ? e.message
           : `Failed to create terminal: ${e instanceof Error ? e.message : String(e)}`;
-      return Promise.resolve({ error: message });
+      return Promise.reject(new Error(message));
     }
   }
 
   private handleTerminalOutput(params: Record<string, unknown>): Promise<unknown> {
     if (!this.terminalManager) {
-      return Promise.resolve({ error: 'Terminal manager not initialized' });
+      return Promise.reject(new Error('Terminal manager not initialized'));
     }
 
     const parsed = zTerminalIdParam.safeParse(params);
     if (!parsed.success) {
-      return Promise.resolve({ error: 'Missing required parameter: terminalId' });
+      return Promise.reject(new Error('Missing required parameter: terminalId'));
     }
 
     return Promise.resolve(this.terminalManager.output(parsed.data.terminalId)).then((res) => {
-      // terminal/output's result is {output, truncated}; an in-band error
-      // would be read as "the command printed nothing".
+      // terminal/output's result is {output, truncated, exitStatus}; an
+      // in-band error would be read as "the command printed nothing".
       if (res.error) throw new Error(res.error);
-      return { output: res.output, truncated: res.truncated ?? false };
+      return {
+        output: res.output,
+        truncated: res.truncated ?? false,
+        ...(res.exitStatus !== undefined ? { exitStatus: res.exitStatus } : {}),
+      };
     });
   }
 
   private handleTerminalKill(params: Record<string, unknown>): Promise<unknown> {
     if (!this.terminalManager) {
-      return Promise.resolve({ error: 'Terminal manager not initialized' });
+      return Promise.reject(new Error('Terminal manager not initialized'));
     }
 
     const parsed = zTerminalIdParam.safeParse(params);
     if (!parsed.success) {
-      return Promise.resolve({ error: 'Missing required parameter: terminalId' });
+      return Promise.reject(new Error('Missing required parameter: terminalId'));
     }
 
-    return Promise.resolve({ success: this.terminalManager.kill(parsed.data.terminalId) });
+    // KillTerminalResponse is an empty object: there is no field in which a
+    // refusal can travel, so a kill that found nothing has to be an error.
+    if (!this.terminalManager.kill(parsed.data.terminalId)) {
+      return Promise.reject(new Error(`Terminal not found: ${parsed.data.terminalId}`));
+    }
+    return Promise.resolve({});
   }
 
   private handleTerminalRelease(params: Record<string, unknown>): Promise<unknown> {
     if (!this.terminalManager) {
-      return Promise.resolve({ error: 'Terminal manager not initialized' });
+      return Promise.reject(new Error('Terminal manager not initialized'));
     }
 
     const parsed = zTerminalIdParam.safeParse(params);
     if (!parsed.success) {
-      return Promise.resolve({ error: 'Missing required parameter: terminalId' });
+      return Promise.reject(new Error('Missing required parameter: terminalId'));
     }
 
-    return Promise.resolve({ success: this.terminalManager.release(parsed.data.terminalId) });
+    if (!this.terminalManager.release(parsed.data.terminalId)) {
+      return Promise.reject(new Error(`Terminal not found: ${parsed.data.terminalId}`));
+    }
+    return Promise.resolve({});
   }
 
   private handleTerminalWaitForExit(params: Record<string, unknown>): Promise<unknown> {
     if (!this.terminalManager) {
-      return Promise.resolve({ error: 'Terminal manager not initialized' });
+      return Promise.reject(new Error('Terminal manager not initialized'));
     }
 
     const parsed = zTerminalIdParam.safeParse(params);
     if (!parsed.success) {
-      return Promise.resolve({ error: 'Missing required parameter: terminalId' });
+      return Promise.reject(new Error('Missing required parameter: terminalId'));
     }
 
     return this.terminalManager
       .waitForExit(parsed.data.terminalId)
-      .then((result) => result ?? { error: 'Terminal not found' });
+      .then((result) => {
+        // WaitForTerminalExitResponse says how the process ended; null means
+        // there was no such terminal to end.
+        if (!result) throw new Error(`Terminal not found: ${parsed.data.terminalId}`);
+        return result;
+      });
   }
 }
