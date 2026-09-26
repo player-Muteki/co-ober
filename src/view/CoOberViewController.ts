@@ -9,6 +9,7 @@ import type {
   AcpResponse,
   SerializedMessage,
   SerializedSession,
+  SessionSnapshot,
   UsageInfo,
 } from '../types';
 import type { CoOberSettings, StoredDraft, TabShell } from '../types';
@@ -272,7 +273,7 @@ export class CoOberViewController {
     // A banner's origin label outlives the question it points at: clicking it
     // after its tab was closed would take the focus to a runtime no longer on
     // the strip, and paint a dead transcript over the one the user is reading.
-    if (this.runtimes.get(rt.tabId) !== rt) return;
+    if (!this.stillOpen(rt)) return;
     if (this.activeRuntime === rt) return;
     const prev = this.activeRuntime;
     prev?.renderer.setActive(false);
@@ -300,6 +301,30 @@ export class CoOberViewController {
   }
 
   /**
+   * True while this tab is still the one on the strip under its own id. Every
+   * long await in this class (creating a session, resuming one, forking) can
+   * outlive the tab that started it, and the answer would then be written into
+   * a runtime nobody can reach — its transcript painted over a stranger's, its
+   * session left registered under a tab id the strip no longer has.
+   */
+  private stillOpen(rt: SessionRuntime): boolean {
+    return !this.disposed && this.runtimes.get(rt.tabId) === rt;
+  }
+
+  /**
+   * Tell the agent it can drop a session this client has no screen for. Gated
+   * on the capability and fired without awaiting: an agent that never
+   * implemented `session/close` must not turn closing a tab into an error, and
+   * a dropped conversation is not a failure the reader can act on.
+   */
+  private releaseAgentSession(sessionId: string | null | undefined): void {
+    if (!sessionId) return;
+    const client = this.deps.runtime.getClient();
+    if (!client?.getAgentCapabilities?.()?.sessionCapabilities?.close) return;
+    void client.closeSession(sessionId).catch((e) => console.error('[co-ober] release agent session:', e));
+  }
+
+  /**
    * A default the agent refused is said in the tab that asked for the session.
    * The session exists and works without it, so this is a note rather than an
    * error — but silence would leave the reader believing their saved model,
@@ -320,8 +345,12 @@ export class CoOberViewController {
     // idle timer would be deferred by a prompt nobody can reach any more.
     const sessions = this.sessionsOf(rt);
     if (sessions.length > 0) this.deps.permissionBanner.dismiss(sessions);
+    // The generation moves whether or not the tab was mid-turn: a turn that
+    // has not reached `busy` yet — a queued head, a session still being
+    // created — is holding the same renderer, and its frames would still be
+    // accepted by every `genId` check on screen for the next tab to inherit.
+    ++rt.genId;
     if (rt.busy) {
-      ++rt.genId;
       rt.busy = false;
       rt.state.isStreaming = false;
       rt.streamCtrl.finalizeBufferedToolCalls();
@@ -341,6 +370,12 @@ export class CoOberViewController {
     this.endSideChat(rt);
     this.callbacks.onCloseSideChat?.(tabId);
     this.runtimes.delete(tabId);
+    // The same reason applies to the conversation itself. Closing a tab used
+    // to leave its agent session running: it kept its context, its commands and
+    // any terminal it started, for a transcript the user can only reach again
+    // through the history list. Only once this tab is off the strip, so a
+    // sibling that was handed the same session keeps it.
+    if (!this.findRuntimeBySession(rt.state.sessionId)) this.releaseAgentSession(rt.state.sessionId);
     this.deps.disposeTabPanel?.(tabId);
     await rt.streamCtrl.dispose();
     if (wasActive) {
@@ -839,12 +874,16 @@ export class CoOberViewController {
           rt.busy = false;
           rt.state.isStreaming = false;
           rt.streamCtrl.finalizeBufferedToolCalls();
+          // The turn that died was this tab's, so the line and the half-drawn
+          // blocks are closed here — a background conversation whose stream the
+          // connection loss ended used to report nothing and leave its
+          // thinking block open until that tab came forward.
+          rt.renderer.finalizeCurrentThinking();
+          rt.renderer.removeAssistantPlaceholder();
+          rt.renderer.addError(t().error.reconnected);
           if (rt === this.activeRuntime) {
             this.deps.input.setStreaming(false);
             this.deps.toolbar.setSending(false);
-            this.renderer.finalizeCurrentThinking();
-            this.renderer.removeAssistantPlaceholder();
-            this.renderer.addError(t().error.reconnected);
           }
           void this.tryDrainAnyQueue();
         }
@@ -893,7 +932,10 @@ export class CoOberViewController {
 
   /** The banner affordance that points back at the tab which produced a request. */
   private originFor(sessionId: string): PermissionOrigin | undefined {
-    const rt = this.findRuntimeBySession(sessionId);
+    // A side chat asks under its own session id, and the tab that owns it is
+    // found no other way: matching only the main session made a /btw prompt
+    // look like it came from nowhere, so the banner had no way home.
+    const rt = this.findOwningRuntime(sessionId);
     if (!rt || rt === this.activeRuntime) return undefined;
     return {
       label: t().permission.originTab.replace('{index}', String(this.tabIndexOf(rt) + 1)),
@@ -951,10 +993,26 @@ export class CoOberViewController {
    * console warning to carry; the transcript only owes the reader a count.
    */
   noteProtocolDrift(sessionId: string | null): void {
-    const rt = this.findOwningRuntime(sessionId) ?? (this.runtimes.size > 0 ? this.activeRuntime : undefined);
+    const owner = this.findOwningRuntime(sessionId);
+    if (owner) {
+      owner.droppedFrames += 1;
+      owner.renderer.setSystemNote('droppedFrames', 'stream.droppedFrames', owner.droppedFrames);
+      return;
+    }
+    // The frame names a session no tab holds: a closed tab's stream that had
+    // not finished arriving, an agent still answering a conversation this
+    // client let go. Its gap cannot be drawn into the transcript it came from,
+    // so the tab on screen says what it is — whose it was, and that this
+    // conversation is not the one missing something.
+    const rt = this.runtimes.size > 0 ? this.activeRuntime : undefined;
     if (!rt) return;
-    rt.droppedFrames += 1;
-    rt.renderer.setSystemNote('droppedFrames', 'stream.droppedFrames', rt.droppedFrames);
+    rt.orphanFrames += 1;
+    rt.renderer.setSystemNote(
+      'orphanFrames',
+      'stream.orphanFrames',
+      rt.orphanFrames,
+      sessionId ? `session ${sessionId.slice(0, 8)}` : t().stream.orphanUnknown,
+    );
   }
 
   /**
@@ -965,10 +1023,19 @@ export class CoOberViewController {
    * record in the transcript whose file was touched what was actually done.
    */
   noteCapabilityGrant(grant: CapabilityGrant): void {
-    const rt = this.findOwningRuntime(grant.sessionId ?? null) ?? (this.runtimes.size > 0 ? this.activeRuntime : undefined);
+    const owner = this.findOwningRuntime(grant.sessionId ?? null);
+    if (owner) {
+      owner.unaskedGrants += 1;
+      owner.renderer.setSystemNote('grants', 'permission.granted', owner.unaskedGrants, grant.detail);
+      return;
+    }
+    // The file was still written and the command still ran. Refusing to count
+    // it because no tab answers for that session any more is how a change made
+    // on this machine goes unreported; the line says whose agent made it.
+    const rt = this.runtimes.size > 0 ? this.activeRuntime : undefined;
     if (!rt) return;
-    rt.unaskedGrants += 1;
-    rt.renderer.setSystemNote('grants', 'permission.granted', rt.unaskedGrants, grant.detail);
+    rt.orphanGrants += 1;
+    rt.renderer.setSystemNote('orphanGrants', 'permission.orphanGranted', rt.orphanGrants, grant.detail);
   }
 
   /**
@@ -1029,9 +1096,11 @@ export class CoOberViewController {
       rt.busy = false;
       rt.state.isStreaming = false;
       rt.state.usage = null;
+      // Every tab had a bubble waiting to be filled; one left hanging in a tab
+      // the user reaches later reads as a reply still on its way.
+      rt.renderer.removeAssistantPlaceholder();
     }
     this.deps.permissionBanner.dismiss();
-    this.renderer.removeAssistantPlaceholder();
     this.deps.updateContextMeter(null);
     this.deps.input.setStreaming(false);
     this.deps.toolbar.setSending(false);
@@ -1209,6 +1278,13 @@ export class CoOberViewController {
         missedDefaults = await applyDefaultSessionSettings(c, sid, this.deps.runtime.settings);
       });
       this.reportMissedDefaults(rt, missedDefaults);
+      if (!this.stillOpen(rt)) {
+        // The tab was closed while the agent was making the session: its
+        // transcript would be stored under an id no tab points at, so the
+        // conversation goes back to the agent instead of being registered.
+        this.releaseAgentSession(rt.state.sessionId);
+        return;
+      }
       if (rt.state.sessionId) {
         this.deps.sessionStore.getOrCreate(rt.state.sessionId);
         if (this.isActiveTab(rt)) this.deps.sessionStore.setActive(rt.state.sessionId);
@@ -1286,6 +1362,10 @@ export class CoOberViewController {
         missedDefaults = await applyDefaultSessionSettings(client, sid, this.deps.runtime.settings);
       });
       this.reportMissedDefaults(rt, missedDefaults);
+      if (!this.stillOpen(rt)) {
+        this.releaseAgentSession(rt.state.sessionId);
+        return null;
+      }
       if (rt.state.sessionId) {
         this.deps.sessionStore.getOrCreate(rt.state.sessionId);
         if (this.isActiveTab(rt)) this.deps.sessionStore.setActive(rt.state.sessionId);
@@ -1334,11 +1414,19 @@ export class CoOberViewController {
         );
       }
     }
+    if (!this.stillOpen(rt)) {
+      // The tab this history entry was opened into is gone. Its transcript
+      // stays in the store, but no screen shows it, so the session the agent
+      // just loaded is handed back instead of held for a tab that never
+      // returns — and nothing is painted over whoever inherited the slot.
+      this.releaseAgentSession(sessionId);
+      return;
+    }
     await this.restoreSession(rt);
     if (source === 'opencode') await this.refreshNativeUsage(sessionId, undefined, rt);
     if (this.isActiveTab(rt)) this.deps.sessionStore.setActive(sessionId);
     await this.deps.sessionStore.save();
-    this.loadToolbarOptions();
+    this.loadToolbarOptions(rt);
     if (this.isActiveTab(rt)) {
       this.callbacks.onShowWelcome(this.deps.runtime.getClient() !== null);
       this.callbacks.onAutoRefActiveFile();
@@ -1371,6 +1459,13 @@ export class CoOberViewController {
     try {
       const source = this.deps.sessionStore.get(sessionId);
       const forkedId = await client.forkSession(sessionId, this.getVaultCwd());
+      if (this.disposed) {
+        // The screen went away while the agent was branching the conversation.
+        // Opening its tab now would register a transcript nobody can see and
+        // leave a live session no tab owns, so the branch is given back.
+        this.releaseAgentSession(forkedId);
+        return;
+      }
       // A fork is a conversation branch: it opens as its own tab so the
       // original stays exactly where it was.
       const rt = this.openRuntime(forkedId);
@@ -1391,7 +1486,7 @@ export class CoOberViewController {
       await this.syncRuntimeSession(forkedId, (u) => collector.handle(u), rt);
       await this.adoptReplay(forkedId, collector.finish());
       await this.restoreSession(rt);
-      this.loadToolbarOptions();
+      this.loadToolbarOptions(rt);
       this.callbacks.onShowWelcome(true);
       this.notifyTabsChanged();
       this.persistTabShell();
@@ -1427,6 +1522,13 @@ export class CoOberViewController {
         const parent = await this.ensureRuntimeSession(rt);
         if (!parent) return;
         rt.sideChatSessionId = await client.forkSession(parent, this.getVaultCwd());
+      }
+      if (!this.stillOpen(rt)) {
+        // The tab was closed while the agent forked. Its panel is gone, so the
+        // scratch thread has nothing left to answer: give it back rather than
+        // opening a side chat for a tab that is no longer on the strip.
+        this.releaseAgentSession(rt.sideChatSessionId);
+        return;
       }
       this.callbacks.onOpenSideChat?.(this.buildSideChatAsk(rt), question, rt.tabId);
     } catch (e) {
@@ -1500,6 +1602,10 @@ export class CoOberViewController {
       console.error('[co-ober] session resume:', e);
       rt.renderer.addError(humanizeError(e));
     }
+    if (!this.stillOpen(rt)) {
+      this.releaseAgentSession(sessionId);
+      return;
+    }
     await this.restoreSession(rt);
     // The transcript swap cleared state usage (it belonged to the outgoing
     // session); hand refreshNativeUsage the resumed session's own currency
@@ -1568,6 +1674,14 @@ export class CoOberViewController {
       rt.renderer.addSystemMessage(t().rewind.renewFailed);
       return;
     }
+    if (!this.stillOpen(rt)) {
+      // The tab closed while its session was being rotated. The transcript is
+      // already carried over to the new session whole, and dropping its tail
+      // now would answer a regenerate nobody can see the result of; the fresh
+      // session goes back, and the conversation stays in the history list.
+      this.releaseAgentSession(renewed);
+      return;
+    }
     session.messages.splice(idx);
     session.updatedAt = Date.now();
     await this.deps.sessionStore.save();
@@ -1595,13 +1709,18 @@ export class CoOberViewController {
     const newId = await this.sessionMutex.runExclusive(async () => {
       const sid = await client.createSession(this.getVaultCwd(), this.deps.runtime.settings.mcpServers);
       missedDefaults = await applyDefaultSessionSettings(client, sid, this.deps.runtime.settings);
+      // The rotation is one transaction. Releasing the outgoing session and
+      // moving the transcript onto the new id belong under the same lock the
+      // other session calls take: run outside it, a sibling's turn could still
+      // be addressed to an id being closed here, or read a store entry caught
+      // between its two names.
+      if (oldId) {
+        if (client.getAgentCapabilities()?.sessionCapabilities?.close) await client.closeSession(oldId);
+        this.deps.sessionStore.rekey(oldId, sid);
+      }
       return sid;
     });
     this.reportMissedDefaults(rt, missedDefaults);
-    if (oldId && client.getAgentCapabilities()?.sessionCapabilities?.close) {
-      client.closeSession(oldId).catch((e) => console.error('[co-ober] close rewound session:', e));
-    }
-    if (oldId) this.deps.sessionStore.rekey(oldId, newId);
     // Take the await with the tab that asked, not with "whichever is on screen
     // when the agent answers": a switch mid-rewind would otherwise move this
     // conversation's new session into another tab and leave this one pointing
@@ -2085,15 +2204,26 @@ export class CoOberViewController {
     // wait keeps the selection it was asked about — and so a send from another
     // tab can neither pick it up nor answer it.
     const inlineEdit = opts.inlineEditHead ?? this.claimInlineEdit(rt);
+    // A turn drained out of the queue that has to wait again comes back with
+    // what it already gave the reader: its bubble is on screen and its image
+    // parts were built once. Re-queueing without both made the next release
+    // paint a second identical bubble and send the turn with its images gone.
+    const waiting = {
+      text,
+      refs,
+      ...(opts.paintedHead ? { painted: true } : {}),
+      ...(opts.imagesHead ? { images: opts.imagesHead } : {}),
+      inlineEdit: inlineEdit ?? undefined,
+    };
     if (rt.busy) {
-      rt.promptQueue.push({ text, refs, inlineEdit: inlineEdit ?? undefined });
+      rt.promptQueue.push(waiting);
       if (this.isActiveTab(rt)) this.updateQueueIndicator(rt);
       return true;
     }
     if (!this.streamSlotsFree(this.deps.runtime.getClient())) {
       // The shared stream budget is held by other tabs: wait in this tab's
       // queue instead of failing; the next release starts it.
-      rt.promptQueue.push({ text, refs, inlineEdit: inlineEdit ?? undefined });
+      rt.promptQueue.push(waiting);
       if (this.isActiveTab(rt)) this.updateQueueIndicator(rt);
       return true;
     }
@@ -2167,6 +2297,18 @@ export class CoOberViewController {
   }
 
   private async drainQueue(rt: SessionRuntime): Promise<void> {
+    // One drain per tab: a release that arrives while a head is in flight would
+    // otherwise take the same queued prompt a second time.
+    if (rt.draining) return;
+    rt.draining = true;
+    try {
+      await this.drainQueueLoop(rt);
+    } finally {
+      rt.draining = false;
+    }
+  }
+
+  private async drainQueueLoop(rt: SessionRuntime): Promise<void> {
     while (rt.promptQueue.length > 0 && !rt.busy) {
       // Only start what the shared budget can carry; the rest waits for the
       // next release tick.
@@ -2521,7 +2663,13 @@ export class CoOberViewController {
     if (!c) return;
 
     const sid = rt.state.sessionId;
-    const snapshot = sid ? (c.getSessionSnapshotFor?.(sid) ?? c.getSessionSnapshot()) : c.getSessionSnapshot();
+    // A tab with no conversation has no negotiated models, modes or commands.
+    // Falling back to the client's current session handed such a tab whatever
+    // the *other* tab is talking to — its bar then offered a model this tab
+    // could not select, and its `/` popover listed another agent's commands.
+    const snapshot: SessionSnapshot = sid
+      ? (c.getSessionSnapshotFor?.(sid) ?? c.getSessionSnapshot())
+      : { configOptions: [], availableCommands: [], availableModels: [], availableModes: [], currentModelId: null, currentModeId: null };
     rt.state.configOptions = snapshot.configOptions;
     rt.state.availableCommands = snapshot.availableCommands;
     rt.state.availableModels = snapshot.availableModels;
@@ -2649,6 +2797,8 @@ export class CoOberViewController {
     // The line this number feeds was painted into the transcript just cleared,
     // so the count starts over with the transcript.
     rt.droppedFrames = 0;
+    rt.orphanFrames = 0;
+    rt.orphanGrants = 0;
     // The adopter paints this panel itself; a pending lazy restore must not
     // replay an old transcript into it afterwards.
     rt.needsRestore = false;

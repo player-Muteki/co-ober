@@ -1905,6 +1905,7 @@ describe('CoOberViewController', () => {
         })),
       });
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      controller.state.sessionId = 'ses-1';
 
       controller.loadToolbarOptions();
 
@@ -1940,6 +1941,7 @@ describe('CoOberViewController', () => {
         })),
       });
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      controller.state.sessionId = 'ses-1';
 
       controller.loadToolbarOptions();
 
@@ -2122,6 +2124,7 @@ describe('CoOberViewController', () => {
           })),
         }),
       );
+      controller.state.sessionId = 'ses-1';
 
       controller.loadToolbarOptions();
 

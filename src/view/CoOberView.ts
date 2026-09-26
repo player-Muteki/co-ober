@@ -34,6 +34,7 @@ import { closeImagePreview } from './imagePreview';
 import { KeybindingManager } from './keybindingManager';
 import { TabBar } from './tabBar';
 import { CoOberViewController } from './CoOberViewController';
+import type { SessionRuntime } from '../chat/sessionRuntime';
 import type { ControllerCallbacks, ControllerDeps, TabPanel } from './CoOberViewController';
 
 interface MarkdownFileView {
@@ -279,35 +280,43 @@ export class CoOberView extends ItemView {
     this.toolbar = new InputToolbar(tbEl, {
       onAgentChange: (agent: string) => {
         const client = this.plugin.getClient();
-        if (!this.controller?.getSessionId() || !client) return;
+        const rt = this.toolbarTab();
+        const sessionId = rt?.sessionId;
+        if (!rt || !sessionId || !client) return;
         void client
-          .setMode(this.controller.getSessionId()!, agent)
-          .then(() => this.controller.loadToolbarOptions())
-          .catch((e: unknown) => this.reportSettingFailure(e));
+          .setMode(sessionId, agent)
+          .then(() => this.controller?.loadToolbarOptions(rt))
+          .catch((e: unknown) => this.reportSettingFailure(e, rt));
       },
       onModelChange: (model: string) => {
         const client = this.plugin.getClient();
-        if (!this.controller?.getSessionId() || !client) return;
+        const rt = this.toolbarTab();
+        const sessionId = rt?.sessionId;
+        if (!rt || !sessionId || !client) return;
         void client
-          .setModel(this.controller.getSessionId()!, model)
-          .then(() => this.controller.loadToolbarOptions())
-          .catch((e: unknown) => this.reportSettingFailure(e));
+          .setModel(sessionId, model)
+          .then(() => this.controller?.loadToolbarOptions(rt))
+          .catch((e: unknown) => this.reportSettingFailure(e, rt));
       },
       onEffortChange: (effort: string) => {
         const client = this.plugin.getClient();
-        if (!this.controller?.getSessionId() || !client) return;
+        const rt = this.toolbarTab();
+        const sessionId = rt?.sessionId;
+        if (!rt || !sessionId || !client) return;
         void client
-          .setConfigOption(this.controller.getSessionId()!, 'effort', effort)
-          .then(() => this.controller.loadToolbarOptions())
-          .catch((e: unknown) => this.reportSettingFailure(e));
+          .setConfigOption(sessionId, 'effort', effort)
+          .then(() => this.controller?.loadToolbarOptions(rt))
+          .catch((e: unknown) => this.reportSettingFailure(e, rt));
       },
       onConfigChange: (configId: string, value: string) => {
         const client = this.plugin.getClient();
-        if (!this.controller?.getSessionId() || !client) return;
+        const rt = this.toolbarTab();
+        const sessionId = rt?.sessionId;
+        if (!rt || !sessionId || !client) return;
         void client
-          .setConfigOption(this.controller.getSessionId()!, configId, value)
-          .then(() => this.controller.loadToolbarOptions())
-          .catch((e: unknown) => this.reportSettingFailure(e));
+          .setConfigOption(sessionId, configId, value)
+          .then(() => this.controller?.loadToolbarOptions(rt))
+          .catch((e: unknown) => this.reportSettingFailure(e, rt));
       },
       onPermissionChange: (mode: string) => {
         this.plugin.settings.permissionMode = mode as import('../types').PermissionLevel;
@@ -854,11 +863,23 @@ export class CoOberView extends ItemView {
   }
 
   /** A rejected mode/model/effort change must not leave the toolbar showing a lie. */
-  private reportSettingFailure(error: unknown): void {
+  /**
+   * The tab a toolbar change was made from. The bar is one shared surface
+   * showing the conversation on screen, so the click belongs to that tab — and
+   * the agent's answer has to be projected back onto *it*, not onto whichever
+   * tab happens to be visible a second later.
+   */
+  private toolbarTab(): SessionRuntime | undefined {
+    const controller = this.controller;
+    if (!controller) return undefined;
+    return controller.runtimeForTab(controller.activeTabId());
+  }
+
+  private reportSettingFailure(error: unknown, rt?: SessionRuntime): void {
     console.error('[co-ober] toolbar setting failed:', error);
     const detail = humanizeError(error);
     new Notice(`${t().toolbar.applyFailed}: ${detail}`);
-    this.controller?.loadToolbarOptions();
+    this.controller?.loadToolbarOptions(rt);
   }
 
   private showReconnectBtn(): void {

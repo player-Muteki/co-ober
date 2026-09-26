@@ -35,6 +35,12 @@ export class SessionRuntime {
   /** Set when a drained turn lost the race for a stream slot and re-queued. */
   capacityParked = false;
   /**
+   * A drain loop is working through this tab's queue. Two at once read the same
+   * head twice over — and each cleared the other's parked marker, so a turn
+   * waiting for a free stream slot was released into the full budget again.
+   */
+  draining = false;
+  /**
    * Update frames this tab's agent emitted that the transcript could not draw.
    * Counted per tab, because the frames that got lost belong to one conversation.
    */
@@ -45,6 +51,14 @@ export class SessionRuntime {
    * because the transcript that was edited by it is this conversation's.
    */
   unaskedGrants = 0;
+  /**
+   * Frames and grants that named a session no tab holds any more — a closed
+   * tab's late stream, or an agent still answering a conversation this client
+   * let go. Counted on the tab that showed the line, because that is where the
+   * reader sees it, while the wording says the gap is not in this transcript.
+   */
+  orphanFrames = 0;
+  orphanGrants = 0;
   /**
    * The /btw scratch thread this tab forked, if any. It is owned here rather
    * than by the view or the controller: a fork outliving the tab that asked

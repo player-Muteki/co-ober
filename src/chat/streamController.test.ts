@@ -566,7 +566,9 @@ describe('StreamController', () => {
       'session-1',
       expect.objectContaining({ role: 'user', content: 'Hi', type: 'text' }),
     );
-    expect(deps.sessionStore.setActive).toHaveBeenCalledWith('session-1');
+    // A background turn persisting its own message must not move the
+    // conversation the user is looking at.
+    expect(deps.sessionStore.setActive).not.toHaveBeenCalled();
 
     vi.runAllTimers();
     expect(deps.sessionStore.save).toHaveBeenCalled();

@@ -111,6 +111,7 @@ const en = {
     originTab: 'Request from tab {index} — click to switch',
     keyHint: 'Enter to choose · Esc leaves it unanswered',
     granted: 'Co-Ober carried out {count} agent request(s) on this machine without a prompt — last: {detail}',
+    orphanGranted: 'Co-Ober carried out {count} agent request(s) on this machine for a conversation that is no longer open in a tab — last: {detail}',
     queueBlocked: 'Answer the request above before sending another message.',
   },
 
@@ -157,6 +158,8 @@ const en = {
     compactionFailed: 'Context compaction failed',
     unsupportedContent: '[{type} content — cannot be shown here]',
     droppedFrames: 'Co-Ober could not draw {count} update frame(s) from this agent — the transcript may be missing part of the response.',
+    orphanFrames: 'Co-Ober could not draw {count} update frame(s) belonging to a conversation that is no longer open here — nothing is missing from this transcript (last: {detail}).',
+    orphanUnknown: 'conversation with no id',
     protocolMismatch: 'This agent negotiated ACP protocol version {count}; Co-Ober implements v1, so part of what it sends may not reach the transcript.',
   },
 

@@ -476,6 +476,33 @@ describe('permission handler wiring', () => {
       outcome: { outcome: 'selected', optionId: 'reject_once' },
     });
   });
+
+  it('answers with the reject fallback once the view takes its handler back', async () => {
+    const { client, transport } = await connectedClient();
+    const handler = vi.fn(async () => 'allow_once');
+    client.setClientHandlers({ onPermissionRequest: handler });
+
+    // What a closing view does: the screen that would have shown the question
+    // is gone, so nothing may answer a permission in that tab’s name.
+    client.setClientHandlers({});
+
+    const onPermission = transport.serverRequests.get('session/request_permission')!;
+    await expect(onPermission(permissionParams)).resolves.toEqual({
+      outcome: { outcome: 'selected', optionId: 'reject_once' },
+    });
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('takes the elicitation handler back with it', async () => {
+    const { client } = await connectedClient();
+    const handler = vi.fn(async () => ({ action: 'decline' as const }));
+    client.setClientHandlers({ onElicitationRequest: handler });
+
+    client.setClientHandlers({});
+
+    expect(Reflect.get(client, 'onElicitationRequest')).toBeUndefined();
+    expect(Reflect.get(client, 'requestHandler').onElicitationRequest).toBeUndefined();
+  });
 });
 
 describe('0.1.40 stage 2 protocol pack', () => {

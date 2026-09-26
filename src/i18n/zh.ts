@@ -113,6 +113,7 @@ const zh: Locale = {
     originTab: '来自标签 {index} 的请求——点击切换',
     keyHint: '回车选择 · Esc 表示未作答',
     granted: 'Co-Ober 未经询问在本机执行了 {count} 次 Agent 请求——最近一次：{detail}',
+    orphanGranted: 'Co-Ober 未经询问，为一个已不在此处打开的对话在本机执行了 {count} 次 Agent 请求——最近一次：{detail}',
     queueBlocked: '请先回答上方的请求，再发送下一条消息。',
   },
 
@@ -159,6 +160,8 @@ const zh: Locale = {
     compactionFailed: '上下文压缩失败',
     unsupportedContent: '[{type} 内容——此处无法展示]',
     droppedFrames: 'Co-Ober 未能绘制来自该 Agent 的 {count} 个更新帧——对话记录可能缺少部分回复。',
+    orphanFrames: 'Co-Ober 未能绘制 {count} 个属于一个已不在此处打开的对话的更新帧——本对话记录并无缺失（最近一次：{detail}）。',
+    orphanUnknown: '无标识的对话',
     protocolMismatch: '该 Agent 协商到 ACP 协议版本 {count}；Co-Ober 实现的是 v1，它发送的部分内容可能无法进入对话记录。',
   },
 

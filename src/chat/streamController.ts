@@ -431,7 +431,11 @@ export class StreamController {
       }
       session.updatedAt = Date.now();
     }
-    this.deps.sessionStore.setActive(sessionId);
+    // Which conversation is "current" belongs to the tab strip, not to whoever
+    // last wrote a message: a background tab's turn finishing used to move the
+    // store's active pointer onto its session, so the composer, the history
+    // list and the next view open all answered for a conversation the reader
+    // never selected.
     this.scheduleSave();
   }
 
@@ -497,7 +501,6 @@ export class StreamController {
       images,
       timestamp: Date.now(),
     });
-    this.deps.sessionStore.setActive(sessionId);
     this.scheduleSave();
   }
 

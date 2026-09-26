@@ -14,7 +14,17 @@ import {
 } from '../constants';
 import { AcpStreamCapacityError } from '../client/AcpErrors';
 import { commandRegistry } from '../commands/registry';
-import type { AcpResponse, AvailableCommand, ContextRef, NormalizedUpdate, PromptPart, StoredDraft, TabShell, UsageInfo } from '../types';
+import type {
+  AcpResponse,
+  AvailableCommand,
+  ContextRef,
+  NormalizedUpdate,
+  PermissionRequest,
+  PromptPart,
+  StoredDraft,
+  TabShell,
+  UsageInfo,
+} from '../types';
 
 vi.mock('../opencode/NativeSessionReader', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../opencode/NativeSessionReader')>();
@@ -2105,6 +2115,383 @@ describe('CoOberViewController — closed means closed (0.2.6 stage 3)', () => {
 
       expect(sid).toBe('new-session');
       expect(h.renderers.get(tab)?.addSystemMessage).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('CoOberViewController — every answer belongs to the tab that asked (0.2.7 stage 1)', () => {
+  let h: Harness;
+
+  beforeEach(() => {
+    h = createHarness();
+    commandRegistry.updateAcpCommands([]);
+    Notice.messages.length = 0;
+  });
+
+  function twoTabs(): [string, string] {
+    h.controller.restoreTabShells(
+      [{ tabId: 'tab-1', sessionId: 'ses-a' }, { tabId: 'tab-2', sessionId: 'ses-b' }],
+      'tab-1',
+    );
+    return h.controller.listTabIds() as [string, string];
+  }
+
+  function clientFor(overrides: Record<string, unknown> = {}) {
+    const client = createMockClient(overrides);
+    (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+    return client;
+  }
+
+  function boundHandlers(client: ReturnType<typeof clientFor>) {
+    h.controller.bindClientHandlers();
+    const calls = (client.setClientHandlers as ReturnType<typeof vi.fn>).mock.calls;
+    return calls[calls.length - 1][0] as {
+      onReconnect: () => Promise<void>;
+      onPermissionRequest: (req: PermissionRequest) => Promise<unknown>;
+    };
+  }
+
+  describe('a turn that outlives the tab it started in', () => {
+    it('gives a session back to the agent when its tab closed while it was made', async () => {
+      const [, tabB] = twoTabs();
+      const rt = rtOf(h, tabB);
+      rt.state.sessionId = null;
+      let resolveCreate: (id: string) => void = () => {};
+      const client = clientFor({
+        getAgentCapabilities: vi.fn(() => ({ sessionCapabilities: { close: true } })),
+        createSession: vi.fn(() => new Promise<string>((r) => { resolveCreate = r; })),
+      });
+
+      const opening = h.controller.newSession(false, rt);
+      await vi.waitFor(() => expect(client.createSession).toHaveBeenCalled());
+      await h.controller.closeTab(tabB);
+      resolveCreate('late-session');
+      await opening;
+
+      expect(client.closeSession).toHaveBeenCalledWith('late-session');
+      expect(h.deps.sessionStore.getOrCreate).not.toHaveBeenCalledWith('late-session');
+    });
+
+    it('gives a scratch thread back when its tab closed while the agent forked it', async () => {
+      const [, tabB] = twoTabs();
+      const rt = rtOf(h, tabB);
+      let resolveFork: (id: string) => void = () => {};
+      const client = clientFor({
+        getAgentCapabilities: vi.fn(() => ({ sessionCapabilities: { close: true, fork: true } })),
+        forkSession: vi.fn(() => new Promise<string>((r) => { resolveFork = r; })),
+      });
+
+      const asking = h.controller.startSideChat('a quick question', rt);
+      await vi.waitFor(() => expect(client.forkSession).toHaveBeenCalled());
+      await h.controller.closeTab(tabB);
+      resolveFork('scratch-1');
+      await asking;
+
+      expect(client.closeSession).toHaveBeenCalledWith('scratch-1');
+      expect(h.callbacks.onOpenSideChat).not.toHaveBeenCalled();
+    });
+
+    it('gives a branch back when the view closed while the agent made it', async () => {
+      twoTabs();
+      let resolveFork: (id: string) => void = () => {};
+      const client = clientFor({
+        getAgentCapabilities: vi.fn(() => ({ sessionCapabilities: { close: true } })),
+        forkSession: vi.fn(() => new Promise<string>((r) => { resolveFork = r; })),
+      });
+
+      const forking = h.controller.forkSession('ses-a');
+      await vi.waitFor(() => expect(client.forkSession).toHaveBeenCalled());
+      await h.controller.dispose();
+      resolveFork('forked-session');
+      await forking;
+
+      expect(client.closeSession).toHaveBeenCalledWith('forked-session');
+      expect(h.deps.sessionStore.getOrCreate).not.toHaveBeenCalledWith('forked-session');
+    });
+  });
+
+  describe('closing a tab', () => {
+    it('releases the conversation it held, so the agent lets it go too', async () => {
+      const [tabA] = twoTabs();
+      const client = clientFor({
+        getAgentCapabilities: vi.fn(() => ({ sessionCapabilities: { close: true } })),
+      });
+
+      await h.controller.closeTab(tabA);
+
+      expect(client.closeSession).toHaveBeenCalledWith('ses-a');
+    });
+
+    it('leaves the conversation with a sibling tab that was handed the same one', async () => {
+      const [tabA, tabB] = twoTabs();
+      rtOf(h, tabB).state.sessionId = 'ses-a';
+      const client = clientFor({
+        getAgentCapabilities: vi.fn(() => ({ sessionCapabilities: { close: true } })),
+      });
+
+      await h.controller.closeTab(tabB);
+
+      expect(client.closeSession).not.toHaveBeenCalled();
+      expect(rtOf(h, tabA).state.sessionId).toBe('ses-a');
+    });
+
+    it('says nothing to an agent that cannot close a session', async () => {
+      const [tabA] = twoTabs();
+      const client = clientFor();
+
+      await h.controller.closeTab(tabA);
+
+      expect(client.closeSession).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('what names a conversation no tab holds', () => {
+    it('says on the screen in view whose frames they were, and that this transcript is whole', () => {
+      const [tabA, tabB] = twoTabs();
+
+      h.controller.noteProtocolDrift('gone-1');
+
+      expect(h.renderers.get(tabA)?.setSystemNote).toHaveBeenCalledWith(
+        'orphanFrames',
+        'stream.orphanFrames',
+        1,
+        'session gone-1',
+      );
+      expect(h.renderers.get(tabB)?.setSystemNote).not.toHaveBeenCalled();
+      expect(rtOf(h, tabA).droppedFrames).toBe(0);
+    });
+
+    it('counts a run of lost frames from nowhere into one line', () => {
+      const [tabA] = twoTabs();
+
+      h.controller.noteProtocolDrift('gone-1');
+      h.controller.noteProtocolDrift('gone-2');
+
+      expect(rtOf(h, tabA).orphanFrames).toBe(2);
+      expect(h.renderers.get(tabA)?.setSystemNote).toHaveBeenLastCalledWith(
+        'orphanFrames',
+        'stream.orphanFrames',
+        2,
+        'session gone-2',
+      );
+    });
+
+    it('still reports the write that happened for a conversation nobody holds', () => {
+      const [tabA] = twoTabs();
+
+      h.controller.noteCapabilityGrant({ sessionId: 'gone-1', kind: 'file-write', detail: 'notes/gone.md' });
+
+      expect(rtOf(h, tabA).orphanGrants).toBe(1);
+      expect(h.renderers.get(tabA)?.setSystemNote).toHaveBeenCalledWith(
+        'orphanGrants',
+        'permission.orphanGranted',
+        1,
+        'notes/gone.md',
+      );
+    });
+
+    it('starts both counts over when the transcript is torn down', async () => {
+      const [tabA] = twoTabs();
+      clientFor();
+      h.controller.noteProtocolDrift('gone-1');
+      h.controller.noteCapabilityGrant({ sessionId: 'gone-1', kind: 'terminal', detail: 'ls' });
+      expect(rtOf(h, tabA).orphanFrames).toBe(1);
+
+      await h.controller.newSession();
+
+      expect(rtOf(h, tabA).orphanFrames).toBe(0);
+      expect(rtOf(h, tabA).orphanGrants).toBe(0);
+    });
+
+    it('answers a question about a scratch thread with the tab that owns it', async () => {
+      const [, tabB] = twoTabs();
+      const client = clientFor();
+      rtOf(h, tabB).sideChatSessionId = 'fork-1';
+
+      const handlers = boundHandlers(client);
+      await handlers.onPermissionRequest({
+        sessionId: 'fork-1',
+        toolCall: { toolCallId: 'tc1', title: 'edit', kind: 'edit', status: 'pending' },
+        options: [{ optionId: 'allow_once', kind: 'allow_once', name: 'Allow once' }],
+      } as unknown as PermissionRequest);
+
+      const show = h.deps.permissionBanner.show as ReturnType<typeof vi.fn>;
+      const origin = show.mock.calls[0][1] as { label: string; onFocus: () => void };
+      expect(origin.label).toBe(t().permission.originTab.replace('{index}', '2'));
+      origin.onFocus();
+      expect(h.controller.activeTabId()).toBe(tabB);
+    });
+  });
+
+  describe('a connection event', () => {
+    it('closes a background tab’s interrupted turn in that tab', async () => {
+      const [tabA, tabB] = twoTabs();
+      const client = clientFor();
+      const rtB = rtOf(h, tabB);
+      rtB.busy = true;
+      rtB.state.isStreaming = true;
+
+      const handlers = boundHandlers(client);
+      await handlers.onReconnect();
+
+      expect(h.renderers.get(tabB)?.addError).toHaveBeenCalledWith(t().error.reconnected);
+      expect(h.renderers.get(tabB)?.finalizeCurrentThinking).toHaveBeenCalled();
+      expect(h.renderers.get(tabB)?.removeAssistantPlaceholder).toHaveBeenCalled();
+      expect(h.renderers.get(tabA)?.addError).not.toHaveBeenCalled();
+      expect(rtB.busy).toBe(false);
+    });
+
+    it('takes the waiting bubble out of every tab when the agent goes away', () => {
+      const [tabA, tabB] = twoTabs();
+
+      h.controller.handleDisconnect();
+
+      expect(h.renderers.get(tabA)?.removeAssistantPlaceholder).toHaveBeenCalled();
+      expect(h.renderers.get(tabB)?.removeAssistantPlaceholder).toHaveBeenCalled();
+    });
+  });
+
+  describe('the toolbar', () => {
+    it('offers nothing to a tab that has no conversation', () => {
+      const tab = h.controller.activeTabId();
+      clientFor({
+        getSessionSnapshot: vi.fn(() => ({
+          configOptions: [],
+          availableCommands: [{ name: 'review', description: '' }],
+          availableModels: [{ modelId: 'gpt-4', name: 'GPT-4' }],
+          availableModes: [{ id: 'plan', name: 'Plan' }],
+          currentModelId: 'gpt-4',
+          currentModeId: 'plan',
+        })),
+      });
+
+      h.controller.loadToolbarOptions();
+
+      expect(rtOf(h, tab).state.availableModels).toEqual([]);
+      expect(rtOf(h, tab).state.currentModelId).toBeNull();
+      expect(h.deps.toolbar.updateAgents).toHaveBeenCalledWith([], 'build');
+      expect(h.deps.toolbar.updateModels).toHaveBeenCalledWith([], '');
+    });
+
+    it('writes a background tab’s own choices into that tab, not into the bar', () => {
+      const [tabA, tabB] = twoTabs();
+      const updateModels = vi.fn();
+      Object.assign(h.deps.toolbar, { updateModels });
+      clientFor({
+        getSessionSnapshotFor: vi.fn((sid: string) => ({
+          configOptions: [],
+          availableCommands: [],
+          availableModels: sid === 'ses-b' ? [{ modelId: 'gpt-5', name: 'GPT-5' }] : [],
+          availableModes: [],
+          currentModelId: sid === 'ses-b' ? 'gpt-5' : null,
+          currentModeId: null,
+        })),
+      });
+
+      h.controller.loadToolbarOptions(rtOf(h, tabB));
+
+      expect(rtOf(h, tabB).state.availableModels).toEqual([{ modelId: 'gpt-5', name: 'GPT-5' }]);
+      expect(rtOf(h, tabA).state.availableModels).toEqual([]);
+      expect(updateModels).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a queue two releases reach at once', () => {
+    function drainFor(rt: SessionRuntime) {
+      return Reflect.get(h.controller, 'drainQueue') as (rt: SessionRuntime) => Promise<void>;
+    }
+
+    it('takes the head once, however many releases arrive', async () => {
+      const [tabA] = twoTabs();
+      const rt = rtOf(h, tabA);
+      clientFor();
+      rt.promptQueue.push({ text: 'parked head', refs: [] });
+      let release: () => void = () => {};
+      const sendStub = vi.fn(async () => {
+        // Mimic a head that loses the stream race: it goes back and waits.
+        rt.promptQueue.unshift({ text: 'parked head', refs: [] });
+        rt.capacityParked = true;
+        await new Promise<void>((r) => { release = r; });
+        return true;
+      });
+      h.controller.send = sendStub as unknown as typeof h.controller.send;
+
+      const first = drainFor(rt).call(h.controller, rt);
+      await tick();
+      await drainFor(rt).call(h.controller, rt);
+      expect(sendStub).toHaveBeenCalledTimes(1);
+
+      release();
+      await first;
+
+      expect(sendStub).toHaveBeenCalledTimes(1);
+      expect(rt.promptQueue.map((e) => e.text)).toEqual(['parked head']);
+      expect(rt.draining).toBe(false);
+    });
+
+    it('keeps the bubble and the images with a turn that goes back to the queue', async () => {
+      const [tabA] = twoTabs();
+      const rt = rtOf(h, tabA);
+      clientFor();
+      const images: PromptPart[] = [{ type: 'image', mimeType: 'image/png', data: 'QUJD' }];
+      rt.busy = true;
+
+      await expect(h.controller.send('second paragraph', [], rt, { paintedHead: true, imagesHead: images })).resolves.toBe(
+        true,
+      );
+
+      expect(rt.promptQueue).toHaveLength(1);
+      expect(rt.promptQueue[0]).toMatchObject({ text: 'second paragraph', painted: true, images });
+      expect(h.renderers.get(tabA)?.addUserMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a session rotation', () => {
+    function renew() {
+      return Reflect.get(h.controller, 'renewAgentSession') as (rt: SessionRuntime) => Promise<string | null>;
+    }
+
+    it('releases the outgoing session before the transcript takes its new name', async () => {
+      const [tabA] = twoTabs();
+      const order: string[] = [];
+      const client = clientFor({
+        getAgentCapabilities: vi.fn(() => ({ sessionCapabilities: { close: true } })),
+        createSession: vi.fn(async () => 'new-ses'),
+        closeSession: vi.fn(async () => { order.push('close'); }),
+      });
+      (h.deps.sessionStore.rekey as ReturnType<typeof vi.fn>).mockImplementation(() => { order.push('rekey'); });
+
+      await renew().call(h.controller, rtOf(h, tabA));
+
+      expect(order).toEqual(['close', 'rekey']);
+      expect(client.closeSession).toHaveBeenCalledWith('ses-a');
+    });
+
+    it('keeps another tab’s session calls out of the whole rotation', async () => {
+      const [tabA, tabB] = twoTabs();
+      let releaseClose: () => void = () => {};
+      const gate = new Promise<void>((r) => { releaseClose = r; });
+      const client = clientFor({
+        getAgentCapabilities: vi.fn(() => ({ sessionCapabilities: { close: true } })),
+        createSession: vi.fn(async () => 'new-ses'),
+        closeSession: vi.fn(async () => { await gate; }),
+      });
+
+      const rotating = renew().call(h.controller, rtOf(h, tabA));
+      await tick();
+      const opening = h.controller.newSession(true, rtOf(h, tabB));
+      await tick();
+
+      // The rotation is still inside its lock, so no other session call has run.
+      expect(client.createSession).toHaveBeenCalledTimes(1);
+      expect(h.deps.sessionStore.rekey).not.toHaveBeenCalled();
+
+      releaseClose();
+      await rotating;
+      await opening;
+
+      expect(h.deps.sessionStore.rekey).toHaveBeenCalledWith('ses-a', 'new-ses');
+      expect(client.createSession).toHaveBeenCalledTimes(2);
     });
   });
 });

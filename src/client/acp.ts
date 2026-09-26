@@ -1079,12 +1079,12 @@ export class AcpClient implements OpencodeClient {
     this.onProtocolDrift = handlers.onProtocolDrift ?? undefined;
     this.onElicitationComplete = handlers.onElicitationComplete ?? undefined;
     if (this.requestHandler) {
-      if (handlers.onPermissionRequest) {
-        this.requestHandler.onPermissionRequest = handlers.onPermissionRequest;
-      }
-      if (handlers.onElicitationRequest) {
-        this.requestHandler.onElicitationRequest = handlers.onElicitationRequest;
-      }
+      // Assigned straight through, guards included: a view that is being torn
+      // down hands an empty handler set to let go of its own prompts, and a
+      // guarded assignment left its banner and elicitation panel wired to an
+      // agent that now answers to someone else.
+      this.requestHandler.onPermissionRequest = handlers.onPermissionRequest;
+      this.requestHandler.onElicitationRequest = handlers.onElicitationRequest;
       this.requestHandler.onPermissionUnreadable = (summary, sessionId) => this.onPermissionUnreadable?.(summary, sessionId);
       this.requestHandler.onCapabilityGrant = (grant) => this.onCapabilityGrant?.(grant);
     }
