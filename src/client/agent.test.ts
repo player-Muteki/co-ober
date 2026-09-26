@@ -138,6 +138,11 @@ describe('AgentRuntime', () => {
       expect(mockAcp.getAgentCapabilities).toHaveBeenCalled();
     });
 
+    it('getAgentProtocolVersion reads the version the handshake negotiated', () => {
+      mockAcp.agentProtocolVersion = 2;
+      expect(runtime.getAgentProtocolVersion()).toBe(2);
+    });
+
     it('getAvailableAgents delegates to acp', async () => {
       await runtime.getAvailableAgents();
       expect(mockAcp.getAvailableAgents).toHaveBeenCalled();

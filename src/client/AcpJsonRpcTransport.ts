@@ -19,9 +19,6 @@ export interface JsonRpcMessageStreams {
   output: NodeJS.WritableStream;
 }
 
-/** Notification methods already reported as unrouted; each logs once per process. */
-const warnedUnknownNotifications = new Set<string>();
-
 export class AcpJsonRpcTransport {
   private readonly pending = new Map<number, PendingRequest>();
   private readonly notificationHandlers = new Map<string, Set<NotificationHandler>>();
@@ -29,6 +26,8 @@ export class AcpJsonRpcTransport {
   private readline: Interface | null = null;
   private nextId = 1;
   private disposed = false;
+  /** Unrouted methods already warned about on *this* connection only. */
+  private readonly warnedUnknownNotifications = new Set<string>();
   /**
    * A notification nobody registered for is a frame that never reaches the
    * transcript at all — the client may report each one as drift.
@@ -231,8 +230,8 @@ export class AcpJsonRpcTransport {
       } else if (!method.startsWith('$/')) {
         // $/-prefixed messages are ignorable by JSON-RPC/LSP convention;
         // anything else we silently drop is protocol drift and should be visible.
-        if (!warnedUnknownNotifications.has(method)) {
-          warnedUnknownNotifications.add(method);
+        if (!this.warnedUnknownNotifications.has(method)) {
+          this.warnedUnknownNotifications.add(method);
           console.warn(`[co-ober] dropping unknown notification: ${method}`);
         }
         this.onUnknownNotification?.(method);

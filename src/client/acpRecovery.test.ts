@@ -591,3 +591,86 @@ describe('0.1.40 stage 2 protocol pack', () => {
     await client.disconnect().catch(() => {});
   });
 });
+
+describe('0.2.3 stage 1 negotiation honesty', () => {
+  beforeEach(() => {
+    FakeSubprocess.instances.length = 0;
+    FakeTransport.instances.length = 0;
+  });
+
+  type FakeWire = (typeof FakeTransport)['instances'][number];
+
+  /** What the agent was told this client honours, read off the wire. */
+  function advertised(transport: FakeWire): Record<string, unknown> {
+    const params = transport.requests[0]?.params as { clientCapabilities?: Record<string, unknown> } | undefined;
+    return params?.clientCapabilities ?? {};
+  }
+
+  async function connectWith(client: AcpClient, initResult: Record<string, unknown>): Promise<FakeWire> {
+    const connecting = client.connect();
+    await tick();
+    const transport = FakeTransport.instances[FakeTransport.instances.length - 1];
+    transport.deferred.resolve(initResult);
+    await connecting;
+    return transport;
+  }
+
+  it('advertises the tier set before connect instead of the defaults', async () => {
+    const client = new AcpClient('opencode', '/vault');
+    client.setFsCapabilityMode('readonly');
+    client.setTerminalCapabilityMode('disabled');
+
+    const transport = await connectWith(client, { protocolVersion: 1, agentCapabilities: {} });
+
+    expect(advertised(transport).fs).toEqual({ readTextFile: true, writeTextFile: false });
+    expect(advertised(transport).terminal).toBeUndefined();
+    await client.disconnect().catch(() => {});
+  });
+
+  it('carries the tier across a reconnect, whose handler is freshly built', async () => {
+    const client = new AcpClient('opencode', '/vault');
+    await connectWith(client, { protocolVersion: 1, agentCapabilities: {} });
+    client.setFsCapabilityMode('readonly');
+    await client.disconnect().catch(() => {});
+
+    const transport = await connectWith(client, { protocolVersion: 1, agentCapabilities: {} });
+
+    expect(advertised(transport).fs).toEqual({ readTextFile: true, writeTextFile: false });
+    await client.disconnect().catch(() => {});
+  });
+
+  it('records the protocol version the agent negotiated and says it out loud', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const client = new AcpClient('opencode', '/vault');
+
+    await connectWith(client, { protocolVersion: 2, agentCapabilities: {} });
+
+    expect(client.agentProtocolVersion).toBe(2);
+    expect(warn.mock.calls.some((call) => String(call[0]).includes('protocolVersion 2'))).toBe(true);
+    warn.mockRestore();
+    await client.disconnect().catch(() => {});
+  });
+
+  it('forgets the negotiated version once the connection is gone', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const client = new AcpClient('opencode', '/vault');
+    await connectWith(client, { protocolVersion: 2, agentCapabilities: {} });
+    warn.mockRestore();
+
+    await client.disconnect().catch(() => {});
+
+    expect(client.agentProtocolVersion).toBeNull();
+  });
+
+  it('records a v1 handshake without a mismatch warning', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const client = new AcpClient('opencode', '/vault');
+
+    await connectWith(client, { protocolVersion: 1, agentCapabilities: {} });
+
+    expect(client.agentProtocolVersion).toBe(1);
+    expect(warn.mock.calls.some((call) => String(call[0]).includes('protocolVersion'))).toBe(false);
+    warn.mockRestore();
+    await client.disconnect().catch(() => {});
+  });
+});

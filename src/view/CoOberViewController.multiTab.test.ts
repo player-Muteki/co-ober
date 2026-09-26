@@ -46,6 +46,7 @@ function createTabRenderer() {
     addError: vi.fn(),
     addSystemMessage: vi.fn(),
     setSystemNote: vi.fn(),
+    clearSystemNote: vi.fn(),
     showUsage: vi.fn(),
     forceScrollToBottom: vi.fn(),
     addToolCall: vi.fn(),
@@ -193,6 +194,7 @@ function createMockClient(overrides: Record<string, unknown> = {}) {
       currentModeId: null,
     })),
     getAgentCapabilities: vi.fn(() => null),
+    getAgentProtocolVersion: vi.fn(() => null as number | null),
     setClientHandlers: vi.fn(),
     permissionMode: 'safe',
     requestPermission: vi.fn(),
@@ -1369,6 +1371,57 @@ describe('CoOberViewController — what survives a restart (0.2.2 stage 2)', () 
 
       expect(h.renderers.get(tabB)?.setSystemNote).toHaveBeenCalledWith('droppedFrames', 'stream.droppedFrames', 1);
       expect(h.renderers.get(tabA)?.setSystemNote).not.toHaveBeenCalled();
+    });
+
+    function clientWithVersion(version: number | null) {
+      const client = createMockClient({ getAgentProtocolVersion: vi.fn(() => version) });
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      return client;
+    }
+
+    it('says the negotiated protocol version in every open tab', () => {
+      clientWithVersion(2);
+      const [tabA, tabB] = twoTabs();
+
+      h.controller.noteProtocolMismatch();
+
+      for (const tab of [tabA, tabB]) {
+        expect(h.renderers.get(tab)?.setSystemNote).toHaveBeenCalledWith(
+          'protocolMismatch',
+          'stream.protocolMismatch',
+          2,
+        );
+      }
+    });
+
+    it('takes the note back out once a later agent speaks the version it implements', () => {
+      const client = clientWithVersion(2);
+      const [tabA] = twoTabs();
+      h.controller.noteProtocolMismatch();
+
+      client.getAgentProtocolVersion.mockReturnValue(1);
+      h.controller.noteProtocolMismatch();
+
+      expect(h.renderers.get(tabA)?.clearSystemNote).toHaveBeenCalledWith('protocolMismatch');
+    });
+
+    it('leaves the transcripts alone about versions when nothing was negotiated', () => {
+      const [tabA] = twoTabs();
+
+      h.controller.noteProtocolMismatch();
+
+      expect(h.renderers.get(tabA)?.setSystemNote).not.toHaveBeenCalled();
+    });
+
+    it('retires the version note when the connection goes away', () => {
+      const client = clientWithVersion(2);
+      const [tabA] = twoTabs();
+      h.controller.noteProtocolMismatch();
+      client.getAgentProtocolVersion.mockReturnValue(null);
+
+      h.controller.handleDisconnect();
+
+      expect(h.renderers.get(tabA)?.clearSystemNote).toHaveBeenCalledWith('protocolMismatch');
     });
   });
 });

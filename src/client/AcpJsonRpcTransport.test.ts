@@ -490,3 +490,29 @@ describe('AcpJsonRpcTransport', () => {
     await expect(p2).resolves.toBe(20);
   });
 });
+
+describe('0.2.3 stage 1 per-connection drift memory', () => {
+  const wait = () => new Promise((resolve) => setTimeout(resolve, 10));
+
+  it('warns again for the same method on the transport a later connection builds', async () => {
+    const firstInput = new PassThrough();
+    const first = new AcpJsonRpcTransport({ input: firstInput, output: new PassThrough() }, 50);
+    first.start();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const line = JSON.stringify({ jsonrpc: '2.0', method: 'co-ober-test/second-connection' }) + '\n';
+
+    firstInput.write(line);
+    await wait();
+    const nextInput = new PassThrough();
+    const next = new AcpJsonRpcTransport({ input: nextInput, output: new PassThrough() }, 50);
+    next.start();
+    nextInput.write(line);
+    await wait();
+
+    const mentions = warn.mock.calls.filter((call) => String(call[0]).includes('co-ober-test/second-connection'));
+    expect(mentions).toHaveLength(2);
+    warn.mockRestore();
+    next.dispose();
+    first.dispose();
+  });
+});

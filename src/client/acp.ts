@@ -76,10 +76,20 @@ export interface AcpSessionMeta {
   };
 }
 
-/** Kinds already reported as unknown; each logs once per client lifetime. */
+/**
+ * Kinds already reported as unknown, and kinds already reported as
+ * validation-rejected. One entry logs once per *connection* — `connect()`
+ * clears both, so a reconnect that starts losing the same frame again is
+ * visible a second time instead of being silenced by the last run's memory.
+ */
 const warnedUnknownUpdateKinds = new Set<string>();
-/** Kinds already reported as validation-rejected; each logs once per lifetime. */
 const warnedRejectedKinds = new Set<string>();
+
+/** Forget the once-per-connection drop warnings; called by every new handshake. */
+export function resetDropWarnings(): void {
+  warnedUnknownUpdateKinds.clear();
+  warnedRejectedKinds.clear();
+}
 
 /** Why a frame was not drawn, reported for every drop so a tab can count them. */
 export type DropReporter = (kind: string) => void;
@@ -483,6 +493,29 @@ export class AcpClient implements OpencodeClient {
   // Real state kept on the client: main.ts / toolbar assign the active
   // permission tier here so onPermissionRequest can branch on 'safe'.
   permissionMode: PermissionLevel = 'yolo';
+  /**
+   * The capability tier last requested, remembered on the client rather than
+   * only on the handler. The handler exists while connected, so a tier set
+   * before `connect()` used to reach the wire as the defaults: the agent was
+   * told `fs.writeTextFile` and `terminal` were supported after the user had
+   * switched them off, then had every attempt refused by the runtime gate.
+   */
+  private capabilityTier: {
+    fs: import('../types').FsCapabilityMode;
+    fsMaxBytes?: number;
+    terminal: import('../types').TerminalCapabilityMode;
+    terminalTimeoutMs?: number;
+    terminalMaxOutputBytes?: number;
+  } = { fs: 'enabled', terminal: 'enabled' };
+  /** The protocol version the agent answered `initialize` with, if any. */
+  agentProtocolVersion: number | null = null;
+
+  /** Hand the remembered tier to whichever handler is live (freshly built or not). */
+  private syncCapabilityTier(): void {
+    const tier = this.capabilityTier;
+    this.requestHandler?.setFsCapabilityMode(tier.fs, tier.fsMaxBytes);
+    this.requestHandler?.setTerminalCapabilityMode(tier.terminal, tier.terminalTimeoutMs, tier.terminalMaxOutputBytes);
+  }
 
   isConnected(): boolean {
     return this.connected;
@@ -497,6 +530,7 @@ export class AcpClient implements OpencodeClient {
     if (this.connected) return;
     this.isIntentionalDisconnect = false;
     this.clearReconnectTimer();
+    resetDropWarnings();
     const generation = ++this.kernelGeneration;
     this.connectingGeneration = generation;
 
@@ -545,6 +579,10 @@ export class AcpClient implements OpencodeClient {
         onPermissionUnreadable: (summary) => this.onPermissionUnreadable?.(summary),
       });
       this.requestHandler = requestHandler;
+      // Before `initialize`, not after: the capabilities we advertise have to be
+      // the ones this client will actually honour, and a tier assigned to the
+      // client earlier (main.ts, or a reconnect reusing it) lives here.
+      this.syncCapabilityTier();
 
       const onSessionUpdate = (params: unknown): void => {
         // Drop updates from a transport that has since been replaced or disposed.
@@ -580,10 +618,14 @@ export class AcpClient implements OpencodeClient {
         })
         .safeParse(response);
       if (initResult.success) {
-        if (initResult.data.protocolVersion !== undefined && initResult.data.protocolVersion !== 1) {
+        const negotiated = initResult.data.protocolVersion;
+        this.agentProtocolVersion = typeof negotiated === 'number' ? negotiated : null;
+        if (negotiated !== undefined && negotiated !== 1) {
           // A later-speaking agent still answers the v1 subset we implement;
           // failing the handshake over the number alone would make it unusable.
-          console.warn(`[co-ober] agent negotiated ACP protocolVersion ${initResult.data.protocolVersion}, client speaks v1`);
+          // The user still has to hear it: parts of what this agent sends may
+          // not be drawn.
+          console.warn(`[co-ober] agent negotiated ACP protocolVersion ${negotiated}, client speaks v1`);
         }
         this.agentCapabilities = normalizeAgentCapabilities(initResult.data.agentCapabilities);
         // Some agents advertise authMethods at the top level of the initialize
@@ -996,6 +1038,8 @@ export class AcpClient implements OpencodeClient {
   }
 
   setFsCapabilityMode(mode: import('../types').FsCapabilityMode, maxBytes?: number): void {
+    this.capabilityTier.fs = mode;
+    if (maxBytes !== undefined) this.capabilityTier.fsMaxBytes = maxBytes;
     this.requestHandler?.setFsCapabilityMode(mode, maxBytes);
   }
 
@@ -1004,6 +1048,9 @@ export class AcpClient implements OpencodeClient {
     timeoutMs?: number,
     maxOutputBytes?: number,
   ): void {
+    this.capabilityTier.terminal = mode;
+    if (timeoutMs !== undefined) this.capabilityTier.terminalTimeoutMs = timeoutMs;
+    if (maxOutputBytes !== undefined) this.capabilityTier.terminalMaxOutputBytes = maxOutputBytes;
     this.requestHandler?.setTerminalCapabilityMode(mode, timeoutMs, maxOutputBytes);
   }
 
@@ -1215,6 +1262,9 @@ export class AcpClient implements OpencodeClient {
     this.normalizers.clear();
     this.loadedSessionIds.clear();
     this.warnedAmbiguousNoSid = false;
+    // Nothing was negotiated any more: a later note must not quote the version
+    // an agent answered with three connections ago.
+    this.agentProtocolVersion = null;
 
     transport?.dispose(error);
     if (shutdownSubprocess) {

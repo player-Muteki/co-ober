@@ -151,6 +151,7 @@ const en = {
     compactionFailed: 'Context compaction failed',
     unsupportedContent: '[{type} content — cannot be shown here]',
     droppedFrames: 'Co-Ober could not draw {count} update frame(s) from this agent — the transcript may be missing part of the response.',
+    protocolMismatch: 'This agent negotiated ACP protocol version {count}; Co-Ober implements v1, so part of what it sends may not reach the transcript.',
   },
 
   error: {

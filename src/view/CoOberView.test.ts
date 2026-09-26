@@ -734,6 +734,7 @@ function createController(plugin: CoOberPlugin): CoOberViewController {
       clear: noop, addUserMessage: noop, addAssistantPlaceholder: noop, removeAssistantPlaceholder: noop,
       appendText: noop, appendThinking: noop, addError: noop, showUsage: noop, forceScrollToBottom: noop,
       addToolCall: noop, updateToolCall: noop, setPlanEntries: noop,
+      setSystemNote: noop, clearSystemNote: noop,
     } as unknown as ControllerDeps['renderer'],
     input: { setStreaming: noop, focus: noop, appendValue: noop, triggerSend: noop, triggerStop: noop } as unknown as ControllerDeps['input'],
     toolbar: { setSending: noop, updateAgents: noop, updateModels: noop, updateEffort: noop } as unknown as ControllerDeps['toolbar'],

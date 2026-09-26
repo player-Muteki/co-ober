@@ -79,6 +79,8 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): MockDeps {
       setPlanEntries: noop,
       collapseTurns: vi.fn(),
       addSystemMessage: vi.fn(),
+      setSystemNote: vi.fn(),
+      clearSystemNote: vi.fn(),
       setActive: noop,
     } as unknown as MockDeps['renderer'],
     input: {

@@ -153,6 +153,7 @@ const zh: Locale = {
     compactionFailed: '上下文压缩失败',
     unsupportedContent: '[{type} 内容——此处无法展示]',
     droppedFrames: 'Co-Ober 未能绘制来自该 Agent 的 {count} 个更新帧——对话记录可能缺少部分回复。',
+    protocolMismatch: '该 Agent 协商到 ACP 协议版本 {count}；Co-Ober 实现的是 v1，它发送的部分内容可能无法进入对话记录。',
   },
 
   error: {

@@ -149,6 +149,8 @@ export class AgentRuntime implements OpencodeClient {
   }
 
   getAgentCapabilities(): AgentCapabilities | null { return this.acp.getAgentCapabilities(); }
+  /** The ACP version the agent answered `initialize` with, or null if unknown. */
+  getAgentProtocolVersion(): number | null { return this.acp.agentProtocolVersion; }
   getAvailableAgents(): Promise<ModeOption[]> { return this.acp.getAvailableAgents(); }
   getAvailableModels(): Promise<ModelOption[]> { return this.acp.getAvailableModels(); }
   getAvailableCommands(): Promise<AvailableCommand[]> { return this.acp.getAvailableCommands(); }

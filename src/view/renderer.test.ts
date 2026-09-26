@@ -71,6 +71,32 @@ describe('ChatRenderer', () => {
       expect(noteBody()?.textContent).toContain('未能绘制');
       setLocale('en');
     });
+
+    it('names the protocol version an agent negotiated', () => {
+      renderer.setSystemNote('protocolMismatch', 'stream.protocolMismatch', 2);
+      expect(noteBody()?.textContent).toContain('ACP protocol version 2');
+    });
+
+    it('takes its own line out and leaves the other notes standing', () => {
+      renderer.setSystemNote('droppedFrames', 'stream.droppedFrames', 2);
+      renderer.setSystemNote('protocolMismatch', 'stream.protocolMismatch', 2);
+      expect(container.querySelectorAll('.co-ober-msg.system').length).toBe(2);
+
+      renderer.clearSystemNote('protocolMismatch');
+
+      const bodies = container.querySelectorAll('.co-ober-msg.system .co-ober-msg-body');
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0].textContent).toContain('could not draw 2 update frame');
+    });
+
+    it('says nothing when the note it was asked to remove was never drawn', () => {
+      renderer.setSystemNote('droppedFrames', 'stream.droppedFrames', 1);
+
+      renderer.clearSystemNote('protocolMismatch');
+      renderer.clearSystemNote('protocolMismatch');
+
+      expect(container.querySelectorAll('.co-ober-msg.system').length).toBe(1);
+    });
   });
 
   describe('addUserMessage', () => {

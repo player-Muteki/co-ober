@@ -313,10 +313,14 @@ export default class CoOberPlugin extends Plugin {
     }
     try {
       const acp = new AcpClient(this.settings.opencodePath, getVaultPath(this.app), this.createVaultIo());
+      // The handshake advertises this client's capabilities, so the stored tier
+      // has to be on the client *before* connect() speaks. Applying it after the
+      // handshake told an agent that file writes and terminals were off.
+      acp.permissionMode = this.settings.permissionMode;
+      applyPermissionTier(acp, this.settings.permissionMode, this.settings);
       await acp.connect();
       this.client = new AgentRuntime(acp);
       this.client.permissionMode = this.settings.permissionMode;
-      applyPermissionTier(this.client, this.settings.permissionMode, this.settings);
       this.client.idleTimeoutMs = this.settings.idleTimeoutMs ?? 300000;
       this._clientReady = true;
       this.resolveClientWaiters(true);

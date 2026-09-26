@@ -12,6 +12,7 @@ import {
   extractConfigMeta,
   mergeAvailableCommands,
   terminalContentFrom,
+  resetDropWarnings,
 } from './acp';
 import { AcpRequestHandler } from './AcpRequestHandler';
 import { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
@@ -1344,5 +1345,51 @@ describe('AcpClient subprocess close during the connect handshake', () => {
     expect(dispose).toHaveBeenCalled();
     expect(schedule).toHaveBeenCalled();
     errSpy.mockRestore();
+  });
+});
+
+describe('0.2.3 stage 1 per-connection drop warnings', () => {
+  const unroutableKind = 'co-ober-test/module_chunk';
+  const unknownFrame = { sessionUpdate: unroutableKind };
+  const malformedToolCall = { sessionUpdate: 'tool_call', title: 'edit file' };
+  const mentions = (warn: { mock: { calls: unknown[][] } }, needle: string) =>
+    warn.mock.calls.filter((call) => String(call[0]).includes(needle));
+
+  it('reports an unroutable frame kind once per connection, not once per process', () => {
+    resetDropWarnings();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    expect(parseSessionUpdate(unknownFrame)).toBeNull();
+    expect(parseSessionUpdate(unknownFrame)).toBeNull();
+    expect(mentions(warn, unroutableKind)).toHaveLength(1);
+
+    resetDropWarnings();
+    expect(parseSessionUpdate(unknownFrame)).toBeNull();
+    expect(mentions(warn, unroutableKind)).toHaveLength(2);
+    warn.mockRestore();
+  });
+
+  it('reports a validation-rejected frame once per connection too', () => {
+    resetDropWarnings();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    expect(parseSessionUpdate(malformedToolCall)).toBeNull();
+    expect(parseSessionUpdate(malformedToolCall)).toBeNull();
+    expect(mentions(warn, 'tool_call frame rejected')).toHaveLength(1);
+
+    resetDropWarnings();
+    expect(parseSessionUpdate(malformedToolCall)).toBeNull();
+    expect(mentions(warn, 'tool_call frame rejected')).toHaveLength(2);
+    warn.mockRestore();
+  });
+
+  it('still counts every dropped frame after the warning went quiet', () => {
+    resetDropWarnings();
+    const dropped: string[] = [];
+
+    parseSessionUpdate(unknownFrame, (kind) => dropped.push(kind));
+    parseSessionUpdate(unknownFrame, (kind) => dropped.push(kind));
+
+    expect(dropped).toEqual([unroutableKind, unroutableKind]);
   });
 });

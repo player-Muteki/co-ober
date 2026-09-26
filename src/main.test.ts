@@ -5,6 +5,7 @@ import { Notice } from './test/obsidianMock';
 import CoOberPlugin from './main';
 import { DEFAULT_SETTINGS, VIEW_TYPE } from './types';
 import { SessionRepository } from './chat/session';
+import { AcpClient } from './client/acp';
 import { t } from './i18n';
 
 describe('CoOberPlugin view activation', () => {
@@ -443,5 +444,74 @@ describe('CoOberPlugin connect failure messaging', () => {
     expect(ok).toBe(false);
     expect(plugin.client).toBeNull();
     errSpy.mockRestore();
+  });
+});
+
+describe('CoOberPlugin capability tier reaches the handshake', () => {
+  function tierPlugin(permissionMode: 'readonly' | 'safe') {
+    const plugin = Object.create(CoOberPlugin.prototype) as CoOberPlugin;
+    Object.assign(plugin, {
+      app: { vault: { adapter: { getBasePath: () => process.cwd() } } },
+      manifest: { id: 'co-ober' },
+      settings: { ...DEFAULT_SETTINGS, opencodePath: 'opencode', permissionMode },
+      clientReadyResolvers: [],
+      client: null,
+    });
+    return plugin;
+  }
+
+  const connectClientOf = (plugin: CoOberPlugin) =>
+    (plugin as unknown as { connectClient: () => Promise<boolean> }).connectClient.bind(plugin);
+
+  async function runConnect(permissionMode: 'readonly' | 'safe') {
+    Notice.messages.length = 0;
+    const order: string[] = [];
+    const connect = vi
+      .spyOn(AcpClient.prototype, 'connect')
+      .mockImplementation(async () => void order.push('connect'));
+    const setFs = vi
+      .spyOn(AcpClient.prototype, 'setFsCapabilityMode')
+      .mockImplementation(() => void order.push('fs'));
+    const setTerminal = vi
+      .spyOn(AcpClient.prototype, 'setTerminalCapabilityMode')
+      .mockImplementation(() => void order.push('terminal'));
+    const plugin = tierPlugin(permissionMode);
+
+    const ok = await connectClientOf(plugin)();
+
+    // Restore first, then keep the recorded calls: vitest clears a spy's call
+    // data along with its implementation.
+    const fsCalls = setFs.mock.calls.map((call) => [...call]);
+    const terminalCalls = setTerminal.mock.calls.map((call) => [...call]);
+    connect.mockRestore();
+    setFs.mockRestore();
+    setTerminal.mockRestore();
+    return { ok, order, plugin, fsCalls, terminalCalls };
+  }
+
+  it('applies the stored tier before the initialize handshake speaks', async () => {
+    const { ok, order, fsCalls, terminalCalls } = await runConnect('readonly');
+
+    expect(ok).toBe(true);
+    expect(order).toEqual(['fs', 'terminal', 'connect']);
+    expect(fsCalls[0]?.[0]).toBe('readonly');
+    expect(terminalCalls[0]?.[0]).toBe('disabled');
+  });
+
+  it('keeps the runtime on the stored tier too, not on its own default', async () => {
+    const { plugin } = await runConnect('readonly');
+
+    expect(plugin.client?.permissionMode).toBe('readonly');
+  });
+
+  it('leaves a permissive tier to the user’s own capability settings', async () => {
+    const { order, fsCalls, terminalCalls } = await runConnect('safe');
+
+    expect(order).toEqual(['fs', 'terminal', 'connect']);
+    expect(fsCalls[0]?.[0]).toBe(DEFAULT_SETTINGS.fsCapability ?? 'enabled');
+    expect(fsCalls[0]?.[1]).toBe(DEFAULT_SETTINGS.maxNoteSize);
+    expect(terminalCalls[0]?.[0]).toBe(DEFAULT_SETTINGS.terminalCapability ?? 'enabled');
+    expect(terminalCalls[0]?.[1]).toBe(DEFAULT_SETTINGS.terminalTimeoutMs);
+    expect(terminalCalls[0]?.[2]).toBe(DEFAULT_SETTINGS.terminalMaxOutputBytes);
   });
 });

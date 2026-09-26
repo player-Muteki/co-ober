@@ -220,7 +220,8 @@ export class ChatRenderer {
    * and `{count}` carries the number, which also lets a language switch
    * relabel the line in place.
    */
-  setSystemNote(key: string, messageKey: string, count: number): void {
+  /** Paint or replace a one-line note; `value` fills the message's `{count}` slot. */
+  setSystemNote(key: string, messageKey: string, value: number): void {
     let wrap = this.systemNotes.get(key);
     // `clear()` and the stale-line sweeps take the element with them, and a
     // panel is not always in the document, so containment — not connectivity —
@@ -237,10 +238,18 @@ export class ChatRenderer {
     const body = wrap.querySelector<HTMLElement>('.co-ober-msg-body');
     if (body) {
       body.dataset.i18nCount = messageKey;
-      body.dataset.count = String(count);
-      body.textContent = (lookupLocaleString(messageKey) ?? '').replace('{count}', String(count));
+      body.dataset.count = String(value);
+      body.textContent = (lookupLocaleString(messageKey) ?? '').replace('{count}', String(value));
     }
     this.scrollToBottom();
+  }
+
+  /** Take a note out of the transcript once the condition it reported is gone. */
+  clearSystemNote(key: string): void {
+    const wrap = this.systemNotes.get(key);
+    if (!wrap) return;
+    this.systemNotes.delete(key);
+    wrap.remove();
   }
 
   addUserMessage(text: string, timestamp?: number, images?: ImageAttachment[]): void {

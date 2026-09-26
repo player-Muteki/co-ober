@@ -35,6 +35,8 @@ export interface OpencodeClient {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   getAgentCapabilities(): AgentCapabilities | null;
+  /** The protocol version the agent negotiated, when the handshake reported one. */
+  getAgentProtocolVersion?(): number | null;
 
   createSession(cwd?: string, mcpServers?: McpServerConfig[]): Promise<SessionId>;
   loadSession(sessionId: SessionId, cwd?: string, mcpServers?: McpServerConfig[], onReplayUpdate?: (chunk: NormalizedUpdate) => void): Promise<void>;

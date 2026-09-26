@@ -758,6 +758,7 @@ export class CoOberViewController {
       }
     }
     this.loadToolbarOptions();
+    this.noteProtocolMismatch();
   }
 
   bindClientHandlers(): void {
@@ -780,6 +781,7 @@ export class CoOberViewController {
           }
         }
         this.loadToolbarOptions();
+        this.noteProtocolMismatch();
         for (const rt of this.runtimes.values()) {
           if (!rt.busy) continue;
           ++rt.genId;
@@ -863,6 +865,23 @@ export class CoOberViewController {
     rt.renderer.setSystemNote('droppedFrames', 'stream.droppedFrames', rt.droppedFrames);
   }
 
+  /**
+   * An agent that negotiated a protocol version this client does not speak
+   * tints every frame it sends, so the transcript says so for as long as the
+   * connection lasts. The risk belongs to the agent rather than to a tab,
+   * which is why each open transcript carries the same line.
+   */
+  noteProtocolMismatch(): void {
+    const version = this.deps.runtime.getClient()?.getAgentProtocolVersion?.() ?? null;
+    for (const rt of this.runtimes.values()) {
+      if (version !== null && version !== 1) {
+        rt.renderer.setSystemNote('protocolMismatch', 'stream.protocolMismatch', version);
+      } else {
+        rt.renderer.clearSystemNote('protocolMismatch');
+      }
+    }
+  }
+
   handleDisconnect(): void {
     this.setConnectedFlags(false);
     for (const rt of this.runtimes.values()) {
@@ -878,6 +897,7 @@ export class CoOberViewController {
     this.deps.input.setStreaming(false);
     this.deps.toolbar.setSending(false);
     this.deps.welcomeView.updateStatus(false);
+    this.noteProtocolMismatch();
     this.callbacks.onShowReconnectBtn();
   }
 
@@ -896,6 +916,7 @@ export class CoOberViewController {
         }
       }
       this.loadToolbarOptions();
+      this.noteProtocolMismatch();
       this.setConnectedFlags(true);
       this.deps.welcomeView.updateStatus(true);
       this.callbacks.onHideReconnectBtn();
