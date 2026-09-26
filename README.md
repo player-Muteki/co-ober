@@ -22,7 +22,7 @@ Most Obsidian AI plugins need third-party API keys (ongoing token costs) or midd
 
 **Auto-Save Output as Notes**: AI-generated content saves directly to your local Vault via the sync engine. No manual copy-paste.
 
-**Model & Mode Switching**: Switch AI models and Agent modes (`build` / `plan` / `docs`) in the toolbar. Mode cycles on click; model opens a hover dropdown.
+**Model & Mode Switching**: Switch AI models and Agent modes (`build` / `plan`, or whatever the connected runtime offers) in the toolbar. Mode cycles on click; model opens a hover dropdown.
 
 **Custom Agents & Skills**: Define local agent profiles and reusable skill instructions in Settings, then inject them into new chat prompts.
 
@@ -80,7 +80,8 @@ Most Obsidian AI plugins need third-party API keys (ongoing token costs) or midd
 | Setting | Description | Default |
 |---------|-------------|---------|
 | OpenCode CLI Path | Path to the `opencode` executable | `opencode` |
-| Default Agent | Agent mode on startup (`build` / `plan` / `docs`) | `build` |
+| Default Agent | Agent mode on startup (`build` / `plan`; the full list comes from the connected runtime) | `build` |
+| Default Thinking Effort | Reasoning effort applied to each newly created session | `default` |
 | Default Model | Model selected for new OpenCode sessions | — |
 | Common Models | Models shown in the chat toolbar when selected in Settings | — |
 | Custom Agents & Skills | Local prompt profiles and reusable skill instructions injected into chat prompts | — |
@@ -90,6 +91,7 @@ Most Obsidian AI plugins need third-party API keys (ongoing token costs) or midd
 | Max Note Reference Size | Maximum bytes when reading a referenced note | `8000` |
 | Max Messages per Session | Truncate session when exceeded | `200` |
 | Session Retention Days | Remove empty sessions older than this | `30` |
+| Max Open Tabs | How many conversations can be open in tabs at once (2–12) | `6` |
 | Sync Rules | Map tool call results to vault notes (tool → folder → filename template) | — |
 | MCP Servers | Local stdio MCP server definitions (name → command → args) passed to new OpenCode sessions | — |
 | Language | UI language (`en` / `zh`) | `en` |
@@ -115,6 +117,7 @@ Runtime agents, models, and available commands/skills load from an existing Open
 | `Escape` | Stop generation |
 | `Tab` | Cycle to next agent mode |
 | `Shift + Tab` | Cycle to previous agent mode |
+| `Alt + 1..9` | Switch to that conversation tab (never cancels a running stream) |
 | `@` | Reference a vault note |
 | `/` | Slash commands |
 
@@ -257,7 +260,7 @@ Licensed under the [MIT License](LICENSE).
 
 **输出自动保存为笔记**：AI 生成的内容通过同步引擎直接保存到本地 Vault，无需手动复制粘贴。
 
-**模型与模式切换**：在界面中直接切换 AI 模型和 Agent 模式（`build` / `plan` / `docs`）。
+**模型与模式切换**：在界面中直接切换 AI 模型和 Agent 模式（离线时为 `build` / `plan`，完整列表来自已连接的运行时）。
 
 **自定义 Agent 与技能**：在设置中定义本地 Agent 配置和可复用技能指令，并注入到新的对话提示词中。
 
@@ -315,7 +318,8 @@ Licensed under the [MIT License](LICENSE).
 | 设置项 | 说明 | 默认值 |
 |--------|------|--------|
 | OpenCode CLI 路径 | `opencode` 可执行文件路径 | `opencode` |
-| 默认 Agent | 启动时的 Agent 模式（`build` / `plan` / `docs`） | `build` |
+| 默认 Agent | 启动时的 Agent 模式（离线为 `build` / `plan`，完整列表来自已连接的运行时） | `build` |
+| 默认思考强度 | 应用到每个新建会话的推理强度 | `default` |
 | 默认模型 | 新建 OpenCode 会话时选择的模型 | — |
 | 常用模型 | 在设置中勾选后显示在聊天工具栏中的模型 | — |
 | 自定义 Agent 与技能 | 本地提示词配置和可复用技能指令，会注入对话提示词 | — |
@@ -325,6 +329,7 @@ Licensed under the [MIT License](LICENSE).
 | 最大笔记引用大小 | 引用笔记时的最大字节数 | `8000` |
 | 每会话最大消息数 | 超出后截断 | `200` |
 | 会话保留天数 | 超出天数的空会话将被清除 | `30` |
+| 最大标签页数 | 同时可以打开的会话标签页数量（2–12） | `6` |
 | 同步规则 | 将工具调用结果映射为 Vault 笔记（工具 → 文件夹 → 文件名模板） | — |
 | MCP 服务器 | 本地 stdio/http/sse MCP 服务器定义，用于新建 OpenCode 会话 | — |
 | 界面语言 | UI 语言（`en` / `zh`） | `en` |
@@ -350,6 +355,7 @@ Licensed under the [MIT License](LICENSE).
 | `Escape` | 停止生成 |
 | `Tab` | 切换到下一个 Agent 模式 |
 | `Shift + Tab` | 切换到上一个 Agent 模式 |
+| `Alt + 1..9` | 切换到该编号的会话标签页（不会中断正在生成的回复） |
 | `@` | 引用 Vault 笔记 |
 | `/` | 斜杠命令 |
 

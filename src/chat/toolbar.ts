@@ -57,9 +57,14 @@ export class InputToolbar {
   // Close fns registered by wireDropdown, keyed by the selector container.
   private readonly dropdownClosers = new Map<HTMLElement, () => void>();
   private readonly domDisposers: Array<() => void> = [];
+  // The document this toolbar was built in: a popped-out view answers to its own
+  // window, and a bare `document` read the main one (dropdowns then never closed
+  // and arrow navigation indexed the wrong list).
+  private readonly doc: Document;
 
   constructor(container: HTMLDivElement, private callbacks: ToolbarCallbacks) {
     container.addClass('co-ober-toolbar');
+    this.doc = container.ownerDocument ?? activeDocument;
     this.unsubscribeLocale = onLocaleChange(() => this.refreshLocale());
 
     // ── Single row ──
@@ -416,7 +421,7 @@ export class InputToolbar {
       const items = Array.from(dropdownEl.querySelectorAll<HTMLElement>(optionSelector));
       if (items.length === 0) return;
       e.preventDefault();
-      const idx = items.indexOf(document.activeElement as HTMLElement);
+      const idx = items.indexOf(this.doc.activeElement as HTMLElement);
       const next = e.key === 'ArrowDown'
         ? items[(idx + 1) % items.length]
         : items[(idx - 1 + items.length) % items.length];
@@ -426,8 +431,9 @@ export class InputToolbar {
     const outside = (ev: Event): void => {
       if (!selectorEl.contains(ev.target as Node)) close();
     };
-    document.addEventListener('click', outside);
-    this.domDisposers.push(() => document.removeEventListener('click', outside));
+    const doc = this.doc;
+    doc.addEventListener('click', outside);
+    this.domDisposers.push(() => doc.removeEventListener('click', outside));
     selectorEl.addEventListener('focusout', (ev) => {
       const next = ev.relatedTarget as Node | null;
       if (next && !selectorEl.contains(next)) close();

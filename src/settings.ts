@@ -764,7 +764,6 @@ export class CoOberSettingsTab extends PluginSettingTab {
     if (Object.keys(options).length === 0) {
       options.build = 'build';
       options.plan = 'plan';
-      options.docs = 'docs';
     }
     if (this.plugin.settings.defaultAgent && !options[this.plugin.settings.defaultAgent]) {
       options[this.plugin.settings.defaultAgent] = this.plugin.settings.defaultAgent;

@@ -32,6 +32,7 @@ import { normalizeEffortLabel } from '../chat/effortLabel';
 import { projectGenericConfigOptions } from '../chat/configOptions';
 import { Mutex } from '../utils/mutex';
 import { safeClone } from '../utils/clone';
+import { humanizeError } from '../utils/errorText';
 import type { WelcomeView } from './welcomeView';
 import type { PermissionBanner, PermissionOrigin } from './permissionBanner';
 import type { InlineEditPanel, InlineEditState } from './inlineEditPanel';
@@ -1167,7 +1168,7 @@ export class CoOberViewController {
       this.persistTabShell();
     } catch (e) {
       console.error('[co-ober] newSession:', e);
-      rt.renderer.addError(e instanceof Error ? e.message : String(e));
+      rt.renderer.addError(humanizeError(e));
     }
   }
 
@@ -1235,7 +1236,7 @@ export class CoOberViewController {
       return rt.state.sessionId;
     } catch (e) {
       console.error('[co-ober] session init:', e);
-      rt.renderer.addError(e instanceof Error ? e.message : String(e));
+      rt.renderer.addError(humanizeError(e));
       return null;
     }
   }
@@ -1304,6 +1305,10 @@ export class CoOberViewController {
     // A fork always lands in its own tab, so a full strip refuses the fork
     // rather than silently replacing what is on screen.
     if (this.tabLimitReached()) return;
+    // A fork that dies halfway leaves its branch tab open and empty, so the
+    // refusal is drawn there once that tab exists — the source tab would
+    // otherwise keep the reason while the reader looks at a blank note.
+    let branchRenderer: ChatRenderer | null = null;
     try {
       const source = this.deps.sessionStore.get(sessionId);
       const forkedId = await client.forkSession(sessionId, this.getVaultCwd());
@@ -1311,6 +1316,7 @@ export class CoOberViewController {
       // original stays exactly where it was.
       const rt = this.openRuntime(forkedId);
       this.activateRuntime(rt);
+      branchRenderer = rt.renderer;
       const forked = this.deps.sessionStore.getOrCreate(forkedId);
       if (source && forked.messages.length === 0) {
         // A branch must own its transcript: StreamController mutates tool
@@ -1332,7 +1338,7 @@ export class CoOberViewController {
       this.persistTabShell();
     } catch (e) {
       console.error('[co-ober] fork session:', e);
-      this.renderer.addError(e instanceof Error ? e.message : String(e));
+      (branchRenderer ?? this.rendererFor(sessionId)).addError(humanizeError(e));
     }
   }
 
@@ -1366,7 +1372,7 @@ export class CoOberViewController {
       this.callbacks.onOpenSideChat?.(this.buildSideChatAsk(rt), question, rt.tabId);
     } catch (e) {
       console.error('[co-ober] side chat fork:', e);
-      rt.renderer.addError(t().sideChat.failed.replace('{error}', e instanceof Error ? e.message : String(e)));
+      rt.renderer.addError(t().sideChat.failed.replace('{error}', humanizeError(e)));
     }
   }
 
@@ -1427,7 +1433,7 @@ export class CoOberViewController {
       await this.adoptReplay(sessionId, collector.finish());
     } catch (e) {
       console.error('[co-ober] session resume:', e);
-      rt.renderer.addError(e instanceof Error ? e.message : String(e));
+      rt.renderer.addError(humanizeError(e));
     }
     await this.restoreSession(rt);
     // The transcript swap cleared state usage (it belonged to the outgoing
@@ -1590,7 +1596,7 @@ export class CoOberViewController {
       sessionId = await this.ensureRuntimeSession(rt);
     } catch (e) {
       releaseBusy();
-      rt.renderer.addError(e instanceof Error ? e.message : String(e));
+      rt.renderer.addError(humanizeError(e));
       // Release queued prompts too, or the queue stalls forever.
       config.onFinally?.();
       void this.tryDrainAnyQueue();
@@ -1704,7 +1710,7 @@ export class CoOberViewController {
             await this.retryTurn(config, text, refs, imageParts, rt);
           });
         } else {
-          rt.renderer.addError(e instanceof Error ? e.message : String(e));
+          rt.renderer.addError(humanizeError(e));
         }
       }
     } finally {
@@ -2110,7 +2116,7 @@ export class CoOberViewController {
       } catch (e) {
         // One failing queued command must not strand the rest of the queue.
         console.error('[co-ober] queued prompt failed:', e);
-        rt.renderer.addError(e instanceof Error ? e.message : String(e));
+        rt.renderer.addError(humanizeError(e));
       }
       if (rt.capacityParked) {
         // The head is parked again until the next release; keep draining here
@@ -2369,9 +2375,7 @@ export class CoOberViewController {
       await this.deps.runtime.createNote(path, markdown);
       rt.renderer.addSystemMessage(t().export.saved.replace('{path}', path));
     } catch (e) {
-      rt.renderer.addSystemMessage(
-        t().export.failed.replace('{error}', e instanceof Error ? e.message : String(e)),
-      );
+      rt.renderer.addSystemMessage(t().export.failed.replace('{error}', humanizeError(e)));
     }
   }
 

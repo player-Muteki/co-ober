@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { ruleMatches, buildSyncNote, sanitizeVaultPath } from './templates';
 import type { SyncRule } from '../types';
+import { SYNC_NOTE_MAX_BYTES, TRUNCATION_MARKER } from '../constants';
 
 describe('ruleMatches', () => {
   const baseRule: SyncRule = {
@@ -158,5 +159,49 @@ describe('sanitizeVaultPath', () => {
 
   it('should reject trailing dots', () => {
     expect(sanitizeVaultPath('sync', 'note.')).toBeNull();
+  });
+});
+
+describe('buildSyncNote body cap (0.2.5 stage 3)', () => {
+  const rule = { toolName: 'bash', folder: 'sync', filenameTemplate: 'capped' };
+
+  it('leaves a body under the limit untouched', () => {
+    const note = buildSyncNote(
+      { toolCallId: '1', toolName: 'bash', toolStatus: 'completed', content: 'short output' },
+      rule.folder,
+      rule.filenameTemplate,
+    );
+    expect(note.content).toContain('short output');
+    expect(note.content).not.toContain(TRUNCATION_MARKER);
+  });
+
+  it('clips an oversized tool output and says so in the note', () => {
+    const note = buildSyncNote(
+      { toolCallId: '1', toolName: 'bash', toolStatus: 'completed', content: 'x'.repeat(SYNC_NOTE_MAX_BYTES * 2) },
+      rule.folder,
+      rule.filenameTemplate,
+    );
+    expect(note.content).toContain(TRUNCATION_MARKER);
+    expect(Buffer.byteLength(note.content, 'utf-8')).toBeLessThan(SYNC_NOTE_MAX_BYTES * 2);
+  });
+
+  it('clips a custom template too, since it is written to the vault the same way', () => {
+    const note = buildSyncNote(
+      { toolCallId: '1', toolName: 'bash', toolStatus: 'completed' },
+      rule.folder,
+      rule.filenameTemplate,
+      'y'.repeat(SYNC_NOTE_MAX_BYTES + 1000),
+    );
+    expect(note.content).toContain(TRUNCATION_MARKER);
+  });
+
+  it('cuts on a character boundary rather than leaving a broken rune', () => {
+    const note = buildSyncNote(
+      { toolCallId: '1', toolName: 'bash', toolStatus: 'completed', content: '汉'.repeat(SYNC_NOTE_MAX_BYTES) },
+      rule.folder,
+      rule.filenameTemplate,
+    );
+    expect(note.content).not.toContain('\uFFFD');
+    expect(note.content).toContain(TRUNCATION_MARKER);
   });
 });

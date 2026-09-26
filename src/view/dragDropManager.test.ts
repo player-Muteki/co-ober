@@ -200,6 +200,36 @@ describe('DragDropManager', () => {
       );
     });
 
+    it('says so when a dropped image cannot be read', async () => {
+      manager.setup();
+
+      const file = new File(['image-data'], 'broken.png', { type: 'image/png' });
+
+      function MockFileReader(this: any) {
+        this.onload = null;
+        this.onerror = null;
+        this.result = null;
+        this.readAsDataURL = vi.fn().mockImplementation(() => {
+          setTimeout(() => {
+            if (this.onerror) this.onerror(new Error('unreadable'));
+          }, 0);
+        });
+      }
+      vi.spyOn(globalThis, 'FileReader').mockImplementation(MockFileReader as any);
+
+      const event = new DragEvent('drop', { bubbles: true });
+      Object.defineProperty(event, 'dataTransfer', { value: { files: [file] } });
+      Object.defineProperty(event, 'preventDefault', { value: vi.fn() });
+
+      dropZone.dispatchEvent(event);
+      await new Promise(r => setTimeout(r, 50));
+
+      // The other branches all announced themselves; a failed read used to leave
+      // the drop looking like a successful attach.
+      expect(handlers.onAddImagePart).not.toHaveBeenCalled();
+      expect((Notice as any).messages.some((m: string) => m.includes('broken.png'))).toBe(true);
+    });
+
     it('rejects image file drop when image capability is false', async () => {
       manager = new DragDropManager(dropZone, overlayContainer, handlers as any, () => ({ promptCapabilities: { image: false } }));
       manager.setup();

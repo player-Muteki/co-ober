@@ -6,6 +6,7 @@ import type { ControllerCallbacks, ControllerDeps } from './CoOberViewController
 import { setLocale, t } from '../i18n/index';
 import { installObsidianDomHelpers } from '../test/domHelpers';
 import { Notice } from '../test/obsidianMock';
+import { isImagePreviewOpen, openImagePreview } from './imagePreview';
 import type CoOberPlugin from '../main';
 import type { StoredDraft } from '../types';
 import { SessionRepository } from '../chat/session';
@@ -263,6 +264,21 @@ describe('CoOberView cleanup', () => {
     const view = createView();
 
     await expect(view.onClose()).resolves.toBeUndefined();
+  });
+
+  it('takes the image lightbox down with the view', async () => {
+    const view = createView(createPlugin());
+    await view.onOpen();
+
+    openImagePreview('data:image/png;base64,AAA=');
+    expect(isImagePreviewOpen()).toBe(true);
+
+    await view.onClose();
+
+    // A pane that closed with the sheet still on screen left the overlay
+    // covering the next view that opened in the same leaf.
+    expect(isImagePreviewOpen()).toBe(false);
+    expect(document.querySelector('.co-ober-img-overlay')).toBeNull();
   });
 });
 

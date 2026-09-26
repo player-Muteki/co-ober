@@ -544,3 +544,19 @@ describe('CoOberSettingsTab live capability push', () => {
     );
   });
 });
+
+describe('CoOberSettingsTab agent list (0.2.5 stage 3)', () => {
+  it('offers the offline modes the client can actually start, and no others', () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+
+    // "docs" was listed here although no code path ever sent it, so a reader who
+    // picked it got a default session and no explanation.
+    const agentSelect = [...tab.containerEl.querySelectorAll('select')]
+      .find((select) => [...select.options].some((option) => option.value === 'build')) as HTMLSelectElement | undefined;
+    expect(agentSelect).toBeDefined();
+    expect([...agentSelect!.options].map((option) => option.value)).toEqual(['build', 'plan']);
+  });
+});

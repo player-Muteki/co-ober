@@ -478,3 +478,45 @@ describe('InputToolbar generic config chips', () => {
     setLocale('en');
   });
 });
+
+describe('InputToolbar dropdown document (0.2.5 stage 3)', () => {
+  it('listens for the outside click on the document the toolbar lives in', () => {
+    setLocale('en');
+    // A second document: reaching for a global here meant the outside click
+    // landed on a document that never saw the toolbar, so the dropdown stayed
+    // open over whatever the reader did next.
+    const other = document.implementation.createHTMLDocument('toolbar');
+    const container = other.createElement('div') as unknown as HTMLDivElement;
+    other.body.appendChild(container);
+    const toolbar = new InputToolbar(container, {});
+    toolbar.updateModels([{ value: 'm', label: 'M' }], 'm');
+
+    (container.querySelector('.co-ober-model-btn') as HTMLElement).click();
+    expect(container.querySelector('.co-ober-model-selector')?.classList.contains('open')).toBe(true);
+
+    other.body.dispatchEvent(new Event('click', { bubbles: true }));
+    expect(container.querySelector('.co-ober-model-selector')?.classList.contains('open')).toBe(false);
+
+    toolbar.dispose();
+    container.remove();
+    setLocale('en');
+  });
+
+  it('stops closing dropdowns once the toolbar is disposed', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    document.body.appendChild(container);
+    const toolbar = new InputToolbar(container, {});
+    toolbar.updateModels([{ value: 'm', label: 'M' }], 'm');
+
+    (container.querySelector('.co-ober-model-btn') as HTMLElement).click();
+    expect(container.querySelector('.co-ober-model-selector')?.classList.contains('open')).toBe(true);
+
+    toolbar.dispose();
+    // The handler is off the document now, so an outside click no longer reaches
+    // a toolbar that has been torn down with the view.
+    document.body.dispatchEvent(new Event('click', { bubbles: true }));
+    expect(container.querySelector('.co-ober-model-selector')?.classList.contains('open')).toBe(true);
+    container.remove();
+  });
+});

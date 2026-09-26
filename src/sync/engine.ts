@@ -1,6 +1,7 @@
 import type { Vault } from 'obsidian';
-import { TFile } from 'obsidian';
+import { Notice, TFile } from 'obsidian';
 import type { SyncRule } from '../types';
+import { t } from '../i18n/index';
 import { ruleMatches, buildSyncNote } from './templates';
 import { Mutex } from '../utils/mutex';
 
@@ -36,7 +37,14 @@ export class SyncEngine {
           await this.ensureFolder(rule.folder);
           const existing = this.vault.getAbstractFileByPath(note.path);
           if (existing && this.isTFile(existing)) {
+            // The filename template can pin a rule to one path, and every turn
+            // then rewrote that note. Reading first is what lets the overwrite
+            // be announced instead of quietly eating what the reader edited.
+            const previous = await this.readContent(existing);
             await this.vault.modify(existing, note.content);
+            if (previous !== null && previous !== note.content) {
+              new Notice(t().sync.overwrote.replace('{path}', note.path));
+            }
           } else {
             await this.vault.create(note.path, note.content);
           }
@@ -47,6 +55,15 @@ export class SyncEngine {
       }
       return failures;
     });
+  }
+
+  private async readContent(file: TFile): Promise<string | null> {
+    try {
+      return await this.vault.cachedRead(file);
+    } catch {
+      // Not knowing what was there is not a licence to claim it was replaced.
+      return null;
+    }
   }
 
   private async ensureFolder(folder: string): Promise<void> {

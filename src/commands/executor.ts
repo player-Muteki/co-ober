@@ -1,5 +1,3 @@
-import type { AvailableCommand } from '../types';
-
 /** Result of parsing a candidate slash command from user input. */
 export interface ParsedCommand {
   name: string;
@@ -26,11 +24,4 @@ export function parseSlashCommand(input: string): ParsedCommand | null {
   if (name.startsWith('@')) return null;
 
   return { name, args, raw: `/${name}${args ? ' ' + args : ''}` };
-}
-
-/**
- * Format a command for display in the popover / toolbar.
- */
-export function formatCommandDisplayName(cmd: AvailableCommand): string {
-  return `/${cmd.name}`;
 }

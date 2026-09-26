@@ -1,4 +1,5 @@
 import type { SyncRule } from '../types';
+import { SYNC_NOTE_MAX_BYTES, TRUNCATION_MARKER } from '../constants';
 
 export interface SyncContext {
   toolCallId: string;
@@ -72,8 +73,16 @@ export function buildSyncNote(ctx: SyncContext, folder: string, filenameTemplate
   }
 
   const fm = ['---', `tool: ${ctx.toolName}`, `timestamp: ${now}`, `status: ${ctx.toolStatus}`, '---'].join('\n');
-  const body = template ?? `## ${ctx.toolName}\n\n${getSyncBody(ctx)}`;
+  const body = capSyncBody(template ?? `## ${ctx.toolName}\n\n${getSyncBody(ctx)}`);
   return { path: `${sanitized.folder}/${sanitized.filename}`, content: fm + '\n\n' + body };
+}
+
+// A tool output is as long as the agent decided it was; writing it out whole put
+// a multi-megabyte note in the vault on every synced call.
+function capSyncBody(body: string): string {
+  if (Buffer.byteLength(body, 'utf-8') <= SYNC_NOTE_MAX_BYTES) return body;
+  const clipped = Buffer.from(body, 'utf-8').subarray(0, SYNC_NOTE_MAX_BYTES).toString('utf-8');
+  return `${clipped.replace(/\uFFFD+$/, '')}\n${TRUNCATION_MARKER}`;
 }
 
 function getSyncBody(ctx: SyncContext): string {

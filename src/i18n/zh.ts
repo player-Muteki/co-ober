@@ -80,6 +80,7 @@ const zh: Locale = {
     imageNotSupported: '当前 OpenCode Agent 不支持图片提示词',
     audioNotSupported: '不支持音频附件',
     imageTooLarge: '图片 "{name}" 超过待发送图片 10MB 上限',
+    readFailed: '无法将“{name}”读取为图片',
   },
 
   lightbox: {
@@ -166,6 +167,15 @@ const zh: Locale = {
     processExit: 'OpenCode 进程已退出',
     reconnected: '连接已恢复，之前的请求已中断。',
     reconnectFailed: '多次重连后仍无法联系 Agent，请点击“连接”重试。',
+    timedOut: 'Agent 未在 {ms} 毫秒内响应“{method}”，它可能仍在处理。',
+    sessionMissing: '这个会话在 Agent 侧已不存在，请新建会话后继续。',
+    processExited: 'Agent 进程已退出（{detail}），请求被中断。',
+    methodNotFound: 'Agent 不支持“{detail}”——它的版本可能低于本插件的预期。',
+    internalError: 'Agent 内部错误：{detail}',
+    agentError: 'Agent 拒绝了请求：{detail}',
+    fileMissing: '无法读取文件：{detail}',
+    accessDenied: '该操作被拒绝：{detail}',
+    unknown: '出现未知错误',
   },
 
   rewind: {
@@ -393,6 +403,7 @@ const zh: Locale = {
 
   sync: {
     ruleFailed: '同步规则“{rule}”失败：{error}',
+    overwrote: '同步已覆盖：{path}',
   },
 
   inlineEdit: {

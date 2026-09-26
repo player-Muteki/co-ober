@@ -1,5 +1,6 @@
 import { t, onLocaleChange } from '../i18n/index';
 import { isImeComposing } from '../utils/ime';
+import { humanizeError } from '../utils/errorText';
 import type { AcpResponse, NormalizedUpdate } from '../types';
 
 /** Sends one question to the forked side session; resolves with the turn response. */
@@ -140,7 +141,7 @@ export class SideChatPanel {
         }
       });
     } catch (e) {
-      answerEl.setText(t().sideChat.failed.replace('{error}', e instanceof Error ? e.message : String(e)));
+      answerEl.setText(t().sideChat.failed.replace('{error}', humanizeError(e)));
       answerEl.removeClass('co-ober-side-chat-msg-agent');
       answerEl.addClass('co-ober-side-chat-msg-error');
     } finally {

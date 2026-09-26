@@ -21,6 +21,7 @@ import { SessionDropdown } from './sessionDropdown';
 import { listNativeSessions, searchNativeSessions } from '../opencode/NativeSessionReader';
 import { applyPermissionTier } from '../client/permissionTier';
 import { resolveCommandPath } from '../utils/commandResolution';
+import { humanizeError } from '../utils/errorText';
 import { commandRegistry } from '../commands/registry';
 import { FileCommandStorage } from '../commands/storage/FileCommandStorage';
 import { Autocomplete } from './autocomplete';
@@ -29,6 +30,7 @@ import { PermissionBanner } from './permissionBanner';
 import { InlineEditPanel } from './inlineEditPanel';
 import { SideChatPanel, type SideChatAsk } from './sideChatPanel';
 import { WelcomeView } from './welcomeView';
+import { closeImagePreview } from './imagePreview';
 import { KeybindingManager } from './keybindingManager';
 import { TabBar } from './tabBar';
 import { CoOberViewController } from './CoOberViewController';
@@ -549,6 +551,9 @@ export class CoOberView extends ItemView {
     this.inlineEditPanel?.dispose();
     for (const panel of [...this.sideChatPanels.values()]) panel.close();
     this.sideChatPanels.clear();
+    // A lightbox is a full-window sheet with its own keydown handler: leaving
+    // it open meant the panel was gone and the screen was still covered.
+    closeImagePreview();
     for (const tabId of [...this.panels.keys()]) this.disposeTabPanel(tabId);
     this.tabBar?.dispose();
     this.tabBar = null;
@@ -851,7 +856,7 @@ export class CoOberView extends ItemView {
   /** A rejected mode/model/effort change must not leave the toolbar showing a lie. */
   private reportSettingFailure(error: unknown): void {
     console.error('[co-ober] toolbar setting failed:', error);
-    const detail = error instanceof Error ? error.message : String(error);
+    const detail = humanizeError(error);
     new Notice(`${t().toolbar.applyFailed}: ${detail}`);
     this.controller?.loadToolbarOptions();
   }

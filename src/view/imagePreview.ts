@@ -1,13 +1,17 @@
 import { t } from '../i18n/index';
 
 let activeOverlay: HTMLDivElement | null = null;
+let activeDoc: Document | null = null;
 let previouslyFocused: HTMLElement | null = null;
 
 function close(): void {
   if (!activeOverlay) return;
   activeOverlay.remove();
   activeOverlay = null;
-  document.removeEventListener('keydown', onKeydown);
+  // Detach from the document that was given the listener. Reaching for a global
+  // here instead left a keydown handler behind on the one that opened it.
+  activeDoc?.removeEventListener('keydown', onKeydown);
+  activeDoc = null;
   const doc = globalThis.document;
   // Hand focus back to the chat element that opened the preview, but only if
   // it is still attached to the page (the transcript may have re-rendered).
@@ -50,6 +54,7 @@ export function openImagePreview(src: string, alt?: string): void {
   doc.body.appendChild(overlay);
   activeOverlay = overlay;
   overlay.focus();
+  activeDoc = doc;
   doc.addEventListener('keydown', onKeydown);
 }
 

@@ -978,7 +978,7 @@ describe('CoOberViewController', () => {
 
       await controller.send('hello', []);
 
-      expect(deps.renderer.addError).toHaveBeenCalledWith('network error');
+      expect(deps.renderer.addError).toHaveBeenCalledWith(`${t().error.unknown}: network error`);
       expect(controller.isBusy()).toBe(false);
     });
 
@@ -2271,7 +2271,7 @@ describe('CoOberViewController', () => {
 
       await fn.call(controller, 'failing msg');
 
-      expect(deps.renderer.addError).toHaveBeenCalledWith('send error');
+      expect(deps.renderer.addError).toHaveBeenCalledWith(`${t().error.unknown}: send error`);
       expect(controller.isBusy()).toBe(false);
     });
   });
@@ -2497,8 +2497,21 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
 
       await expect(controller.forkSession('local-1')).resolves.toBeUndefined();
 
-      expect(deps.renderer.addError).toHaveBeenCalledWith('fork boom');
+      expect(deps.renderer.addError).toHaveBeenCalledWith(`${t().error.unknown}: fork boom`);
       expect(deps.sessionStore.setActive).not.toHaveBeenCalled();
+    });
+
+    it('puts a protocol failure into a sentence the reader can act on', async () => {
+      const client = createMockClient({
+        forkSession: vi.fn().mockRejectedValue(new AcpTimeoutError('session/fork', 30000)),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      await controller.forkSession('local-1');
+
+      const message = (deps.renderer.addError as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(message).toBe(t().error.timedOut.replace('{method}', 'session/fork').replace('{ms}', '30000'));
+      expect(message).not.toContain('timed out after');
     });
   });
 
@@ -2541,7 +2554,7 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
         await controller.send('tail', []);
         await first;
 
-        expect(deps.renderer.addError).toHaveBeenCalledWith('boom');
+        expect(deps.renderer.addError).toHaveBeenCalledWith(`${t().error.unknown}: boom`);
         // drainQueue is fire-and-forget; wait for the tail prompt to reach the client.
         await vi.waitFor(() => {
           const calls = client.sendMessage.mock.calls as unknown as Array<[string, Array<{ text?: string }>, unknown]>;

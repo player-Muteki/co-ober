@@ -78,6 +78,7 @@ const en = {
     imageNotSupported: 'This OpenCode agent does not support image prompts',
     audioNotSupported: 'Audio attachments are not supported',
     imageTooLarge: '"{name}" exceeds the 10 MB pending-image limit',
+    readFailed: 'Could not read "{name}" as an image',
   },
 
   lightbox: {
@@ -164,6 +165,15 @@ const en = {
     processExit: 'OpenCode process exited',
     reconnected: 'Connection restored. The previous request was interrupted.',
     reconnectFailed: 'The agent could not be reached after repeated reconnect attempts. Click "Connect" to retry.',
+    timedOut: 'The agent did not answer "{method}" within {ms} ms. It may still be working.',
+    sessionMissing: 'This conversation no longer exists on the agent side. Start a new session to continue.',
+    processExited: 'The agent process exited ({detail}) and the request was interrupted.',
+    methodNotFound: 'The agent does not support "{detail}" — it may be older than this plugin expects.',
+    internalError: 'The agent hit an internal error: {detail}',
+    agentError: 'The agent refused: {detail}',
+    fileMissing: 'A file could not be read: {detail}',
+    accessDenied: 'That operation was refused: {detail}',
+    unknown: 'Something went wrong',
   },
 
   rewind: {
@@ -391,6 +401,7 @@ const en = {
 
   sync: {
     ruleFailed: 'Sync rule "{rule}" failed: {error}',
+    overwrote: 'Sync overwrote: {path}',
   },
 
   inlineEdit: {

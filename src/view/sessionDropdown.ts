@@ -2,6 +2,7 @@ import { Notice } from 'obsidian';
 import type { SessionStore } from '../chat/session';
 import { t } from '../i18n/index';
 import { isImeComposing } from '../utils/ime';
+import { humanizeError } from '../utils/errorText';
 import type { AgentCapabilities, SessionMeta } from '../types';
 
 const DELETE_CONFIRM_TIMEOUT_MS = 3000;
@@ -184,7 +185,7 @@ export class SessionDropdown {
 				this.rerender();
 			}).catch((e: unknown) => {
 				this.nativeLoadedOnce = true;
-				this.nativeLoadError = e instanceof Error ? e.message : String(e);
+				this.nativeLoadError = humanizeError(e);
 				console.error('[co-ober] native session list failed:', e);
 				if (this.dropdownEl) this.rerender();
 			});
@@ -425,6 +426,6 @@ export class SessionDropdown {
 
 	private reportActionError(e: unknown): void {
 		console.error('[co-ober] session action:', e);
-		new Notice(t().sessionDropdown.actionFailed.replace('{error}', e instanceof Error ? e.message : String(e)));
+		new Notice(t().sessionDropdown.actionFailed.replace('{error}', humanizeError(e)));
 	}
 }

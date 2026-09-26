@@ -127,6 +127,9 @@ export class DragDropManager {
 					this.handlers.onAddImagePart(data, file.type, imageBytes, file.name);
 				} catch (err) {
 					console.error('[co-ober] Failed to read image:', err);
+					// The sibling branches all say what happened; a dropped file
+					// with only a console line looked like a successful attach.
+					new Notice(t().dragDrop.readFailed.replace('{name}', file.name));
 				}
 			}
 		}

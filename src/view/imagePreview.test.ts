@@ -87,3 +87,51 @@ describe('imagePreview', () => {
     trigger.remove();
   });
 });
+
+describe('imagePreview document listeners (0.2.5 stage 3)', () => {
+  type Listener = EventListenerOrEventListenerObject;
+
+  function trackKeydown(): { added: Listener[]; removed: Listener[]; restore: () => void } {
+    const added: Listener[] = [];
+    const removed: Listener[] = [];
+    const originalAdd = document.addEventListener.bind(document);
+    const originalRemove = document.removeEventListener.bind(document);
+    document.addEventListener = ((type: string, listener: Listener, options?: unknown) => {
+      if (type === 'keydown') added.push(listener);
+      return originalAdd(type as 'keydown', listener, options as AddEventListenerOptions | undefined);
+    }) as typeof document.addEventListener;
+    document.removeEventListener = ((type: string, listener: Listener, options?: unknown) => {
+      if (type === 'keydown') removed.push(listener);
+      return originalRemove(type as 'keydown', listener, options as AddEventListenerOptions | undefined);
+    }) as typeof document.removeEventListener;
+    return { added, removed, restore: () => {
+      document.addEventListener = originalAdd;
+      document.removeEventListener = originalRemove;
+    } };
+  }
+
+  it('detaches from the same document it attached to when the overlay closes', () => {
+    const spy = trackKeydown();
+    try {
+      openImagePreview('x');
+      closeImagePreview();
+      expect(spy.added).toHaveLength(1);
+      expect(spy.removed).toEqual(spy.added);
+    } finally {
+      spy.restore();
+    }
+  });
+
+  it('does not stack a handler per opening, so one Escape closes the sheet', () => {
+    const spy = trackKeydown();
+    try {
+      openImagePreview('one');
+      openImagePreview('two');
+      closeImagePreview();
+      expect(spy.added).toHaveLength(2);
+      expect(spy.removed).toEqual(spy.added);
+    } finally {
+      spy.restore();
+    }
+  });
+});

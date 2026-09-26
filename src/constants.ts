@@ -24,6 +24,8 @@ export const REQUEST_DEFAULT_MAX_OUTPUT_BYTES = 100000;
 export const TRUNCATION_MARKER = '... [truncated]';
 /** Default byte cap for a note read into prompt context. */
 export const CONTEXT_NOTE_MAX_BYTES = 8000;
+/** Byte cap on one synced note body: a tool output must not grow a vault note without end. */
+export const SYNC_NOTE_MAX_BYTES = 200_000;
 /** Max characters of sqlite stderr kept when reporting a query failure. */
 export const SQLITE_STDERR_MAX_CHARS = 2000;
 /** Turns shorter than this render no tok/s figure — the rate would mislead. */
