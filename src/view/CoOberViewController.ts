@@ -460,12 +460,16 @@ export class CoOberViewController {
    */
   restoreTabShells(shells: TabShell[], activeTabId: string | null): void {
     if (shells.length === 0) return;
+    // A saved strip can outlive its cap — the limit was lowered, or data.json
+    // was edited by hand. Restoring every stored shell would blow straight
+    // past maxOpenTabs, which the user-facing open paths all refuse to do.
+    const capped = shells.slice(0, this.maxOpenTabs());
     const byShellTabId = new Map<string, SessionRuntime>();
     const adopted = this.activeRuntime;
-    adopted.sessionId = shells[0].sessionId;
+    adopted.sessionId = capped[0].sessionId;
     adopted.needsRestore = true;
-    byShellTabId.set(shells[0].tabId, adopted);
-    for (const shell of shells.slice(1)) {
+    byShellTabId.set(capped[0].tabId, adopted);
+    for (const shell of capped.slice(1)) {
       const rt = this.openRuntime(shell.sessionId);
       rt.needsRestore = true;
       byShellTabId.set(shell.tabId, rt);
@@ -473,7 +477,7 @@ export class CoOberViewController {
     const front = (activeTabId ? byShellTabId.get(activeTabId) : undefined) ?? adopted;
     if (front !== adopted) this.activateRuntime(front);
     const drafts: Record<string, StoredDraft> = {};
-    for (const shell of shells) {
+    for (const shell of capped) {
       const rt = shell.draft ? byShellTabId.get(shell.tabId) : undefined;
       if (rt) drafts[rt.tabId] = shell.draft!;
     }

@@ -45,9 +45,20 @@ export class SessionReplayCollector {
         type: bucket.type,
         content: bucket.text,
         timestamp: now,
-        nativeMessageId: bucket.messageId,
+        nativeMessageId: agentMessageId(bucket.messageId),
       });
     }
     return messages;
   }
+}
+
+/**
+ * The normalizer mints '#anon-N' for id-less runs and the collector keys a
+ * compaction boundary as 'compaction|N'. Neither is an id the agent ever sent,
+ * so neither may become a nativeMessageId: writing one to disk breaks the
+ * contract that nativeMessageId is the agent's own and hands cost/usage
+ * matching an id no agent will echo back on a later load.
+ */
+function agentMessageId(id: string): string | undefined {
+  return id.startsWith('#') || id.startsWith('compaction|') ? undefined : id;
 }

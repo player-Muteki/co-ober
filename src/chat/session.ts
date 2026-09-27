@@ -153,8 +153,11 @@ export class SessionRepository implements SessionStore {
       createdAt: now,
       updatedAt: now,
     };
+    // Ensuring a session exists is not the same as opening it. adoptReplay and
+    // a background tab's stream both create here; if this also moved the
+    // pointer, a background turn would silently hijack the conversation the
+    // user is looking at. Activation is the caller's explicit setActive.
     this.sessions.set(opencodeSessionId, session);
-    this.activeSessionId = opencodeSessionId;
     return session;
   }
 

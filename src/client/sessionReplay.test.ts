@@ -55,6 +55,28 @@ describe('SessionReplayCollector', () => {
     expect(messages[0]?.nativeMessageId).toBe('msg_0ad397');
     expect(messages[1]?.nativeMessageId).toBe('msg_0ad397');
   });
+
+  it('does not persist a synthetic anonymous id as the agent\'s native id', () => {
+    // '#anon-N' is minted by the normalizer for a run that had no messageId.
+    // Writing it to disk would break the contract that nativeMessageId is the
+    // agent's own and hand usage matching an id no agent will echo back.
+    const collector = new SessionReplayCollector();
+    collector.handle(chunk('agent', '#anon-7', 'no real id'));
+
+    const messages = collector.finish();
+    expect(messages[0]?.nativeMessageId).toBeUndefined();
+    expect(messages[0]?.content).toBe('no real id');
+  });
+
+  it('does not stamp the compaction boundary marker with a native id', () => {
+    setLocale('en');
+    const collector = new SessionReplayCollector();
+    collector.handle({ kind: 'compaction' });
+
+    const messages = collector.finish();
+    expect(messages[0]?.content).toBe('— Context compacted by the agent —');
+    expect(messages[0]?.nativeMessageId).toBeUndefined();
+  });
 });
 
 describe('SessionReplayCollector compaction boundary', () => {

@@ -698,6 +698,26 @@ describe('CoOberViewController — tab strip and shells (0.2.0 stage 3)', () => 
     expect(h.controller.canOpenTab()).toBe(true);
   });
 
+  it('restores at most the configured number of tabs from a longer saved strip', () => {
+    setCap(2);
+    withStored({ 'ses-a': 1, 'ses-b': 1, 'ses-c': 1 });
+    h.controller.restoreTabShells(
+      [
+        { tabId: 'tab-1', sessionId: 'ses-a' },
+        { tabId: 'tab-2', sessionId: 'ses-b' },
+        { tabId: 'tab-3', sessionId: 'ses-c' },
+      ],
+      'tab-3',
+    );
+
+    // The strip outlived its cap (lowered, or data.json edited by hand).
+    // Restoring every shell would blow past maxOpenTabs, which the user-facing
+    // open paths all refuse — and a front tab dropped by the clamp falls back
+    // to the first kept panel rather than selecting a tab that was never made.
+    expect(h.controller.listTabIds()).toEqual(['tab-1', 'tab-2']);
+    expect(h.controller.activeTabId()).toBe('tab-1');
+  });
+
   describe('a full strip refuses to add a tab, and says so', () => {
     let client: ReturnType<typeof createMockClient>;
 

@@ -164,7 +164,6 @@ const en = {
   },
 
   error: {
-    compact: 'Compact failed',
     timeout: 'Request timed out',
     processExit: 'OpenCode process exited',
     reconnected: 'Connection restored. The previous request was interrupted.',

@@ -34,7 +34,7 @@ describe('SessionRepository', () => {
     expect(repository.activeId).toBe('s1');
   });
 
-  it('creates localized sessions and makes them active', () => {
+  it('creates a localized session without claiming the active conversation', () => {
     setLocale('en');
     const { repository } = createRepository();
 
@@ -43,7 +43,20 @@ describe('SessionRepository', () => {
     expect(session.sessionId).toBe('new-id');
     expect(session.title).toContain('Chat ');
     expect(session.messages).toEqual([]);
-    expect(repository.activeId).toBe('new-id');
+    // Creation is not activation: a fresh object left the pointer untouched.
+    expect(repository.activeId).toBeNull();
+  });
+
+  it('leaves an existing session active when a background one is created', () => {
+    const { repository } = createRepository();
+    repository.getOrCreate('open-tab');
+    repository.setActive('open-tab');
+
+    // Adopting/replaying a conversation the user is not looking at must not
+    // pull the active pointer onto it.
+    repository.getOrCreate('background');
+
+    expect(repository.activeId).toBe('open-tab');
   });
 
   it('renames an existing session and reports the title in listings', () => {
