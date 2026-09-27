@@ -2347,6 +2347,21 @@ describe('CoOberViewController', () => {
         vi.useRealTimers();
       }
     });
+
+    it('survives a save that hands back a non-promise', () => {
+      vi.useFakeTimers();
+      try {
+        (deps.sessionStore.save as ReturnType<typeof vi.fn>).mockReturnValue(undefined);
+        controller.persistTabShell();
+
+        // A bare store hands back undefined. Reaching for .catch on it throws
+        // inside the timer, past the caller and out as an unhandled error.
+        expect(() => vi.advanceTimersByTime(STREAM_SAVE_DEBOUNCE_MS)).not.toThrow();
+        expect(deps.sessionStore.save).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   describe('copyLastAssistantMessage', () => {

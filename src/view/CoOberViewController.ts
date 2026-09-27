@@ -516,7 +516,13 @@ export class CoOberViewController {
     if (this.shellSaveTimer !== null) window.clearTimeout(this.shellSaveTimer);
     this.shellSaveTimer = window.setTimeout(() => {
       this.shellSaveTimer = null;
-      void this.deps.sessionStore.save().catch((e: unknown) => console.error('[co-ober] tab shell save failed:', e));
+      // The timer can outlive the view: dispose clears it, but a save already
+      // scheduled before the flag flips still fires. Promise.resolve keeps a
+      // save() that hands back a non-thenable from crashing on .catch.
+      if (this.disposed) return;
+      void Promise.resolve(this.deps.sessionStore.save()).catch((e: unknown) =>
+        console.error('[co-ober] tab shell save failed:', e),
+      );
     }, STREAM_SAVE_DEBOUNCE_MS);
   }
 
