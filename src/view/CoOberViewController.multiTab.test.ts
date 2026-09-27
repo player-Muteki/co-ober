@@ -2369,6 +2369,21 @@ describe('CoOberViewController — every answer belongs to the tab that asked (0
       expect(h.renderers.get(tabA)?.removeAssistantPlaceholder).toHaveBeenCalled();
       expect(h.renderers.get(tabB)?.removeAssistantPlaceholder).toHaveBeenCalled();
     });
+
+    it('closes a half-drawn thought in every tab when the agent goes away', () => {
+      const [tabA, tabB] = twoTabs();
+      const rtB = rtOf(h, tabB);
+      rtB.busy = true;
+      rtB.state.isStreaming = true;
+
+      h.controller.handleDisconnect();
+
+      // Losing the connection skips each turn's finally, so the live thinking
+      // block kept its running timer and its "thinking…" label in a tab the
+      // user might not visit until long after the agent came back.
+      expect(h.renderers.get(tabA)?.finalizeCurrentThinking).toHaveBeenCalled();
+      expect(h.renderers.get(tabB)?.finalizeCurrentThinking).toHaveBeenCalled();
+    });
   });
 
   describe('the toolbar', () => {

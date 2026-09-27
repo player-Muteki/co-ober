@@ -38,7 +38,7 @@ const mocks = vi.hoisted(() => {
     static instances: FakeTransport[] = [];
     notifications = new Map<string, (params: unknown) => void>();
     sentNotifications: Array<{ method: string; params: unknown }> = [];
-    requests: Array<{ method: string; params: unknown }> = [];
+    requests: Array<{ method: string; params: unknown; timeoutMs?: number; signal?: AbortSignal }> = [];
     serverRequests = new Map<string, (params: unknown) => Promise<unknown>>();
     disposed = false;
     disposeError: Error | null = null;
@@ -65,8 +65,8 @@ const mocks = vi.hoisted(() => {
       this.serverRequests.set(method, cb);
     }
 
-    request(method: string, params?: unknown): Promise<unknown> {
-      this.requests.push({ method, params });
+    request(method: string, params?: unknown, timeoutMs?: number, signal?: AbortSignal): Promise<unknown> {
+      this.requests.push({ method, params, timeoutMs, signal });
       return this.deferred.promise;
     }
 
@@ -577,6 +577,43 @@ describe('0.1.40 stage 2 protocol pack', () => {
     expect(outcome).not.toBe('pending');
     expect(outcome).toBeInstanceOf(AcpTimeoutError);
     expect((outcome as Error).message).toMatch(/timed out/);
+  });
+
+  it('hangs up on the load request the idle deadline gave up on', async () => {
+    const { client, transport } = await connectedPendingClient();
+    vi.useFakeTimers();
+    const requestsBefore = transport.requests.length;
+    const loading = client.loadSession('ses_big', '/vault', [], () => {});
+    loading.catch(() => {});
+
+    await vi.advanceTimersByTimeAsync(ACP_LOAD_SESSION_IDLE_TIMEOUT_MS + 1000);
+
+    const load = transport.requests.slice(requestsBefore).find((r) => r.method === 'session/load');
+    expect(load).toBeDefined();
+    // The load runs on the idle deadline alone, and giving up on it has to end
+    // the request too: an abandoned load stays on the connection, answers the
+    // retry below as a ghost, and reports a session nobody asked for any more.
+    expect(load!.timeoutMs).toBe(0);
+    expect(load!.signal?.aborted).toBe(true);
+
+    // The retry gets a request of its own that is still live.
+    transport.deferred = (() => {
+      let resolve!: (v: unknown) => void;
+      let reject!: (e: unknown) => void;
+      const promise = new Promise<unknown>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    })();
+    const retry = client.loadSession('ses_big', '/vault', [], () => {});
+    await vi.advanceTimersByTimeAsync(0);
+    const retryRequest = transport.requests.at(-1);
+    expect(retryRequest?.method).toBe('session/load');
+    expect(retryRequest?.signal?.aborted).toBe(false);
+    transport.deferred.resolve({ sessionId: 'ses_big' });
+    await expect(retry).resolves.toBeUndefined();
+    await expect(loading).rejects.toBeInstanceOf(AcpTimeoutError);
   });
 
   it('a replay update refreshes the load deadline', async () => {

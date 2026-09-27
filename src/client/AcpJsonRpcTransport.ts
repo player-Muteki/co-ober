@@ -293,7 +293,12 @@ export class AcpJsonRpcTransport {
           return;
         }
         started
-          .then((result) => this.send({ jsonrpc: '2.0', id, result }))
+          // A handler that resolves nothing still owes the agent a response:
+          // JSON.stringify drops an undefined result, and the frame that
+          // arrives — an id with neither result nor error — is the shape a
+          // spec-strict agent rejects outright even though it answered. null is
+          // JSON-RPC's own "no value".
+          .then((result) => this.send({ jsonrpc: '2.0', id, result: result ?? null }))
           .catch((err: unknown) => {
             this.send({ jsonrpc: '2.0', id, error: errorPayload(err) });
           });

@@ -849,7 +849,8 @@ describe('AcpClient session loading', () => {
     ]);
 
     // The trailing 0 is the idle-deadline contract: session/load runs with no
-    // fixed transport timeout; replay updates refresh a 30s idle timer.
+    // fixed transport timeout; replay updates refresh a 30s idle timer, and the
+    // signal is how that timer ends the request once it gives up.
     expect(requestWithFallback).toHaveBeenCalledWith(
       'loadSession',
       {
@@ -866,6 +867,7 @@ describe('AcpClient session loading', () => {
         ],
       },
       0,
+      expect.any(AbortSignal),
     );
     expect(client.getCurrentSessionId()).toBe('s1');
   });

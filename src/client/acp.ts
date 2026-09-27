@@ -787,11 +787,20 @@ export class AcpClient implements OpencodeClient {
     };
     this.replaySessionId = id;
     let idleTimer: number | null = null;
+    const loadAbort = new AbortController();
     const idleDeadline = new Promise<never>((_, reject) => {
       const arm = () => {
         if (idleTimer !== null) window.clearTimeout(idleTimer);
         idleTimer = window.setTimeout(
-          () => reject(new AcpTimeoutError(logicalMethod, ACP_LOAD_SESSION_IDLE_TIMEOUT_MS)),
+          () => {
+            reject(new AcpTimeoutError(logicalMethod, ACP_LOAD_SESSION_IDLE_TIMEOUT_MS));
+            // Rejecting the race does not end the request: with no timeout of
+            // its own the load sits on the transport's pending map for the life
+            // of the connection, so the user's retry of the same session answers
+            // against a ghost request — and the ghost's late reply settles a
+            // promise nobody is routing any more.
+            loadAbort.abort();
+          },
           ACP_LOAD_SESSION_IDLE_TIMEOUT_MS,
         );
       };
@@ -799,7 +808,7 @@ export class AcpClient implements OpencodeClient {
       arm();
     });
     try {
-      const r = await Promise.race([this.requestWithFallback(logicalMethod, params, 0), idleDeadline]);
+      const r = await Promise.race([this.requestWithFallback(logicalMethod, params, 0, loadAbort.signal), idleDeadline]);
       this.applySessionSnapshot(r as Record<string, unknown>, id);
       this.loadedSessionIds.add(id);
       this.sessionId_ = id;

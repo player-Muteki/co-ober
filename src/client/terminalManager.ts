@@ -321,11 +321,21 @@ export class TerminalManager {
 
 		const maxBytes = this.outputLimitFor(term);
 		const combined = term.output + text;
-		if (combined.length > maxBytes) {
+		// The ceiling is a byte count — what the agent declared it can accept —
+		// so it has to be measured in bytes. String.length counts UTF-16 units:
+		// Chinese output is three bytes a character, and honoring the limit by
+		// length fed the agent up to triple what it asked to bound its own
+		// context with.
+		if (Buffer.byteLength(combined, 'utf-8') > maxBytes) {
 			// Keep the tail and drop the head: what an agent reads next is how
 			// the command ended. One oversized chunk used to sail past the
 			// ceiling untouched, so the limit was a floor, not a ceiling.
-			term.output = combined.slice(combined.length - maxBytes);
+			const buf = Buffer.from(combined, 'utf-8');
+			let start = Math.max(buf.length - maxBytes, 0);
+			// ...but never through the middle of a character: 0b10xxxxxx is a
+			// continuation byte, and a frame starting on one decodes as U+FFFD.
+			while (start < buf.length && (buf[start] & 0xc0) === 0x80) start++;
+			term.output = buf.subarray(start).toString('utf-8');
 			term.outputTruncated = true;
 		} else {
 			term.output = combined;

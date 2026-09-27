@@ -1128,6 +1128,10 @@ export class CoOberViewController {
       rt.state.usage = null;
       // Every tab had a bubble waiting to be filled; one left hanging in a tab
       // the user reaches later reads as a reply still on its way.
+      // The turn that died also had a live thinking block: a connection loss
+      // skips the turn's finally, so the block would keep its running timer
+      // and its "thinking…" label until that tab is reopened from history.
+      rt.renderer.finalizeCurrentThinking();
       rt.renderer.removeAssistantPlaceholder();
     }
     this.deps.permissionBanner.dismiss();

@@ -133,6 +133,30 @@ describe('TerminalManager', () => {
 			expect(manager.output(instance.terminalId).output).toBe('héllo');
 		});
 
+		it('measures the ceiling in bytes for multibyte output', () => {
+			const instance = manager.create({ command: 'echo', outputByteLimit: 100 }, '/vault');
+			lastProc().stdout.emit('data', '中'.repeat(100));
+
+			const result = manager.output(instance.terminalId);
+			// A CJK log costs three bytes per character: judged by string length
+			// this kept ~300 bytes under the 100-byte ceiling the agent declared.
+			expect(Buffer.byteLength(result.output, 'utf-8')).toBeLessThanOrEqual(100);
+			expect(result.output).toBe('中'.repeat(33));
+			expect(result.truncated).toBe(true);
+		});
+
+		it('cuts between characters, so a trimmed log never carries half of one', () => {
+			const instance = manager.create({ command: 'echo', outputByteLimit: 101 }, '/vault');
+			lastProc().stdout.emit('data', '😀'.repeat(40));
+
+			const result = manager.output(instance.terminalId);
+			// Starting the slice mid-sequence decoded a replacement character at
+			// the front, and a lone surrogate corrupts whatever follows it.
+			expect(Buffer.byteLength(result.output, 'utf-8')).toBeLessThanOrEqual(101);
+			expect(result.output).not.toContain('\uFFFD');
+			expect(result.output).toBe('😀'.repeat(25));
+		});
+
 		it('spawns with the environment the agent asked for', () => {
 			manager.create({ command: 'git', env: { GIT_AUTHOR_NAME: 'qs' } }, '/vault');
 

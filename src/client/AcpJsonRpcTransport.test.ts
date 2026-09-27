@@ -224,6 +224,24 @@ describe('AcpJsonRpcTransport', () => {
     });
   });
 
+  it('answers a handler that returns nothing with an explicit null result', async () => {
+    transport.start();
+
+    let sentMsg = '';
+    output.on('data', (chunk) => {
+      sentMsg += chunk.toString();
+    });
+
+    transport.onRequest('voidRequest', async () => undefined);
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'voidRequest' }) + '\n');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // JSON.stringify drops an undefined value, which left the frame carrying
+    // neither result nor error — an answer the agent is entitled to read as
+    // malformed and wait on.
+    expect(JSON.parse(sentMsg.trim())).toEqual({ jsonrpc: '2.0', id: 7, result: null });
+  });
+
   it('answers unregistered server→client requests with -32601 so the agent does not block', async () => {
     transport.start();
 
