@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { SessionRepository, enforceStoredImageBudget } from './session';
-import type { ContentBlock, SerializedMessage, SerializedSession } from '../types';
+import type { ContentBlock, ImageAttachment, SerializedMessage, SerializedSession } from '../types';
 import { setLocale, t } from '../i18n/index';
 
 function createSession(id: string, updatedAt = 1, messageCount = 0): SerializedSession {
@@ -425,6 +425,28 @@ describe('stored image budget', () => {
 
     expect(repository.get('s1')!.messages[0].contentBlocks).toBeUndefined();
   });
+
+  it('measures a non-string images[].data as zero bytes so it cannot purge the exempt payload', () => {
+    const { repository } = createRepository();
+    const corrupt: SerializedMessage = {
+      role: 'user',
+      content: 'pic',
+      type: 'text',
+      timestamp: 1,
+      images: [
+        // A foreign/corrupt write put a number where the base64 payload belongs.
+        { mimeType: 'image/png', data: 12345 } as unknown as ImageAttachment,
+        { mimeType: 'image/png', data: 'E'.repeat(40) },
+      ],
+    };
+    repository.hydrate([imageBlockSession('s1', [corrupt])], 's1');
+
+    // If the corrupt entry leaked into the total as NaN, every `total <= budget`
+    // comparison reads false and the exempt image is purged. Counted as 0 bytes,
+    // only the 40-byte valid image counts, which fits the budget untouched.
+    expect(() => enforce(repository, 40)).not.toThrow();
+    expect(repository.get('s1')!.messages[0].images).toBeDefined();
+  });
 });
 
 describe('what retention may touch (0.2.5 stage 1)', () => {
@@ -486,6 +508,24 @@ describe('what retention may touch (0.2.5 stage 1)', () => {
     enforce(repository, 10);
 
     expect(repository.get('open')!.messages[0].contentBlocks).toBeUndefined();
+  });
+
+  it('spares a closed session whose stored timestamp is 0 rather than reading it as ancient', () => {
+    const { repository } = createRepository();
+    // A migration-repaired record carries updatedAt 0. That is "no date", not
+    // "January 1970", so retention must not mistake it for the oldest thing on disk.
+    repository.hydrate([createSession('undated', 0, 1), createSession('fresh', now, 1)], 'fresh');
+
+    repository.prune({ maxMessages: 200, retentionDays: 30, now });
+
+    expect(repository.get('undated')).toBeDefined();
+    // The guard is a `> 0` floor, not a disabled window: a genuinely stale
+    // closed conversation is still dropped.
+    const aged = createSession('aged', stale, 1);
+    const second = createRepository();
+    second.repository.hydrate([aged, createSession('fresh', now, 1)], 'fresh');
+    second.repository.prune({ maxMessages: 200, retentionDays: 30, now });
+    expect(second.repository.get('aged')).toBeUndefined();
   });
 });
 

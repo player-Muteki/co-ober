@@ -267,8 +267,11 @@ function applyPrune(
   for (const [id, session] of sessions) {
     // Retention may only touch conversations nobody is looking at: a tab
     // that stayed in the background for a month is still an open chat, and
-    // its transcript must not be gone the moment it is switched to.
-    if (!exempt.has(id) && !session.pinned && session.updatedAt < cutoffTime) {
+    // its transcript must not be gone the moment it is switched to. A session
+    // whose updatedAt is unknown (0 — the value migration gives a repaired
+    // record) is spared too: it is not "from 1970", it simply has no date, and
+    // deleting it would let the repair silently destroy what just loaded.
+    if (!exempt.has(id) && !session.pinned && session.updatedAt > 0 && session.updatedAt < cutoffTime) {
       sessions.delete(id);
       continue;
     }
@@ -319,7 +322,10 @@ export function enforceStoredImageBudget(
       for (const block of msg.contentBlocks ?? []) {
         if (block.type === 'image') bytes += block.data?.length ?? 0;
       }
-      for (const image of msg.images ?? []) bytes += image.data.length;
+      // Read the size defensively: a payload whose `data` is not a string would
+      // otherwise make the total NaN, and every `total <= budget` comparison then
+      // reads false — purging every image on disk, exempt ones included.
+      for (const image of msg.images ?? []) bytes += typeof image.data === 'string' ? image.data.length : 0;
       if (bytes > 0) {
         total += bytes;
         sinks.push({ msg, bytes });

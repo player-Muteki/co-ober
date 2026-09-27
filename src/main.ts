@@ -103,7 +103,16 @@ export default class CoOberPlugin extends Plugin {
 
   override async loadData(): Promise<PluginData | null> {
     const saved: unknown = await super.loadData();
-    if (!saved) return null;
+    if (!saved) {
+      // Real Obsidian swallows a JSON.parse failure and returns the same null
+      // it returns for a missing file, so a torn data.json — the crash-mid-save
+      // the rolling backup exists to survive — would otherwise load as fresh
+      // defaults and let the next autosave overwrite the recoverable bytes. If
+      // the file is present with content that did not parse, fail the load so
+      // the caller routes into restore-from-backup.
+      if (await this.existsNonEmptyDataFile()) throw new Error('data.json is present but could not be parsed');
+      return null;
+    }
 
     // A file written by a newer schema must never be migrated-and-restamped:
     // it goes through the load-failure path so it can be set aside intact.
@@ -117,19 +126,25 @@ export default class CoOberPlugin extends Plugin {
 
     if (hasPluginData) {
       const data = saved as Partial<PluginData>;
-      // A store whose session list is present but not a list is a truncated or
-      // foreign write, not an empty history: treat it as a load failure so the
-      // caller can restore the rolling backup instead of saving over it.
-      if (data.sessions !== undefined && !Array.isArray(data.sessions)) {
-        throw new Error('data.json session list is not an array');
+      // A file this build stamps (schemaVersion >= 1) always carries the session
+      // list. If it is absent, or present but not a list, the write was
+      // truncated or foreign — not an intentionally empty history — so fail the
+      // load and let the caller restore the rolling backup. Pre-schema files
+      // legitimately omit the key and are treated as an empty store.
+      if (storedVersion >= 1 && !Array.isArray(data.sessions)) {
+        throw new Error('data.json session list is missing or not an array');
       }
       const restored = migratePluginDataSessions(data.sessions, data.activeSessionId);
       const surviving = new Set(restored.sessions.map((session) => session.sessionId));
       const tabs = migratePluginDataTabs(data.openTabs, data.activeTabId, surviving, restored.activeSessionId);
       // The autoConnect toggle did nothing before 0.1.34, so a stored false in
-      // pre-schema data is the old default, not a choice: keep auto-connect.
+      // genuinely pre-schema data is the old default, not a choice: keep
+      // auto-connect. A file that merely failed to read its schemaVersion as a
+      // number still carries the key — evidence of a version-aware writer — so
+      // its explicit false is respected rather than silently flipped back on.
       const settings = sanitizeLoadedSettings(data.settings, DEFAULT_SETTINGS);
-      if (storedVersion < 1 && settings.autoConnect === false) settings.autoConnect = true;
+      const looksLegacy = !('schemaVersion' in data);
+      if (looksLegacy && settings.autoConnect === false) settings.autoConnect = true;
       return {
         schemaVersion: PLUGIN_DATA_SCHEMA_VERSION,
         settings,
@@ -178,6 +193,7 @@ export default class CoOberPlugin extends Plugin {
   }
 
   async savePluginData(): Promise<void> {
+    let ok = false;
     try {
       await this.saveMutex.runExclusive(async () => {
         // Pruning happens on the snapshot copy inside buildPluginData, so the
@@ -186,11 +202,7 @@ export default class CoOberPlugin extends Plugin {
         await super.saveData(this.buildPluginData());
         await this.writeRollingBackup();
       });
-      // A successful write ends the failure streak: drop the alarm and let
-      // the next failure notify immediately.
-      this.lastSaveNoticeAt = 0;
-      this.dismissSaveAlarm();
-      this.onPersistenceOutcome?.(false);
+      ok = true;
     } catch (e) {
       // Every save call site except unload is fire-and-forget; surface failures
       // here (throttled) instead of losing chat data silently. The Notice is
@@ -200,9 +212,26 @@ export default class CoOberPlugin extends Plugin {
       const now = Date.now();
       if (now - this.lastSaveNoticeAt > SAVE_NOTICE_THROTTLE_MS) {
         this.lastSaveNoticeAt = now;
+        // Retire the incumbent before taking its place: a duration-0 Notice never
+        // self-expires, so overwriting the reference would strand an unhideable
+        // toast that stacks up on every failure after the throttle window.
+        this.saveAlarm?.hide();
         this.saveAlarm = new Notice(t().notice.saveFailed, 0);
       }
-      this.onPersistenceOutcome?.(true);
+    }
+    // A successful write ends the failure streak: drop the alarm and let the
+    // next failure notify immediately.
+    if (ok) {
+      this.lastSaveNoticeAt = 0;
+      this.dismissSaveAlarm();
+    }
+    // Outcome reporting lives outside the write's try/catch: a throwing view
+    // callback must not relabel a write that reached the disk as a failure, nor
+    // reject the never-rejects save API the fire-and-forget call sites rely on.
+    try {
+      this.onPersistenceOutcome?.(!ok);
+    } catch (e) {
+      console.error('[co-ober] persistence outcome handler failed:', e);
     }
   }
 
@@ -222,6 +251,25 @@ export default class CoOberPlugin extends Plugin {
 
   private dataFilePath(): string {
     return `${this.app.vault.configDir}/plugins/${this.manifest.id}/data.json`;
+  }
+
+  /**
+   * True when data.json is on disk with non-empty content. Used only to tell a
+   * corrupt save (present, but super.loadData() swallowed the parse error and
+   * returned null) apart from a genuinely absent file, so the corrupt case can
+   * route to restore-from-backup. Any probe failure fails open to "absent",
+   * preserving the old load-defaults behavior rather than crashing startup.
+   */
+  private async existsNonEmptyDataFile(): Promise<boolean> {
+    try {
+      const adapter = this.app.vault.adapter;
+      const path = this.dataFilePath();
+      if (!(await adapter.exists(path))) return false;
+      const raw = await adapter.read(path);
+      return raw.trim().length > 0;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -272,7 +320,11 @@ export default class CoOberPlugin extends Plugin {
       const backupPath = `${dataPath}.bak`;
       if (!(await adapter.exists(backupPath))) return false;
       const raw = await adapter.read(backupPath);
-      JSON.parse(raw);
+      // Promote only a backup that would actually load. A copy that parses but
+      // trips the loader's own checks (too-new, or its session list lost) would
+      // be written over the live file and then set aside again by the caller —
+      // renaming the bytes we just restored and leaving no data.json at all.
+      if (!backupIsLoadable(raw)) return false;
       if (!(await this.backupUnreadableData('corrupt'))) return false;
       await adapter.write(dataPath, raw);
       await this.loadPluginData();
@@ -457,4 +509,24 @@ function countPersistedSessions(raw: string): number | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Whether a rolling-backup string would actually load: parseable JSON, not
+ * newer than this build, and — when versioned — carrying a session list. This
+ * mirrors loadData()'s own failure conditions so a backup that would only get
+ * set aside again is never promoted over the live file.
+ */
+function backupIsLoadable(raw: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return false;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return false;
+  const version = readSchemaVersion(parsed);
+  if (version > PLUGIN_DATA_SCHEMA_VERSION) return false;
+  if (version >= 1 && !Array.isArray((parsed as { sessions?: unknown }).sessions)) return false;
+  return true;
 }

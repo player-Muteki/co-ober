@@ -35,7 +35,25 @@ function sanitizeMessage(value: unknown): SerializedMessage | null {
   if (typeof value.content !== 'string') return null;
   const type = typeof value.type === 'string' ? value.type : 'text';
   const timestamp = typeof value.timestamp === 'number' && Number.isFinite(value.timestamp) ? value.timestamp : 0;
-  return { ...value, type, timestamp } as unknown as SerializedMessage;
+  const copy: Record<string, unknown> = { ...value, type, timestamp };
+  // Rendering and the persisted image budget both walk these two arrays, so a
+  // single malformed element is enough to make every later save throw inside
+  // the snapshot (a truncated transcript then never reaches disk) — and a
+  // non-string image payload turns the byte total into NaN, which purges every
+  // image, pinned ones included. Drop anything the loops cannot safely read.
+  if ('contentBlocks' in copy) {
+    const blocks = Array.isArray(copy.contentBlocks) ? copy.contentBlocks.filter(isRecord) : [];
+    if (blocks.length > 0) copy.contentBlocks = blocks;
+    else delete copy.contentBlocks;
+  }
+  if ('images' in copy) {
+    const images = Array.isArray(copy.images)
+      ? copy.images.filter((img) => isRecord(img) && typeof img.data === 'string')
+      : [];
+    if (images.length > 0) copy.images = images;
+    else delete copy.images;
+  }
+  return copy as unknown as SerializedMessage;
 }
 
 /**

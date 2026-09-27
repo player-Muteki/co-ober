@@ -122,6 +122,23 @@ describe('CoOberPlugin persistence', () => {
     await vi.waitFor(() => expect(saveData).toHaveBeenCalledTimes(1));
     saveData.mockRestore();
   });
+
+  it('does not let a throwing outcome handler break the never-rejects save API', async () => {
+    // Fire-and-forget call sites rely on savePluginData() settling. Reporting a
+    // completed write must not be able to reject it (or relabel it a failure).
+    const saveSpy = vi.spyOn(Plugin.prototype, 'saveData').mockResolvedValue(undefined);
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const plugin = new CoOberPlugin({} as never, {} as never);
+    plugin.settings = { ...DEFAULT_SETTINGS };
+    plugin.onPersistenceOutcome = () => {
+      throw new Error('view exploded while painting');
+    };
+
+    await expect(plugin.savePluginData()).resolves.toBeUndefined();
+
+    errSpy.mockRestore();
+    saveSpy.mockRestore();
+  });
 });
 
 describe('CoOberPlugin.loadData autoConnect migration', () => {
@@ -142,6 +159,24 @@ describe('CoOberPlugin.loadData autoConnect migration', () => {
   it('respects an explicit false saved under the current schema', async () => {
     const loadSpy = vi.spyOn(Plugin.prototype, 'loadData').mockResolvedValue({
       schemaVersion: 1,
+      settings: { autoConnect: false },
+      sessions: [],
+      activeSessionId: null,
+    });
+    const plugin = new CoOberPlugin({} as never, {} as never);
+
+    const data = await plugin.loadData();
+
+    expect(data?.settings.autoConnect).toBe(false);
+    loadSpy.mockRestore();
+  });
+
+  it('respects an explicit false when the version field is present but unreadable', async () => {
+    // A half-written "schemaVersion": "2" (a string) reads as version 0, but the
+    // key's presence still says a version-aware build wrote this file — so the
+    // stored false is a real choice and must not be flipped back to true.
+    const loadSpy = vi.spyOn(Plugin.prototype, 'loadData').mockResolvedValue({
+      schemaVersion: '2',
       settings: { autoConnect: false },
       sessions: [],
       activeSessionId: null,
@@ -208,7 +243,7 @@ describe('CoOberPlugin.loadData foreign session list', () => {
 
     // A truncated or foreign write, not an empty history: throwing routes the
     // caller to the restore-from-backup path instead of saving over the backup.
-    await expect(plugin.loadData()).rejects.toThrow('session list is not an array');
+    await expect(plugin.loadData()).rejects.toThrow('session list is missing or not an array');
     loadSpy.mockRestore();
   });
 
@@ -225,6 +260,51 @@ describe('CoOberPlugin.loadData foreign session list', () => {
 
     expect(data?.sessions).toEqual([]);
     loadSpy.mockRestore();
+  });
+
+  it('treats a versioned file that lost the sessions field entirely as a load failure', async () => {
+    // buildPluginData() always writes sessions, so a file stamped v2 with no
+    // sessions key at all is a truncated/foreign write, not an empty history.
+    const loadSpy = vi.spyOn(Plugin.prototype, 'loadData').mockResolvedValue({
+      schemaVersion: 2,
+      settings: { defaultModel: 'x' },
+      activeSessionId: null,
+    });
+    const plugin = new CoOberPlugin({} as never, {} as never);
+
+    await expect(plugin.loadData()).rejects.toThrow('session list is missing or not an array');
+    loadSpy.mockRestore();
+  });
+});
+
+describe('CoOberPlugin.loadData corrupt file on disk', () => {
+  function corruptPlugin(exists: boolean, raw: string) {
+    const plugin = Object.create(CoOberPlugin.prototype) as CoOberPlugin;
+    Object.assign(plugin, {
+      app: {
+        vault: {
+          configDir: '.obsidian',
+          adapter: { exists: vi.fn(async () => exists), read: vi.fn(async () => raw) },
+        },
+      },
+      manifest: { id: 'co-ober' },
+    });
+    return plugin;
+  }
+
+  it('routes a present-but-unparseable data.json into the load-failure path', async () => {
+    // Real Obsidian returns null for a corrupt file exactly as it does for a
+    // missing one; without the probe the plugin would load defaults and the
+    // next autosave would overwrite the bytes the rolling backup might restore.
+    const plugin = corruptPlugin(true, '{"schemaVersion": 2, "sessions": [');
+
+    await expect(plugin.loadData()).rejects.toThrow('present but could not be parsed');
+  });
+
+  it('still treats a genuinely absent file as fresh defaults', async () => {
+    const plugin = corruptPlugin(false, '');
+
+    await expect(plugin.loadData()).resolves.toBeNull();
   });
 });
 

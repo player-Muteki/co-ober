@@ -100,6 +100,33 @@ describe('migratePluginDataSessions', () => {
     expect(migratePluginDataSessions([validSession('s1')], 'gone').activeSessionId).toBeNull();
     expect(migratePluginDataSessions([validSession('s1')], 7 as unknown as string).activeSessionId).toBeNull();
   });
+
+  it('drops malformed contentBlocks and images[] elements, and the key when none survive', () => {
+    const state = migratePluginDataSessions(
+      [
+        validSession('s1', {
+          messages: [
+            validMessage({
+              contentBlocks: [{ type: 'text', text: 'keep' }, null, 42, 'nope'],
+              images: [{ mimeType: 'image/png', data: 'ok' }, { mimeType: 'image/png', data: 12345 }, null],
+            }),
+            validMessage({ contentBlocks: [null, 'all junk'], images: [{ data: 7 }] }),
+          ],
+        }),
+      ],
+      null,
+    );
+    const [first, second] = state.sessions[0].messages;
+    // Well-formed elements survive; a number-valued image payload — the value
+    // that turned the persisted byte total into NaN and purged every image,
+    // pinned ones included — and non-objects are stopped at this boundary.
+    expect(first.contentBlocks).toEqual([{ type: 'text', text: 'keep' }]);
+    expect(first.images).toEqual([{ mimeType: 'image/png', data: 'ok' }]);
+    // Nothing safe survives on the second message, so the keys are removed
+    // rather than left as empty arrays the later save loops would still walk.
+    expect('contentBlocks' in second).toBe(false);
+    expect('images' in second).toBe(false);
+  });
 });
 
 describe('migratePluginDataTabs', () => {
