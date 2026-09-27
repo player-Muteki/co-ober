@@ -1,3 +1,23 @@
+## 0.2.7 - 2026-09-27
+
+No new capabilities. This release keeps every answer in the tab that asked it, answers the protocol closer to the frames it actually accepts, and refuses to let a bad write or a nonsense setting eat what was already there.
+
+### Changed
+- **A turn belongs to the tab that started it**: a disposed view stops re-binding handlers and a closing view takes its permission and elicitation handlers back so nothing answers in a gone tab's name, closing a tab releases the agent session it owned (and only once the sibling sharing it is gone too), a turn that outlives its tab is released rather than resurrected, and a background turn no longer rewrites the conversation pointer on the screen in front.
+- **Reconnect settles where it belongs**: reconnect and disconnect resolve the interrupted turn inside each owning tab, a sessionless tab loads an empty toolbar snapshot instead of the active tab's models, a background tab's toolbar write-back stays in its own state, and a capacity-parked queue drains once even under two simultaneous releases.
+- **The protocol shapes this client honors**: `session/set_config_option` sends the type the agent declared, so a boolean option stays a boolean instead of being pasted as the string *true*; prompt parts are copied down to only the fields the content schema defines, so a local label or internal id cannot poison the frame; and an MCP transport the agent never affirmed is disabled in the picker instead of offered and rejected on connect.
+- **An error the agent can branch on**: cancelling a turn resolves the permission still open on that screen as *cancelled* rather than leaving a banner that outlives its stream, a capability surface the reader closed mid-session answers `-32601` (method not found) instead of the `auth_required` code that sent a good agent off to log in, and a terminal the manager no longer has answers `-32002` (resource not found) while a malformed frame keeps `-32602`.
+- **A save cannot lose what the backup still holds**: a save that wrote no conversations against a backup that still has them is refused rather than promoted, and a stored session list that is present but not a list is treated as a load failure that restores from the rolling backup instead of writing over the good bytes.
+- **Retention runs on a copy**: retention, truncation and the stored-image budget now apply to a private snapshot of the store, so no transcript on screen is rewritten under the reader, and a nonsense `retentionDays` or `maxMessages` (zero, negative, `NaN`) is floored rather than trusted — one bad value used to delete every closed conversation in a single save.
+- **A tab switch and a typed draft reach the disk**: the tab shell and the half-typed message riding on it are written on the same debounced save the transcript stream uses, so they arrive in `data.json` without waiting for a chat turn, and a session rotation closes and rekeys inside the mutex so the agent sees one create, not a race.
+- **The strings say what the code does**: the Readonly and Plan permission labels now describe what actually happens — Readonly auto-approves reads, searches *and fetches* and rejects writes and execution; Plan approves only reads and searches and rejects the rest — in English and Chinese.
+
+### Fixed
+- **A sync rule will not overwrite what it cannot read**: a rule whose note it cannot read refuses the write and records the failure, instead of quietly eating the reader's own edits over a file it never looked inside.
+- **A rule added in the same moment gets its own id**: an MCP server or sync rule created in the same millisecond as another is given a collision-free id rather than overwriting its twin.
+- **A cleared composer still reports itself**: a turn that throws after the input box has already emptied paints its reason in the tab that sent it, instead of vanishing as an unhandled rejection that leaves a blank box and no reply.
+- **A terminal that already stopped is not an error**: killing a terminal that has already exited returns the success the agent wanted, and a `wait_for_exit` deadline that passes leaves the command running instead of sending it a `SIGTERM` it never asked for.
+
 ## 0.2.6 - 2026-09-26
 
 No new capabilities. This release keeps what was already written, answers the protocol closer to the shape it arrives in, and makes the client own the things it claimed.
