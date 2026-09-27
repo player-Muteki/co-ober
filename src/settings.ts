@@ -9,7 +9,7 @@ import { applyPermissionTier } from './client/permissionTier';
 import { resolveCommandPath } from './utils/commandResolution';
 import { MIN_OPEN_TABS, MAX_OPEN_TABS, DEFAULT_OPEN_TABS } from './constants';
 
-import { addCustomAgentBlock, addCustomSkillBlock, addCommonModelToggle, addMcpServerBlock, addSyncRuleBlock, renameCustomAgent, renameCustomSkill } from './settings/settingBlocks';
+import { addCustomAgentBlock, addCustomSkillBlock, addCommonModelToggle, addMcpServerBlock, addSyncRuleBlock, nextRuleId, renameCustomAgent, renameCustomSkill } from './settings/settingBlocks';
 
 interface AutoScrollView {
   setAutoScrollEnabled?: (enabled: boolean) => void;
@@ -345,7 +345,7 @@ export class CoOberSettingsTab extends PluginSettingTab {
         .onClick(async () => {
           const server: McpServerConfig = {
             type: 'stdio',
-            id: Date.now().toString(),
+            id: nextRuleId(s.mcpServers),
             enabled: true,
             name: 'filesystem',
             command: 'npx',
@@ -374,7 +374,7 @@ export class CoOberSettingsTab extends PluginSettingTab {
       .addButton((b) => b.setButtonText(labels.sync.add)
         .onClick(async () => {
           const rule: SyncRule = {
-            id: Date.now().toString(),
+            id: nextRuleId(s.syncRules),
             enabled: true,
             toolName: 'edit',
             folder: s.defaultNoteFolder,

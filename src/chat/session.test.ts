@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { SessionRepository } from './session';
+import { SessionRepository, enforceStoredImageBudget } from './session';
 import type { ContentBlock, SerializedMessage, SerializedSession } from '../types';
 import { setLocale, t } from '../i18n/index';
 
@@ -324,8 +324,9 @@ describe('stored image budget', () => {
   }
 
   function enforce(repository: SessionRepository, budgetBytes: number): void {
-    const method = Reflect.get(repository, 'enforceStoredImageBudget') as (b: number) => void;
-    method.call(repository, budgetBytes);
+    const sessions = Reflect.get(repository, 'sessions') as Map<string, SerializedSession>;
+    const exempt = (Reflect.get(repository, 'exemptSessionIds') as () => Set<string>).call(repository);
+    enforceStoredImageBudget(sessions, exempt, budgetBytes);
   }
 
   function imageBlock(data: string, timestamp: number): SerializedMessage {
@@ -490,15 +491,14 @@ describe('what retention may touch (0.2.5 stage 1)', () => {
 
 function imageBlockSessionFor(id: string, messages: SerializedMessage[]): SerializedSession {
   return { sessionId: id, title: id, messages, createdAt: 1, updatedAt: 1 };
-}
-
-function imageBlockFor(data: string, timestamp: number): SerializedMessage {
+}function imageBlockFor(data: string, timestamp: number): SerializedMessage {
   return { role: 'user', content: 'look', type: 'text', timestamp, contentBlocks: [{ type: 'image', mimeType: 'image/png', data }] };
 }
 
 function enforce(repository: SessionRepository, budgetBytes: number): void {
-  const method = Reflect.get(repository, 'enforceStoredImageBudget') as (b: number) => void;
-  method.call(repository, budgetBytes);
+  const sessions = Reflect.get(repository, 'sessions') as Map<string, SerializedSession>;
+  const exempt = (Reflect.get(repository, 'exemptSessionIds') as () => Set<string>).call(repository);
+  enforceStoredImageBudget(sessions, exempt, budgetBytes);
 }
 
 describe('SessionRepository tab shells', () => {
@@ -566,5 +566,57 @@ describe('SessionRepository tab shells', () => {
       { tabId: 'tab-1', sessionId: 'real-1' },
       { tabId: 'tab-2', sessionId: 'other' },
     ]);
+  });
+});
+
+describe('pruning happens on the save snapshot, not the live transcript (0.2.7 stage 3)', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = 100 * DAY;
+
+  it('trims and drops for disk while the on-screen conversation stays whole', () => {
+    const { repository } = createRepository();
+    repository.hydrate(
+      [createSession('active', now, 6), createSession('expired', now - 31 * DAY)],
+      'active',
+    );
+
+    const snapshot = repository.snapshot({ maxMessages: 4, retentionDays: 30, now });
+
+    // The copy that reaches disk is pruned...
+    expect(snapshot.sessions.map((s) => s.sessionId)).toEqual(['active']);
+    expect(snapshot.sessions[0].messages).toHaveLength(4);
+    // ...but the transcript the user is reading is untouched.
+    expect(repository.get('expired')).toBeDefined();
+    expect(repository.get('active')!.messages).toHaveLength(6);
+  });
+
+  it('floors a retention window that would otherwise delete every closed conversation', () => {
+    const { repository } = createRepository();
+    repository.hydrate([createSession('open', now, 1), createSession('fifteen', now - 15 * DAY, 1)], 'open');
+
+    // retentionDays 0 is nonsense; clamped to 30 it spares the 15-day-old chat.
+    const snapshot = repository.snapshot({ maxMessages: 200, retentionDays: 0, now });
+
+    expect(snapshot.sessions.map((s) => s.sessionId).sort()).toEqual(['fifteen', 'open']);
+  });
+
+  it('floors a message cap that would otherwise empty every transcript', () => {
+    const { repository } = createRepository();
+    repository.hydrate([createSession('open', now, 5)], 'open');
+
+    // maxMessages 0/NaN falls back to 200, so a 5-message chat is left alone.
+    const snapshot = repository.snapshot({ maxMessages: NaN, retentionDays: 30, now });
+
+    expect(snapshot.sessions[0].messages).toHaveLength(5);
+    expect(snapshot.sessions[0].messages.some((m) => m.role === 'system')).toBe(false);
+  });
+
+  it('the live prune() clamps the same way so one bad setting cannot wipe the store', () => {
+    const { repository } = createRepository();
+    repository.hydrate([createSession('open', now, 1), createSession('fifteen', now - 15 * DAY, 1)], 'open');
+
+    repository.prune({ maxMessages: 200, retentionDays: -5, now });
+
+    expect(repository.get('fifteen')).toBeDefined();
   });
 });

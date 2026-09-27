@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi } from 'vitest';
 import { installObsidianDomHelpers } from '../test/domHelpers';
-import { addMcpServerBlock } from './settingBlocks';
+import { addMcpServerBlock, nextRuleId } from './settingBlocks';
 import type { CoOberSettings, McpServerConfig } from '../types';
 
 installObsidianDomHelpers();
@@ -50,5 +50,29 @@ describe('MCP transport gating reads an affirmed capability, not its absence (0.
     const { http, sse } = render(undefined);
     expect(http.disabled).toBe(true);
     expect(sse.disabled).toBe(true);
+  });
+});
+
+describe('nextRuleId avoids an id already in use (0.2.7 stage 3)', () => {
+  it('returns the bare timestamp when nothing collides', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(1700000000000));
+    try {
+      expect(nextRuleId([])).toBe('1700000000000');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('suffixes past a collision instead of handing out a duplicate id', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(1700000000000));
+    try {
+      // Two adds in the same millisecond used to collide and overwrite.
+      const taken = [{ id: '1700000000000' }, { id: '1700000000000-1' }];
+      expect(nextRuleId(taken)).toBe('1700000000000-2');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

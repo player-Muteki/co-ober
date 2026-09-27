@@ -24,6 +24,7 @@ import {
   readNativeToolErrors,
   readNativeTurnStats,
 } from '../opencode/NativeSessionReader';
+import { STREAM_SAVE_DEBOUNCE_MS } from '../constants';
 
 vi.mock('../opencode/NativeSessionReader', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../opencode/NativeSessionReader')>();
@@ -2296,6 +2297,55 @@ describe('CoOberViewController', () => {
 
       expect(deps.renderer.addError).toHaveBeenCalledWith(`${t().error.unknown}: send error`);
       expect(controller.isBusy()).toBe(false);
+    });
+  });
+
+  describe('sendFromComposer rejection tail (0.2.7 stage 3)', () => {
+    it('paints a rejected turn in this tab instead of dropping it as an unhandled rejection', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      vi.spyOn(controller, 'send').mockRejectedValue(new Error('boom'));
+
+      const accepted = controller.sendFromComposer('hello', []);
+
+      // The composer already cleared and painted its bubble; a throw after that
+      // has to be reported, not lost.
+      expect(accepted).toBe(true);
+      await vi.waitFor(() =>
+        expect(deps.renderer.addError).toHaveBeenCalledWith(`${t().error.unknown}: boom`),
+      );
+      expect(consoleSpy).toHaveBeenCalledWith('[co-ober] composer send failed:', expect.any(Error));
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('persistTabShell debounce (0.2.7 stage 3)', () => {
+    it('arms the same debounced save the transcript uses so a shell reaches disk without a turn', () => {
+      vi.useFakeTimers();
+      try {
+        controller.persistTabShell();
+
+        expect(deps.sessionStore.setTabShell).toHaveBeenCalled();
+        // Not written synchronously — it rides the STREAM_SAVE_DEBOUNCE window.
+        expect(deps.sessionStore.save).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(STREAM_SAVE_DEBOUNCE_MS);
+        expect(deps.sessionStore.save).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('collapses a burst of shell changes into one save', () => {
+      vi.useFakeTimers();
+      try {
+        controller.persistTabShell();
+        controller.persistTabShell();
+        controller.persistTabShell();
+        vi.advanceTimersByTime(STREAM_SAVE_DEBOUNCE_MS);
+
+        expect(deps.sessionStore.save).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

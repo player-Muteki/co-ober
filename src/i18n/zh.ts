@@ -527,9 +527,9 @@ const zh: Locale = {
       name: '权限模式',
       desc: '工具权限的自动批准行为',
       yolo: 'Yolo — 全部自动批准',
-      plan: 'Plan — 自动批准安全操作',
+      plan: 'Plan — 自动批准读取与搜索，其余一律拒绝',
       safe: 'Safe — 全部确认',
-      readonly: 'Readonly — 仅读取/搜索，拒绝一切写入与执行',
+      readonly: 'Readonly — 自动批准读取、搜索与抓取，拒绝一切写入与执行',
     },
     systemPrompt: {
       heading: '系统提示词',

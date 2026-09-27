@@ -525,9 +525,9 @@ const en = {
       name: 'Permission Mode',
       desc: 'Auto-approve behavior for tool permissions',
       yolo: 'Yolo — auto-approve all',
-      plan: 'Plan — auto-approve safe',
+      plan: 'Plan — auto-approve reads and searches; everything else is rejected',
       safe: 'Safe — confirm all',
-      readonly: 'Readonly — read/search only, all writes and execution rejected',
+      readonly: 'Readonly — auto-approve reads, searches and fetches; writes and execution are rejected',
     },
     systemPrompt: {
       heading: 'System Prompt',

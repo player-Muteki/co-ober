@@ -41,8 +41,14 @@ export class SyncEngine {
             // then rewrote that note. Reading first is what lets the overwrite
             // be announced instead of quietly eating what the reader edited.
             const previous = await this.readContent(existing);
+            if (previous === null) {
+              // A note we cannot read may hold the reader's own edits; writing
+              // over it blind would destroy them without even being able to say
+              // so. Leave it intact and count this rule as having failed.
+              throw new Error(`could not read ${note.path} before overwriting`);
+            }
             await this.vault.modify(existing, note.content);
-            if (previous !== null && previous !== note.content) {
+            if (previous !== note.content) {
               new Notice(t().sync.overwrote.replace('{path}', note.path));
             }
           } else {

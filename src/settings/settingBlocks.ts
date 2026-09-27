@@ -352,6 +352,15 @@ export function addSyncRuleBlock(containerEl: HTMLElement, rule: SyncRule, setti
     };
   }
 
+export function nextRuleId(existing: Array<{ id: string }>): string {
+  const taken = new Set(existing.map((rule) => rule.id));
+  const base = Date.now().toString();
+  if (!taken.has(base)) return base;
+  let n = 1;
+  while (taken.has(`${base}-${n}`)) n += 1;
+  return `${base}-${n}`;
+}
+
 export function renameCustomAgent(currentId: string, nextId: string, settings: CoOberSettings, save: () => Promise<void>, labels: Locale['settings']): boolean {
     if (!nextId) {
       new Notice(labels.customAgents.emptyId);

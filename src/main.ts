@@ -117,6 +117,12 @@ export default class CoOberPlugin extends Plugin {
 
     if (hasPluginData) {
       const data = saved as Partial<PluginData>;
+      // A store whose session list is present but not a list is a truncated or
+      // foreign write, not an empty history: treat it as a load failure so the
+      // caller can restore the rolling backup instead of saving over it.
+      if (data.sessions !== undefined && !Array.isArray(data.sessions)) {
+        throw new Error('data.json session list is not an array');
+      }
       const restored = migratePluginDataSessions(data.sessions, data.activeSessionId);
       const surviving = new Set(restored.sessions.map((session) => session.sessionId));
       const tabs = migratePluginDataTabs(data.openTabs, data.activeTabId, surviving, restored.activeSessionId);
@@ -148,7 +154,12 @@ export default class CoOberPlugin extends Plugin {
   }
 
   private buildPluginData(): PluginData {
-    const sessionState = this.sessionStore.snapshot();
+    // Prune against a private copy of the store (retention, truncation, image
+    // budget) so a save never rewrites or strips the transcripts on screen.
+    const sessionState = this.sessionStore.snapshot({
+      maxMessages: this.settings.maxSessionMessages ?? 200,
+      retentionDays: this.settings.sessionRetentionDays ?? 30,
+    });
     return {
       schemaVersion: PLUGIN_DATA_SCHEMA_VERSION,
       settings: this.settings,
@@ -169,10 +180,9 @@ export default class CoOberPlugin extends Plugin {
   async savePluginData(): Promise<void> {
     try {
       await this.saveMutex.runExclusive(async () => {
-        this.sessionStore.prune({
-          maxMessages: this.settings.maxSessionMessages ?? 200,
-          retentionDays: this.settings.sessionRetentionDays ?? 30,
-        });
+        // Pruning happens on the snapshot copy inside buildPluginData, so the
+        // live in-memory transcripts are written out as-is and never truncated
+        // or image-stripped under the reader's feet.
         await super.saveData(this.buildPluginData());
         await this.writeRollingBackup();
       });
@@ -225,10 +235,28 @@ export default class CoOberPlugin extends Plugin {
       const adapter = this.app.vault.adapter;
       const dataPath = this.dataFilePath();
       if (!(await adapter.exists(dataPath))) return;
-      await adapter.write(`${dataPath}.bak`, await adapter.read(dataPath));
+      const raw = await adapter.read(dataPath);
+      if (await this.wouldEmptyAPopulatedBackup(raw)) return;
+      await adapter.write(`${dataPath}.bak`, raw);
     } catch (e) {
       console.warn('[co-ober] could not refresh data.json backup:', e);
     }
+  }
+
+  /**
+   * A save that wrote no conversations, against a backup that still holds them,
+   * is the crash/full-disk signature this backup exists to survive — promoting it
+   * would make the loss permanent. Refuse the copy and leave the good backup
+   * where it is. An unparseable incoming file is refused for the same reason.
+   */
+  private async wouldEmptyAPopulatedBackup(incoming: string): Promise<boolean> {
+    const adapter = this.app.vault.adapter;
+    const backupPath = `${this.dataFilePath()}.bak`;
+    if (!(await adapter.exists(backupPath))) return false;
+    const backupCount = countPersistedSessions(await adapter.read(backupPath));
+    if (backupCount === null || backupCount === 0) return false;
+    const incomingCount = countPersistedSessions(incoming);
+    return incomingCount === null || incomingCount === 0;
   }
 
   /**
@@ -418,5 +446,15 @@ export default class CoOberPlugin extends Plugin {
       return;
     }
     await this.app.vault.create(cleanPath, content);
+  }
+}
+
+/** Session count in a serialized data.json, or null when it cannot be read. */
+function countPersistedSessions(raw: string): number | null {
+  try {
+    const parsed = JSON.parse(raw) as { sessions?: unknown };
+    return Array.isArray(parsed?.sessions) ? parsed.sessions.length : null;
+  } catch {
+    return null;
   }
 }

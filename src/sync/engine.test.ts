@@ -198,8 +198,9 @@ describe('SyncEngine', () => {
     }
   });
 
-  it('does not claim an overwrite it could not read', async () => {
+  it('refuses to overwrite a note it could not read', async () => {
     Notice.messages.length = 0;
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const vault = createMockVault(async () => {
       throw new Error('not readable');
     });
@@ -222,9 +223,15 @@ describe('SyncEngine', () => {
       content: 'updated',
     });
 
-    expect(failures).toEqual([]);
-    expect(vault.modify).toHaveBeenCalledOnce();
+    // A note we cannot read may hold the reader's own edits; writing over it
+    // blind would destroy them without even being able to say so.
+    expect(vault.modify).not.toHaveBeenCalled();
+    expect(failures).toHaveLength(1);
+    expect(failures[0].rule.id).toBe('test');
+    expect(failures[0].error.message).toBe('could not read sync/write-test before overwriting');
     expect(Notice.messages).toEqual([]);
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
   });
 
   it('should handle errors gracefully', async () => {

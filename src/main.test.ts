@@ -196,6 +196,38 @@ describe('CoOberPlugin.loadData tab shells', () => {
   });
 });
 
+describe('CoOberPlugin.loadData foreign session list', () => {
+  it('treats a present-but-not-a-list session field as a load failure', async () => {
+    const loadSpy = vi.spyOn(Plugin.prototype, 'loadData').mockResolvedValue({
+      schemaVersion: 2,
+      settings: {},
+      sessions: { not: 'a list' },
+      activeSessionId: null,
+    });
+    const plugin = new CoOberPlugin({} as never, {} as never);
+
+    // A truncated or foreign write, not an empty history: throwing routes the
+    // caller to the restore-from-backup path instead of saving over the backup.
+    await expect(plugin.loadData()).rejects.toThrow('session list is not an array');
+    loadSpy.mockRestore();
+  });
+
+  it('accepts a well-formed empty list as an intentionally emptied store', async () => {
+    const loadSpy = vi.spyOn(Plugin.prototype, 'loadData').mockResolvedValue({
+      schemaVersion: 2,
+      settings: {},
+      sessions: [],
+      activeSessionId: null,
+    });
+    const plugin = new CoOberPlugin({} as never, {} as never);
+
+    const data = await plugin.loadData();
+
+    expect(data?.sessions).toEqual([]);
+    loadSpy.mockRestore();
+  });
+});
+
 describe('CoOberPlugin corrupted data recovery', () => {
   function createLoadPlugin(loadData: () => Promise<unknown>) {
     const rename = vi.fn().mockResolvedValue(undefined);
@@ -373,6 +405,50 @@ describe('CoOberPlugin corrupted data recovery', () => {
         expect.any(Error),
       );
       consoleWarn.mockRestore();
+      saveSpy.mockRestore();
+    });
+
+    it('refuses to promote a save that lost every conversation over a populated backup', async () => {
+      const populated = JSON.stringify({
+        schemaVersion: 2,
+        settings: {},
+        sessions: [{ sessionId: 's1', title: 'kept', createdAt: 1, updatedAt: 2, messages: [] }],
+        activeSessionId: 's1',
+      });
+      const { plugin, files } = createBackupPlugin({ loadData: [], backup: populated, live: '' });
+      const saveSpy = vi.spyOn(Plugin.prototype, 'saveData').mockImplementation(async () => {
+        // The crash/full-disk signature the backup exists to survive: the live
+        // file now holds no conversations at all.
+        files.set(DATA, '{"schemaVersion":2,"sessions":[]}');
+      });
+
+      await plugin.savePluginData();
+
+      // Copying that emptiness over the backup would make the loss permanent,
+      // so the last good copy is left exactly where it is.
+      expect(files.get(BAK)).toBe(populated);
+      saveSpy.mockRestore();
+    });
+
+    it('still refreshes the backup when a save shrinks it without emptying it', async () => {
+      const populated = JSON.stringify({
+        schemaVersion: 2,
+        settings: {},
+        sessions: [
+          { sessionId: 's1', title: 'kept', createdAt: 1, updatedAt: 2, messages: [] },
+          { sessionId: 's2', title: 'gone', createdAt: 1, updatedAt: 2, messages: [] },
+        ],
+        activeSessionId: 's1',
+      });
+      const { plugin, files } = createBackupPlugin({ loadData: [], backup: populated, live: '' });
+      const saveSpy = vi.spyOn(Plugin.prototype, 'saveData').mockImplementation(async () => {
+        // A routine retention prune: fewer conversations, still not empty.
+        files.set(DATA, '{"schemaVersion":2,"sessions":[{"sessionId":"s1"}]}');
+      });
+
+      await plugin.savePluginData();
+
+      expect(files.get(BAK)).toBe('{"schemaVersion":2,"sessions":[{"sessionId":"s1"}]}');
       saveSpy.mockRestore();
     });
   });

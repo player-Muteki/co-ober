@@ -110,13 +110,30 @@ export class SessionRepository implements SessionStore {
     this.activeTabId = null;
   }
 
-  snapshot(): SerializedSessionState {
+  snapshot(pruneOptions?: SessionPruneOptions): SerializedSessionState {
+    const sessions = pruneOptions
+      ? this.prunedSessionsCopy(pruneOptions)
+      : [...this.sessions.values()];
     return {
-      sessions: elideRedundantTextBlocks([...this.sessions.values()]),
+      sessions: elideRedundantTextBlocks(sessions),
       activeSessionId: this.activeSessionId,
       openTabs: this.openTabs.map((tab) => ({ ...tab })),
       activeTabId: this.activeTabId,
     };
+  }
+
+  /**
+   * Prune a private copy of every session for the bytes about to hit disk, so
+   * retention, truncation and the image budget never reach into the
+   * transcripts the user is reading.
+   */
+  private prunedSessionsCopy(options: SessionPruneOptions): SerializedSession[] {
+    const clone = new Map<string, SerializedSession>();
+    for (const [id, session] of this.sessions) {
+      clone.set(id, { ...session, messages: session.messages.map((msg) => ({ ...msg })) });
+    }
+    applyPrune(clone, this.exemptSessionIds(), options);
+    return [...clone.values()];
   }
 
   get(id: string): SerializedSession | undefined {
@@ -207,39 +224,8 @@ export class SessionRepository implements SessionStore {
     if (this.activeSessionId === id) this.activeSessionId = null;
   }
 
-  prune({ maxMessages, retentionDays, now = Date.now() }: SessionPruneOptions): void {
-    const cutoffTime = now - retentionDays * MS_PER_DAY;
-    const messageLimit = Math.max(1, maxMessages);
-    const exempt = this.exemptSessionIds();
-
-    for (const [id, session] of this.sessions) {
-      // Retention may only touch conversations nobody is looking at: a tab
-      // that stayed in the background for a month is still an open chat, and
-      // its transcript must not be gone the moment it is switched to.
-      if (!exempt.has(id) && !session.pinned && session.updatedAt < cutoffTime) {
-        this.sessions.delete(id);
-        continue;
-      }
-
-      if (session.messages.length > messageLimit) {
-        const retainedCount = messageLimit - 1;
-        const firstCount = Math.floor(retainedCount / 2);
-        const lastCount = retainedCount - firstCount;
-        const truncatedCount = session.messages.length - firstCount - lastCount;
-        session.messages = [
-          ...session.messages.slice(0, firstCount),
-          {
-            role: 'system',
-            content: t().session.truncated.replace('{count}', String(truncatedCount)),
-            type: 'text',
-            timestamp: session.messages[firstCount]?.timestamp ?? now,
-          },
-          ...(lastCount > 0 ? session.messages.slice(-lastCount) : []),
-        ];
-      }
-    }
-
-    this.enforceStoredImageBudget();
+  prune(options: SessionPruneOptions): void {
+    applyPrune(this.sessions, this.exemptSessionIds(), options);
   }
 
   /**
@@ -256,44 +242,98 @@ export class SessionRepository implements SessionStore {
     return ids;
   }
 
-  /**
-   * Base64 images persisted with the transcript are unbounded otherwise —
-   * data.json bloat slows every save and eventually breaks it. On each prune,
-   * strip whole image payloads (oldest message first) until the stored total
-   * fits the budget; the text of the affected messages is untouched.
-   *
-   * Pinned and open-tab conversations are stripped last: a pinned star means
-   * "keep", and gutting the images of the chat currently on screen is a
-   * smaller harm than a save that fails for everyone.
-   */
-  private enforceStoredImageBudget(budgetBytes = STORED_IMAGE_BUDGET_BYTES): void {
-    const exempt = this.exemptSessionIds();
-    const protectedCarriers: Array<{ msg: SerializedMessage; bytes: number }> = [];
-    const freeCarriers: Array<{ msg: SerializedMessage; bytes: number }> = [];
-    let total = 0;
-    for (const [id, session] of this.sessions) {
-      const sinks = exempt.has(id) || session.pinned ? protectedCarriers : freeCarriers;
-      for (const msg of session.messages) {
-        let bytes = 0;
-        for (const block of msg.contentBlocks ?? []) {
-          if (block.type === 'image') bytes += block.data?.length ?? 0;
-        }
-        for (const image of msg.images ?? []) bytes += image.data.length;
-        if (bytes > 0) {
-          total += bytes;
-          sinks.push({ msg, bytes });
-        }
+}
+
+function clampPruneInt(value: number, fallback: number): number {
+  return Number.isFinite(value) && value >= 1 ? Math.floor(value) : fallback;
+}
+
+/**
+ * Retention + truncation + image budget, applied to whichever map it is given:
+ * the live store for an explicit `prune()`, a private copy for a save. A bad
+ * retentionDays (0, negative, NaN) would delete every closed conversation in
+ * one save, so the window and the message cap are floored here rather than
+ * trusted from settings.
+ */
+function applyPrune(
+  sessions: Map<string, SerializedSession>,
+  exempt: Set<string>,
+  { maxMessages, retentionDays, now = Date.now() }: SessionPruneOptions,
+): void {
+  const messageLimit = clampPruneInt(maxMessages, 200);
+  const retention = clampPruneInt(retentionDays, 30);
+  const cutoffTime = now - retention * MS_PER_DAY;
+
+  for (const [id, session] of sessions) {
+    // Retention may only touch conversations nobody is looking at: a tab
+    // that stayed in the background for a month is still an open chat, and
+    // its transcript must not be gone the moment it is switched to.
+    if (!exempt.has(id) && !session.pinned && session.updatedAt < cutoffTime) {
+      sessions.delete(id);
+      continue;
+    }
+
+    if (session.messages.length > messageLimit) {
+      const retainedCount = messageLimit - 1;
+      const firstCount = Math.floor(retainedCount / 2);
+      const lastCount = retainedCount - firstCount;
+      const truncatedCount = session.messages.length - firstCount - lastCount;
+      session.messages = [
+        ...session.messages.slice(0, firstCount),
+        {
+          role: 'system',
+          content: t().session.truncated.replace('{count}', String(truncatedCount)),
+          type: 'text',
+          timestamp: session.messages[firstCount]?.timestamp ?? now,
+        },
+        ...(lastCount > 0 ? session.messages.slice(-lastCount) : []),
+      ];
+    }
+  }
+
+  enforceStoredImageBudget(sessions, exempt);
+}
+
+/**
+ * Base64 images persisted with the transcript are unbounded otherwise —
+ * data.json bloat slows every save and eventually breaks it. On each prune,
+ * strip whole image payloads (oldest message first) until the stored total
+ * fits the budget; the text of the affected messages is untouched.
+ *
+ * Pinned and open-tab conversations are stripped last: a pinned star means
+ * "keep", and gutting the images of the chat currently on screen is a
+ * smaller harm than a save that fails for everyone.
+ */
+export function enforceStoredImageBudget(
+  sessions: Map<string, SerializedSession>,
+  exempt: Set<string>,
+  budgetBytes = STORED_IMAGE_BUDGET_BYTES,
+): void {
+  const protectedCarriers: Array<{ msg: SerializedMessage; bytes: number }> = [];
+  const freeCarriers: Array<{ msg: SerializedMessage; bytes: number }> = [];
+  let total = 0;
+  for (const [id, session] of sessions) {
+    const sinks = exempt.has(id) || session.pinned ? protectedCarriers : freeCarriers;
+    for (const msg of session.messages) {
+      let bytes = 0;
+      for (const block of msg.contentBlocks ?? []) {
+        if (block.type === 'image') bytes += block.data?.length ?? 0;
+      }
+      for (const image of msg.images ?? []) bytes += image.data.length;
+      if (bytes > 0) {
+        total += bytes;
+        sinks.push({ msg, bytes });
       }
     }
-    if (total <= budgetBytes) return;
-    for (const carriers of [freeCarriers, protectedCarriers]) {
+  }
+  if (total <= budgetBytes) return;
+  for (const carriers of [freeCarriers, protectedCarriers]) {
+    if (total <= budgetBytes) break;
+    carriers.sort((a, b) => a.msg.timestamp - b.msg.timestamp);
+    for (const { msg, bytes } of carriers) {
       if (total <= budgetBytes) break;
-      carriers.sort((a, b) => a.msg.timestamp - b.msg.timestamp);
-      for (const { msg, bytes } of carriers) {
-        if (total <= budgetBytes) break;
-        purgeImagePayload(msg);
-        total -= bytes;
-      }
+      purgeImagePayload(msg);
+      total -= bytes;
     }
   }
 }

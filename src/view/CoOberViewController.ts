@@ -63,6 +63,7 @@ import {
   MIN_OPEN_TABS,
   MAX_OPEN_TABS,
   DEFAULT_OPEN_TABS,
+  STREAM_SAVE_DEBOUNCE_MS,
 } from '../constants';
 
 export interface ControllerCallbacks {
@@ -498,6 +499,21 @@ export class CoOberViewController {
       return shell;
     });
     this.deps.sessionStore.setTabShell(shells, this.activeRuntime.tabId);
+    // The shell (and the half-typed draft riding on it) is only on disk once a
+    // save runs; schedule the same debounced write the transcript stream uses so
+    // a tab switch or an edited draft reaches data.json without a chat turn.
+    this.scheduleShellSave();
+  }
+
+  private shellSaveTimer: number | null = null;
+
+  private scheduleShellSave(): void {
+    if (this.disposed) return;
+    if (this.shellSaveTimer !== null) window.clearTimeout(this.shellSaveTimer);
+    this.shellSaveTimer = window.setTimeout(() => {
+      this.shellSaveTimer = null;
+      void this.deps.sessionStore.save().catch((e: unknown) => console.error('[co-ober] tab shell save failed:', e));
+    }, STREAM_SAVE_DEBOUNCE_MS);
   }
 
   /**
@@ -798,6 +814,10 @@ export class CoOberViewController {
     for (const rt of this.runtimes.values()) this.dropQueuedPrompts(rt);
     for (const rt of this.runtimes.values()) this.endSideChat(rt);
     for (const rt of this.runtimes.values()) await rt.streamCtrl.dispose();
+    if (this.shellSaveTimer !== null) {
+      window.clearTimeout(this.shellSaveTimer);
+      this.shellSaveTimer = null;
+    }
     this.noteContentCache.clear();
   }
 
@@ -2188,7 +2208,14 @@ export class CoOberViewController {
       rt.renderer.addSystemMessage(t().permission.queueBlocked);
       return false;
     }
-    void this.send(text, refs, rt);
+    // send() clears the composer and paints its own bubbles, but a throw after
+    // the box is already empty (a command file that failed to parse, a template
+    // that could not build) would otherwise vanish as an unhandled rejection and
+    // leave a cleared input with no reply and no reason. Report it in this tab.
+    this.send(text, refs, rt).catch((e: unknown) => {
+      console.error('[co-ober] composer send failed:', e);
+      rt.renderer.addError(humanizeError(e));
+    });
     return true;
   }
 
