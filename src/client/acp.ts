@@ -58,6 +58,7 @@ import {
   zNotice,
   zCompactionUpdate,
   zStateUpdate,
+  parseConfigOptions,
 } from './acpSchemas';
 import { z } from 'zod';
 
@@ -356,7 +357,11 @@ export function extractSessionSnapshot(result: Record<string, unknown>): AcpSess
   }
 
   if (Array.isArray(result.configOptions)) {
-    const configMeta = extractConfigMeta(result.configOptions as SessionConfigOption[]);
+    // Same reader as a config_option_update notification: an agent that groups
+    // its model choices, or ships a boolean toggle with no options, used to
+    // throw here — from inside the code that runs right after the session was
+    // created — and the caller never heard about the session at all.
+    const configMeta = extractConfigMeta(parseConfigOptions(result.configOptions) as SessionConfigOption[]);
     snapshot.configOptions = configMeta.configOptions;
     snapshot.currentModelId = configMeta.currentModelId;
     snapshot.availableModels = configMeta.availableModels;
@@ -901,8 +906,10 @@ export class AcpClient implements OpencodeClient {
         ? { sessionId: id, configId, value, type: 'boolean' }
         : { sessionId: id, configId, value };
     const r = await this.requestWithFallback('setConfigOption', params);
-    const parsed = z.object({ configOptions: z.array(z.any()).optional() }).safeParse(r);
-    const configOptions = parsed.success ? ((parsed.data.configOptions as SessionConfigOption[]) ?? []) : [];
+    // `z.array(z.any())` handed the raw frame straight to the toolbar, which
+    // walks option lists: the same grouped or toggle-shaped element a
+    // notification would have flattened arrived here unparsed.
+    const configOptions = parseConfigOptions((r as { configOptions?: unknown } | undefined)?.configOptions) as SessionConfigOption[];
     this.applyConfigOptions(configOptions, id);
     return configOptions;
   }

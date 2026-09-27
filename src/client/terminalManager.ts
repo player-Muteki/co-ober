@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'child_process';
-import type { TerminalInstance, TerminalCreateParams, TerminalOutputResult } from '../types';
+import { DEFAULT_SETTINGS, type TerminalInstance, type TerminalCreateParams, type TerminalOutputResult } from '../types';
 
 export interface TerminalManagerOptions {
 	timeoutMs: number;
@@ -66,22 +66,37 @@ interface ExitWaiter {
 	timeout: number;
 }
 
+/**
+ * A limit that is not a positive, finite number is not a limit this manager
+ * can honour: a zero or negative deadline fires every wait instantly, and a
+ * zero byte ceiling erases output, which reads back to the agent as a command
+ * that ran and printed nothing. Fall through to the value already in force.
+ */
+function usableLimit(value: number | undefined, current: number): number {
+	return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : current;
+}
+
+// CoOberSettings marks these optional, so the manager keeps its own answer for
+// a caller that handed it nothing usable.
+const DEFAULT_TIMEOUT_MS = DEFAULT_SETTINGS.terminalTimeoutMs ?? 30000;
+const DEFAULT_MAX_OUTPUT_BYTES = DEFAULT_SETTINGS.terminalMaxOutputBytes ?? 100000;
+
 export class TerminalManager {
 	private terminals = new Map<string, TerminalInstance>();
 	private processes = new Map<string, ChildProcess>();
 	private exitWaiters = new Map<string, ExitWaiter>();
 	private nextId = 1;
-	private timeoutMs: number;
-	private maxOutputBytes: number;
+	private timeoutMs: number = DEFAULT_TIMEOUT_MS;
+	private maxOutputBytes: number = DEFAULT_MAX_OUTPUT_BYTES;
 
 	constructor(options: TerminalManagerOptions) {
-		this.timeoutMs = options.timeoutMs;
-		this.maxOutputBytes = options.maxOutputBytes;
+		this.timeoutMs = usableLimit(options.timeoutMs, this.timeoutMs);
+		this.maxOutputBytes = usableLimit(options.maxOutputBytes, this.maxOutputBytes);
 	}
 
 	setConfig(options: Partial<TerminalManagerOptions>): void {
-		if (options.timeoutMs !== undefined) this.timeoutMs = options.timeoutMs;
-		if (options.maxOutputBytes !== undefined) this.maxOutputBytes = options.maxOutputBytes;
+		if (options.timeoutMs !== undefined) this.timeoutMs = usableLimit(options.timeoutMs, this.timeoutMs);
+		if (options.maxOutputBytes !== undefined) this.maxOutputBytes = usableLimit(options.maxOutputBytes, this.maxOutputBytes);
 	}
 
 	create(params: TerminalCreateParams, vaultPath: string): TerminalInstance {
@@ -233,6 +248,22 @@ export class TerminalManager {
 	 */
 	get(terminalId: string): TerminalInstance | undefined {
 		return this.terminals.get(terminalId);
+	}
+
+	/**
+	 * Stop every command still running, keeping the terminals themselves so
+	 * their output stays readable and the agent can still release them. Used
+	 * when the capability tier closes mid-session: a live process is work that
+	 * continues on the user's files after they have said, in the toolbar, that
+	 * nothing may change.
+	 */
+	stopAllRunning(): number {
+		let stopped = 0;
+		for (const [terminalId, instance] of this.terminals) {
+			if (instance.status !== 'running') continue;
+			if (this.kill(terminalId)) stopped++;
+		}
+		return stopped;
 	}
 
 	/**

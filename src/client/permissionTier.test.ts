@@ -25,7 +25,7 @@ describe('applyPermissionTier', () => {
     const target = makeTarget();
     applyPermissionTier(target, 'readonly', makeSettings());
 
-    expect(target.setFsCapabilityMode).toHaveBeenCalledWith('readonly');
+    expect(target.setFsCapabilityMode).toHaveBeenCalledWith('readonly', 4242);
     expect(target.setTerminalCapabilityMode).toHaveBeenCalledWith('disabled');
   });
 
@@ -45,8 +45,19 @@ describe('applyPermissionTier', () => {
     const target = makeTarget();
     applyPermissionTier(target, 'plan', makeSettings());
 
-    expect(target.setFsCapabilityMode).toHaveBeenCalledWith('readonly');
+    expect(target.setFsCapabilityMode).toHaveBeenCalledWith('readonly', 4242);
     expect(target.setTerminalCapabilityMode).toHaveBeenCalledWith('disabled');
+  });
+
+  it('carries the read ceiling through while the tier is down', () => {
+    // readonly and plan close writes, not reads — and a read is still bounded.
+    // Leaving maxBytes behind here left the delegate on whatever ceiling was
+    // current when the tier last went up, so a maxNoteSize change made in
+    // Settings never reached it.
+    const target = makeTarget();
+    applyPermissionTier(target, 'readonly', makeSettings({ maxNoteSize: 999 }));
+
+    expect(target.setFsCapabilityMode).toHaveBeenCalledWith('readonly', 999);
   });
 
   it('safe and yolo tiers defer to settings as well', () => {

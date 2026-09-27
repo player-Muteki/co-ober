@@ -106,6 +106,18 @@ const zConfigOptions = z.array(z.unknown()).transform((items) => {
   }
   return readable;
 });
+/**
+ * The one reading of an agent's `configOptions` that every path shares: a
+ * response to `session/new` or `session/set_config_option` carries the same
+ * shape a notification does, and taking it on faith (`as SessionConfigOption[]`)
+ * let a grouped or option-less frame reach the consumers that walk
+ * `option.options.map(...)`. Reading responses through the same parser keeps a
+ * frame the agent legitimately sent from throwing inside the handler that
+ * creates the session.
+ */
+export function parseConfigOptions(items: unknown): z.infer<typeof zConfigOption>[] {
+  return Array.isArray(items) ? zConfigOptions.parse(items) : [];
+}
 const zModeOption = z.object({ id: z.string(), name: z.string(), description: zOpt(z.string()) });
 const zModelOption = z.object({ modelId: z.string(), name: z.string() });
 // ACP carries the expected-argument hint in `input.hint`; dropping it here is

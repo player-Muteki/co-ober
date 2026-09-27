@@ -628,6 +628,39 @@ describe('extractSessionSnapshot', () => {
     expect(snapshot.currentModelId).toBe('gpt-4');
   });
 
+  it('flattens a grouped model list the way the notification path does', () => {
+    // session/new answers with the same shape a config_option_update carries.
+    // The response was cast straight to the consumer's type, so a group — an
+    // entry with sub-options and no value of its own — reached the toolbar as
+    // an option list whose members had nothing to map, from inside the code
+    // that runs right after the session was created.
+    const snapshot = extractSessionSnapshot({
+      configOptions: [
+        {
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          type: 'select',
+          currentValue: 'gpt-4',
+          options: [{ group: 'openai', name: 'OpenAI', options: [{ value: 'gpt-4', name: 'GPT-4' }] }],
+        },
+      ],
+    });
+
+    expect(snapshot.currentModelId).toBe('gpt-4');
+    expect(snapshot.availableModels.map((m) => m.modelId)).toEqual(['gpt-4']);
+  });
+
+  it('reads an options field that is not a list as no choices, not a crash', () => {
+    expect(() =>
+      extractSessionSnapshot({
+        configOptions: [
+          { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: 'x', options: 'nope' },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
   it('should apply models from models field', () => {
     const snapshot = extractSessionSnapshot({
       models: {
@@ -729,6 +762,30 @@ describe('a config answer that is a real value (0.2.6 stage 2)', () => {
       configId: 'model',
       value: 'gpt-4',
     });
+  });
+
+  it('returns the config list it read, not the frame it was sent', async () => {
+    // The answer to set_config_option carries the whole option set again. Handing
+    // it over verbatim meant the toolbar walked a grouped or option-less entry
+    // exactly like the notification path used to — the one place that guard was
+    // left out of.
+    const client = new AcpClient('opencode');
+    Reflect.set(client, 'requestWithFallback', vi.fn().mockResolvedValue({
+      configOptions: [
+        {
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          type: 'select',
+          currentValue: 'gpt-4',
+          options: [{ group: 'openai', name: 'OpenAI', options: [{ value: 'gpt-4', name: 'GPT-4' }] }],
+        },
+      ],
+    }));
+
+    const configOptions = await client.setConfigOption('s1', 'model', 'gpt-4');
+
+    expect(configOptions[0].options).toEqual([{ value: 'gpt-4', name: 'GPT-4', description: 'OpenAI' }]);
   });
 });
 

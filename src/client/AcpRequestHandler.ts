@@ -342,6 +342,11 @@ export class AcpRequestHandler {
     this.terminalCapabilityMode = mode;
     if (this.terminalManager) {
       this.terminalManager.setConfig({ timeoutMs, maxOutputBytes });
+      // Closing the door is not stopping what already walked through it. The
+      // user switching to plan/readonly, or turning the terminal off in
+      // Settings, means a command still running is work on their vault that
+      // they have just withdrawn permission for.
+      if (mode === 'disabled') this.terminalManager.stopAllRunning();
     }
   }
 
@@ -573,10 +578,14 @@ export class AcpRequestHandler {
         pid: instance.pid,
       });
     } catch (e) {
-      const message =
-        e instanceof TerminalError
-          ? e.message
-          : `Failed to create terminal: ${e instanceof Error ? e.message : String(e)}`;
+      // A TerminalError is this client refusing the command it was handed —
+      // blank, or off the allowlist. That is a complaint about the parameters,
+      // so it goes back as -32602; an internal error tells the agent our side
+      // broke, which is what invites it to retry the same command forever.
+      if (e instanceof TerminalError) {
+        return Promise.reject(new AcpInvalidParamsError(e.message));
+      }
+      const message = `Failed to create terminal: ${e instanceof Error ? e.message : String(e)}`;
       return Promise.reject(new Error(message));
     }
   }

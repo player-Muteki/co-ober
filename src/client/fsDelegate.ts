@@ -188,7 +188,10 @@ export class FsDelegate {
 		const fd = openSync(filePath, 'r');
 		try {
 			const bytesRead = readSync(fd, buffer, 0, maxBytes, 0);
-			return buffer.toString('utf-8', 0, bytesRead);
+			// The ceiling lands on a byte, not a character boundary. Decoding a
+			// cut-off sequence appends a replacement character, which the agent
+			// then reads as real file content and can write back into the note.
+			return buffer.toString('utf-8', 0, bytesRead).replace(/\uFFFD+$/, '');
 		} finally {
 			closeSync(fd);
 		}

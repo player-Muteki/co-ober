@@ -535,7 +535,7 @@ describe('CoOberSettingsTab live capability push', () => {
     // must not hand the agent a write surface the permission mode exists to shut.
     await changeDropdown(findDropdown(tab, 'FS Capability Mode'), 'enabled');
     expect(plugin.settings.fsCapability).toBe('enabled');
-    expect(client.setFsCapabilityMode).toHaveBeenCalledWith('readonly');
+    expect(client.setFsCapabilityMode).toHaveBeenCalledWith('readonly', plugin.settings.maxNoteSize);
     expect(client.setTerminalCapabilityMode).toHaveBeenCalledWith('disabled');
 
     await changeDropdown(findDropdown(tab, 'Terminal Capability Mode'), 'enabled');

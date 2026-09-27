@@ -18,7 +18,11 @@ export interface CapabilityTierTarget {
  */
 export function applyPermissionTier(target: CapabilityTierTarget, mode: PermissionLevel, settings: CoOberSettings): void {
   if (mode === 'readonly' || mode === 'plan') {
-    target.setFsCapabilityMode('readonly');
+    // Closing writes does not close reads, and a read still needs a byte
+    // ceiling. Carrying the setting through here is what lets a maxNoteSize
+    // change reach the delegate while the tier is down, instead of leaving it
+    // reading at whatever limit was current when the tier was last up.
+    target.setFsCapabilityMode('readonly', settings.maxNoteSize);
     target.setTerminalCapabilityMode('disabled');
     return;
   }

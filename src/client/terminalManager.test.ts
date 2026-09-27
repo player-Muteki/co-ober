@@ -191,6 +191,33 @@ describe('TerminalManager', () => {
 		});
 	});
 
+	describe('stopAllRunning', () => {
+		it('signals every running command and says how many it stopped', () => {
+			const first = manager.create({ command: 'sleep 5' }, '/vault');
+			const second = manager.create({ command: 'sleep 7' }, '/vault');
+
+			expect(manager.stopAllRunning()).toBe(2);
+			expect(manager.get(first.terminalId)?.status).toBe('killed');
+			expect(manager.get(second.terminalId)?.status).toBe('killed');
+			// Stopped, not erased: the agent can still read what it printed and
+			// release it, which is what keeps a refusal from looking like a crash.
+			expect(manager.output(first.terminalId).error).toBeUndefined();
+		});
+
+		it('leaves a terminal that already exited alone', () => {
+			const instance = manager.create({ command: 'echo' }, '/vault');
+			const proc = Reflect.get(manager, 'processes').get(instance.terminalId);
+			proc.emit('exit', 0, null);
+			const killSpy = vi.spyOn(proc, 'kill');
+
+			// Closing the surface is not a licence to rewrite history: a command
+			// that finished on its own has an exit code the agent can still read.
+			expect(manager.stopAllRunning()).toBe(0);
+			expect(killSpy).not.toHaveBeenCalled();
+			expect(manager.get(instance.terminalId)?.status).toBe('exited');
+		});
+	});
+
 	describe('release', () => {
 		it('releases a terminal', () => {
 			const instance = manager.create({ command: 'echo' }, '/vault');
@@ -263,6 +290,33 @@ describe('TerminalManager', () => {
 		it('returns undefined for non-existent terminal', () => {
 			const retrieved = manager.get('non-existent');
 			expect(retrieved).toBeUndefined();
+		});
+	});
+
+	describe('configured limits', () => {
+		it('keeps the limit in force when Settings hand it one that is not a limit', () => {
+			// A number that survives sanitisation as 0 or -5 is not "no wait" or
+			// "print nothing": it is a broken value, and honouring it turned every
+			// waitForExit into an instant answer and every log into an empty one.
+			manager.setConfig({ timeoutMs: -5, maxOutputBytes: 0 });
+
+			expect(Reflect.get(manager, 'timeoutMs')).toBe(5000);
+			expect(Reflect.get(manager, 'maxOutputBytes')).toBe(1000);
+		});
+
+		it('applies a usable limit', () => {
+			manager.setConfig({ timeoutMs: 250, maxOutputBytes: 64 });
+
+			expect(Reflect.get(manager, 'timeoutMs')).toBe(250);
+			expect(Reflect.get(manager, 'maxOutputBytes')).toBe(64);
+		});
+
+		it('starts on the plugin default rather than an unusable configured value', () => {
+			const localManager = new TerminalManager({ timeoutMs: NaN, maxOutputBytes: -1 });
+
+			expect(Reflect.get(localManager, 'timeoutMs')).toBe(30000);
+			expect(Reflect.get(localManager, 'maxOutputBytes')).toBe(100000);
+			localManager.dispose();
 		});
 	});
 

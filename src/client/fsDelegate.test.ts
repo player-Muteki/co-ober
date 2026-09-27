@@ -145,6 +145,30 @@ describe('FsDelegate', () => {
 			expect(result.content).toContain('truncated');
 		});
 
+		it('does not hand back half a character when the byte ceiling cuts one', () => {
+			// 中 is three bytes, so a four-byte ceiling lands inside 文. Decoding
+			// the cut sequence appends U+FFFD, which the agent read as the last
+			// character of its own note — and could write straight back.
+			const bytes = Buffer.from('中文', 'utf-8');
+			(existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
+			(statSync as ReturnType<typeof vi.fn>).mockReturnValue({ isDirectory: () => false, size: bytes.length });
+
+			const fs = require('fs');
+			fs.openSync = vi.fn().mockReturnValue(1);
+			fs.readSync = vi.fn((_fd: number, buffer: Buffer, offset: number, length: number) => {
+				const copied = Math.min(length, bytes.length);
+				bytes.copy(buffer, offset, 0, copied);
+				return copied;
+			});
+			fs.closeSync = vi.fn();
+
+			const narrow = new FsDelegate({ vaultPath: '/vault', maxBytes: 4 });
+			const result = narrow.readTextFile('cjk.md');
+
+			expect(result.content).toContain('truncated');
+			expect(result.content).not.toContain('\uFFFD');
+		});
+
 		it('flags only a genuinely missing file as notFound', () => {
 			// A directory, an out-of-vault path and a truncated read are all
 			// failures, but none is "the file is not there" — collapsing them into
@@ -217,6 +241,13 @@ describe('the lines an agent pointed at (0.2.5 stage 2)', () => {
 
 		expect(result.content).toContain('truncated');
 		expect(result.content.startsWith('aaaaaaaa')).toBe(true);
+	});
+
+	it('cuts a capped window between characters too', () => {
+		const narrow = new FsDelegate({ vaultPath: '/vault', maxBytes: 4 });
+		file('中文\nmore');
+
+		expect(narrow.readTextFile('a.md', { line: 1 }).content).not.toContain('\uFFFD');
 	});
 
 	it('still reads the whole file when no window was named', () => {

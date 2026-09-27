@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { AcpRequestHandler, parseElicitationForm } from './AcpRequestHandler';
-import { AcpMethodNotFoundError, AcpResourceNotFoundError } from './AcpErrors';
+import { AcpInvalidParamsError, AcpMethodNotFoundError, AcpResourceNotFoundError } from './AcpErrors';
+import { TerminalError } from './terminalManager';
 import type { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
 import type { CapabilityGrant, PermissionDecision, PermissionRequest, TerminalCreateParams } from '../types';
 
@@ -542,6 +543,38 @@ describe('terminal/create as the protocol writes it (0.2.6 stage 2)', () => {
     await expect(call(handler, 'handleTerminalCreate', { command: 'ls', args: 'origin' })).rejects.toThrow(/args/);
     handler.dispose();
   });
+
+  it('answers a refused command as invalid params rather than an internal error', async () => {
+    // A TerminalError is this client saying no to the command it was handed —
+    // blank, or off the allowlist. As a bare Error it arrives at the agent as
+    // -32603, "something broke on the client", which is exactly what invites
+    // the same refused command to be retried for the rest of the turn.
+    const handler = makeHandler({});
+    handler.setTerminalCapabilityMode('enabled');
+    Reflect.set(handler, 'terminalManager', {
+      dispose: vi.fn(),
+      create: () => {
+        throw new TerminalError('Command not allowed: mkfs');
+      },
+    });
+
+    await expect(call(handler, 'handleTerminalCreate', { command: 'mkfs' })).rejects.toBeInstanceOf(AcpInvalidParamsError);
+    handler.dispose();
+  });
+
+  it('keeps a failure inside the spawn path an internal error', async () => {
+    const handler = makeHandler({});
+    handler.setTerminalCapabilityMode('enabled');
+    Reflect.set(handler, 'terminalManager', {
+      dispose: vi.fn(),
+      create: () => {
+        throw new Error('EPERM');
+      },
+    });
+
+    await expect(call(handler, 'handleTerminalCreate', { command: 'ls' })).rejects.toThrow('Failed to create terminal: EPERM');
+    handler.dispose();
+  });
 });
 
 describe('AcpRequestHandler capability-surface and not-found error shape (0.2.7 stage 2)', () => {
@@ -568,9 +601,27 @@ describe('AcpRequestHandler capability-surface and not-found error shape (0.2.7 
 
   it('answers a closed terminal surface with method-not-found', async () => {
     const h = handler();
-    Reflect.set(h, 'terminalManager', { create: () => ({ terminalId: 't1', pid: 1 }), setConfig: vi.fn(), dispose: vi.fn() });
+    Reflect.set(h, 'terminalManager', {
+      create: () => ({ terminalId: 't1', pid: 1 }),
+      setConfig: vi.fn(),
+      stopAllRunning: vi.fn(),
+      dispose: vi.fn(),
+    });
     h.setTerminalCapabilityMode('disabled');
     await expect(callPrivate(h, 'handleTerminalCreate', { command: 'ls' })).rejects.toBeInstanceOf(AcpMethodNotFoundError);
+    h.dispose();
+  });
+
+  it('stops a command still running when the terminal surface closes', async () => {
+    // Turning the terminal off — in Settings, or by moving to plan/readonly —
+    // is the user withdrawing permission for work on their vault. Killing the
+    // door against future requests left the running one running.
+    const h = handler();
+    const stopAllRunning = vi.fn();
+    Reflect.set(h, 'terminalManager', { setConfig: vi.fn(), stopAllRunning, dispose: vi.fn() });
+    h.setTerminalCapabilityMode('disabled');
+
+    expect(stopAllRunning).toHaveBeenCalledTimes(1);
     h.dispose();
   });
 
