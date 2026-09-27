@@ -5,6 +5,13 @@ import { TRUNCATION_MARKER } from '../constants';
 export interface FsReadResult {
 	content: string;
 	error?: string;
+	/**
+	 * True only when the file genuinely does not exist. The caller maps this to
+	 * JSON-RPC RESOURCE_NOT_FOUND; every other failure (outside the vault, a
+	 * directory, an I/O or permission error) is a different problem and must not
+	 * be reported as "not there", or the agent stops looking instead of reacting.
+	 */
+	notFound?: boolean;
 }
 
 export interface FsWriteResult {
@@ -64,7 +71,7 @@ export class FsDelegate {
 			}
 
 			if (!existsSync(resolvedPath)) {
-				return { content: '', error: `File not found: ${filePath}` };
+				return { content: '', error: `File not found: ${filePath}`, notFound: true };
 			}
 
 			const stat = statSync(resolvedPath);

@@ -31,6 +31,7 @@ interface PendingRequest {
   reject: (error: Error) => void;
   timeout: number | null;
   abortHandler: (() => void) | null;
+  signal: AbortSignal | null;
 }
 
 type NotificationHandler = (params: unknown) => void | Promise<void>;
@@ -118,7 +119,7 @@ export class AcpJsonRpcTransport {
         signal.addEventListener('abort', abortHandler, { once: true });
       }
 
-      this.pending.set(id, { method, resolve: resolve as (v: unknown) => void, reject, timeout, abortHandler });
+      this.pending.set(id, { method, resolve: resolve as (v: unknown) => void, reject, timeout, abortHandler, signal: signal ?? null });
       this.send(msg);
     });
   }
@@ -149,11 +150,22 @@ export class AcpJsonRpcTransport {
 
   rejectPending(error: Error): void {
     for (const [, entry] of this.pending) {
-      if (entry.timeout) window.clearTimeout(entry.timeout);
-      if (entry.abortHandler) entry.abortHandler();
+      this.settle(entry);
       entry.reject(error);
     }
     this.pending.clear();
+  }
+
+  /**
+   * Clear the request's timeout and detach its abort listener, so neither
+   * outlives the settled promise. Every path that finishes a pending request
+   * goes through here: a request that is answered, or one rejected because the
+   * connection closed, must not leave a listener attached to an AbortSignal the
+   * agent reuses for the next turn.
+   */
+  private settle(entry: PendingRequest): void {
+    if (entry.timeout) window.clearTimeout(entry.timeout);
+    if (entry.signal && entry.abortHandler) entry.signal.removeEventListener('abort', entry.abortHandler);
   }
 
   dispose(error?: Error): void {
@@ -217,16 +229,14 @@ export class AcpJsonRpcTransport {
       const entry = this.pending.get(typeof id === 'number' ? id : Number(id));
       this.pending.delete(typeof id === 'number' ? id : Number(id));
       if (entry) {
-        if (entry.timeout) window.clearTimeout(entry.timeout);
-        if (entry.abortHandler) entry.abortHandler();
+        this.settle(entry);
         entry.resolve(msg.result);
       }
     } else if (id !== undefined && hasError) {
       const entry = this.pending.get(typeof id === 'number' ? id : Number(id));
       this.pending.delete(typeof id === 'number' ? id : Number(id));
       if (entry) {
-        if (entry.timeout) window.clearTimeout(entry.timeout);
-        if (entry.abortHandler) entry.abortHandler();
+        this.settle(entry);
         const errObj = msg.error as { code?: number; message?: string; data?: unknown };
         // Some agents carry the only human-readable text in error.data;
         // without it the message stays "Unknown error" for both the console
@@ -235,6 +245,17 @@ export class AcpJsonRpcTransport {
         entry.reject(
           new AcpProtocolError(errObj?.message ?? dataText ?? 'Unknown error', entry.method, errObj?.code, errObj?.data),
         );
+      }
+    } else if (id !== undefined && !hasMethod) {
+      // A frame that carries an id but no method is a response, not a request
+      // or notification. When it holds neither result nor error it is malformed
+      // — but leaving the matching request unanswered makes the agent hang
+      // until its own timeout. Answer it with the empty result the agent gave.
+      const entry = this.pending.get(typeof id === 'number' ? id : Number(id));
+      this.pending.delete(typeof id === 'number' ? id : Number(id));
+      if (entry) {
+        this.settle(entry);
+        entry.resolve(undefined);
       }
     } else if (hasMethod && id === undefined) {
       const method = msg.method as string;

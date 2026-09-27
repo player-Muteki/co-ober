@@ -493,7 +493,14 @@ export class AcpRequestHandler {
     }
 
     return Promise.resolve(this.fsDelegate.readTextFile(parsed.data.path, parsed.data)).then((res) => {
-      if (res.error) throw new AcpResourceNotFoundError(res.error);
+      if (res.error) {
+        // Only a genuinely missing file is "resource not found" (-32002). A path
+        // outside the vault, a directory, or an I/O/permission failure is a
+        // different problem: stamped -32002 the agent concluded the file simply
+        // wasn't there and moved on instead of reacting to what really failed.
+        if (res.notFound) throw new AcpResourceNotFoundError(res.error);
+        throw new Error(res.error);
+      }
       return { content: res.content };
     });
   }

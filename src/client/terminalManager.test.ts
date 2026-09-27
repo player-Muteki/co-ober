@@ -250,6 +250,18 @@ describe('TerminalManager', () => {
 			manager.dispose();
 			expect(manager.getAll()).toHaveLength(0);
 		});
+
+		it('resolves a pending waitForExit instead of stranding it when the manager is disposed', async () => {
+			const instance = manager.create({ command: 'sleep 5' }, '/vault');
+			const waiter = manager.waitForExit(instance.terminalId);
+
+			manager.dispose();
+
+			// Clearing the waiter's timeout without answering it left whoever
+			// called waitForExit hanging for a process the manager was taking
+			// away. Resolve it as "no exit observed".
+			await expect(waiter).resolves.toBeNull();
+		});
 	});
 });
 

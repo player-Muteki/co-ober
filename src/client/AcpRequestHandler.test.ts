@@ -173,6 +173,19 @@ describe('AcpRequestHandler fs/terminal in-band errors', () => {
     handler.dispose();
   });
 
+  it('reports -32002 only for a genuinely missing file, not for a refused path', async () => {
+    const handler = makeHandler({});
+    // A file that simply isn't there is a resource-not-found the agent can act on.
+    await expect(callPrivate(handler, 'handleReadTextFile', { path: 'definitely-missing.md' }))
+      .rejects.toBeInstanceOf(AcpResourceNotFoundError);
+    // An out-of-vault path is a refusal, not an absence: stamping -32002 on it
+    // told the agent the file was not there, so it stopped looking instead of
+    // reacting to what actually went wrong.
+    await expect(callPrivate(handler, 'handleReadTextFile', { path: '/etc/passwd' }))
+      .rejects.not.toBeInstanceOf(AcpResourceNotFoundError);
+    handler.dispose();
+  });
+
   it('surfaces a failed write as a rejected request, not an empty success', async () => {
     const handler = new AcpRequestHandler({
       transport: { onRequest: vi.fn(() => () => {}) } as unknown as AcpJsonRpcTransport,

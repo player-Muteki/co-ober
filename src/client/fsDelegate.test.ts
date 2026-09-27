@@ -117,6 +117,7 @@ describe('FsDelegate', () => {
 
 			expect(result.content).toBe('');
 			expect(result.error).toContain('File not found');
+			expect(result.notFound).toBe(true);
 		});
 
 		it('returns error for directory', () => {
@@ -142,6 +143,18 @@ describe('FsDelegate', () => {
 			const result = delegate.readTextFile('large-file.txt');
 
 			expect(result.content).toContain('truncated');
+		});
+
+		it('flags only a genuinely missing file as notFound', () => {
+			// A directory, an out-of-vault path and a truncated read are all
+			// failures, but none is "the file is not there" — collapsing them into
+			// that signal let an agent stop looking instead of reacting.
+			(existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
+			(statSync as ReturnType<typeof vi.fn>).mockReturnValue({ isDirectory: () => true, size: 0 });
+			expect(delegate.readTextFile('some-folder').notFound).toBeUndefined();
+
+			expect(delegate.readTextFile('/etc/passwd').notFound).toBeUndefined();
+			expect(delegate.readTextFile('../escape.md').notFound).toBeUndefined();
 		});
 	});
 });

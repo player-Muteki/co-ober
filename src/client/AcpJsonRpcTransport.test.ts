@@ -600,6 +600,71 @@ describe('AcpJsonRpcTransport', () => {
     await expect(p1).resolves.toBe(10);
     await expect(p2).resolves.toBe(20);
   });
+
+  it('settles a request the agent answers with neither result nor error', async () => {
+    transport.start();
+    const p = transport.request('voidish', undefined, 5_000);
+    let sent = '';
+    output.on('data', (chunk) => {
+      sent += chunk.toString();
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const reqId = JSON.parse(sent.trim()).id;
+
+    // An id with no method is a response. One that carries neither result nor
+    // error is malformed, but leaving it unanswered made the request hang until
+    // its own timeout; answer it as the empty result the agent gave.
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: reqId }) + '\n');
+
+    await expect(p).resolves.toBeUndefined();
+  });
+
+  it('rejects a signal-bound pending request with the close reason, not an abort', async () => {
+    transport.start();
+    const signal = {
+      aborted: false,
+      addEventListener: (_event: string, _handler: () => void) => {},
+      removeEventListener: vi.fn(),
+    };
+    const p = transport.request('m', undefined, 5_000, signal as unknown as AbortSignal);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const closing = new Error('ACP process exited (code=1, signal=null)');
+    transport.rejectPending(closing);
+
+    // Triggering each request's abort handler first rejected it with a generic
+    // "aborted" and swallowed the real reason a caller needs to tell a
+    // connection dying apart from a user cancel.
+    await expect(p).rejects.toBe(closing);
+  });
+
+  it('detaches the abort listener when a request is answered normally', async () => {
+    transport.start();
+    const added: Array<() => void> = [];
+    const signal = {
+      aborted: false,
+      addEventListener: (_event: string, handler: () => void) => {
+        added.push(handler);
+      },
+      removeEventListener: vi.fn(),
+    };
+    const p = transport.request('m', undefined, 5_000, signal as unknown as AbortSignal);
+    let sent = '';
+    output.on('data', (chunk) => {
+      sent += chunk.toString();
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const reqId = JSON.parse(sent.trim()).id;
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: reqId, result: 'done' }) + '\n');
+
+    await expect(p).resolves.toBe('done');
+    // A request answered before its deadline still had a listener attached to a
+    // signal the agent reuses for the next turn; normal completion must let it go.
+    expect(added).toHaveLength(1);
+    expect(signal.removeEventListener).toHaveBeenCalledWith('abort', added[0]);
+  });
 });
 
 describe('0.2.3 stage 1 per-connection drift memory', () => {

@@ -241,6 +241,13 @@ export class TerminalManager {
 	dispose(): void {
 		for (const [, waiter] of this.exitWaiters) {
 			window.clearTimeout(waiter.timeout);
+			// A wait for an exit that will never be observed — the manager is
+			// going away — must be answered, not left hanging. Clearing the
+			// timeout alone strands every resolve callback and blocks whoever
+			// called waitForExit until their own deadline. Say nothing exited.
+			for (const resolve of waiter.resolves) {
+				resolve(null);
+			}
 		}
 		this.exitWaiters.clear();
 
