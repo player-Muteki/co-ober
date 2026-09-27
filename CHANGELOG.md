@@ -1,3 +1,23 @@
+## 0.2.10 - 2026-09-27
+
+No new capabilities. This release refuses a store that would load as nothing, answers the agent with the config options and the parameter error it should have received, and leaves a stopped turn with nothing still spinning behind it.
+
+### Changed
+- **The smallest message cap still keeps an answer**: a limit of one no longer spends its single slot on the truncation marker, so the newest turn — the answer being read — stays on disk instead of being replaced by a line saying how many messages were dropped.
+- **A session list that yields no sessions is a failed load**: a `data.json` this build stamped whose list names conversations but produces none after migration is told apart from an intentionally empty history and routed to restore-from-backup, rather than hydrating as an empty plugin that restamps and buries the bytes; the rolling backup applies the same gate to itself, so a copy that would only fail again is never written over the live file.
+- **A save-failure toast cannot outlive its plugin**: the sticky notice is retired when the plugin is torn down, since a duration-0 toast survives its instance and a reload holds no reference to hide it — leaving the reader accused of a failing disk for a session that will never write again.
+- **A command from a file remembers the line you typed**: an expanded slash command now records the prompt as typed, in the tab it was typed in and in the transcript that reaches disk, the way a builtin command always has — no more answer with no question above it and nothing left behind by a reload.
+- **The config options a session answers with get walked**: `session/new` and `set_config_option` responses are parsed by the same parser a notification already used, so a grouped model list or an option-less toggle no longer arrives unwalked at the toolbar — and no longer throws from inside the code that runs immediately after the session was created.
+- **A command this client refuses says why**: a blank invocation, or one off the allowlist, answers as the invalid-params it is rather than an internal error, so an agent stops spending the rest of its turn retrying a command that will never be accepted.
+- **A whole-file read cuts on a character too**: the byte ceiling for an entire note is clipped to a whole character the way the line-window branch already did, so the note an agent reads back never ends in a glyph no file ever contained.
+- **The note size reaches the tiers where reads still happen**: `maxNoteSize` is carried through the *readonly* and *plan* tiers instead of leaving the delegate on whatever ceiling was current the last time that tier was up.
+- **A ceiling of nothing is not a ceiling**: a zero or negative terminal timeout and output size are refused rather than honoured — the first answers every wait instantly, the second makes every command appear to print nothing.
+- **Closing the terminal stops the work it was guarding**: a running command is killed the moment the terminal surface closes, so nothing keeps executing against the user's vault after they withdrew permission for it.
+- **A stop leaves no spinner, no banner, no dot**: stopping a turn retires the permission question that turn was asking, takes the waiting bubble away with the `finally` the generation bump skipped, and tells the tab strip the tab stopped working — and only that session's banner goes, since a `/btw` thread of the same tab still holds its own question the reader never cancelled.
+- **A turn that never started is not unread**: a turn that lost the shared-slot race and went back into the queue no longer lights the unread dot, so the reader is not sent to a panel whose answer had not begun.
+- **The image budget belongs to the tab**: the staged-byte total is handed over with the composer when a tab comes forward, instead of being carried across tabs by one shared counter that made the tab you entered pay for the attachments of the tab you left — and let a chip removed there drive the budget negative and admit anything.
+- **The chat bar shows the tier Settings just moved**: changing *Permission Mode* re-projects the tier onto the open chat view's own selector, which previously re-read the setting only when a tab was activated and so kept naming a tier no longer in force.
+
 ## 0.2.9 - 2026-09-27
 
 No new capabilities. This release keeps a damaged store from being read as an empty one, answers the protocol with the ceiling and the hangs-up call it should have sent, and puts the shared screens back in the state of the tab you are actually looking at.
