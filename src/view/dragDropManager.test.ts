@@ -137,6 +137,49 @@ describe('DragDropManager', () => {
       manager.onRemoveImagePart('data', 1024);
       expect(handlers.onRemoveImagePart).toHaveBeenCalledWith('data', 1024);
     });
+
+    it('adopts the staged total of the tab now in front', async () => {
+      mockSizedImageReader();
+      const big = new File(['image-data'], 'big.png', { type: 'image/png' });
+      Object.defineProperty(big, 'size', { value: 9 * 1024 * 1024 });
+      await manager.handleFiles([big]);
+      expect(handlers.onAddImagePart).toHaveBeenCalledTimes(1);
+
+      // The reader switched tabs: the tab in front has nothing staged, so the
+      // bytes left behind must stop charging it.
+      manager.setStagedBytes(0);
+      (Notice as any).messages.length = 0;
+      const second = new File(['more'], 'second.png', { type: 'image/png' });
+      Object.defineProperty(second, 'size', { value: 2 * 1024 * 1024 });
+      await manager.handleFiles([second]);
+
+      expect(handlers.onAddImagePart).toHaveBeenCalledTimes(2);
+      expect((Notice as any).messages).toEqual([]);
+    });
+
+    it('keeps the budget of the tab in front even when nothing was staged here', async () => {
+      mockSizedImageReader();
+      // A draft restored from disk — or another tab's staged set handed over —
+      // is measured, not assumed empty.
+      manager.setStagedBytes(9 * 1024 * 1024);
+      (Notice as any).messages.length = 0;
+
+      const file = new File(['more'], 'second.png', { type: 'image/png' });
+      Object.defineProperty(file, 'size', { value: 2 * 1024 * 1024 });
+      await manager.handleFiles([file]);
+
+      expect(handlers.onAddImagePart).not.toHaveBeenCalled();
+      expect((Notice as any).messages).toContain(
+        '"second.png" was not added — the images already staged fill the 10 MB limit',
+      );
+    });
+
+    it('does not go below the adopted total when a chip is removed', () => {
+      manager.setStagedBytes(4096);
+      manager.onRemoveImagePart('data', 1024);
+
+      expect((Reflect.get(manager, 'pendingImageTotalBytes') as number)).toBe(3072);
+    });
   });
 
   describe('drop handling', () => {

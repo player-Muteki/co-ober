@@ -1349,6 +1349,58 @@ describe('CoOberViewController', () => {
       // answer was cut short instead of replaying it as a finished turn.
       expect(stamp).toHaveBeenCalledTimes(1);
     });
+
+    it('retires the permission question the stopped turn was asking', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      const dismiss = vi.fn();
+      Object.assign(deps.permissionBanner, { dismiss });
+      controller.state.sessionId = 's-stopped';
+      // A /btw thread of this tab may have its own question on screen; the
+      // reader stopped this turn, not that one.
+      activeRt(controller).sideChatSessionId = 's-btw';
+      Reflect.set(controller, 'busy', true);
+      controller.state.isStreaming = true;
+
+      await controller.stopGeneration();
+
+      // The banner outlives its turn otherwise: an answer clicked after the
+      // cancel goes to a session no longer listening.
+      expect(dismiss).toHaveBeenCalledWith(['s-stopped']);
+    });
+
+    it('takes the waiting bubble away when the stop lands before the first token', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      const order: string[] = [];
+      Object.assign(deps.renderer, {
+        removeAssistantPlaceholder: vi.fn(() => order.push('placeholder')),
+        appendInterruptIndicator: vi.fn(() => order.push('interrupt')),
+      });
+      controller.state.sessionId = 'test-session';
+      Reflect.set(controller, 'busy', true);
+      controller.state.isStreaming = true;
+
+      await controller.stopGeneration();
+
+      // The finally that would have removed it is skipped by the genId bump, so
+      // a stopped tab kept its spinner — a reply that never came.
+      expect(order).toEqual(['placeholder', 'interrupt']);
+    });
+
+    it('takes the generating marker off the tab strip', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      const onTabsChanged = vi.fn();
+      callbacks.onTabsChanged = onTabsChanged;
+      controller.state.sessionId = 'test-session';
+      Reflect.set(controller, 'busy', true);
+      controller.state.isStreaming = true;
+
+      await controller.stopGeneration();
+
+      expect(onTabsChanged).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('an inline edit asked for by this tab', () => {

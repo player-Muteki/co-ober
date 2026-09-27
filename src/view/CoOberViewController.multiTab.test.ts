@@ -430,6 +430,39 @@ describe('CoOberViewController — multi-tab runtimes (0.2.0 stage 2)', () => {
       expect(rt.renderer.addError).not.toHaveBeenCalled();
       expect(rt.busy).toBe(false);
     });
+
+    it('does not flag a background tab whose turn only lost the slot race', async () => {
+      const count = { value: MAX_CONCURRENT_STREAMS };
+      const client = createMockClient({
+        activeStreamCount: vi.fn(() => count.value),
+        sendMessage: vi.fn().mockImplementation(() => {
+          count.value = MAX_CONCURRENT_STREAMS;
+          return Promise.reject(new AcpStreamCapacityError(MAX_CONCURRENT_STREAMS));
+        }),
+      });
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      h.controller.state.sessionId = 'ses-a';
+      const tabA = h.controller.activeTabId();
+      (rtOf(h, tabA) as { busy: boolean }).busy = true;
+      await h.controller.switchSession('ses-b');
+      const tabB = h.controller.activeTabId();
+      const rt = rtOf(h, tabB);
+
+      // Full budget: the prompt waits in tab B's queue instead of failing.
+      await h.controller.send('parked', []);
+      expect(rt.promptQueue.map((e) => e.text)).toEqual(['parked']);
+      // The reader goes back to the other conversation before a slot frees.
+      h.controller.switchToTab(tabA);
+
+      count.value = MAX_CONCURRENT_STREAMS - 1;
+      (Reflect.get(h.controller, 'tryDrainAnyQueue') as () => void).call(h.controller);
+      await vi.waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(1));
+
+      // Nothing answered: lighting the unread dot would send the reader to an
+      // empty panel, and it would go back out when the head actually ran.
+      expect(rt.unread).toBe(false);
+      expect(rt.promptQueue.map((e) => e.text)).toEqual(['parked']);
+    });
   });
 
   describe('teardown', () => {

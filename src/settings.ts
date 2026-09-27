@@ -34,6 +34,10 @@ interface LocaleAwareView {
   refreshTabBar?: () => void;
 }
 
+interface PermissionAwareView {
+  refreshPermissionMode?: () => void;
+}
+
 interface DiagnosticResult {
   label: string;
   ok: boolean;
@@ -165,10 +169,15 @@ export class CoOberSettingsTab extends PluginSettingTab {
         .onChange(async (v) => {
           s.permissionMode = v as PermissionLevel;
           await this.save();
-          if (this.plugin.client) {
-            this.plugin.client.permissionMode = v as PermissionLevel;
-            applyPermissionTier(this.plugin.client, s.permissionMode, s);
+          const client = this.plugin.getClient();
+          if (client) {
+            client.permissionMode = v as PermissionLevel;
+            applyPermissionTier(client, s.permissionMode, s);
           }
+          // The chat bar carries its own permission selector and reads the
+          // setting only when a tab is activated, so without this push it keeps
+          // naming the tier that was in force before this dropdown moved.
+          this.refreshOpenViewsPermission();
         }));
 
     new Setting(containerEl)
@@ -804,6 +813,14 @@ export class CoOberSettingsTab extends PluginSettingTab {
     for (const leaf of leaves) {
       const view = leaf.view as LocaleAwareView;
       view.refreshLocale?.();
+    }
+  }
+
+  private refreshOpenViewsPermission(): void {
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE);
+    for (const leaf of leaves) {
+      const view = leaf.view as PermissionAwareView;
+      view.refreshPermissionMode?.();
     }
   }
 

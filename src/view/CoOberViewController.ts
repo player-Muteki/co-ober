@@ -1990,8 +1990,11 @@ export class CoOberViewController {
           this.deps.toolbar.setSending(false);
           this.deps.input.focus();
         } else {
-          // A turn completed out of sight: flag the tab until it is viewed.
-          rt.unread = true;
+          // A turn completed out of sight: flag the tab until it is viewed. A
+          // turn that lost the capacity race and went back into the queue is
+          // not completed — flagging it told the reader to look at a tab whose
+          // answer had not started yet, and the dot went out when it re-ran.
+          if (!parkedForCapacity) rt.unread = true;
         }
         this.notifyTabsChanged();
         // A turn that never ran has nothing to report: stamping the footer here
@@ -2438,6 +2441,7 @@ export class CoOberViewController {
     const rt = this.activeRuntime;
     const c = this.deps.runtime.getClient();
     if (!c || !rt.state.sessionId || (!rt.busy && !rt.state.isStreaming)) return;
+    const sessionId = rt.state.sessionId;
     // Increment genId FIRST so the in-flight executeAgentCall's finally block
     // skips stale state updates (busy=false, onFinally).
     ++rt.genId;
@@ -2446,10 +2450,14 @@ export class CoOberViewController {
     try {
       // Cancel the backend RPC before resetting local state,
       // so the in-flight handler stops processing chunks immediately.
-      await c.cancel(rt.state.sessionId);
+      await c.cancel(sessionId);
     } catch (e) {
       console.error('[co-ober] cancel:', e);
     }
+    // The turn this banner belongs to is over, so the question it asked can no
+    // longer be answered in the context that asked it. Leaving it standing
+    // offered the user a choice whose outcome nobody will read.
+    this.deps.permissionBanner.dismiss([sessionId]);
     // Buffered pending/in_progress tool calls belonged to the interrupted
     // turn: render them terminal now so they neither vanish nor ghost into
     // the next turn (its finally is skipped by the genId bump above).
@@ -2457,6 +2465,10 @@ export class CoOberViewController {
     // Stop during a thought: close the live thinking block before the
     // interrupt marker, so its timer stops and the label finalizes.
     rt.renderer.finalizeCurrentThinking();
+    // The same finally that would have taken the waiting bubble away is
+    // skipped by the genId bump: stopped before the first token arrived, the
+    // tab kept showing a spinner that reads as a reply still on its way.
+    rt.renderer.removeAssistantPlaceholder();
     // Append "Interrupted" indicator to the current assistant response
     rt.renderer.appendInterruptIndicator();
     // ...and into the transcript message, so a reload doesn't replay a
@@ -2484,6 +2496,9 @@ export class CoOberViewController {
       this.deps.input.focus();
     }
     this.updateQueueIndicator(rt);
+    // The strip's generating marker is cleared by the same finally the genId
+    // bump skipped, so say here that this tab is no longer working.
+    this.notifyTabsChanged();
   }
 
   /**

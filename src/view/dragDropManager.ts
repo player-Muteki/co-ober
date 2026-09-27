@@ -88,6 +88,17 @@ export class DragDropManager {
 		this.pendingImageTotalBytes = 0;
 	}
 
+	/**
+	 * Adopt the byte total of the images actually staged in front of the user.
+	 * One manager serves every tab while the staged list swaps with the tab, so
+	 * a counter that only ever moved by add and remove keeps charging the tab
+	 * you left onto the tab you entered — and subtracting a chip the entered tab
+	 * never added drives it negative, after which any amount goes through.
+	 */
+	setStagedBytes(total: number): void {
+		this.pendingImageTotalBytes = total;
+	}
+
 	onRemoveImagePart(data: string, size: number): void {
 		this.pendingImageTotalBytes -= size;
 		this.handlers.onRemoveImagePart(data, size);

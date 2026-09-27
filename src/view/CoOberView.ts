@@ -710,6 +710,13 @@ export class CoOberView extends ItemView {
     this.manualRefs = draft ? new Set(draft.manualRefs) : new Set();
     this.lastAutoRefId = draft?.lastAutoRefId ?? null;
     this.pendingImageParts = draft ? [...draft.images] : [];
+    // The staged list belongs to the tab, the byte counter to the one manager
+    // this view shares. Without this handoff the tab you enter keeps paying for
+    // the attachments of the tab you left — and a chip removed here subtracts
+    // bytes it never staged, which then lets an over-budget drop through.
+    let stagedBytes = 0;
+    for (const entry of this.pendingImageParts) stagedBytes += entry.size;
+    this.dragDropManager?.setStagedBytes(stagedBytes);
     this.rebuildChips();
   }
 
@@ -836,6 +843,16 @@ export class CoOberView extends ItemView {
     this.contextChipsEl?.querySelectorAll('.chip-remove').forEach((el) => {
       el.setAttribute('aria-label', t().input.removeChip);
     });
+  }
+
+  /**
+   * Re-project the permission tier onto the toolbar. The Settings dropdown and
+   * the bar's own selector write the same value, so a change made over there
+   * has to come back here: leaving the bar on the old label shows a tier that
+   * is no longer in force, while requests are already handled under the new one.
+   */
+  refreshPermissionMode(): void {
+    this.toolbar.updatePermission(this.plugin.settings.permissionMode);
   }
 
   // ── Reconnect button (view-owned DOM) ──

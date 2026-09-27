@@ -383,7 +383,11 @@ describe('CoOberSettingsTab locale refresh', () => {
 });
 
 function createPlugin(
-  refreshedView: { refreshLocale: () => void; loadToolbarOptions?: () => void },
+  refreshedView: {
+    refreshLocale: () => void;
+    loadToolbarOptions?: () => void;
+    refreshPermissionMode?: () => void;
+  },
   snapshot: {
     availableModes?: Array<{ id: string; name: string }>;
     availableModels?: Array<{ modelId: string; name: string }>;
@@ -541,6 +545,23 @@ describe('CoOberSettingsTab live capability push', () => {
     await changeDropdown(findDropdown(tab, 'Terminal Capability Mode'), 'enabled');
     expect(plugin.settings.terminalCapability).toBe('enabled');
     expect(client.setTerminalCapabilityMode).toHaveBeenLastCalledWith('disabled');
+  });
+
+  it('reprojects the tier onto the open chat view when the permission mode moves', async () => {
+    setLocale('en');
+    const refreshPermissionMode = vi.fn();
+    const plugin = createPlugin({ refreshLocale: vi.fn(), refreshPermissionMode });
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+    const client = plugin.getClient()!;
+
+    await changeDropdown(findDropdown(tab, 'Permission Mode'), 'readonly');
+
+    expect(plugin.settings.permissionMode).toBe('readonly');
+    expect(client.permissionMode).toBe('readonly');
+    // The chat bar has its own permission selector and only re-reads the setting
+    // when a tab comes forward, so it kept naming the tier that no longer holds.
+    expect(refreshPermissionMode).toHaveBeenCalledTimes(1);
   });
 
   it('passes an idle timeout of 0 through as disabled', async () => {

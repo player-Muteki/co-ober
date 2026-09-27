@@ -505,6 +505,36 @@ describe('CoOberView tab panels', () => {
     expect(liveImages(view)).toEqual([]);
   });
 
+  it('carries the staged-image budget with the tab, not with the view', async () => {
+    const view = await openView(createPlugin({ client: createClient() }));
+    const dragDrop = Reflect.get(view, 'dragDropManager') as object;
+    const staged = () => Reflect.get(dragDrop, 'pendingImageTotalBytes') as number;
+    await stageImage(view, 'shot.png', 'image/png');
+    expect(staged()).toBe(4);
+
+    // The shared composer moves onto the new tab's (empty) draft; the bytes the
+    // first tab staged would otherwise keep filling this tab's 10 MB budget.
+    const { tabA } = await openSecondTab(view);
+    expect(staged()).toBe(0);
+
+    const controller = Reflect.get(view, 'controller') as CoOberViewController;
+    controller.switchToTab(tabA);
+    expect(staged()).toBe(4);
+  });
+
+  it('shows the permission tier the settings just moved on its own selector', async () => {
+    const plugin = createPlugin({ client: createClient() });
+    const view = await openView(plugin);
+    const updates: string[] = [];
+    const toolbar = Reflect.get(view, 'toolbar') as { updatePermission: (mode: string) => void };
+    toolbar.updatePermission = (mode: string) => { updates.push(mode); };
+    plugin.settings.permissionMode = 'readonly';
+
+    view.refreshPermissionMode();
+
+    expect(updates).toEqual(['readonly']);
+  });
+
   it('brings the jump-to-latest button back for a tab scrolled up in', async () => {
     const view = await openView(createPlugin({ client: createClient() }));
     const { tabA, tabB } = await openSecondTab(view);
