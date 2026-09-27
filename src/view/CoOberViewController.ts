@@ -145,6 +145,14 @@ export interface ControllerDeps {
 export interface AgentCallConfig {
   addUserMessage?: boolean;
   saveMessage?: boolean;
+  /**
+   * The line to paint and store as the reader's own message when it is not the
+   * text the agent is sent — a file command sends its expanded template while
+   * the transcript keeps what was typed. Painting it at the call site instead
+   * would do so before this turn's session exists, where the next send reads it
+   * as a superseded user line and clears it.
+   */
+  displayText?: string;
   buildPartsWithRefs?: ContextRef[];
   history?: SerializedMessage[];
   onAfterResponse?: (response: AcpResponse | undefined) => Promise<void>;
@@ -1876,9 +1884,9 @@ export class CoOberViewController {
       .filter((p) => p.type === 'image' && typeof p.mimeType === 'string' && typeof p.data === 'string')
       .map((p) => ({ mimeType: p.mimeType as string, data: p.data as string }));
     if (!savedRetry && config.addUserMessage !== false)
-      rt.renderer.addUserMessage(text, undefined, images.length > 0 ? images : undefined);
+      rt.renderer.addUserMessage(config.displayText ?? text, undefined, images.length > 0 ? images : undefined);
     if (!savedRetry && config.saveMessage !== false)
-      rt.streamCtrl.saveMessage('user', text, 'text', undefined, images.length > 0 ? images : undefined);
+      rt.streamCtrl.saveMessage('user', config.displayText ?? text, 'text', undefined, images.length > 0 ? images : undefined);
     rt.renderer.addAssistantPlaceholder();
 
     let parkedForCapacity = false;
@@ -2291,7 +2299,12 @@ export class CoOberViewController {
         if (def.source === 'file' && def.template) {
           const { templateExpander } = await import('../commands/templateExpander');
           const expanded = templateExpander.buildPrompt(def, parsed.args);
-          await this.sendTextToAgent(expanded, refs, rt);
+          // The agent reads the expanded template; the transcript keeps the
+          // line the reader typed, the way a builtin command records its own.
+          // This sent through the plain path with painting and storing turned
+          // off, so a file command left an answer with no question above it and
+          // a reload showed the exchange never happened.
+          await this.sendTextToAgent(expanded, refs, rt, text);
           return true;
         }
       }
@@ -2333,15 +2346,23 @@ export class CoOberViewController {
     return true;
   }
 
-  private async sendTextToAgent(text: string, refs?: ContextRef[], rt: SessionRuntime = this.activeRuntime): Promise<void> {
+  private async sendTextToAgent(
+    text: string,
+    refs?: ContextRef[],
+    rt: SessionRuntime = this.activeRuntime,
+    displayText?: string,
+  ): Promise<void> {
+    // Without a line to show in place of the prompt this stays the silent
+    // internal send it was (/add-dir, /compact): the reader asked for those by
+    // other means, and their own message is not this text.
+    const carriesOwnLine = displayText !== undefined;
     await this.executeAgentCall(
       text,
       refs ?? [],
       {
-        addUserMessage: false,
-        saveMessage: false,
+        ...(carriesOwnLine ? { displayText } : { addUserMessage: false, saveMessage: false }),
         buildPartsWithRefs: refs && refs.length > 0 ? refs : undefined,
-        retryFn: (t, r) => this.sendTextToAgent(t, r, rt),
+        retryFn: (t, r) => this.sendTextToAgent(t, r, rt, displayText),
       },
       rt,
     );

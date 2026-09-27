@@ -672,4 +672,35 @@ describe('pruning happens on the save snapshot, not the live transcript (0.2.7 s
 
     expect(repository.get('fifteen')).toBeDefined();
   });
+
+  it('a one-message cap keeps the newest message instead of only a truncation note', () => {
+    setLocale('en');
+    const { repository } = createRepository();
+    repository.hydrate([createSession('open', now, 5)], 'open');
+
+    // parseBoundedInt allows maxSessionMessages = 1, and the head/tail split
+    // spends its single slot on the marker (retainedCount = 0), so one save
+    // replaced the entire transcript — the turn being read included — with
+    // "[5 earlier messages truncated]".
+    const snapshot = repository.snapshot({ maxMessages: 1, retentionDays: 30, now });
+
+    expect(snapshot.sessions[0].messages).toHaveLength(1);
+    expect(snapshot.sessions[0].messages[0].content).toBe('message 4');
+  });
+
+  it('a two-message cap still records that the middle went away', () => {
+    setLocale('en');
+    const { repository } = createRepository();
+    repository.hydrate([createSession('open', now, 6)], 'open');
+
+    const snapshot = repository.snapshot({ maxMessages: 2, retentionDays: 30, now });
+
+    // Two slots are enough for one kept message plus the marker, so the note
+    // stays: the reader is told the history was trimmed rather than misled
+    // into thinking the chat started mid-sentence.
+    expect(snapshot.sessions[0].messages).toEqual([
+      expect.objectContaining({ role: 'system', content: '[5 earlier messages truncated]' }),
+      expect.objectContaining({ role: 'user', content: 'message 5' }),
+    ]);
+  });
 });

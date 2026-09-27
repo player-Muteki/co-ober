@@ -970,6 +970,48 @@ describe('CoOberViewController', () => {
       expect(client.sendMessage).toHaveBeenCalled();
     });
 
+    it('paints and stores the typed line of a file command whose template was expanded', async () => {
+      const source = {
+        type: 'file' as const,
+        load: () => [{
+          id: 'file:plan',
+          trigger: 'plan',
+          title: 'Plan',
+          description: '',
+          category: 'agent' as const,
+          source: 'file' as const,
+          template: 'Write a plan for $ARGUMENTS',
+          run: async () => {},
+        }],
+      };
+      commandRegistry.registerSource(source);
+      try {
+        const client = createMockClient();
+        (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+        (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+        await controller.send('/plan a release', []);
+
+        // The agent reads the expanded template...
+        expect(client.sendMessage).toHaveBeenCalledWith(
+          expect.any(String),
+          [{ type: 'text', text: 'Write a plan for a release' }],
+          expect.any(Function),
+        );
+        // ...and the transcript keeps the line the reader typed, exactly as a
+        // builtin command does. This branch sent through the plain path, which
+        // paints and stores nothing: the answer appeared with no question above
+        // it, and a reload showed the exchange never happened.
+        expect(deps.renderer.addUserMessage).toHaveBeenCalledWith('/plan a release', undefined, undefined);
+        expect(deps.sessionStore.append).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({ role: 'user', content: '/plan a release' }),
+        );
+      } finally {
+        commandRegistry.unregisterSource(source);
+      }
+    });
+
     it('handles send errors', async () => {
       const client = createMockClient({
         sendMessage: vi.fn().mockRejectedValue(new Error('network error')),

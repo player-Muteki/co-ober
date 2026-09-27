@@ -96,7 +96,17 @@ export default class CoOberPlugin extends Plugin {
   override onunload(): void {
     // Views flush their debounced saves on close, but app exit does not await
     // that teardown — write the store once more so a stream tail survives.
-    void this.savePluginData().catch((e) => console.warn('[co-ober] unload save failed:', e));
+    void this.savePluginData()
+      .catch((e) => console.warn('[co-ober] unload save failed:', e))
+      .finally(() => {
+        // The save-failure alarm is a duration-0 Notice, so it outlives the
+        // plugin that raised it: a reload creates a fresh instance whose
+        // saveAlarm is null and can never hide this toast, leaving an
+        // unhideable "your disk is failing" banner on screen for a session
+        // that will never write again. Settle it once teardown is final; the
+        // console line above still records why.
+        this.dismissSaveAlarm();
+      });
     void this.client?.disconnect().catch(() => {});
   }
 
@@ -142,6 +152,17 @@ export default class CoOberPlugin extends Plugin {
     if (hasPluginData) {
       const data = saved as Partial<PluginData>;
       const restored = migratePluginDataSessions(data.sessions, data.activeSessionId);
+      // The list existing as an array is only half of "the file carried a
+      // history": an ids-only array and a list of records this build refuses
+      // (no role, content that is not a string) both pass the check above and
+      // then restore as zero conversations. That is the same loss the missing
+      // list would be — the plugin hydrates empty, restamps the file and the
+      // next autosave buries bytes a version-aware writer wrote — so a file
+      // that claimed conversations and yielded none fails to the backup path.
+      // An intentionally empty history writes `sessions: []` and stays fine.
+      if (storedVersion >= 1 && Array.isArray(storedSessions) && storedSessions.length > 0 && restored.sessions.length === 0) {
+        throw new Error('data.json session list carries no loadable conversation');
+      }
       const surviving = new Set(restored.sessions.map((session) => session.sessionId));
       const tabs = migratePluginDataTabs(data.openTabs, data.activeTabId, surviving, restored.activeSessionId);
       // The autoConnect toggle did nothing before 0.1.34, so a stored false in
@@ -540,6 +561,14 @@ function backupIsLoadable(raw: string): boolean {
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return false;
   const version = readSchemaVersion(parsed);
   if (version > PLUGIN_DATA_SCHEMA_VERSION) return false;
-  if (version >= 1 && !Array.isArray((parsed as { sessions?: unknown }).sessions)) return false;
+  const sessions = (parsed as { sessions?: unknown }).sessions;
+  if (version >= 1 && !Array.isArray(sessions)) return false;
+  // Mirrors loadData()'s second gate using the same migration the load will
+  // run: a backup that names conversations but yields none would be written
+  // over the live file, fail the load right after, and leave the copy this
+  // promotion just set aside as the only remaining data.json.
+  if (version >= 1 && Array.isArray(sessions) && sessions.length > 0) {
+    if (migratePluginDataSessions(sessions, null).sessions.length === 0) return false;
+  }
   return true;
 }

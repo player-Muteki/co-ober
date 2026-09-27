@@ -123,6 +123,29 @@ describe('CoOberPlugin persistence', () => {
     saveData.mockRestore();
   });
 
+  it('retires the sticky save alarm when the plugin goes away', async () => {
+    Notice.messages.length = 0;
+    Notice.hidden.length = 0;
+    const saveSpy = vi.spyOn(Plugin.prototype, 'saveData').mockRejectedValue(new Error('disk full'));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const plugin = new CoOberPlugin({} as never, {} as never);
+    plugin.settings = { ...DEFAULT_SETTINGS };
+
+    await plugin.savePluginData();
+    expect(Reflect.get(plugin, 'saveAlarm')).toBeInstanceOf(Notice);
+
+    // A duration-0 Notice outlives the plugin that raised it, and after a
+    // reload the fresh instance starts with saveAlarm = null: nothing could
+    // ever hide the toast, which went on accusing the disk of failing for a
+    // session that would never write again.
+    plugin.onunload();
+
+    await vi.waitFor(() => expect(Notice.hidden).toContain(t().notice.saveFailed));
+    expect(Reflect.get(plugin, 'saveAlarm')).toBeNull();
+    errorSpy.mockRestore();
+    saveSpy.mockRestore();
+  });
+
   it('does not let a throwing outcome handler break the never-rejects save API', async () => {
     // Fire-and-forget call sites rely on savePluginData() settling. Reporting a
     // completed write must not be able to reject it (or relabel it a failure).
@@ -290,6 +313,53 @@ describe('CoOberPlugin.loadData foreign session list', () => {
     const plugin = new CoOberPlugin({} as never, {} as never);
 
     await expect(plugin.loadData()).rejects.toThrow('session list is missing or not an array');
+    loadSpy.mockRestore();
+  });
+
+  it('fails a versioned list of ids that carries no conversation record at all', async () => {
+    // The array check passed: the list is a list. But every element is a bare
+    // id, so the migration restores zero conversations — the plugin hydrated
+    // as an empty store, restamped the file and the next autosave buried bytes
+    // a version-aware writer wrote, exactly as if the list had been lost.
+    const loadSpy = vi.spyOn(Plugin.prototype, 'loadData').mockResolvedValue({
+      schemaVersion: 2,
+      settings: {},
+      sessions: ['ses-1', 'ses-2'],
+      activeSessionId: 'ses-1',
+    });
+    const plugin = new CoOberPlugin({} as never, {} as never);
+
+    await expect(plugin.loadData()).rejects.toThrow('carries no loadable conversation');
+    loadSpy.mockRestore();
+  });
+
+  it('loads a versioned list whose usable records survive alongside junk ones', async () => {
+    const loadSpy = vi.spyOn(Plugin.prototype, 'loadData').mockResolvedValue({
+      schemaVersion: 2,
+      settings: {},
+      sessions: ['ses-1', { sessionId: 'ses-2', title: 'kept', createdAt: 1, updatedAt: 2, messages: [] }],
+      activeSessionId: 'ses-2',
+    });
+    const plugin = new CoOberPlugin({} as never, {} as never);
+
+    const data = await plugin.loadData();
+
+    // Partial damage stays partial: refusing the whole file over one bad entry
+    // would throw away the conversation that did read.
+    expect(data?.sessions.map((s) => s.sessionId)).toEqual(['ses-2']);
+    loadSpy.mockRestore();
+  });
+
+  it('leaves a pre-schema file without a session list on the legacy defaults path', async () => {
+    const loadSpy = vi.spyOn(Plugin.prototype, 'loadData').mockResolvedValue({
+      defaultModel: 'x',
+      autoConnect: false,
+    });
+    const plugin = new CoOberPlugin({} as never, {} as never);
+
+    const data = await plugin.loadData();
+
+    expect(data?.sessions).toEqual([]);
     loadSpy.mockRestore();
   });
 });
@@ -547,6 +617,32 @@ describe('CoOberPlugin corrupted data recovery', () => {
 
       expect(files.get(BAK)).toBe(populated);
       saveSpy.mockRestore();
+    });
+
+    it('does not promote a backup whose session list would itself load as nothing', async () => {
+      // loadData() now refuses a versioned list that names conversations and
+      // yields none, so a copy of that shape has to fail the same gate here: it
+      // would be written over the live file, throw on the load that follows,
+      // and leave the restored bytes renamed away as .corrupt-* with no
+      // data.json in their place.
+      Notice.messages.length = 0;
+      const useless = JSON.stringify({
+        schemaVersion: 2,
+        settings: {},
+        sessions: ['ses-1', 'ses-2'],
+        activeSessionId: 'ses-1',
+      });
+      const { plugin, files } = createBackupPlugin({
+        loadData: [() => Promise.reject(new Error('no loadable conversation'))],
+        backup: useless,
+      });
+
+      await plugin.onload();
+
+      expect([...files.keys()]).not.toContain(DATA);
+      expect(files.get(BAK)).toBe(useless);
+      expect(plugin.sessionStore.hydrate).toHaveBeenCalledWith([], null);
+      expect(Notice.messages.some((m) => m.includes('starting with defaults'))).toBe(true);
     });
 
     it('still refreshes the backup when a save shrinks it without emptying it', async () => {

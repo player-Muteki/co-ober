@@ -280,6 +280,15 @@ function applyPrune(
     }
 
     if (session.messages.length > messageLimit) {
+      // A cap of one leaves no room for both a marker and anything kept: the
+      // head/tail split spends its only slot on the note, so a single save
+      // would replace the whole transcript — including the turn the reader is
+      // in the middle of — with "N messages truncated". Below two slots the
+      // window just keeps the newest messages and says nothing about the rest.
+      if (messageLimit < 2) {
+        session.messages = session.messages.slice(-messageLimit);
+        continue;
+      }
       const retainedCount = messageLimit - 1;
       const firstCount = Math.floor(retainedCount / 2);
       const lastCount = retainedCount - firstCount;
