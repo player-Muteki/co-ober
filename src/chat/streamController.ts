@@ -137,6 +137,22 @@ export class StreamController {
         } else {
           // Flush any buffered pending tools, then update completed/failed
           this.flushToolBuffer();
+          // An agent that reports only the finished call — no pending or
+          // in_progress frame first — still gets a card. Without one there is
+          // no element for the update to write into, and the step vanished
+          // from the live transcript and from the blocks a reload renders.
+          if (!this.toolBlocks.has(ch.toolCallId)) {
+            renderer.addToolCall(ch.toolCallId, ch.title || ch.toolCallId, ch.toolKind, ch.rawInput, ch.locations);
+            const block: ContentBlock = {
+              type: 'tool_use',
+              toolCallId: ch.toolCallId,
+              toolTitle: ch.title,
+              toolKind: ch.toolKind,
+              toolStatus: ch.status === 'failed' ? 'failed' : 'completed',
+            };
+            this.currentContentBlocks.push(block);
+            this.toolBlocks.set(ch.toolCallId, block);
+          }
           renderer.updateToolCall(
             ch.toolCallId,
             ch.status,

@@ -1744,8 +1744,10 @@ describe('CoOberViewController — what belongs to a tab stays in that tab (0.2.
     const [tabA, tabB] = twoTabs();
     const usage = { totalTokens: 42, inputTokens: 20, outputTokens: 22 } as UsageInfo;
     rtOf(h, tabB).state.usage = usage;
-    const meter = h.deps.updateContextMeter as ReturnType<typeof vi.fn>;
-    meter.mockClear();
+    // The harness shares one spy across the surfaces entering a tab touches
+    // (meter, composer, toolbar), so give the meter its own before counting.
+    const meter = vi.fn();
+    Object.assign(h.deps, { updateContextMeter: meter });
 
     h.controller.switchToTab(tabB);
 
@@ -2383,6 +2385,37 @@ describe('CoOberViewController — every answer belongs to the tab that asked (0
       // user might not visit until long after the agent came back.
       expect(h.renderers.get(tabA)?.finalizeCurrentThinking).toHaveBeenCalled();
       expect(h.renderers.get(tabB)?.finalizeCurrentThinking).toHaveBeenCalled();
+    });
+  });
+
+  describe('the composer on the way into a tab', () => {
+    function twoTabs(): [string, string] {
+      h.controller.restoreTabShells(
+        [{ tabId: 'tab-1', sessionId: 'ses-a' }, { tabId: 'tab-2', sessionId: 'ses-b' }],
+        'tab-1',
+      );
+      return h.controller.listTabIds() as [string, string];
+    }
+
+    it('shows the controls of the tab arrived at, not of the one left behind', () => {
+      const [tabA, tabB] = twoTabs();
+      rtOf(h, tabB).busy = true;
+      const setStreaming = vi.fn();
+      const setSending = vi.fn();
+      Object.assign(h.deps.input, { setStreaming });
+      Object.assign(h.deps.toolbar, { setSending });
+
+      h.controller.switchToTab(tabB);
+
+      // A turn started in the background paints its own tab only, so the
+      // composer kept whatever the previous tab left: *send* on a panel that
+      // was answering, and no *stop* to answer it with.
+      expect(setStreaming).toHaveBeenCalledWith(true);
+      expect(setSending).toHaveBeenCalledWith(true);
+
+      h.controller.switchToTab(tabA);
+      expect(setStreaming).toHaveBeenLastCalledWith(false);
+      expect(setSending).toHaveBeenLastCalledWith(false);
     });
   });
 

@@ -3308,4 +3308,20 @@ describe('CoOberViewController — queue visualization and auto titles', () => {
 
     expect(rename).not.toHaveBeenCalled();
   });
+
+  describe('a builtin command the send path already painted (0.2.9 stage 3)', () => {
+    it('shows the /help prompt once, not twice', async () => {
+      const addUserMessage = vi.fn();
+      Object.assign(deps.renderer, { addUserMessage });
+
+      await controller.send('/help', []);
+
+      // The send path draws and stores the user line for every builtin before
+      // running it; help drawing it again left two identical bubbles on screen
+      // for the one message in the transcript.
+      expect(addUserMessage).toHaveBeenCalledTimes(1);
+      expect(addUserMessage).toHaveBeenCalledWith('/help');
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalled();
+    });
+  });
 });

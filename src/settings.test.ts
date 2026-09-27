@@ -480,6 +480,19 @@ describe('CoOberSettingsTab live capability push', () => {
     await flushPromises();
   }
 
+  function findDropdown(tab: CoOberSettingsTab, name: string): HTMLSelectElement {
+    const select = [...tab.containerEl.querySelectorAll('select')]
+      .find((el) => el.closest('.setting-item')?.textContent?.includes(name));
+    expect(select).toBeDefined();
+    return select as HTMLSelectElement;
+  }
+
+  async function changeDropdown(select: HTMLSelectElement, value: string): Promise<void> {
+    select.value = value;
+    select.dispatchEvent(new Event('change'));
+    await flushPromises();
+  }
+
   it('pushes maxNoteSize to the connected client so the cached handler limit updates', async () => {
     setLocale('en');
     const plugin = createPlugin({ refreshLocale: vi.fn() });
@@ -505,6 +518,29 @@ describe('CoOberSettingsTab live capability push', () => {
 
     await changeInput(findTextSettingInput(tab, 'Max Output Size (bytes)'), '2048');
     expect(client.setTerminalCapabilityMode).toHaveBeenCalledWith('enabled', 5000, 2048);
+  });
+
+  it('keeps a tier-forbidden capability closed when its dropdown is moved', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    plugin.settings.permissionMode = 'readonly';
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+    const client = plugin.getClient()!;
+    vi.mocked(client.setFsCapabilityMode).mockClear();
+    vi.mocked(client.setTerminalCapabilityMode).mockClear();
+
+    // Under the readonly tier, the *stored* preference is still remembered, but
+    // the live client is pushed through the tier — so choosing read & write here
+    // must not hand the agent a write surface the permission mode exists to shut.
+    await changeDropdown(findDropdown(tab, 'FS Capability Mode'), 'enabled');
+    expect(plugin.settings.fsCapability).toBe('enabled');
+    expect(client.setFsCapabilityMode).toHaveBeenCalledWith('readonly');
+    expect(client.setTerminalCapabilityMode).toHaveBeenCalledWith('disabled');
+
+    await changeDropdown(findDropdown(tab, 'Terminal Capability Mode'), 'enabled');
+    expect(plugin.settings.terminalCapability).toBe('enabled');
+    expect(client.setTerminalCapabilityMode).toHaveBeenLastCalledWith('disabled');
   });
 
   it('passes an idle timeout of 0 through as disabled', async () => {

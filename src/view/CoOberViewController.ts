@@ -288,6 +288,12 @@ export class CoOberViewController {
     // its own tab's numbers only, so re-project them on the way in rather
     // than leaving the previous tab's figures on the arc.
     this.deps.updateContextMeter(rt.state.usage);
+    // The composer is one shared surface as well: a turn started in the
+    // background paints its own tab only, so arriving here has to put this
+    // tab's own streaming state back — otherwise the panel an answer is
+    // arriving in still offers *send* and hides *stop*.
+    this.deps.input.setStreaming(rt.busy);
+    this.deps.toolbar.setSending(rt.busy);
     this.updateQueueIndicator();
     // A tab restored from disk is only painted once the user actually looks
     // at it; until then its panel stays empty and cheap.
@@ -649,7 +655,6 @@ export class CoOberViewController {
         const helpText = cmds
           .map((c) => `- **/${c.trigger}**${c.aliases?.length ? ` (${c.aliases.join(', ')})` : ''}: ${c.description}`)
           .join('\n');
-        rt.renderer.addUserMessage('/help');
         rt.renderer.addSystemMessage(`### ${t().slash.helpHeader}\n\n${helpText}`);
       },
     });

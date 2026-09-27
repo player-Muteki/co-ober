@@ -349,6 +349,60 @@ describe('StreamController', () => {
     expect(deps.onSyncFailure).not.toHaveBeenCalled();
   });
 
+  it('renders a tool call the agent only reports finished', () => {
+    const session: { messages: Array<Record<string, unknown>>; updatedAt: number } = { messages: [], updatedAt: 0 };
+    deps.sessionStore.get.mockReturnValue(session);
+
+    controller.handleChunk({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'call-late',
+      title: 'Run tests',
+      toolKind: 'execute',
+      status: 'completed',
+      rawInput: { cmd: 'npm test' },
+      rawOutput: { ok: true },
+      contents: [],
+    });
+
+    // Cards are made from pending snapshots; an update with no card in front
+    // of it had no element to write into, so the step disappeared from the
+    // live transcript and from the blocks a reload renders.
+    expect(deps.renderer.addToolCall).toHaveBeenCalledWith(
+      'call-late',
+      'Run tests',
+      'execute',
+      { cmd: 'npm test' },
+      undefined,
+    );
+    expect(deps.renderer.updateToolCall).toHaveBeenCalledWith(
+      'call-late',
+      'completed',
+      { ok: true },
+      [],
+      { cmd: 'npm test' },
+      undefined,
+      'execute',
+    );
+
+    controller.handleChunk({
+      kind: 'message_chunk',
+      role: 'agent',
+      messageId: 'msg-late',
+      chunkText: 'done',
+      accumulatedText: 'done',
+    });
+    // The saved turn keeps its tool step: text leads and the tracked blocks
+    // follow, so ask that the card landed among them rather than fixing the
+    // shape of a block list this controller assembles on purpose.
+    expect(session.messages[0]).toEqual(
+      expect.objectContaining({
+        contentBlocks: expect.arrayContaining([
+          expect.objectContaining({ type: 'tool_use', toolCallId: 'call-late', toolStatus: 'completed' }),
+        ]),
+      }),
+    );
+  });
+
   it('calls collapseToolCall on completed status (safety net)', () => {
     controller.handleChunk({
       kind: 'tool_call_snapshot',

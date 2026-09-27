@@ -494,7 +494,11 @@ export class CoOberSettingsTab extends PluginSettingTab {
           // Update connected client
           const client = this.plugin.getClient();
           if (client) {
-            client.setFsCapabilityMode(v as FsCapabilityMode, s.maxNoteSize);
+            // Through the tier, not around it: under *readonly* or *plan* this
+            // setting is remembered but the live client keeps writes closed, so
+            // picking *enabled* here cannot open the write surface the tier
+            // exists to shut.
+            applyPermissionTier(client, s.permissionMode, s);
           }
         }));
 
@@ -514,7 +518,10 @@ export class CoOberSettingsTab extends PluginSettingTab {
           await this.save();
           const client = this.plugin.getClient();
           if (client) {
-            client.setTerminalCapabilityMode(v as TerminalCapabilityMode, s.terminalTimeoutMs, s.terminalMaxOutputBytes);
+            // The same gate as the file surface above: a tier that forbids
+            // running commands does not start honouring them because this
+            // dropdown was moved.
+            applyPermissionTier(client, s.permissionMode, s);
           }
         }));
 

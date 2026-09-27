@@ -25,16 +25,15 @@ export class TemplateExpander {
 
     const parts = args.split(/\s+/);
 
-    let result = template;
-    // $ARGUMENTS — full arg string
-    result = result.replace(/\$ARGUMENTS/g, args);
-    // $1 … $9 — positional
-    result = result.replace(/\$(\d)/g, (_, idx) => {
-      const n = parseInt(idx as string, 10);
+    // One pass, so a placeholder that arrives *inside* substituted text is
+    // never expanded a second time: a `$3` the user typed as part of their
+    // argument used to be rewritten by the positional pass that ran after
+    // $ARGUMENTS, silently editing what the command sent to the agent.
+    return template.replace(/\$(ARGUMENTS|[1-9])/g, (match, key: string) => {
+      if (key === 'ARGUMENTS') return args;
+      const n = Number(key);
       return n >= 1 && n <= parts.length ? parts[n - 1] : '';
     });
-
-    return result;
   }
 
   /**
