@@ -275,6 +275,23 @@ describe('CoOberPlugin.loadData foreign session list', () => {
     await expect(plugin.loadData()).rejects.toThrow('session list is missing or not an array');
     loadSpy.mockRestore();
   });
+
+  it('treats a stamped file that lost settings, sessions and the pointer together as a load failure', async () => {
+    // Half a save can leave only the schemaVersion and the tab shells behind.
+    // That file carried none of the keys the versioned branch keys off, so it
+    // took the legacy path, hydrated as an empty plugin, and the next autosave
+    // wrote over the recoverable bytes with the empty store — the rolling
+    // backup never even offered itself.
+    const loadSpy = vi.spyOn(Plugin.prototype, 'loadData').mockResolvedValue({
+      schemaVersion: 2,
+      openTabs: [{ tabId: 'tab-1', sessionId: 'ses-a' }],
+      activeTabId: 'tab-1',
+    });
+    const plugin = new CoOberPlugin({} as never, {} as never);
+
+    await expect(plugin.loadData()).rejects.toThrow('session list is missing or not an array');
+    loadSpy.mockRestore();
+  });
 });
 
 describe('CoOberPlugin.loadData corrupt file on disk', () => {
@@ -506,6 +523,28 @@ describe('CoOberPlugin corrupted data recovery', () => {
 
       // Copying that emptiness over the backup would make the loss permanent,
       // so the last good copy is left exactly where it is.
+      expect(files.get(BAK)).toBe(populated);
+      saveSpy.mockRestore();
+    });
+
+    it('refuses to promote an id-list save whose sessions would not load over a populated backup', async () => {
+      const populated = JSON.stringify({
+        schemaVersion: 2,
+        settings: {},
+        sessions: [{ sessionId: 's1', title: 'kept', createdAt: 1, updatedAt: 2, messages: [] }],
+        activeSessionId: 's1',
+      });
+      const { plugin, files } = createBackupPlugin({ loadData: [], backup: populated, live: '' });
+      const saveSpy = vi.spyOn(Plugin.prototype, 'saveData').mockImplementation(async () => {
+        // Parses, and sessions is an array — but every entry is a bare id, so
+        // this build loads no conversation from it at all. Counted by the
+        // array's length it read as two, and the copy still holding the real
+        // sessions would have been replaced by nothing.
+        files.set(DATA, '{"schemaVersion":2,"sessions":["ses-1","ses-2"]}');
+      });
+
+      await plugin.savePluginData();
+
       expect(files.get(BAK)).toBe(populated);
       saveSpy.mockRestore();
     });

@@ -28,13 +28,40 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Whether an entry of a persisted session list would actually load. The save
+ * path counts the conversations in a file to decide whether the rolling backup
+ * is about to be overwritten by an emptying write, and that count has to mean
+ * what the loader keeps: an id list — `["ses-1","ses-2"]`, what a partial merge
+ * or a foreign writer leaves behind — parses, is an array, and loads as zero
+ * conversations. Counted as two, it outvotes the backup that still holds the
+ * real sessions and the loss becomes permanent.
+ */
+export function isLoadableSessionEntry(value: unknown): value is Record<string, unknown> {
+  return isRecord(value) && typeof value.sessionId === 'string' && value.sessionId.length > 0;
+}
+
+/**
+ * The largest epoch a `Date` can represent. A stored timestamp beyond it — or
+ * the `Infinity` that `JSON.parse('1e999')` hands back, which is `typeof
+ * 'number'` — is a damaged value: every render of the session list throws on
+ * `toISOString()`, and retention can never prune the conversation (`Infinity <
+ * cutoff` is false), so it survives to be re-stamped on every save. It
+ * collapses to 0, which the loader reads as "unknown" and retention spares.
+ */
+const MAX_TIMESTAMP_MS = 8.64e15;
+
+function toTimestamp(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= MAX_TIMESTAMP_MS ? value : 0;
+}
+
 /** Permissive on optional/unknown fields, strict on the ones rendering depends on. */
 function sanitizeMessage(value: unknown): SerializedMessage | null {
   if (!isRecord(value)) return null;
   if (typeof value.role !== 'string' || !MESSAGE_ROLES.has(value.role)) return null;
   if (typeof value.content !== 'string') return null;
   const type = typeof value.type === 'string' ? value.type : 'text';
-  const timestamp = typeof value.timestamp === 'number' && Number.isFinite(value.timestamp) ? value.timestamp : 0;
+  const timestamp = toTimestamp(value.timestamp);
   const copy: Record<string, unknown> = { ...value, type, timestamp };
   // Rendering and the persisted image budget both walk these two arrays, so a
   // single malformed element is enough to make every later save throw inside
@@ -86,8 +113,7 @@ function sanitizeDraft(value: unknown): StoredDraft | undefined {
 }
 
 function sanitizeSession(value: unknown): SerializedSession | null {
-  if (!isRecord(value)) return null;
-  if (typeof value.sessionId !== 'string' || value.sessionId.length === 0) return null;
+  if (!isLoadableSessionEntry(value)) return null;
   const messages = Array.isArray(value.messages)
     ? value.messages.map(sanitizeMessage).filter((m): m is SerializedMessage => m !== null)
     : [];
@@ -95,8 +121,8 @@ function sanitizeSession(value: unknown): SerializedSession | null {
     ...value,
     sessionId: value.sessionId,
     title: typeof value.title === 'string' ? value.title : '',
-    createdAt: typeof value.createdAt === 'number' ? value.createdAt : 0,
-    updatedAt: typeof value.updatedAt === 'number' ? value.updatedAt : 0,
+    createdAt: toTimestamp(value.createdAt),
+    updatedAt: toTimestamp(value.updatedAt),
     messages,
   } as unknown as SerializedSession;
 }

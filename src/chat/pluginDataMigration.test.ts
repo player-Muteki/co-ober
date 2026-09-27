@@ -90,6 +90,28 @@ describe('migratePluginDataSessions', () => {
     expect(state.sessions[0].messages[0]).toMatchObject({ type: 'text', timestamp: 0 });
   });
 
+  it('collapses a timestamp Date cannot represent instead of carrying one that throws on every render', () => {
+    // JSON.parse('1e999') is Infinity — typeof 'number' — and any epoch past
+    // Date's range makes the session list's toISOString() throw on every load
+    // while retention never prunes the conversation holding it.
+    const infinity = JSON.parse('1e999') as number;
+    const state = migratePluginDataSessions(
+      [
+        validSession('s1', {
+          createdAt: infinity,
+          updatedAt: 1e17,
+          messages: [{ role: 'user', content: 'q', type: 'text', timestamp: -1e20 }],
+        }),
+      ],
+      null,
+    );
+    const session = state.sessions[0];
+    expect(session.createdAt).toBe(0);
+    expect(session.updatedAt).toBe(0);
+    expect(() => new Date(session.updatedAt).toISOString()).not.toThrow();
+    expect(session.messages[0]).toMatchObject({ timestamp: 0 });
+  });
+
   it('treats a missing messages array as empty and keeps extra session fields', () => {
     const state = migratePluginDataSessions([validSession('s1', { messages: undefined, pinned: true })], null);
     expect(state.sessions[0].messages).toEqual([]);

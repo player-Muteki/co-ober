@@ -13,6 +13,7 @@ import { setLocale, t } from './i18n/index';
 import { Mutex } from './utils/mutex';
 import { SessionRepository } from './chat/session';
 import {
+  isLoadableSessionEntry,
   migratePluginDataSessions,
   migratePluginDataTabs,
   readSchemaVersion,
@@ -119,6 +120,20 @@ export default class CoOberPlugin extends Plugin {
     const storedVersion = readSchemaVersion(saved);
     if (storedVersion > PLUGIN_DATA_SCHEMA_VERSION) throw new PluginDataTooNewError(storedVersion);
 
+    // A file this build stamps always carries the session list. If it is absent,
+    // or present but not a list, the write was truncated or foreign — not an
+    // intentionally empty history — so fail the load and let the caller restore
+    // the rolling backup. The check has to run before the hasPluginData split
+    // below: half a save can lose the settings, the session list and the active
+    // pointer together while leaving its schemaVersion behind, and that file
+    // took the legacy branch, hydrated as an empty plugin, and had its
+    // recoverable bytes overwritten by the next autosave. Pre-schema files
+    // legitimately omit the key and stay treated as an empty store.
+    const storedSessions = saved !== null && typeof saved === 'object' ? (saved as Partial<PluginData>).sessions : undefined;
+    if (storedVersion >= 1 && !Array.isArray(storedSessions)) {
+      throw new Error('data.json session list is missing or not an array');
+    }
+
     const hasPluginData =
       typeof saved === 'object' &&
       saved !== null &&
@@ -126,14 +141,6 @@ export default class CoOberPlugin extends Plugin {
 
     if (hasPluginData) {
       const data = saved as Partial<PluginData>;
-      // A file this build stamps (schemaVersion >= 1) always carries the session
-      // list. If it is absent, or present but not a list, the write was
-      // truncated or foreign — not an intentionally empty history — so fail the
-      // load and let the caller restore the rolling backup. Pre-schema files
-      // legitimately omit the key and are treated as an empty store.
-      if (storedVersion >= 1 && !Array.isArray(data.sessions)) {
-        throw new Error('data.json session list is missing or not an array');
-      }
       const restored = migratePluginDataSessions(data.sessions, data.activeSessionId);
       const surviving = new Set(restored.sessions.map((session) => session.sessionId));
       const tabs = migratePluginDataTabs(data.openTabs, data.activeTabId, surviving, restored.activeSessionId);
@@ -501,11 +508,17 @@ export default class CoOberPlugin extends Plugin {
   }
 }
 
-/** Session count in a serialized data.json, or null when it cannot be read. */
+/**
+ * How many sessions a serialized data.json would actually load, or null when it
+ * cannot be read. Counting what the loader keeps, not the array's length: an id
+ * list — `{"sessions":["ses-1","ses-2"]}` — loads as no conversations at all,
+ * and read as two it would let an effectively-empty save overwrite the backup
+ * that still holds the real copies.
+ */
 function countPersistedSessions(raw: string): number | null {
   try {
     const parsed = JSON.parse(raw) as { sessions?: unknown };
-    return Array.isArray(parsed?.sessions) ? parsed.sessions.length : null;
+    return Array.isArray(parsed?.sessions) ? parsed.sessions.filter(isLoadableSessionEntry).length : null;
   } catch {
     return null;
   }
