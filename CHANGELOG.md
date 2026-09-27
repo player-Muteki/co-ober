@@ -1,3 +1,21 @@
+## 0.2.9 - 2026-09-27
+
+No new capabilities. This release keeps a damaged store from being read as an empty one, answers the protocol with the ceiling and the hangs-up call it should have sent, and puts the shared screens back in the state of the tab you are actually looking at.
+
+### Changed
+- **A file that lost everything is not a fresh install**: the stamped-file guard moved ahead of the new-install branch, so a `data.json` that lost its settings, session list and active pointer together is told apart from a genuinely first run and routed to restore-from-backup instead of hydrating as an empty plugin whose bytes the next autosave overwrites.
+- **The backup is judged by what a load would keep**: the backup guard now counts only the sessions a loader would actually hold on to, so a parseable id-list can no longer read as a populated store and replace the copy that still holds the real conversations.
+- **A timestamp that cannot render cannot survive**: session and message timestamps must be finite numbers inside `Date`'s range to pass migration, ending the value that threw on every list render while retention refused to prune it.
+- **Giving up on a stalled load hangs it up**: the idle deadline on a bounded `session/load` now aborts the request it gave up on, so an abandoned load stops sitting on the connection for its whole life — answering the reader's retry as a ghost and settling a promise nobody routes any more.
+- **A handler that returns nothing answers explicitly**: a listener with nothing to give back is answered with a `null` result, because JSON drops an `undefined` value and leaves the frame carrying neither result nor error — an answer a good agent reads as malformed and waits on.
+- **The terminal ceiling counts bytes, and cuts on a character line**: output is bounded by `Buffer.byteLength` rather than string length, ending the CJK log that fed an agent close to triple what it declared it would bound its own context with, and the trimmed tail no longer starts between characters, so no replacement glyph or lone surrogate reaches the transcript.
+- **A lost connection finishes the thought everywhere**: a connection that dies mid-thought closes the live thinking block in every tab, not only the ones a turn's own `finally` reaches, so a tab visited later shows a finished thought instead of a timer still counting on an answer that died.
+- **The composer reports the tab you arrived in**: entering a tab re-projects its own streaming state onto the shared composer and toolbar, so a turn started in the background no longer leaves the panel an answer is arriving in offering *send* while hiding *stop*.
+- **A tool call reported only as finished still gets its card**: an agent that sends no `pending` or `in_progress` frame before the completed one now has the card made at that moment instead of an update with nothing to write into, which dropped the step from the live transcript and from the blocks a later reload renders.
+- **A capability dropdown cannot outvote the permission tier**: the file-system and terminal mode dropdowns push through the tier rather than around it, so picking *read & write* under *readonly* or *plan* is remembered but cannot open the write or command surface that tier exists to shut.
+- **A placeholder inside an argument stays a placeholder**: template expansion is one pass instead of two sequential replaces, so a `$3` the user typed as part of their own argument is no longer rewritten after `$ARGUMENTS` had landed — a silent edit to what the command sent to the agent.
+- **The slash command you typed is drawn once**: the dead `/help` echo is removed, since the send path already paints and stores the command the user typed, which left that prompt on screen twice.
+
 ## 0.2.8 - 2026-09-27
 
 No new capabilities. This release keeps a bad save from eating the copy it was made to protect, answers a dying connection and a genuinely missing file with the reason an agent can act on, and lets no background operation move the screen the reader is looking at.
