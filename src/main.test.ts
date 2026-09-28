@@ -871,7 +871,6 @@ describe('CoOberPlugin connect failure messaging', () => {
       app: { vault: { adapter: { getBasePath: () => process.cwd() } } },
       manifest: { id: 'co-ober' },
       settings: { ...DEFAULT_SETTINGS, opencodePath },
-      clientReadyResolvers: [],
     });
     return plugin;
   }
@@ -927,7 +926,6 @@ describe('CoOberPlugin capability tier reaches the handshake', () => {
       app: { vault: { adapter: { getBasePath: () => process.cwd() } } },
       manifest: { id: 'co-ober' },
       settings: { ...DEFAULT_SETTINGS, opencodePath: 'opencode', permissionMode },
-      clientReadyResolvers: [],
       client: null,
     });
     return plugin;

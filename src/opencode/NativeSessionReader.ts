@@ -363,13 +363,15 @@ export function buildSessionTodosSql(sessionId: string): string {
 
 /**
  * Read the OpenCode-native todo list for one session, ordered by position.
- * Returns an empty list when the database or rows are unavailable; never throws.
+ * An empty list means the session has no todos; null means the database could
+ * not be read, which a caller must not show as though the list came back empty.
+ * Never throws.
  */
-export async function readNativeSessionTodos(sessionId: string, deps: NativeSessionReaderDeps = {}): Promise<NativeSessionTodo[]> {
+export async function readNativeSessionTodos(sessionId: string, deps: NativeSessionReaderDeps = {}): Promise<NativeSessionTodo[] | null> {
 	if (!sessionId) return [];
 	// `todo` is a session-registry table (FK to `session`) and survives the fork unchanged.
 	const rows = await readNativeRows(() => buildSessionTodosSql(sessionId), deps, 'native session todos');
-	if (!rows) return [];
+	if (!rows) return null;
 	const todos: NativeSessionTodo[] = [];
 	for (const row of rows) {
 		if (typeof row.content !== 'string' || typeof row.status !== 'string') continue;

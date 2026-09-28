@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { ChatRenderer, formatMessageUsage, currencySymbol, contextPercentage } from './renderer';
 import { closeImagePreview } from './imagePreview';
 import { installObsidianDomHelpers } from '../test/domHelpers';
@@ -707,6 +707,15 @@ describe('ChatRenderer', () => {
       expect(contextPercentage({ contextTokens: 100, contextWindow: 0 })).toBeNull();
       expect(contextPercentage({})).toBeNull();
     });
+
+    it('keeps an unreported figure out of the reading rather than calling it 0%', () => {
+      // 0% is a claim about the conversation: the window is empty. A session
+      // that never reported its context usage says nothing of the kind, and the
+      // meter had been answering the question it was asked with a made-up zero.
+      expect(contextPercentage({ contextWindow: 100000 })).toBeNull();
+      expect(contextPercentage({ contextTokens: undefined, contextWindow: 100000 })).toBeNull();
+      expect(contextPercentage({ contextTokens: 0, contextWindow: 100000 })).toBe(0);
+    });
   });
 
   describe('appendThinking', () => {
@@ -747,6 +756,143 @@ describe('ChatRenderer', () => {
       // After finalize, the block should be collapsed
       const box = container.querySelector('.co-ober-thinking-block') as HTMLElement;
       expect(box?.classList.contains('is-thinking')).toBe(false);
+    });
+  });
+
+  describe('a render the reader is in the middle of', () => {
+    let frames: FrameRequestCallback[];
+
+    beforeEach(() => {
+      frames = [];
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+        frames.push(cb);
+        return frames.length;
+      });
+      vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+    });
+
+    afterEach(async () => {
+      renderer.cancelThinkingRender();
+      vi.restoreAllMocks();
+      const { MarkdownRenderer } = await import('obsidian');
+      const render = MarkdownRenderer.render as unknown as ReturnType<typeof vi.fn>;
+      render.mockReset();
+      render.mockResolvedValue(undefined);
+    });
+
+    async function thinkingRenderSpy(): Promise<ReturnType<typeof vi.fn>> {
+      const { MarkdownRenderer } = await import('obsidian');
+      const spy = MarkdownRenderer.render as unknown as ReturnType<typeof vi.fn>;
+      spy.mockReset();
+      spy.mockImplementation((_app: unknown, text: string, el: HTMLElement) => {
+        el.textContent = String(text);
+        return Promise.resolve();
+      });
+      return spy;
+    }
+
+    function expandedThinkingBody(): HTMLElement {
+      const box = container.querySelector('.co-ober-thinking-block') as HTMLElement;
+      (box.querySelector('.co-ober-thinking-header') as HTMLElement).click();
+      return box.querySelector('.co-ober-thinking-body') as HTMLElement;
+    }
+
+    function runArmed(start: number): void {
+      for (const cb of frames.slice(start)) cb(0);
+    }
+
+    it('does not rebuild an expanded thinking block under a live selection', async () => {
+      const spy = await thinkingRenderSpy();
+      renderer.appendThinking('first part');
+      const body = expandedThinkingBody();
+      // The expand itself renders; start from a clean record.
+      spy.mockClear();
+      frames.length = 0;
+
+      renderer.scheduleThinkingRender();
+      runArmed(0);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(body.textContent).toBe('first part');
+
+      // The reader is now dragging across that sentence. The next pass would
+      // empty() the body out from under the mouse, which collapses the
+      // selection and leaves them copying the wrong words.
+      vi
+        .spyOn(document, 'getSelection')
+        .mockReturnValue({ isCollapsed: false, rangeCount: 1, anchorNode: body } as unknown as Selection);
+      spy.mockClear();
+      frames.length = 0;
+      renderer.appendThinking(' second part');
+      runArmed(0);
+      expect(spy).not.toHaveBeenCalled();
+      expect(body.textContent).toBe('first part');
+
+      // Deferring costs formatting for a frame, never content: finalize still
+      // writes the whole thought back into the body it left standing.
+      vi.spyOn(document, 'getSelection').mockReturnValue(null);
+      renderer.finalizeCurrentThinking();
+      expect(body.textContent).toBe('first part second part');
+    });
+
+    it('still formats a thinking block nobody is holding', async () => {
+      const spy = await thinkingRenderSpy();
+      renderer.appendThinking('plain thought');
+      const body = expandedThinkingBody();
+      spy.mockClear();
+      frames.length = 0;
+
+      renderer.scheduleThinkingRender();
+      runArmed(0);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(body.textContent).toBe('plain thought');
+    });
+
+    it('reports the transcript busy while the caret or a selection lives in it', () => {
+      const inside = container.createEl('button');
+      const outside = document.body.createEl('input');
+      expect(renderer.holdsReaderAttention()).toBe(false);
+
+      inside.focus();
+      expect(renderer.holdsReaderAttention()).toBe(true);
+
+      outside.focus();
+      expect(renderer.holdsReaderAttention()).toBe(false);
+
+      vi
+        .spyOn(document, 'getSelection')
+        .mockReturnValue({ isCollapsed: false, rangeCount: 1, anchorNode: container } as unknown as Selection);
+      expect(renderer.holdsReaderAttention()).toBe(true);
+      vi.spyOn(document, 'getSelection').mockReturnValue(null);
+
+      // A control that has since left the DOM cannot keep holding the reader.
+      inside.focus();
+      inside.remove();
+      outside.remove();
+      expect(renderer.holdsReaderAttention()).toBe(false);
+    });
+  });
+
+  describe('setPlanStale', () => {
+    const noteBody = () => container.querySelector('.co-ober-msg.system .co-ober-msg-body');
+
+    it('says the plan could not be read instead of redrawing the old list', () => {
+      renderer.setPlanEntries([{ content: 'step one', status: 'completed' }]);
+      renderer.setPlanStale(true);
+      expect(noteBody()?.textContent).toContain('The plan could not be read');
+    });
+
+    it('retires the note once a reading arrives', () => {
+      renderer.setPlanEntries([{ content: 'step one', status: 'completed' }]);
+      renderer.setPlanStale(true);
+      renderer.setPlanStale(false);
+      expect(container.querySelector('.co-ober-msg.system')).toBeNull();
+    });
+
+    it('stays quiet when there is no plan on screen to go stale', () => {
+      // A transcript that never showed a plan has nothing to qualify; nagging
+      // about an unreadable list would invent a panel the reader never saw.
+      renderer.setPlanStale(true);
+      expect(container.querySelector('.co-ober-msg.system')).toBeNull();
     });
   });
 

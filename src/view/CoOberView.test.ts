@@ -10,6 +10,7 @@ import { isImagePreviewOpen, openImagePreview } from './imagePreview';
 import type CoOberPlugin from '../main';
 import type { StoredDraft } from '../types';
 import { SessionRepository } from '../chat/session';
+import { CONTEXT_METER_WARNING_PCT, CONTEXT_METER_CRITICAL_PCT } from '../constants';
 
 installObsidianDomHelpers();
 
@@ -862,7 +863,8 @@ function createController(plugin: CoOberPlugin): CoOberViewController {
     renderer: {
       clear: noop, addUserMessage: noop, addAssistantPlaceholder: noop, removeAssistantPlaceholder: noop,
       appendText: noop, appendThinking: noop, addError: noop, showUsage: noop, forceScrollToBottom: noop,
-      addToolCall: noop, updateToolCall: noop, setPlanEntries: noop,
+      addToolCall: noop, updateToolCall: noop, setPlanEntries: noop, setPlanStale: noop,
+      holdsReaderAttention: vi.fn(() => false),
       setSystemNote: noop, clearSystemNote: noop,
     } as unknown as ControllerDeps['renderer'],
     input: { setStreaming: noop, focus: noop, appendValue: noop, triggerSend: noop, triggerStop: noop } as unknown as ControllerDeps['input'],
@@ -935,7 +937,6 @@ function createPlugin(overrides: {
     },
     loadPluginData: vi.fn().mockResolvedValue(undefined),
     savePluginData: vi.fn().mockResolvedValue(undefined),
-    waitForClient: vi.fn().mockResolvedValue(false),
     initClient: overrides.initClient ?? vi.fn().mockResolvedValue(Boolean(client)),
     getClient: vi.fn(() => client),
     getVaultCwd: vi.fn(() => '/vault'),
@@ -1003,3 +1004,73 @@ function text(view: CoOberView, selector: string): string | null | undefined {
 function texts(view: CoOberView, selector: string): string[] {
   return [...view.contentEl.querySelectorAll(selector)].map((el) => el.textContent ?? '');
 }
+
+describe('the context meter', () => {
+  async function openMeterView(): Promise<CoOberView> {
+    setLocale('en');
+    const view = createView();
+    await view.onOpen();
+    return view;
+  }
+
+  const meterOf = (view: CoOberView) =>
+    view.contentEl.querySelector('.co-ober-arc-meter') as HTMLElement;
+  const pctOf = (view: CoOberView) =>
+    view.contentEl.querySelector('.co-ober-arc-pct')?.textContent;
+  const usageAt = (pct: number) => ({
+    totalTokens: 10,
+    inputTokens: 10,
+    outputTokens: 0,
+    contextTokens: (pct / 100) * 100000,
+    contextWindow: 100000,
+  });
+
+  it('is a reading the keyboard can open', async () => {
+    const view = await openMeterView();
+    // The percentage is legible at a glance, but which tokens went where and
+    // how close the window is arrived only on hover. A meter you cannot reach
+    // with Tab has detail no reader without a mouse will ever read.
+    expect(meterOf(view).tabIndex).toBe(0);
+    expect(meterOf(view).getAttribute('aria-label')).toBe(t().usage.contextMeterAria);
+  });
+
+  it('dashes the meter before the agent reports any context', async () => {
+    const view = await openMeterView();
+    view.updateContextMeter(null);
+    expect(pctOf(view)).toBe('—');
+    expect(meterOf(view).classList.contains('empty')).toBe(true);
+    expect(meterOf(view).hasAttribute('data-tooltip')).toBe(false);
+  });
+
+  it('keeps a counted zero looking like a reading', async () => {
+    const view = await openMeterView();
+    view.updateContextMeter({ totalTokens: 0, inputTokens: 0, outputTokens: 0, contextTokens: 0, contextWindow: 100000 });
+    expect(pctOf(view)).toBe('0%');
+    expect(meterOf(view).classList.contains('empty')).toBe(false);
+  });
+
+  it('dashes an unreported figure instead of calling the window empty', async () => {
+    const view = await openMeterView();
+    view.updateContextMeter({ totalTokens: 40, inputTokens: 40, outputTokens: 0, contextWindow: 100000 });
+    expect(pctOf(view)).toBe('—');
+    expect(meterOf(view).classList.contains('empty')).toBe(true);
+  });
+
+  it('says the limit is near on the same reading that turns the arc orange', async () => {
+    const view = await openMeterView();
+    view.updateContextMeter(usageAt(CONTEXT_METER_WARNING_PCT));
+    expect(meterOf(view).classList.contains('warning')).toBe(true);
+    expect(meterOf(view).getAttribute('data-tooltip')).toContain(t().usage.approachingLimit);
+
+    view.updateContextMeter(usageAt(CONTEXT_METER_WARNING_PCT - 1));
+    expect(meterOf(view).classList.contains('warning')).toBe(false);
+    expect(meterOf(view).getAttribute('data-tooltip')).not.toContain(t().usage.approachingLimit);
+  });
+
+  it('hands the last band to the critical colour', async () => {
+    const view = await openMeterView();
+    view.updateContextMeter(usageAt(CONTEXT_METER_CRITICAL_PCT));
+    expect(meterOf(view).classList.contains('critical')).toBe(true);
+    expect(meterOf(view).classList.contains('warning')).toBe(false);
+  });
+});

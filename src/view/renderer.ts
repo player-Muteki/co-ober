@@ -62,8 +62,11 @@ export function currencySymbol(currency?: string): string {
  */
 export function contextPercentage(usage: Pick<UsageInfo, 'contextTokens' | 'contextWindow'>): number | null {
   const window = usage.contextWindow ?? 0;
-  const used = usage.contextTokens ?? 0;
-  if (window <= 0) return null;
+  // A session that has reported no context usage is not a session at zero
+  // context: rendering the missing number as 0% promised the reader an empty
+  // window the agent had never described.
+  const used = usage.contextTokens;
+  if (used === undefined || window <= 0) return null;
   return Math.min(100, Math.max(0, Math.round((used / window) * 100)));
 }
 
@@ -556,6 +559,18 @@ export class ChatRenderer {
   }
 
   /**
+   * Whether the reader is busy with this transcript rather than with the prompt:
+   * the caret sits inside a message (a copy button, an expanded thinking block)
+   * or they are dragging across text. Called at a turn boundary, where the
+   * transcript used to hand the caret to the composer without asking.
+   */
+  holdsReaderAttention(): boolean {
+    const active = this.doc.activeElement;
+    if (active && this.container.contains(active)) return true;
+    return this.hasUserSelectionInView();
+  }
+
+  /**
    * Flush pending text render immediately (cancel schedule + execute now).
    * Used by StreamController when content type changes (e.g., text→thinking).
    */
@@ -771,6 +786,11 @@ export class ChatRenderer {
       if (!ts || !ts.fullText) return;
       // Only render markdown when the block is expanded to avoid wasted work
       if (ts.wrapper.classList.contains('is-collapsed')) return;
+      // The rebuild empties the body, so a passage the reader is dragging across
+      // vanishes under their mouse mid-drag — the selection collapses and they
+      // copy the wrong words. Leaving the previous render standing costs one
+      // frame of formatting; finalize still writes the whole text back.
+      if (this.hasUserSelectionInView()) return;
       ts.body.empty();
       MarkdownRenderer.render(
         this.app,
@@ -937,6 +957,20 @@ export class ChatRenderer {
       this.planEl.createDiv({ cls: `plan-item status-${e.status}`, text: `${icon} ${e.content}` });
     }
     this.scrollToBottom();
+  }
+
+  /**
+   * Say that the plan on screen could not be re-read. A resync that quietly
+   * failed left yesterday's checklist standing under today's answer, checked off
+   * like a plan the agent was still following. With no panel on screen there is
+   * nothing to be out of date, so the note stays out of the transcript.
+   */
+  setPlanStale(stale: boolean): void {
+    if (!stale) {
+      this.clearSystemNote('planStale');
+      return;
+    }
+    if (this.planEl && this.container.contains(this.planEl)) this.setSystemNote('planStale', 'plan.stale', 0);
   }
 
   addError(text: string, actionLabel?: string, actionCallback?: () => void | Promise<void>): void {

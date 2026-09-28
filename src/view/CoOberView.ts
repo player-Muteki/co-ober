@@ -189,6 +189,10 @@ export class CoOberView extends ItemView {
     this.meterEl = header.createDiv({ cls: 'co-ober-arc-meter' });
     this.meterEl.setAttribute('role', 'meter');
     this.meterEl.setAttribute('aria-label', t().usage.contextMeterAria);
+    // The percentage is readable at a glance but the detail behind it (which
+    // tokens went where, how close to the limit) only arrived on a mouse
+    // hover. A focusable meter gives the same reading to a keyboard.
+    this.meterEl.tabIndex = 0;
     const svg = this.doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 40 24');
     svg.setAttribute('class', 'co-ober-arc-svg');
@@ -1206,7 +1210,12 @@ export class CoOberView extends ItemView {
     const R = 18;
     const ARC_LEN = Math.PI * R;
 
-    if (!usage || !usage.contextTokens) {
+    // The dash means "the agent has not told us", which is not the same fact as
+    // "the window is empty": a session whose very first tokens are counted reads
+    // as 0% and still has to look like a reading, or the reader cannot tell a
+    // fresh conversation from one whose numbers never arrived.
+    const pct = usage ? contextPercentage(usage) : null;
+    if (!usage || pct === null) {
       this.meterEl.addClass('empty');
       this.meterEl.removeClass('warning', 'critical');
       this.meterPctEl.setText('—');
@@ -1218,9 +1227,8 @@ export class CoOberView extends ItemView {
 
     this.meterEl.removeClass('empty');
 
-    const used = usage.contextTokens;
+    const used = usage.contextTokens ?? 0;
     const contextWindow = usage.contextWindow ?? 0;
-    const pct = contextPercentage(usage) ?? 0;
 
     const filled = (pct / 100) * ARC_LEN;
     this.meterArcFill.setAttribute('stroke-dasharray', `${filled} ${ARC_LEN}`);
@@ -1241,7 +1249,10 @@ export class CoOberView extends ItemView {
       `${t().usage.input}: ${fmt(usage.inputTokens)}`,
       usage.thoughtTokens ? `${t().usage.thinking}: ${fmt(usage.thoughtTokens)}` : '',
       `${t().usage.output}: ${fmt(usage.outputTokens)}`,
-      pct >= 80 ? t().usage.approachingLimit : '',
+      // The words arrive with the colour: a meter that had already gone orange
+      // stayed quiet until a hardcoded 80, so the warning read two different
+      // thresholds depending on whether the reader hovered.
+      pct >= CONTEXT_METER_WARNING_PCT ? t().usage.approachingLimit : '',
     ]
       .filter(Boolean)
       .join('\n');

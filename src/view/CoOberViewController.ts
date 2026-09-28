@@ -2063,7 +2063,12 @@ export class CoOberViewController {
         if (active()) {
           this.deps.input.setStreaming(false);
           this.deps.toolbar.setSending(false);
-          this.deps.input.focus();
+          // The composer wants the caret for the next message — but not when the
+          // reader is still holding the answer they were given: mid-selection, or
+          // with the caret on a copy button or an expanded step. Returning the
+          // focus used to be unconditional, which pulled the selection out from
+          // under the mouse the moment the turn finished speaking.
+          if (!rt.renderer.holdsReaderAttention()) this.deps.input.focus();
         } else {
           // A turn completed out of sight: flag the tab until it is viewed. A
           // turn that lost the capacity race and went back into the queue is
@@ -2083,7 +2088,12 @@ export class CoOberViewController {
         // plan panel — but skip when the stream already delivered a plan
         // after this turn started, so the refresh can't overwrite it.
         if ((rt.state.lastPlanUpdateAt ?? 0) < rt.sendStartTime) {
-          void this.refreshNativePlan(sessionId, rt).catch(() => {});
+          // Fire-and-forget, but not silent: a resync that threw used to vanish
+          // with its own error, leaving a plan panel that stopped moving and no
+          // trace of why for the reader or whoever debugs it next.
+          this.refreshNativePlan(sessionId, rt).catch((e) => {
+            console.error('[co-ober] plan resync failed:', e);
+          });
         }
         // Fold the finished turn: thinking/tool steps behind a summary header.
         rt.renderer.collapseTurns?.();
@@ -2172,11 +2182,18 @@ export class CoOberViewController {
 
   /**
    * Re-read the OpenCode-native todo table so the plan panel survives session
-   * restore. Silently no-ops when the database or todos are unavailable.
+   * restore. A read that failed is reported on the panel it left stale; only a
+   * database that answers "no todos" is taken as the truth.
    */
   private async refreshNativePlan(sessionId: string, rt: SessionRuntime = this.activeRuntime): Promise<void> {
     const todos = await readNativeSessionTodos(sessionId);
-    if (todos.length === 0 || rt.state.sessionId !== sessionId) return;
+    if (rt.state.sessionId !== sessionId) return;
+    if (todos === null) {
+      rt.renderer.setPlanStale(true);
+      return;
+    }
+    rt.renderer.setPlanStale(false);
+    if (todos.length === 0) return;
     rt.renderer.setPlanEntries(todos);
   }
 

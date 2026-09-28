@@ -78,6 +78,11 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): MockDeps {
       addToolCall: noop,
       updateToolCall: noop,
       setPlanEntries: noop,
+      // The turn boundary asks the transcript whether it is holding the reader
+      // before handing the caret to the composer. "Not holding" is the ordinary
+      // case, so that is what the stub answers unless a test says otherwise.
+      holdsReaderAttention: vi.fn(() => false),
+      setPlanStale: vi.fn(),
       collapseTurns: vi.fn(),
       addSystemMessage: vi.fn(),
       setSystemNote: vi.fn(),
@@ -949,6 +954,81 @@ describe('CoOberViewController', () => {
 
       await vi.waitFor(() => expect(setPlanEntries).toHaveBeenCalledWith(todos));
       expect(deps.renderer.collapseTurns).toHaveBeenCalled();
+    });
+
+    it('says the plan went stale when the native reading fails', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      const setPlanEntries = vi.fn();
+      const setPlanStale = vi.fn();
+      Object.assign(deps.renderer, { setPlanEntries, setPlanStale });
+      (readNativeSessionTodos as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+      await controller.send('hello', []);
+
+      await vi.waitFor(() => expect(setPlanStale).toHaveBeenCalledWith(true));
+      // The list already on screen is the last thing the agent actually said,
+      // so it stays — but it is no longer presented as current.
+      expect(setPlanEntries).not.toHaveBeenCalled();
+    });
+
+    it('retires the stale mark when a later reading comes back', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      const setPlanStale = vi.fn();
+      const setPlanEntries = vi.fn();
+      Object.assign(deps.renderer, { setPlanStale, setPlanEntries });
+      (readNativeSessionTodos as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+      await controller.send('hello', []);
+
+      await vi.waitFor(() => expect(setPlanStale).toHaveBeenCalledWith(false));
+      // An empty answer is a real one: the agent has no steps left, which is
+      // not the same fact as "the list is out of date".
+      expect(setPlanEntries).not.toHaveBeenCalled();
+    });
+
+    it('says so when the plan resync itself blows up', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      (readNativeSessionTodos as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('disk gone'));
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      await controller.send('hello', []);
+
+      // The turn itself is over and the answer stands, so this must not ride
+      // back up as an unhandled rejection — but it has to leave a trace.
+      await vi.waitFor(() => expect(
+        errSpy.mock.calls.some((args) => String(args[0]).includes('plan resync failed')),
+      ).toBe(true));
+      errSpy.mockRestore();
+    });
+
+    it('leaves the caret with the reader when a turn ends on text they are holding', async () => {      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      const focus = vi.fn();
+      Object.assign(deps.input, { focus });
+      Object.assign(deps.renderer, { holdsReaderAttention: vi.fn(() => true) });
+
+      await controller.send('hello', []);
+
+      expect(focus).not.toHaveBeenCalled();
+    });
+
+    it('returns the caret to the composer when nothing holds it', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      const focus = vi.fn();
+      Object.assign(deps.input, { focus });
+
+      await controller.send('hello', []);
+
+      expect(focus).toHaveBeenCalled();
     });
 
     it('applies context usage reported in the response _meta', async () => {

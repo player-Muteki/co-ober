@@ -289,14 +289,17 @@ describe('readNativeSessionTodos', () => {
 		]);
 	});
 
-	it('degrades to an empty list when unavailable', async () => {
+	it('reports an unreadable database as null, not as a finished plan', async () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 		const todos = await readNativeSessionTodos('ses_a', {
 			env: { HOME: '/home/u' },
 			fs: fakeFs,
 			sqlite: { requireSqliteModule: () => null, spawn: () => { throw new Error('nope'); }, execPath: '', env: {} } as never,
 		});
-		expect(todos).toEqual([]);
+		// Empty told the reader "the agent has no steps left", which is a
+		// different fact from "we could not ask it", and the plan panel has to be
+		// able to tell them apart.
+		expect(todos).toBeNull();
 		warn.mockRestore();
 	});
 
@@ -696,7 +699,7 @@ describe('native schema probe (v2 defense)', () => {
 		expect(await listNativeSessions('/vault', { ...base, sqlite: deps as never })).toEqual([]);
 		expect(await searchNativeSessions('/vault', 'term', { ...base, sqlite: deps as never })).toEqual([]);
 		expect(await readNativeSessionUsage('ses_a', { ...base, sqlite: deps as never })).toBeUndefined();
-		expect(await readNativeSessionTodos('ses_a', { ...base, sqlite: deps as never })).toEqual([]);
+		expect(await readNativeSessionTodos('ses_a', { ...base, sqlite: deps as never })).toBeNull();
 		expect(seen.every((sql) => sql.includes('sqlite_master'))).toBe(true);
 		const v2Warnings = warn.mock.calls.filter((args) => String(args[0]).includes('does not match the v1 schema'));
 		expect(v2Warnings.length).toBe(1);

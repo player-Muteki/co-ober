@@ -215,6 +215,103 @@ describe('TabBar', () => {
     expect(callbacks.onClose).toHaveBeenCalledWith('tab-1');
   });
 
+  describe('the strip under a repaint it did not need', () => {
+    const tabList = (): TabDescriptor[] => [
+      tab({ tabId: 'tab-1', active: true }),
+      tab({ tabId: 'tab-2' }),
+      tab({ tabId: 'tab-3', unread: true }),
+    ];
+
+    it('leaves the badges standing when nothing about the list changed', () => {
+      const { bar, container } = createBar(tabList());
+      const badgesBefore = badges(container);
+      badgesBefore[0].focus();
+
+      // A turn boundary repaints every open tab, most of them unchanged. Rebuilding
+      // those strips restarted the generating pulse from zero and took the caret
+      // out of the reader's hands for a repaint with nothing to show.
+      bar.render(tabList(), 6);
+
+      expect(badges(container)).toEqual(badgesBefore);
+      expect(container.ownerDocument.activeElement).toBe(badgesBefore[0]);
+    });
+
+    it('hands the caret back to the badge it was on', () => {
+      const { bar, container } = createBar(tabList());
+      badges(container)[1].focus();
+
+      bar.render(
+        tabList().map((t2) => (t2.tabId === 'tab-2' ? { ...t2, streaming: true } : t2)),
+        6,
+      );
+
+      expect(container.ownerDocument.activeElement?.getAttribute('data-tab-id')).toBe('tab-2');
+    });
+
+    it('hands the caret back to the close button it was on', () => {
+      const { bar, container } = createBar(tabList());
+      closeButtons(container)[2].focus();
+
+      bar.render(
+        tabList().map((t2) => (t2.tabId === 'tab-1' ? { ...t2, streaming: true } : t2)),
+        6,
+      );
+
+      const active = container.ownerDocument.activeElement;
+      expect(active?.classList.contains('co-ober-tab-close')).toBe(true);
+      expect(active?.closest('[data-tab-id]')?.getAttribute('data-tab-id')).toBe('tab-3');
+    });
+
+    it('hands the caret back to the new-tab button', () => {
+      const { bar, container } = createBar(tabList());
+      const add = container.querySelector<HTMLElement>('.co-ober-tab-new');
+      add?.focus();
+
+      bar.render([...tabList(), tab({ tabId: 'tab-4' })], 6);
+
+      const after = container.querySelector<HTMLElement>('.co-ober-tab-new');
+      expect(after).not.toBe(add);
+      expect(container.ownerDocument.activeElement).toBe(after);
+    });
+
+    it('does not take the caret when it was never in the strip', () => {
+      const { bar, container } = createBar(tabList());
+      const outside = document.createElement('input');
+      document.body.appendChild(outside);
+      outside.focus();
+
+      bar.render(
+        tabList().map((t2) => (t2.tabId === 'tab-2' ? { ...t2, unread: true } : t2)),
+        6,
+      );
+
+      // A reader typing in the composer, or selecting text in another panel, has
+      // nothing to do with the strip; stealing their caret each turn would leave
+      // them typing into a tab badge.
+      expect(container.ownerDocument.activeElement).toBe(outside);
+    });
+
+    it('leaves the caret alone when the button it held is gone', () => {
+      const { bar, container } = createBar(tabList());
+      container.querySelector<HTMLElement>('.co-ober-tab-new')?.focus();
+
+      bar.render(tabList(), 1);
+
+      expect(container.ownerDocument.activeElement).not.toBe(container.querySelector('.co-ober-tab-new'));
+    });
+
+    it('keeps the strip at the position the reader scrolled to', () => {
+      const { bar, container } = createBar(tabList());
+      const root = container.querySelector<HTMLElement>('.co-ober-tab-bar');
+      if (!root) throw new Error('missing tab bar root');
+      root.scrollLeft = 120;
+
+      bar.render([...tabList(), tab({ tabId: 'tab-4' })], 6);
+
+      expect(container.querySelector<HTMLElement>('.co-ober-tab-bar')?.scrollLeft).toBe(120);
+    });
+  });
+
   it('opens new tabs and refuses past the limit', () => {
     const under = createBar([tab({ tabId: 'tab-1' })], 3);
     under.container.querySelector<HTMLElement>('.co-ober-tab-new')?.click();

@@ -192,13 +192,6 @@
   background: transparent;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .co-ober-tab-pulse {
-    animation: none;
-    opacity: 1;
-  }
-}
-
 /* Tab stack — one message panel per open conversation; only the active shows */
 .co-ober-tab-stack {
   position: relative;
@@ -938,8 +931,9 @@
   50% { opacity: 0.7; }
 }
 
-/* Tooltip on hover */
-.co-ober-arc-meter[data-tooltip]:hover::after {
+/* Tooltip on hover or keyboard focus (the meter is focusable) */
+.co-ober-arc-meter[data-tooltip]:hover::after,
+.co-ober-arc-meter[data-tooltip]:focus-visible::after {
   content: attr(data-tooltip);
   position: absolute;
   top: 100%;
@@ -957,6 +951,12 @@
   white-space: pre-line;
   z-index: 1001;
   pointer-events: none;
+}
+
+.co-ober-arc-meter:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-s);
 }
 
 .co-ober-toolbar .co-ober-send-btn {
@@ -1307,6 +1307,34 @@
   border-radius: var(--radius-s);
   padding: 10px 12px;
   background: var(--background-secondary);
+}
+
+/* Where the question came from. The code makes it a button that moves focus to
+   that tab, but with no rule behind it the control looked like a caption of the
+   banner: no pointer, no hover, and a keyboard reader could not see the caret
+   arrive on something it could press. */
+.co-ober-permission-banner .perm-origin {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-primary);
+  font-size: var(--font-smaller);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.co-ober-permission-banner .perm-origin:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.co-ober-permission-banner .perm-origin:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
 }
 
 .co-ober-permission-banner .perm-title {
@@ -1985,30 +2013,6 @@ pre:focus-within .co-ober-copy-btn {
 }
 .co-ober-tool-call.status-blocked {
   border-color: rgba(234, 179, 8, 0.4);
-}
-
-/* Tool status icons (rendered in header) */
-.co-ober-tool-status {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  font-size: 12px;
-  width: 16px;
-  height: 16px;
-  justify-content: center;
-}
-.co-ober-tool-status.status-running {
-  color: var(--text-accent);
-  animation: co-ober-spin 1s linear infinite;
-}
-.co-ober-tool-status.status-completed {
-  color: #22c55e;
-}
-.co-ober-tool-status.status-error {
-  color: var(--text-error);
-}
-.co-ober-tool-status.status-blocked {
-  color: #eab308;
 }
 
 /* Diff line additions — diff-line.added/removed/context already exist,
@@ -2714,4 +2718,25 @@ body.theme-light .co-ober-msg.user .co-ober-msg-body {
 
 .co-ober-side-chat-send {
   align-self: flex-end;
+}
+
+/* Reduced motion — deliberately the last rules in the file. A media query adds
+   no specificity, so a block parked among the tab styles lost every tie against
+   a spinner declared later, and the setting looked like it did nothing: the tool
+   card kept turning and the thinking dots kept blinking for a reader who asked
+   for neither. */
+@media (prefers-reduced-motion: reduce) {
+  .co-ober-tab-pulse,
+  .co-ober-tool-call-header .tc-stat.spin svg,
+  .co-ober-spinner,
+  .co-ober-arc-meter.critical .co-ober-arc-fill,
+  .co-ober-thinking-block .co-ober-thinking-dot,
+  .co-ober-new-messages-btn {
+    animation: none;
+  }
+
+  .co-ober-tab-pulse,
+  .co-ober-thinking-block .co-ober-thinking-dot {
+    opacity: 1;
+  }
 }

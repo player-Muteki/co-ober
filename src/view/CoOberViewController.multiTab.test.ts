@@ -62,6 +62,8 @@ function createTabRenderer() {
     addToolCall: vi.fn(),
     updateToolCall: vi.fn(),
     setPlanEntries: vi.fn(),
+    setPlanStale: vi.fn(),
+    holdsReaderAttention: vi.fn(() => false),
     renderStructuredMessage: vi.fn(),
     collapseTurns: vi.fn(),
     setActive: vi.fn(),

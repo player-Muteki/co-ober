@@ -34,21 +34,8 @@ export default class CoOberPlugin extends Plugin {
    * Notice below only says the disk is bad, not which transcript is at risk.
    */
   onPersistenceOutcome: ((failed: boolean) => void) | null = null;
-  private clientReadyResolvers: Array<(ready: boolean) => void> = [];
-  private _clientReady = false;
   private connecting: Promise<boolean> | null = null;
   private readonly saveMutex = new Mutex();
-
-  /** Resolves when the first successful connection is established. */
-  waitForClient(): Promise<boolean> {
-    if (this._clientReady) return Promise.resolve(true);
-    return new Promise((resolve) => this.clientReadyResolvers.push(resolve));
-  }
-
-  private resolveClientWaiters(ready: boolean): void {
-    for (const resolve of this.clientReadyResolvers) resolve(ready);
-    this.clientReadyResolvers = [];
-  }
 
   override async onload(): Promise<void> {
     try {
@@ -473,7 +460,6 @@ export default class CoOberPlugin extends Plugin {
   }
 
   private async connectClient(): Promise<boolean> {
-    this.resolveClientWaiters(false);
     // A live client must be torn down before replacement: dropping the
     // reference alone leaves its `opencode acp` subprocess, transport and
     // reconnect timers running as orphans.
@@ -493,14 +479,10 @@ export default class CoOberPlugin extends Plugin {
       this.client = new AgentRuntime(acp);
       this.client.permissionMode = this.settings.permissionMode;
       this.client.idleTimeoutMs = this.settings.idleTimeoutMs ?? 300000;
-      this._clientReady = true;
-      this.resolveClientWaiters(true);
       new Notice(t().notice.connected);
       return true;
     } catch (e) {
-      this._clientReady = false;
       this.client = null;
-      this.resolveClientWaiters(false);
       console.error('[co-ober] Connect failed:', e);
       const cmd = this.settings.opencodePath;
       new Notice(

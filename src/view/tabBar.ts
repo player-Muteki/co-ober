@@ -1,8 +1,11 @@
 import type { TabDescriptor } from './CoOberViewController';
-import { t, onLocaleChange } from '../i18n/index';
+import { type Locale, t, onLocaleChange } from '../i18n/index';
 
 /** Second click inside this window confirms closing a tab that is still generating. */
 const CLOSE_CONFIRM_TIMEOUT_MS = 3000;
+
+/** Which control inside the strip held the caret, so a rebuild can hand it back. */
+type HeldFocus = { kind: 'tab' | 'close'; tabId: string } | { kind: 'new' } | null;
 
 export interface TabBarCallbacks {
   onSelect(tabId: string): void;
@@ -18,6 +21,9 @@ export class TabBar {
   private readonly root: HTMLDivElement;
   private lastTabs: TabDescriptor[] = [];
   private lastMaxTabs = 0;
+  private rendered = '';
+  private renderedArmed = '';
+  private renderedLocale: Locale | null = null;
   private readonly armed = new Map<string, number>();
   private readonly unsubscribeLocale: () => void;
   private disposed = false;
@@ -35,7 +41,23 @@ export class TabBar {
     if (this.disposed) return;
     this.lastTabs = tabs;
     this.lastMaxTabs = maxTabs;
+    // Rebuilding empties the strip, which takes the caret with it, restarts the
+    // generating pulse from zero and drops the place the reader had scrolled to.
+    // A turn boundary — or a background tab's frame — repaints it with nothing
+    // about it changed, so a strip that would come back identical is left alone.
+    // An armed closing counts as content: a button showing ✓ is not the button
+    // this same list was last painted with.
+    const signature = this.describe(tabs, maxTabs);
+    const armed = this.armedSignature();
+    const locale = t();
+    if (signature === this.rendered && armed === this.renderedArmed && locale === this.renderedLocale) return;
+    this.rendered = signature;
+    this.renderedArmed = armed;
+    this.renderedLocale = locale;
+
     const root = this.root;
+    const held = this.captureFocus();
+    const scrollLeft = root.scrollLeft;
     root.empty();
     root.setAttribute('aria-label', t().tabs.tray);
 
@@ -49,6 +71,9 @@ export class TabBar {
       add.setAttribute('title', t().tabs.limitReached.replace('{max}', String(maxTabs)));
     }
     add.onclick = () => this.callbacks.onNew();
+
+    root.scrollLeft = scrollLeft;
+    this.restoreFocus(held);
   }
 
   dispose(): void {
@@ -58,6 +83,46 @@ export class TabBar {
     this.disposed = true;
     this.root.remove();
     this.lastTabs = [];
+  }
+
+  /** The badges and what each is doing — everything a repaint would redo. */
+  private describe(tabs: TabDescriptor[], maxTabs: number): string {
+    const marks = tabs
+      .map((tab) => `${tab.tabId}:${tab.active}${tab.streaming}${tab.queued}${tab.unread}${tab.title}`)
+      .join('|');
+    return `${maxTabs}\u0000${marks}`;
+  }
+
+  /** Which closing buttons are currently showing ✓ — a painted difference. */
+  private armedSignature(): string {
+    return [...this.armed.keys()].sort().join(',');
+  }
+
+  private captureFocus(): HeldFocus {
+    const active = this.root.ownerDocument?.activeElement;
+    if (!active || !this.root.contains(active)) return null;
+    if (active.closest('.co-ober-tab-new')) return { kind: 'new' };
+    const close = active.closest('.co-ober-tab-close');
+    const badge = active.closest<HTMLElement>('.co-ober-tab');
+    const tabId = badge?.dataset.tabId;
+    if (!tabId) return null;
+    return { kind: close ? 'close' : 'tab', tabId };
+  }
+
+  private restoreFocus(held: HeldFocus): void {
+    if (!held) return;
+    if (held.kind === 'new') {
+      const add = this.root.querySelector<HTMLButtonElement>('.co-ober-tab-new');
+      if (add && !add.disabled) add.focus();
+      return;
+    }
+    const badge = this.root.querySelector<HTMLElement>(`.co-ober-tab[data-tab-id="${cssEscape(held.tabId)}"]`);
+    if (!badge) return;
+    if (held.kind === 'close') {
+      badge.querySelector<HTMLElement>('.co-ober-tab-close')?.focus();
+      return;
+    }
+    badge.focus();
   }
 
   private renderTab(root: HTMLElement, tab: TabDescriptor, index: number, tabs: TabDescriptor[]): void {
@@ -139,6 +204,10 @@ export class TabBar {
       this.render(this.lastTabs, this.lastMaxTabs);
     }, CLOSE_CONFIRM_TIMEOUT_MS);
     this.armed.set(tabId, timer);
+    // The ✓ was painted outside render(), so the same list the strip was built
+    // from is now stale. Forgetting this leaves the timeout's rebuild convinced
+    // nothing changed, and the confirmation sits there after its window closed.
+    this.renderedArmed = this.armedSignature();
   }
 
   private disarmClose(tabId: string): void {
