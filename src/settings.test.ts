@@ -202,7 +202,7 @@ describe('CoOberSettingsTab locale refresh', () => {
 
   it('loads agents and models into settings and saves common model choices', async () => {
     setLocale('en');
-    const refreshedView = { refreshLocale: vi.fn(), loadToolbarOptions: vi.fn() };
+    const refreshedView = { refreshLocale: vi.fn(), reloadToolbarOptions: vi.fn() };
     const plugin = createPlugin(refreshedView, {
       availableModes: [
         { id: 'build', name: 'Build' },
@@ -237,7 +237,7 @@ describe('CoOberSettingsTab locale refresh', () => {
     await flushPromises();
 
     expect(plugin.settings.commonModels).toEqual(['openai/gpt']);
-    expect(refreshedView.loadToolbarOptions).toHaveBeenCalled();
+    expect(refreshedView.reloadToolbarOptions).toHaveBeenCalled();
   });
 
   it('renders successful diagnostics for connection and runtime metadata', async () => {
@@ -483,7 +483,7 @@ describe('CoOberSettingsTab reconnect', () => {
 function createPlugin(
   refreshedView: {
     refreshLocale: () => void;
-    loadToolbarOptions?: () => void;
+    reloadToolbarOptions?: () => void;
     refreshPermissionMode?: () => void;
     reconnectAgent?: () => Promise<boolean>;
   },

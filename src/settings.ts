@@ -42,6 +42,10 @@ interface ReconnectableView {
   reconnectAgent: () => Promise<boolean>;
 }
 
+interface ToolbarAwareView {
+  reloadToolbarOptions?: () => void;
+}
+
 interface DiagnosticResult {
   label: string;
   ok: boolean;
@@ -804,8 +808,10 @@ export class CoOberSettingsTab extends PluginSettingTab {
   private refreshOpenViewsModels(): void {
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE);
     for (const leaf of leaves) {
-      const view = leaf.view as { loadToolbarOptions?: () => void };
-      view.loadToolbarOptions?.();
+      // The pane's own entry point: the option lists live on its controller,
+      // which the view object does not expose.
+      const view = leaf.view as ToolbarAwareView;
+      view.reloadToolbarOptions?.();
     }
   }
 

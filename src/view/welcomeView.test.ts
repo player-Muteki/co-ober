@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
-import { WelcomeView } from './welcomeView';
+import { WelcomeView, connectionStatus } from './welcomeView';
 import { installObsidianDomHelpers } from '../test/domHelpers';
 import { t, setLocale } from '../i18n/index';
 import zhLocale from '../i18n/zh';
@@ -12,7 +12,7 @@ describe('WelcomeView', () => {
 		const container = document.createElement('div');
 		const view = new WelcomeView(container);
 
-		view.show(true);
+		view.show('connected');
 
 		const el = container.querySelector('.co-ober-welcome');
 		expect(el).not.toBeNull();
@@ -31,21 +31,35 @@ describe('WelcomeView', () => {
 		expect(status?.textContent).toBe(t().welcome.connected);
 	});
 
-	it('show(true) displays "connected" status', () => {
+	it('shows "connected" for a client that completed its handshake', () => {
 		const container = document.createElement('div');
 		const view = new WelcomeView(container);
 
-		view.show(true);
+		view.show('connected');
 
 		const status = container.querySelector('.co-ober-welcome-status span');
 		expect(status?.textContent).toBe(t().welcome.connected);
+	});
+
+	it('shows "connecting" while the agent is still being reached', () => {
+		const container = document.createElement('div');
+		const view = new WelcomeView(container);
+
+		view.show('connecting');
+
+		// A client object exists from the moment one is being built, so saying
+		// "Connected" here told the reader to type into a composer whose every
+		// send was about to fail — and saying "Disconnected" sent them to the
+		// reconnect button for a connection that was already on its way.
+		const status = container.querySelector('.co-ober-welcome-status span');
+		expect(status?.textContent).toBe(t().welcome.connecting);
 	});
 
 	it('does not render auth methods when authMethods is empty', () => {
 		const container = document.createElement('div');
 		const view = new WelcomeView(container, () => ({ authMethods: [] }));
 
-		view.show(true);
+		view.show('connected');
 
 		expect(container.querySelector('.co-ober-welcome-auth-methods')).toBeNull();
 	});
@@ -56,7 +70,7 @@ describe('WelcomeView', () => {
 			authMethods: [{ id: 'github', name: 'GitHub' }],
 		}));
 
-		view.show(true);
+		view.show('connected');
 
 		const auth = container.querySelector('.co-ober-welcome-auth-methods');
 		expect(auth).not.toBeNull();
@@ -65,11 +79,25 @@ describe('WelcomeView', () => {
 		expect(auth?.textContent).toContain(t().welcome.authLoginCommand);
 	});
 
-	it('show(false) displays "disconnected" status', () => {
+	it('withholds the auth-method hint until the handshake that reported it is in hand', () => {
+		const container = document.createElement('div');
+		const view = new WelcomeView(container, () => ({
+			authMethods: [{ id: 'github', name: 'GitHub' }],
+		}));
+
+		view.show('connecting');
+
+		// The login command is only an instruction for an agent that answered;
+		// shown during a reconnect it tells the reader to fix an authentication
+		// that was never the problem.
+		expect(container.querySelector('.co-ober-welcome-auth-methods')).toBeNull();
+	});
+
+	it('show("disconnected") displays "disconnected" status', () => {
 		const container = document.createElement('div');
 		const view = new WelcomeView(container);
 
-		view.show(false);
+		view.show('disconnected');
 
 		const status = container.querySelector('.co-ober-welcome-status span');
 		expect(status?.textContent).toBe(t().welcome.disconnected);
@@ -79,7 +107,7 @@ describe('WelcomeView', () => {
 		const container = document.createElement('div');
 		const view = new WelcomeView(container);
 
-		view.show(true);
+		view.show('connected');
 		expect(container.querySelector('.co-ober-welcome')).not.toBeNull();
 
 		view.hide();
@@ -90,13 +118,23 @@ describe('WelcomeView', () => {
 		const container = document.createElement('div');
 		const view = new WelcomeView(container);
 
-		view.show(false);
+		view.show('disconnected');
 		const statusParent = container.querySelector('.co-ober-welcome-status');
 		const statusSpan = statusParent?.querySelector('span');
 		expect(statusSpan?.textContent).toBe(t().welcome.disconnected);
 
-		view.updateStatus(true);
+		view.updateStatus('connected');
 		expect(statusParent?.textContent).toBe(t().welcome.connected);
+	});
+
+	it('updateStatus() rewrites the line for a connection that came in partway', () => {
+		const container = document.createElement('div');
+		const view = new WelcomeView(container);
+
+		view.show('connecting');
+		view.updateStatus('connected');
+
+		expect(container.querySelector('.co-ober-welcome-status span')?.textContent).toBe(t().welcome.connected);
 	});
 
 	it('isVisible() correctly reflects current state', () => {
@@ -105,7 +143,7 @@ describe('WelcomeView', () => {
 
 		expect(view.isVisible()).toBe(false);
 
-		view.show(true);
+		view.show('connected');
 		expect(view.isVisible()).toBe(true);
 
 		view.hide();
@@ -116,8 +154,8 @@ describe('WelcomeView', () => {
 		const container = document.createElement('div');
 		const view = new WelcomeView(container);
 
-		view.show(true);
-		view.show(false);
+		view.show('connected');
+		view.show('disconnected');
 
 		const elements = container.querySelectorAll('.co-ober-welcome');
 		expect(elements.length).toBe(1);
@@ -126,12 +164,27 @@ describe('WelcomeView', () => {
 		expect(status?.textContent).toBe(t().welcome.disconnected);
 	});
 
+	describe('connectionStatus()', () => {
+		it('names no client as disconnected and a live one as connected', () => {
+			expect(connectionStatus(null)).toBe('disconnected');
+			expect(connectionStatus({ isConnected: () => true })).toBe('connected');
+		});
+
+		it('names a client that exists but has not finished connecting as connecting', () => {
+			// This is the state the boolean lost: an agent runtime is held while
+			// its subprocess is starting or while a drop is being retried, and a
+			// screen built on "a client object exists" called both of those
+			// connected.
+			expect(connectionStatus({ isConnected: () => false })).toBe('connecting');
+		});
+	});
+
 	describe('locale subscription', () => {
 		it('re-renders visible content when the locale changes', () => {
 			setLocale('en');
 			const container = document.createElement('div');
 			const view = new WelcomeView(container);
-			view.show(false);
+			view.show('disconnected');
 
 			setLocale('zh');
 			expect(container.querySelector('.co-ober-welcome-title')?.textContent).toBe(zhLocale.appName);
@@ -140,11 +193,30 @@ describe('WelcomeView', () => {
 			view.dispose();
 		});
 
+		it('keeps the state the reader was shown when the locale changes', () => {
+			setLocale('en');
+			const container = document.createElement('div');
+			const view = new WelcomeView(container);
+			view.show('connecting');
+
+			setLocale('zh');
+			try {
+				// The rebuild paints from the stored state, so a pane that was
+				// told "connecting" must not come back from a locale switch
+				// claiming the agent is unreachable.
+				expect(container.querySelector('.co-ober-welcome-status span')?.textContent)
+					.toBe(zhLocale.welcome.connecting);
+			} finally {
+				setLocale('en');
+				view.dispose();
+			}
+		});
+
 		it('dispose() unsubscribes the locale listener and hides the view', () => {
 			setLocale('en');
 			const container = document.createElement('div');
 			const view = new WelcomeView(container);
-			view.show(false);
+			view.show('disconnected');
 			const showSpy = vi.spyOn(view, 'show');
 
 			view.dispose();

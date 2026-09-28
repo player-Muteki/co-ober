@@ -12,6 +12,7 @@ const zh: Locale = {
       slash: '/ 斜杠命令',
     },
     connected: '● 已连接',
+    connecting: '◐ 正在连接…',
     disconnected: '○ 未连接',
     authMethodsHint: 'OpenCode 返回了可用的认证方式：',
     authLoginCommand: '请在终端运行 `opencode auth login`，然后重新连接 Co-Ober。',
@@ -129,6 +130,7 @@ const zh: Locale = {
     switchTo: '切换到标签 {index}',
     streaming: '生成中',
     dangling: '该对话已不再保存，标签为空。',
+    restoreFailed: '该对话无法打开。请切换到别的标签再切回来重试。',
   },
 
   draft: {

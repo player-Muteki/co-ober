@@ -139,7 +139,9 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): MockDeps {
       sessions: new Map(),
       activeId: null,
     } as unknown as ControllerDeps['sessionStore'],
-    welcomeView: { show: noop, hide: noop, updateStatus: noop } as unknown as ControllerDeps['welcomeView'],
+    // The greeting has three states worth asserting on their own, so this stub
+    // does not ride the shared no-op.
+    welcomeView: { show: noop, hide: noop, updateStatus: vi.fn() } as unknown as ControllerDeps['welcomeView'],
     runtime: {
       settings: {
         maxNoteSize: 8000,
@@ -170,6 +172,7 @@ function createMockCallbacks(): ControllerCallbacks {
   return {
     onShowWelcome: vi.fn(),
     onHideWelcome: vi.fn(),
+    onTabsChanged: vi.fn(),
     onShowReconnectBtn: vi.fn(),
     onHideReconnectBtn: vi.fn(),
     onShowNewMessagesBtn: vi.fn(),
@@ -253,7 +256,7 @@ describe('CoOberViewController', () => {
       expect(result).toBe(true);
       expect(controller.state.isConnected).toBe(true);
       expect(callbacks.onHideReconnectBtn).toHaveBeenCalled();
-      expect(deps.welcomeView.updateStatus).toHaveBeenCalledWith(true);
+      expect(deps.welcomeView.updateStatus).toHaveBeenCalledWith('connected');
     });
 
     it('initializes client when not connected', async () => {
@@ -289,7 +292,7 @@ describe('CoOberViewController', () => {
 
       expect(controller.state.isConnected).toBe(false);
       expect(controller.state.isStreaming).toBe(false);
-      expect(deps.welcomeView.updateStatus).toHaveBeenCalledWith(false);
+      expect(deps.welcomeView.updateStatus).toHaveBeenCalledWith('disconnected');
       expect(callbacks.onShowReconnectBtn).toHaveBeenCalled();
     });
 
@@ -305,6 +308,8 @@ describe('CoOberViewController', () => {
 
       expect(deps.toolbar.updateAgents).toHaveBeenCalledWith([], undefined);
       expect(deps.toolbar.updateModels).toHaveBeenCalledWith([], undefined);
+      // The tier list is ours, so it stays on the bar; the selection was a
+      // negotiation with the agent that died, so nothing is named as in force.
       expect(deps.toolbar.updateEffort).toHaveBeenCalledWith(
         [
           { value: 'default', label: t().toolbar.effort.default },
@@ -312,9 +317,92 @@ describe('CoOberViewController', () => {
           { value: 'medium', label: t().toolbar.effort.medium },
           { value: 'high', label: t().toolbar.effort.high },
         ],
-        deps.runtime.settings.defaultEffort,
+        undefined,
       );
       expect(deps.toolbar.updateExtraConfigs).toHaveBeenCalledWith([]);
+    });
+  });
+
+  describe('0.2.12 stage 2 — panel and tab initialization', () => {
+    it('greets a panel with the connection state the agent is really in', () => {
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(null);
+      expect(controller.welcomeStatus()).toBe('disconnected');
+
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(createMockClient({
+        isConnected: vi.fn(() => false),
+      }));
+      // main.ts only hands out the client once connect() resolved, so a held
+      // client that has not finished its handshake is the connecting window:
+      // telling the reader "Connected" here invites a send that cannot land.
+      expect(controller.welcomeStatus()).toBe('connecting');
+
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(createMockClient());
+      expect(controller.welcomeStatus()).toBe('connected');
+    });
+
+    it('takes the picture and the waiting bubbles away from a connection that died', () => {
+      const setImageAttachEnabled = vi.fn();
+      Object.assign(deps.toolbar, { setImageAttachEnabled });
+      const rt = activeRt(controller);
+      rt.busy = true;
+
+      controller.handleDisconnect();
+
+      // The button mirrored the dead agent's capability, so a staged image went
+      // into a prompt with nowhere to go.
+      expect(setImageAttachEnabled).toHaveBeenCalledWith(false);
+      // Every tab's turn was cut short, so the strip has to be told or each one
+      // keeps its generating dot for a conversation that stopped working.
+      expect(callbacks.onTabsChanged).toHaveBeenCalled();
+    });
+
+    it('says where a tab that could not be painted stands, and lets the next look retry it', async () => {
+      const rt = activeRt(controller);
+      rt.state.sessionId = 'test';
+      rt.needsRestore = true;
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue({ messages: [{ role: 'user', content: 'hi', type: 'text', timestamp: 1 }] });
+      const restore = vi.spyOn(controller, 'restoreSession').mockRejectedValue(new Error('vault read failed'));
+
+      // A rejected paint used to abort the rest of the pane's startup — welcome
+      // page, keybindings, drag and drop — and leave the tab blank forever.
+      await expect(controller.ensurePainted(rt)).resolves.toBeUndefined();
+      expect(rt.renderer.addSystemMessage).toHaveBeenCalledWith(t().tabs.restoreFailed);
+      expect(rt.needsRestore).toBe(true);
+      expect(rt.restoring).toBe(false);
+
+      restore.mockResolvedValue(undefined);
+      await controller.ensurePainted(rt);
+      expect(restore).toHaveBeenCalledTimes(2);
+      expect(rt.needsRestore).toBe(false);
+    });
+
+    it('paints one transcript once when the reader clicks through the strip twice', () => {
+      const rt = activeRt(controller);
+      rt.state.sessionId = 'test';
+      rt.needsRestore = true;
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue({ messages: [] });
+      const restore = vi.spyOn(controller, 'restoreSession').mockReturnValue(new Promise<void>(() => {}));
+
+      void controller.ensurePainted(rt);
+      void controller.ensurePainted(rt);
+
+      // Both calls happen in one breath, before the first paint could clear its
+      // marker, so without an in-flight flag the same read — and the same panel
+      // reset — runs twice for a tab the reader only looked at once.
+      expect(restore).toHaveBeenCalledTimes(1);
+      expect(rt.restoring).toBe(true);
+    });
+
+    it('leaves a tab that never had a session marked for nothing', async () => {
+      const rt = activeRt(controller);
+      rt.state.sessionId = null;
+      rt.needsRestore = true;
+      const restore = vi.spyOn(controller, 'restoreSession').mockResolvedValue(undefined);
+
+      await controller.ensurePainted(rt);
+
+      expect(restore).not.toHaveBeenCalled();
+      expect(rt.needsRestore).toBe(false);
     });
   });
 
@@ -343,7 +431,7 @@ describe('CoOberViewController', () => {
       await controller.reconnect();
 
       expect(controller.state.isConnected).toBe(true);
-      expect(deps.welcomeView.updateStatus).toHaveBeenCalledWith(true);
+      expect(deps.welcomeView.updateStatus).toHaveBeenCalledWith('connected');
       expect(callbacks.onHideReconnectBtn).toHaveBeenCalled();
     });
 
@@ -2090,6 +2178,9 @@ describe('CoOberViewController', () => {
 
       controller.loadToolbarOptions();
 
+      // The list is this client's own vocabulary, so it is still offered; the
+      // saved default is what a NEW session will be asked for, not something
+      // this session ever reported, so no tier is named as already in force.
       expect(deps.toolbar.updateEffort).toHaveBeenCalledWith(
         [
           { value: 'default', label: ef.default },
@@ -2097,7 +2188,7 @@ describe('CoOberViewController', () => {
           { value: 'medium', label: ef.medium },
           { value: 'high', label: ef.high },
         ],
-        'default',
+        undefined,
       );
     });
 
@@ -2984,6 +3075,21 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
       };
     }
 
+    /**
+     * The stub renderer answers several methods with one shared mock, so its
+     * call count is the sum of everything drawn. A paint test needs to count
+     * one pass, so it takes its own counters.
+     */
+    function countPaint() {
+      return {
+        addUserMessage: deps.renderer.addUserMessage = vi.fn(),
+        appendText: deps.renderer.appendText = vi.fn(),
+        clear: deps.renderer.clear = vi.fn(),
+      };
+    }
+
+    const nativeUsage = [{ messageId: 'msg_1', cost: 0.5, inputTokens: 10, outputTokens: 7, totalTokens: 17 }];
+
     it('drops a turn whose session creation was superseded by a session switch', async () => {
       const gate = deferred<string>();
       const sendMessage = vi.fn().mockResolvedValue({ stopReason: 'end_turn' });
@@ -3013,14 +3119,23 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
       (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue(restorableSession());
       const gate = deferred<unknown[]>();
       (readNativeMessageStats as ReturnType<typeof vi.fn>).mockReturnValueOnce(gate.promise);
+      const { addUserMessage, appendText, clear } = countPaint();
 
       const restoring = controller.restoreSession();
+      // The transcript this plugin already holds goes on the panel before the
+      // agent's own files are read, so the reader is not left at a blank pane
+      // for as long as the native read takes — or forever, when it throws.
+      expect(addUserMessage).toHaveBeenCalledWith('hello', 1000, undefined);
+
       controller.state.sessionId = 'other';
-      gate.resolve([]);
+      gate.resolve(nativeUsage);
       await restoring;
 
-      expect(deps.renderer.addUserMessage).not.toHaveBeenCalled();
-      expect(deps.renderer.appendText).not.toHaveBeenCalled();
+      // The figures did arrive, but the panel now belongs to another session.
+      // The abandoned restore must not clear and repaint it with A's messages.
+      expect(clear).not.toHaveBeenCalled();
+      expect(addUserMessage).toHaveBeenCalledTimes(1);
+      expect(appendText).toHaveBeenCalledTimes(1);
     });
 
     it('restoreSession bails when a newer generation claims the transcript', async () => {
@@ -3028,13 +3143,44 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
       (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue(restorableSession());
       const gate = deferred<unknown[]>();
       (readNativeMessageStats as ReturnType<typeof vi.fn>).mockReturnValueOnce(gate.promise);
+      const { addUserMessage, appendText, clear } = countPaint();
 
       const restoring = controller.restoreSession();
       activeRt(controller).genId++;
-      gate.resolve([]);
+      gate.resolve(nativeUsage);
       await restoring;
 
-      expect(deps.renderer.addUserMessage).not.toHaveBeenCalled();
+      expect(clear).not.toHaveBeenCalled();
+      expect(addUserMessage).toHaveBeenCalledTimes(1);
+      expect(appendText).toHaveBeenCalledTimes(1);
+    });
+
+    it('restoreSession repaints once when the native read brought figures the snapshot lacked', async () => {
+      controller.state.sessionId = 'test';
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue(restorableSession());
+      (readNativeMessageStats as ReturnType<typeof vi.fn>).mockResolvedValueOnce(nativeUsage);
+      const { addUserMessage, appendText, clear } = countPaint();
+
+      await controller.restoreSession();
+
+      expect(clear).toHaveBeenCalledTimes(1);
+      expect(addUserMessage).toHaveBeenCalledTimes(2);
+      // The second pass carries the usage the first one could not have shown.
+      expect(appendText).toHaveBeenLastCalledWith('hi', 'restore-2000-1', 2000, {
+        cost: 0.5, inputTokens: 10, outputTokens: 7, totalTokens: 17,
+      }, undefined);
+    });
+
+    it('restoreSession keeps the transcript it painted when the native read throws', async () => {
+      controller.state.sessionId = 'test';
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue(restorableSession());
+      (readNativeMessageStats as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('no native store'));
+      const { addUserMessage, clear } = countPaint();
+
+      await expect(controller.restoreSession()).resolves.toBeUndefined();
+
+      expect(addUserMessage).toHaveBeenCalledWith('hello', 1000, undefined);
+      expect(clear).not.toHaveBeenCalled();
     });
 
     it('renders normally when nothing superseded the restore', async () => {

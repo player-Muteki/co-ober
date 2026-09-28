@@ -10,6 +10,7 @@ const en = {
       slash: '/  Slash commands',
     },
     connected: '● Connected',
+    connecting: '◐ Connecting…',
     disconnected: '○ Disconnected',
     authMethodsHint: 'OpenCode reported available authentication methods:',
     authLoginCommand: 'Run `opencode auth login` in a terminal, then reconnect Co-Ober.',
@@ -127,6 +128,7 @@ const en = {
     switchTo: 'Switch to tab {index}',
     streaming: 'generating',
     dangling: 'This conversation is no longer stored, so the tab is empty.',
+    restoreFailed: 'This conversation could not be opened. Switch away and back to try again.',
   },
 
   draft: {

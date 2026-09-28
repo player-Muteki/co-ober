@@ -29,7 +29,7 @@ import { DragDropManager } from './dragDropManager';
 import { PermissionBanner } from './permissionBanner';
 import { InlineEditPanel } from './inlineEditPanel';
 import { SideChatPanel, type SideChatAsk } from './sideChatPanel';
-import { WelcomeView } from './welcomeView';
+import { WelcomeView, connectionStatus, type WelcomeStatus } from './welcomeView';
 import { closeImagePreview } from './imagePreview';
 import { KeybindingManager } from './keybindingManager';
 import { TabBar } from './tabBar';
@@ -352,9 +352,9 @@ export class CoOberView extends ItemView {
 
     const savedSessionId = this.sessionStore.activeId;
     const callbacks: ControllerCallbacks = {
-      onShowWelcome: (connected: boolean) => {
+      onShowWelcome: (status: WelcomeStatus) => {
         if (this.messagesEl.children.length === 0) {
-          this.welcomeView.show(connected);
+          this.welcomeView.show(status);
         }
       },
       onHideWelcome: () => this.welcomeView.hide(),
@@ -450,8 +450,12 @@ export class CoOberView extends ItemView {
     // Init connection: auto-connect when the setting is on, otherwise leave
     // the manual reconnect button as the entry point.
     const connectedClient = this.plugin.getClient();
-    this.controller.state.isConnected = connectedClient?.isConnected() ?? false;
-    if (this.controller.state.isConnected) {
+    const connected = connectedClient?.isConnected() ?? false;
+    // Every tab on the restored strip is told, not only the one in front: a
+    // background runtime left holding the default offline flag answers a failed
+    // send with "the connection was lost" on a connection that never broke.
+    this.controller.setConnectedFlags(connected);
+    if (connected) {
       this.controller.bindClientHandlers();
       void this.controller.syncRuntimeSession(this.controller.getSessionId()).catch((e) => {
         console.error('[co-ober] session sync:', e);
@@ -480,7 +484,7 @@ export class CoOberView extends ItemView {
 
     // Show welcome page if no messages
     if (this.messagesEl.children.length === 0) {
-      this.welcomeView.show(this.plugin.getClient() !== null);
+      this.welcomeView.show(connectionStatus(this.plugin.getClient()));
     }
 
     // Auto-reference the currently active file
@@ -594,7 +598,7 @@ export class CoOberView extends ItemView {
     this.clearAutoRefs();
     this.controller.resetConversationView();
     if (this.messagesEl.children.length === 0) {
-      this.welcomeView.show(this.plugin.getClient() !== null);
+      this.welcomeView.show(connectionStatus(this.plugin.getClient()));
     }
   }
 
@@ -684,7 +688,7 @@ export class CoOberView extends ItemView {
     this.welcomeView.reparent(next.el);
     this.restoreDraft(tabId);
     if (next.el.children.length === 0) {
-      this.welcomeView.show(this.plugin.getClient() !== null);
+      this.welcomeView.show(connectionStatus(this.plugin.getClient()));
     }
     // The outgoing tab's button is hidden on switch; a tab the reader scrolled
     // up in must come back offering the jump to latest — and only after the
@@ -820,6 +824,17 @@ export class CoOberView extends ItemView {
       if (rt) rt.state.autoScrollEnabled = enabled;
       if (enabled) this.hideNewMessagesBtn(tabId);
     }
+  }
+
+  /**
+   * Re-project the toolbar from what the agent currently reports. Settings
+   * reaches an open pane through this: the option lists belong to the
+   * controller, and a duck-typed call straight to `loadToolbarOptions` landed on
+   * a method the view never had — so saving a model change in Settings left every
+   * open chat bar still offering the list from before the save.
+   */
+  reloadToolbarOptions(): void {
+    this.controller?.loadToolbarOptions();
   }
 
   refreshLocale(): void {

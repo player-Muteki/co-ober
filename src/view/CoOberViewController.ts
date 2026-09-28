@@ -35,7 +35,8 @@ import { Mutex } from '../utils/mutex';
 import { safeClone } from '../utils/clone';
 import { humanizeError } from '../utils/errorText';
 import { supportsPromptCapability } from '../utils/agentCapabilities';
-import type { WelcomeView } from './welcomeView';
+import type { WelcomeView, WelcomeStatus } from './welcomeView';
+import { connectionStatus } from './welcomeView';
 import type { PermissionBanner, PermissionOrigin } from './permissionBanner';
 import type { InlineEditPanel, InlineEditState } from './inlineEditPanel';
 import type { SideChatAsk } from './sideChatPanel';
@@ -67,7 +68,7 @@ import {
 } from '../constants';
 
 export interface ControllerCallbacks {
-  onShowWelcome(connected: boolean): void;
+  onShowWelcome(status: WelcomeStatus): void;
   onHideWelcome(): void;
   onShowReconnectBtn(): void;
   onHideReconnectBtn(): void;
@@ -400,7 +401,7 @@ export class CoOberViewController {
       } else {
         this.activeRuntime = this.openRuntime(null);
         this.updateQueueIndicator();
-        this.callbacks.onShowWelcome(this.deps.runtime.getClient() !== null);
+        this.callbacks.onShowWelcome(this.welcomeStatus());
         this.callbacks.onAutoRefActiveFile();
       }
     }
@@ -450,16 +451,35 @@ export class CoOberViewController {
 
   /** Paint a restored tab's stored transcript the first time the user looks at it. */
   async ensurePainted(rt: SessionRuntime): Promise<void> {
-    if (!rt.needsRestore || rt.painted) return;
-    rt.needsRestore = false;
-    if (!rt.sessionId) return;
+    if (!rt.needsRestore || rt.painted || rt.restoring) return;
+    if (!rt.sessionId) {
+      rt.needsRestore = false;
+      return;
+    }
     if (!this.deps.sessionStore.get(rt.sessionId)) {
       // Retention pruned the conversation the tab pointed at; an empty panel
       // with no explanation reads like a bug.
+      rt.needsRestore = false;
       rt.renderer.addSystemMessage(t().tabs.dangling);
       return;
     }
-    await this.restoreSession(rt);
+    // Both callers await this only to sequence pane startup, and an open chat
+    // pane must not fail because its transcript could not be read: a rejected
+    // promise here used to abort the rest of onOpen (welcome, keybindings, drag
+    // and drop) and, since the flag was cleared before the await, leave the tab
+    // blank forever. So the failure is said where the reader sees it, and the
+    // tab stays marked so the next time it comes forward the paint is retried.
+    const sid = rt.sessionId;
+    rt.restoring = true;
+    try {
+      await this.restoreSession(rt);
+      if (rt.sessionId === sid) rt.needsRestore = false;
+    } catch (e) {
+      console.error('[co-ober] tab restore failed:', e);
+      rt.renderer.addSystemMessage(t().tabs.restoreFailed);
+    } finally {
+      rt.restoring = false;
+    }
   }
 
   /** Startup hook: the tab in front gets its transcript immediately. */
@@ -574,8 +594,19 @@ export class CoOberViewController {
     this.deps.toolbar.setSending(false);
   }
 
-  private setConnectedFlags(v: boolean): void {
+  /**
+   * Hand the connection state to every tab, not just the one on screen. A
+   * background tab that still believes it is offline answers a failed send with
+   * "the connection was lost" — on a connection that never broke — because the
+   * turn error is reported from whichever tab owns the turn.
+   */
+  setConnectedFlags(v: boolean): void {
     for (const rt of this.runtimes.values()) rt.state.isConnected = v;
+  }
+
+  /** Which greeting state a freshly opened panel should be painted with. */
+  welcomeStatus(): WelcomeStatus {
+    return connectionStatus(this.deps.runtime.getClient());
   }
 
   private streamSlotsFree(client: OpencodeClient | null): boolean {
@@ -646,7 +677,7 @@ export class CoOberViewController {
         await this.cancelActiveGeneration(rt);
         rt.state.clear();
         this.resetRuntimeView(rt);
-        if (this.isActiveTab(rt)) this.callbacks.onShowWelcome(true);
+        if (this.isActiveTab(rt)) this.callbacks.onShowWelcome(this.welcomeStatus());
       },
     });
     registry.registerBuiltin({
@@ -852,7 +883,7 @@ export class CoOberViewController {
       this.setConnectedFlags(true);
       this.bindClientHandlers();
       this.callbacks.onHideReconnectBtn();
-      this.deps.welcomeView.updateStatus(true);
+      this.deps.welcomeView.updateStatus('connected');
       await this.syncSavedSessionAndLoadToolbar();
       return true;
     }
@@ -867,7 +898,10 @@ export class CoOberViewController {
 
     this.bindClientHandlers();
     this.callbacks.onHideReconnectBtn();
-    this.deps.welcomeView.updateStatus(true);
+    // A client object exists the moment the connect was asked for, so an
+    // attempt that has not reported in yet is its own state — and a greeting
+    // that says Connected sends the reader into a prompt that cannot land.
+    this.deps.welcomeView.updateStatus(this.welcomeStatus());
     await this.syncSavedSessionAndLoadToolbar();
     return true;
   }
@@ -898,7 +932,7 @@ export class CoOberViewController {
       onReconnect: async () => {
         this.bindClientHandlers();
         this.setConnectedFlags(true);
-        this.deps.welcomeView.updateStatus(true);
+        this.deps.welcomeView.updateStatus('connected');
         this.callbacks.onHideReconnectBtn();
         for (const rt of this.runtimes.values()) {
           if (!rt.state.sessionId) continue;
@@ -1155,11 +1189,21 @@ export class CoOberViewController {
     // agent's models, modes and config choices: switching to them cannot work.
     this.deps.toolbar.updateAgents([], undefined);
     this.deps.toolbar.updateModels([], undefined);
-    this.deps.toolbar.updateEffort(this.builtInEfforts(), this.deps.runtime.settings.defaultEffort);
+    // The effort list here is our own, but nothing is negotiating it any more,
+    // so no tier is named as the current one.
+    this.deps.toolbar.updateEffort(this.builtInEfforts(), undefined);
     this.deps.toolbar.updateExtraConfigs([]);
-    this.deps.welcomeView.updateStatus(false);
+    // An image that cannot be sent must not stay attachable: the button offered
+    // the dead agent's capability, so the reader staged a picture into a prompt
+    // that has nowhere to go.
+    this.deps.toolbar.setImageAttachEnabled(false);
+    this.deps.welcomeView.updateStatus('disconnected');
     this.noteProtocolMismatch();
     this.callbacks.onShowReconnectBtn();
+    // Every tab had its turn cut short, and the strip still lights a generating
+    // dot for each one until it is told. A badge that outlives its turn sends
+    // the reader to a tab that stopped working some seconds ago.
+    this.notifyTabsChanged();
   }
 
   async reconnect(): Promise<void> {
@@ -1182,7 +1226,7 @@ export class CoOberViewController {
       this.loadToolbarOptions();
       this.noteProtocolMismatch();
       this.setConnectedFlags(true);
-      this.deps.welcomeView.updateStatus(true);
+      this.deps.welcomeView.updateStatus('connected');
       this.callbacks.onHideReconnectBtn();
       // handleDisconnect keeps the queues on purpose, so a manual reconnect is
       // the only thing that can release them; without this a prompt parked
@@ -1344,7 +1388,7 @@ export class CoOberViewController {
       await this.deps.sessionStore.save();
       this.loadToolbarOptions(rt);
       if (this.isActiveTab(rt)) {
-        this.callbacks.onShowWelcome(this.deps.runtime.getClient() !== null);
+        this.callbacks.onShowWelcome(this.welcomeStatus());
         this.callbacks.onAutoRefActiveFile();
       }
       // The badge tooltip and the restored shell both key off the session id,
@@ -1363,11 +1407,34 @@ export class CoOberViewController {
     if (!session) return;
     const gen = rt.genId;
     const sid = rt.state.sessionId;
-    await this.enrichMessagesFromNative(session);
+    // The transcript the plugin already holds goes on the panel before any
+    // read of the agent's own files is attempted: the reader opened this tab to
+    // see their conversation, and three sequential disk reads — or one that
+    // throws — used to be what stood between them and it.
+    this.paintTranscript(rt, session);
+    let enriched = false;
+    try {
+      enriched = await this.enrichMessagesFromNative(session);
+    } catch (e) {
+      // Enrichment only supplies the cost lines and tool errors a native run
+      // left out of the stored record. Without them the conversation is whole,
+      // so losing them is not a reason to lose the panel.
+      console.warn('[co-ober] native enrichment failed:', e);
+    }
     // A session switch during enrichment resets the view and repoints
     // sessionId; painting this transcript then would render A's messages
     // into B's freshly cleared panel.
     if (rt.genId !== gen || rt.state.sessionId !== sid) return;
+    if (enriched) {
+      // Now the records hold figures the first pass could not have shown.
+      rt.renderer.clear();
+      this.paintTranscript(rt, session);
+    }
+    await this.refreshNativePlan(session.sessionId, rt);
+  }
+
+  /** Render one stored conversation into its tab's panel, bottom to top. */
+  private paintTranscript(rt: SessionRuntime, session: SerializedSession): void {
     let idx = 0;
     for (const msg of session.messages) {
       const restoreId = `restore-${msg.timestamp}-${idx++}`;
@@ -1393,7 +1460,6 @@ export class CoOberViewController {
     // hiding it for a tab in the background would take it away from whoever is
     // looking at an empty panel.
     if (session.messages.length > 0 && this.isActiveTab(rt)) this.callbacks.onHideWelcome();
-    await this.refreshNativePlan(session.sessionId, rt);
   }
 
   async ensureRuntimeSession(rt: SessionRuntime = this.activeRuntime): Promise<string | null> {
@@ -1486,7 +1552,7 @@ export class CoOberViewController {
     await this.deps.sessionStore.save();
     this.loadToolbarOptions(rt);
     if (this.isActiveTab(rt)) {
-      this.callbacks.onShowWelcome(this.deps.runtime.getClient() !== null);
+      this.callbacks.onShowWelcome(this.welcomeStatus());
       this.callbacks.onAutoRefActiveFile();
     }
     this.notifyTabsChanged();
@@ -1545,7 +1611,7 @@ export class CoOberViewController {
       await this.adoptReplay(forkedId, collector.finish());
       await this.restoreSession(rt);
       this.loadToolbarOptions(rt);
-      this.callbacks.onShowWelcome(true);
+      this.callbacks.onShowWelcome(this.welcomeStatus());
       this.notifyTabsChanged();
       this.persistTabShell();
     } catch (e) {
@@ -1679,7 +1745,7 @@ export class CoOberViewController {
     this.persistTabShell();
     this.loadToolbarOptions(rt);
     if (this.isActiveTab(rt)) {
-      this.callbacks.onShowWelcome(this.deps.runtime.getClient() !== null);
+      this.callbacks.onShowWelcome(this.welcomeStatus());
       this.callbacks.onAutoRefActiveFile();
     }
   }
@@ -2119,7 +2185,7 @@ export class CoOberViewController {
    * throughput and tool errors from the OpenCode database. Silently no-ops
    * when unavailable.
    */
-  private async enrichMessagesFromNative(session: SerializedSession): Promise<void> {
+  private async enrichMessagesFromNative(session: SerializedSession): Promise<boolean> {
     const [stats, toolErrors, turnStats] = await Promise.all([
       readNativeMessageStats(session.sessionId),
       readNativeToolErrors(session.sessionId),
@@ -2129,13 +2195,14 @@ export class CoOberViewController {
     if (stats.length > 0) changed = this.attachNativeUsage(session, stats);
     if (turnStats.length > 0) changed = this.attachNativeTurnStats(session, turnStats) || changed;
     if (Object.keys(toolErrors).length > 0) changed = this.attachNativeToolErrors(session, toolErrors) || changed;
-    if (!changed) return;
+    if (!changed) return false;
     try {
       await this.deps.sessionStore.save();
     } catch (e) {
       // enrichment is cosmetic; a failed persist must not break restore
       console.warn('[co-ober] native enrichment save failed:', e);
     }
+    return true;
   }
 
   private attachNativeUsage(session: SerializedSession, stats: NativeMessageStat[]): boolean {
@@ -2787,15 +2854,14 @@ export class CoOberViewController {
 
     rt.state.currentModelId = snapshot.currentModelId ?? selectValueOf(modelConfig) ?? null;
     if (!this.isActiveTab(rt)) return;
-    this.deps.toolbar.updateAgents(
-      agents,
-      snapshot.currentModeId ?? selectValueOf(modeConfig) ?? this.deps.runtime.settings.defaultAgent,
-    );
-    this.deps.toolbar.updateModels(
-      models,
-      snapshot.currentModelId ?? selectValueOf(modelConfig) ?? this.deps.runtime.settings.defaultModel,
-    );
-    this.deps.toolbar.updateEffort(efforts, selectValueOf(effortConfig) ?? this.deps.runtime.settings.defaultEffort);
+    // What the bar names as chosen is limited to what this session reported.
+    // Falling back to the saved default here dressed a value the agent never
+    // confirmed — including one it may have overridden mid-run — in the look of
+    // the tier the next prompt would actually send, while every other projection
+    // path (config options, mode and model updates) reports only what it was told.
+    this.deps.toolbar.updateAgents(agents, snapshot.currentModeId ?? selectValueOf(modeConfig));
+    this.deps.toolbar.updateModels(models, snapshot.currentModelId ?? selectValueOf(modelConfig));
+    this.deps.toolbar.updateEffort(efforts, selectValueOf(effortConfig));
     this.deps.toolbar.updateExtraConfigs(projectGenericConfigOptions(snapshot.configOptions));
     this.deps.toolbar.updatePermission(this.deps.runtime.settings.permissionMode);
     // Mirror the send-path rule (images are stripped unless supported) so the

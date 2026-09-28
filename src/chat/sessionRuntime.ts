@@ -30,6 +30,12 @@ export class SessionRuntime {
   painted = false;
   /** Rebuilt from a saved shell: its transcript is painted on first view. */
   needsRestore = false;
+  /**
+   * A paint of this tab's stored transcript is in flight. The flag is raised
+   * before the first await, so a reader clicking through the strip twice in one
+   * breath does not start the same read — and the same panel reset — twice.
+   */
+  restoring = false;
   /** A turn completed while this tab was hidden. */
   unread = false;
   /** Set when a drained turn lost the race for a stream slot and re-queued. */

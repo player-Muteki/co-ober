@@ -938,7 +938,7 @@ describe('CoOberViewController — one tab’s teardown stays inside that tab (0
       expect(rt.renderer.clear).toHaveBeenCalledTimes(1);
       // Clearing the transcript is not leaving the session.
       expect(rt.state.sessionId).toBe('ses-a');
-      expect(h.callbacks.onShowWelcome).toHaveBeenCalledWith(true);
+      expect(h.callbacks.onShowWelcome).toHaveBeenCalledWith('connected');
 
       // The turn still in flight belongs to a dead generation: its frames must
       // not repaint the cleared panel.
@@ -2526,8 +2526,11 @@ describe('CoOberViewController — every answer belongs to the tab that asked (0
 
       expect(rtOf(h, tab).state.availableModels).toEqual([]);
       expect(rtOf(h, tab).state.currentModelId).toBeNull();
-      expect(h.deps.toolbar.updateAgents).toHaveBeenCalledWith([], 'build');
-      expect(h.deps.toolbar.updateModels).toHaveBeenCalledWith([], '');
+      // Nothing was negotiated in this tab, so the bar is empty AND unsillected:
+      // naming the saved default here would show a tier this conversation never
+      // reported, in the same voice the agent's own answer uses.
+      expect(h.deps.toolbar.updateAgents).toHaveBeenCalledWith([], undefined);
+      expect(h.deps.toolbar.updateModels).toHaveBeenCalledWith([], undefined);
     });
 
     it('writes a background tab’s own choices into that tab, not into the bar', () => {
@@ -2686,5 +2689,74 @@ describe('cancelActiveGeneration answers its own banner (0.2.7 stage 2)', () => 
 
     expect(client.cancel).not.toHaveBeenCalled();
     expect(h.deps.permissionBanner.dismiss).not.toHaveBeenCalled();
+  });
+});
+
+describe('CoOberViewController — every tab is told what is true (0.2.12 stage 2)', () => {
+  let h: Harness;
+
+  beforeEach(() => {
+    h = createHarness();
+  });
+
+  function twoTabs(): [string, string] {
+    h.controller.restoreTabShells(
+      [{ tabId: 'tab-1', sessionId: 'ses-a' }, { tabId: 'tab-2', sessionId: 'ses-b' }],
+      'tab-1',
+    );
+    return h.controller.listTabIds() as [string, string];
+  }
+
+  it('hands the connection to every tab, not only the one in front', () => {
+    const [tabA, tabB] = twoTabs();
+    const behind = rtOf(h, tabB);
+    expect(behind.state.isConnected).toBe(false);
+
+    h.controller.setConnectedFlags(true);
+
+    // The panel a reader is looking at is not the panel that answers: the turn
+    // error is reported from whichever tab owns the turn, so a background tab
+    // left believing it is offline explains a failed send as a lost connection
+    // on a connection that never broke.
+    expect(behind.state.isConnected).toBe(true);
+    expect(rtOf(h, tabA).state.isConnected).toBe(true);
+  });
+
+  it('greets a reset tab with the state the agent is really in', async () => {
+    // The client object is handed over as soon as the connect was asked for and
+    // kept while the handshake reports in — the window in which every send is
+    // about to fail. `initClient` answering true is that window: the attempt is
+    // in place, the agent has not said it is reachable.
+    (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      createMockClient({ isConnected: vi.fn(() => false) }),
+    );
+    (h.deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+    twoTabs();
+    const showWelcome = h.callbacks.onShowWelcome as ReturnType<typeof vi.fn>;
+    const updateStatus = h.deps.welcomeView.updateStatus as ReturnType<typeof vi.fn>;
+    showWelcome.mockClear();
+    updateStatus.mockClear();
+
+    await h.controller.newSession();
+
+    expect(showWelcome).toHaveBeenCalledWith('connecting');
+    expect(updateStatus).toHaveBeenCalledWith('connecting');
+  });
+
+  it('paints the tab that comes forward in the click that brought it', () => {
+    const [, tabB] = twoTabs();
+    (h.deps.sessionStore.get as ReturnType<typeof vi.fn>).mockImplementation((sid: string) => (
+      sid === 'ses-b'
+        ? { sessionId: 'ses-b', messages: [{ role: 'user', content: 'what was said', type: 'text', timestamp: 5 }], updatedAt: 5 }
+        : { messages: [], updatedAt: 0 }
+    ));
+
+    h.controller.switchToTab(tabB);
+
+    // The conversation this plugin already holds needs no read of the agent's
+    // files to appear, so the reader does not stare at an empty panel while the
+    // native enrichment is still running — or after it failed.
+    expect(rtOf(h, tabB).renderer.addUserMessage).toHaveBeenCalledWith('what was said', 5, undefined);
+    expect(rtOf(h, tabB).painted).toBe(true);
   });
 });
