@@ -971,8 +971,13 @@ export class CoOberViewController {
             this.deps.input.setStreaming(false);
             this.deps.toolbar.setSending(false);
           }
-          void this.tryDrainAnyQueue();
         }
+        // Queues are released by the reconnection itself, not by the settling
+        // above. handleDisconnect keeps them on purpose and clears every tab's
+        // busy flag on the way out — so a drain parked inside that busy check
+        // could never run here, and the panel came back saying Connected with a
+        // queued prompt waiting on a turn that had already died.
+        void this.tryDrainAnyQueue();
       },
       onReconnectFailed: () => {
         this.noteConnectionLost(t().error.reconnectFailed);
@@ -1237,9 +1242,9 @@ export class CoOberViewController {
       this.setConnectedFlags(true);
       this.deps.welcomeView.updateStatus('connected');
       this.callbacks.onHideReconnectBtn();
-      // handleDisconnect keeps the queues on purpose, so a manual reconnect is
-      // the only thing that can release them; without this a prompt parked
-      // before the crash waited for a turn that would never come.
+      // handleDisconnect keeps the queues on purpose, so a reconnect is the only
+      // thing that can release them; without this a prompt parked before the
+      // crash waited for a turn that would never come.
       this.tryDrainAnyQueue();
     } catch (e) {
       console.error('[co-ober] reconnect failed:', e);

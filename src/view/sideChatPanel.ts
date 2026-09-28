@@ -140,6 +140,10 @@ export class SideChatPanel {
     const bubblesByMessage = new Map<string, HTMLDivElement>();
     try {
       await this.deps.ask(text, (u) => {
+        // Closing the panel takes the transcript away and aborts the ask; a chunk
+        // already on its way here would be poured into a panel that no longer
+        // exists, and the bubble it needed to land in threw on the way out.
+        if (!this.transcriptEl) return;
         if (u.kind === 'message_chunk' && u.role === 'agent') {
           const key = u.messageId ?? '';
           let target = bubblesByMessage.get(key);
@@ -156,8 +160,9 @@ export class SideChatPanel {
       // Nothing had arrived yet, so the waiting bubble is still the placeholder
       // the reader was shown; it becomes the error in place. Once any text has
       // landed, that text is the agent's and stays on screen, with the failure
-      // added below it rather than written over it.
-      const failingEl = bubblesByMessage.size === 0
+      // added below it rather than written over it. A panel closed mid-ask has
+      // no place left to add that line, so the detached bubble takes it.
+      const failingEl = bubblesByMessage.size === 0 || !this.transcriptEl
         ? answerEl
         : this.appendBubble('agent', '');
       failingEl.setText(t().sideChat.failed.replace('{error}', humanizeError(e)));

@@ -234,6 +234,7 @@ const en = {
     assistant: 'Assistant',
     system: 'System',
     image: '[image]',
+    tool: '[tool]',
   },
 
   thinking: {

@@ -427,15 +427,13 @@ describe('native session content search', () => {
 		expect(sessions).toEqual([]);
 	});
 
-	it('degrades to an empty list when the query fails', async () => {
+	it('reports a failed query as the failure it is, not as no matches', async () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-		const sessions = await searchNativeSessions('/vault', 'term', {
+		await expect(searchNativeSessions('/vault', 'term', {
 			env: { HOME: '/home/u' },
 			fs: fakeFs,
 			sqlite: { requireSqliteModule: () => null, spawn: () => { throw new Error('nope'); }, execPath: '', env: {} } as never,
-		});
-		expect(sessions).toEqual([]);
-		expect(warn).toHaveBeenCalled();
+		})).rejects.toThrow('nope');
 		warn.mockRestore();
 	});
 });

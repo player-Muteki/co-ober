@@ -67,6 +67,66 @@ describe('buildTranscriptMarkdown', () => {
     expect(md).toContain('[image] [image]');
   });
 
+  it('keeps a picture the agent showed, which is a block and not an attachment', () => {
+    const md = buildTranscriptMarkdown(session({
+      messages: [
+        {
+          role: 'assistant',
+          content: '',
+          type: 'text',
+          timestamp: 1,
+          contentBlocks: [{ type: 'image', mimeType: 'image/png', data: 'AAA=' }],
+        },
+      ],
+    }));
+    // The agent's own images arrive with the message content left empty, so this
+    // turn was on screen and nothing at all in the exported note.
+    expect(md).toContain('## Assistant · ');
+    expect(md).toContain('[image]');
+  });
+
+  it('carries the steps of a turn that answered in tool calls alone', () => {
+    const md = buildTranscriptMarkdown(session({
+      messages: [
+        {
+          role: 'assistant',
+          content: '',
+          type: 'tool-call',
+          timestamp: 1,
+          contentBlocks: [
+            { type: 'tool_use', toolCallId: 'c1', toolTitle: 'Read notes/a.md', toolKind: 'read', toolStatus: 'completed' },
+            { type: 'tool_use', toolCallId: 'c2', toolKind: 'search', toolStatus: 'completed' },
+          ],
+        },
+      ],
+    }));
+    expect(md).toContain('## Assistant · ');
+    expect(md).toContain('[tool] Read notes/a.md');
+    // A card with no title of its own contributes no empty bullet.
+    expect((md.match(/\[tool\]/g) ?? []).length).toBe(1);
+  });
+
+  it('names the exported steps and pictures in the note language', () => {
+    setLocale('zh');
+    const md = buildTranscriptMarkdown(session({
+      messages: [
+        {
+          role: 'assistant',
+          content: '',
+          type: 'tool-call',
+          timestamp: 1,
+          contentBlocks: [
+            { type: 'tool_use', toolCallId: 'c1', toolTitle: '读取', toolKind: 'read', toolStatus: 'completed' },
+            { type: 'image', mimeType: 'image/png', data: 'AAA=' },
+          ],
+        },
+      ],
+    }));
+    expect(md).toContain('[工具] 读取');
+    expect(md).toContain('[图片]');
+    setLocale('en');
+  });
+
   it('uses localized role labels', () => {
     setLocale('zh');
     const md = buildTranscriptMarkdown(session({

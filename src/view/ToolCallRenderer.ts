@@ -3,7 +3,7 @@
  * with status indicators and tool-specific content previews.
  *
  * Standard layout: [icon] [tool-name] [file/command summary] [status icon]
- * Status: running(rotating) / completed(check) / error(x) / blocked(shield)
+ * Status: running(rotating) / completed(check) / error(x) / queued(circle)
  *
  * Uses unified collapsible pattern and DiffRenderer for hunk-based diff.
  *
@@ -237,8 +237,9 @@ export function updateToolCallElement(
     if (newSummary) summaryEl.textContent = newSummary;
   }
 
-  // Status classes
-  wrapper.classList.remove('status-pending', 'status-running', 'status-completed', 'status-error', 'status-blocked');
+  // Status classes. The list is the four states this renderer can actually put
+  // on a card; a fifth was cleared here for a look nothing ever produced.
+  wrapper.classList.remove('status-pending', 'status-running', 'status-completed', 'status-error');
   statusEl.className = 'tc-stat';
 
   // Handle write/edit tools through dedicated renderer

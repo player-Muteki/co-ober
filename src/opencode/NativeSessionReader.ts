@@ -678,7 +678,7 @@ export function buildNativeSessionSearchSql(cwd: string, query: string, limit: n
 	].join(' ');
 }
 
-/** Content-search OpenCode-native sessions for the vault; empty list on any failure. */
+/** Content-search OpenCode-native sessions for the vault; a read that could not run rejects. */
 export async function searchNativeSessions(cwd: string, query: string, deps: NativeSessionReaderDeps = {}): Promise<SessionMeta[]> {
 	const trimmed = query.trim();
 	if (!trimmed) return [];
@@ -688,14 +688,13 @@ export async function searchNativeSessions(cwd: string, query: string, deps: Nat
 	const format = await resolveNativeReadFormat(databasePath, deps);
 	if (!format) return [];
 
-	let rows: SqliteRow[];
-	try {
-		const sql = format === 'v2' ? buildNativeSessionSearchSqlV2(cwd, trimmed) : buildNativeSessionSearchSql(cwd, trimmed);
-		rows = await querySqliteJson(databasePath, sql, deps.sqlite);
-	} catch (error) {
-		console.warn('[co-ober] native session search unavailable:', error);
-		return [];
-	}
+	// "The database has no sessions like this" and "the search could not run"
+	// are different answers, and the caller has a line for the second one.
+	// Swallowing the failure here made that line unreachable: a broken read came
+	// back as an empty list, so the panel reported no matches for a question it
+	// never got to ask.
+	const sql = format === 'v2' ? buildNativeSessionSearchSqlV2(cwd, trimmed) : buildNativeSessionSearchSql(cwd, trimmed);
+	const rows = await querySqliteJson(databasePath, sql, deps.sqlite);
 
 	const sessions: SessionMeta[] = [];
 	for (const row of rows) {

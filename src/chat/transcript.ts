@@ -16,8 +16,19 @@ function formatTimestamp(ms: number): string {
 function messageBody(msg: SerializedMessage): string {
 	const parts: string[] = [];
 	if (msg.content) parts.push(msg.content);
-	const imageCount = msg.images?.length ?? 0;
+	const blocks = msg.contentBlocks ?? [];
+	// An agent image lands in the transcript as an image content block, with the
+	// message's own content left empty — so a turn that showed a picture beside
+	// the answer carried nothing into the export this function was skipping.
+	const imageCount = (msg.images?.length ?? 0) + blocks.filter((block) => block.type === 'image').length;
 	if (imageCount > 0) parts.push(Array(imageCount).fill(t().transcript.image).join(' '));
+	// The steps a turn took are on screen as cards; a turn that answered in tool
+	// calls alone was a card list the exported note threw away whole.
+	const steps = blocks
+		.filter((block) => block.type === 'tool_use')
+		.map((block) => block.toolTitle?.trim() ?? '')
+		.filter(Boolean);
+	if (steps.length > 0) parts.push(steps.map((step) => `${t().transcript.tool} ${step}`).join('\n'));
 	return parts.join('\n\n');
 }
 
@@ -25,7 +36,7 @@ function messageBody(msg: SerializedMessage): string {
 export function buildTranscriptMarkdown(session: SerializedSession): string {
 	const lines: string[] = [`# ${session.title}`, ''];
 	for (const msg of session.messages) {
-		if (msg.type !== 'text') continue;
+		if (msg.type !== 'text' && msg.type !== 'tool-call') continue;
 		const body = messageBody(msg);
 		if (!body) continue;
 		lines.push(`## ${ROLE_LABELS[msg.role]()} · ${formatTimestamp(msg.timestamp)}`, '', body, '');

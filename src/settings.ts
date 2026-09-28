@@ -6,6 +6,7 @@ import type { OpencodeClient } from './client';
 import { setLocale, t as locale } from './i18n/index';
 import { CLIENT_VERSION } from './client/acp';
 import { applyPermissionTier } from './client/permissionTier';
+import { validateCustomAgent } from './agents/custom';
 import { resolveCommandPath } from './utils/commandResolution';
 import { MIN_OPEN_TABS, MAX_OPEN_TABS, DEFAULT_OPEN_TABS } from './constants';
 
@@ -194,11 +195,20 @@ export class CoOberSettingsTab extends PluginSettingTab {
       .setDesc(labels.customAgents.activeDesc)
       .addDropdown((d) => {
         const options: Record<string, string> = { '': labels.customAgents.none };
-        for (const agent of s.customAgents.filter((item) => item.enabled)) {
+        // Only an agent whose prompt will actually be attached may be named here.
+        // The send path drops one that fails validation — a blank name or
+        // instruction, a duplicate or unknown skill reference — without a word,
+        // so listing an enabled-but-invalid agent promised a tier no prompt would
+        // ever carry.
+        for (const agent of s.customAgents.filter(
+          (item) => item.enabled && validateCustomAgent(item, s.customSkills).length === 0,
+        )) {
           options[agent.id] = agent.name || agent.id;
         }
         d.addOptions(options);
-        d.setValue(s.activeCustomAgentId ?? '');
+        // A stored id no longer offered gets the honest reading — nothing is in
+        // force — rather than a select showing neither the name nor None.
+        d.setValue(s.activeCustomAgentId && s.activeCustomAgentId in options ? s.activeCustomAgentId : '');
         d.onChange(async (v) => { s.activeCustomAgentId = v; await this.save(); });
       });
 

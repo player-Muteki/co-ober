@@ -756,3 +756,28 @@ describe('CoOberSettingsTab agent list (0.2.5 stage 3)', () => {
     expect([...agentSelect!.options].map((option) => option.value)).toEqual(['build', 'plan']);
   });
 });
+
+describe('CoOberSettingsTab active custom agent (0.2.13 stage 2)', () => {
+  it('names only an agent whose prompt would actually be attached', () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    plugin.settings.customAgents = [
+      { id: 'good-agent', name: 'Researcher', description: '', instructions: 'read first', skillIds: [], enabled: true },
+      { id: 'blank-agent', name: 'Blank', description: '', instructions: '   ', skillIds: [], enabled: true },
+      { id: 'stray-agent', name: 'Stray', description: '', instructions: 'ok', skillIds: ['nope'], enabled: true },
+      { id: 'off-agent', name: 'Off', description: '', instructions: 'ok', skillIds: [], enabled: false },
+    ];
+    plugin.settings.activeCustomAgentId = 'blank-agent';
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+
+    // The send path drops an agent that fails validation without a word, so
+    // listing one here promised a tier no prompt would ever carry.
+    const select = [...tab.containerEl.querySelectorAll('select')]
+      .find((el) => [...el.options].some((option) => option.value === 'good-agent')) as HTMLSelectElement | undefined;
+    expect(select).toBeDefined();
+    expect([...select!.options].map((option) => option.value)).toEqual(['', 'good-agent']);
+    // The stored pick is one the plugin will not attach, so the row reads None.
+    expect(select!.value).toBe('');
+  });
+});

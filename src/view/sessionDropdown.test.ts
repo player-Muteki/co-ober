@@ -680,6 +680,20 @@ describe('SessionDropdown', () => {
       dd.destroy();
     });
 
+    it('says the search failed instead of leaving nothing where answers were', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const dd = makeContentDropdown(async () => { throw new Error('database is locked'); });
+      typeQuery(dd, 'foo');
+      await new Promise((r) => setTimeout(r, 10));
+
+      // A read that could not run is not a search that found nothing: the panel
+      // used to answer a broken database with silence.
+      expect(container.querySelector('.co-ober-session-content-section')).toBeNull();
+      expect(container.querySelector('.co-ober-session-native-error')?.textContent).toContain('Content search failed');
+      warn.mockRestore();
+      dd.destroy();
+    });
+
     it('does not search for queries shorter than two characters', async () => {
       const searcher = vi.fn(async () => []);
       const dd = makeContentDropdown(searcher);

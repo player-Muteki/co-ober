@@ -3,7 +3,11 @@ import { CONTEXT_NOTE_MAX_BYTES, TRUNCATION_MARKER } from '../constants';
 
 /** Resolve note references into structured content blocks */
 export class ContextResolver {
-  constructor(private vault: Vault, private maxBytes = CONTEXT_NOTE_MAX_BYTES) {}
+  // The ceiling is read per resolve, not frozen at construction: a pane open
+  // while the number changes in Settings would otherwise go on cutting every
+  // referenced note at the ceiling the panel happened to open under, with the
+  // Settings screen showing a different figure.
+  constructor(private vault: Vault, private maxBytes: () => number = () => CONTEXT_NOTE_MAX_BYTES) {}
 
   /** Read and return note content up to maxBytes */
   async resolveNote(path: string): Promise<{ name: string; content: string } | null> {
@@ -12,9 +16,10 @@ export class ContextResolver {
     try {
       const content = await this.vault.read(abstract);
       const name = abstract.basename;
+      const ceiling = this.maxBytes();
       const encoded = new TextEncoder().encode(content);
-      if (encoded.byteLength > this.maxBytes) {
-        return { name, content: truncateUtf8(content, this.maxBytes) + TRUNCATION_MARKER };
+      if (encoded.byteLength > ceiling) {
+        return { name, content: truncateUtf8(content, ceiling) + TRUNCATION_MARKER };
       }
       return { name, content };
     } catch {

@@ -236,6 +236,7 @@ const zh: Locale = {
     assistant: '助手',
     system: '系统',
     image: '[图片]',
+    tool: '[工具]',
   },
 
   thinking: {

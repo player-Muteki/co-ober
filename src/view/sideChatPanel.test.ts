@@ -126,7 +126,51 @@ describe('SideChatPanel', () => {
     panel.close();
   });
 
-  it('refuses to ask while the main conversation is generating', async () => {    const { panel, ask } = makePanel({ isMainBusy: () => true });
+  it('drops a chunk that arrives after the reader closed the panel', async () => {
+    let pushChunk: ((u: NormalizedUpdate) => void) | null = null;
+    let finish: (() => void) | null = null;
+    const ask = vi.fn<SideChatAsk>(async (_text, onChunk) => {
+      pushChunk = onChunk;
+      await new Promise<void>((resolve) => { finish = resolve; });
+      return okResponse;
+    });
+    const { panel } = makePanel({ ask: ask as SideChatAsk });
+    void panel.send('hello');
+    await new Promise((r) => setTimeout(r, 0));
+    pushChunk!({ kind: 'message_chunk', role: 'agent', messageId: 'm1', chunkText: 'a', accumulatedText: 'half an answer' });
+
+    panel.close();
+
+    // A second message needs a second bubble, and a panel the reader took away
+    // has no transcript to put one in — the agent's own stream callback threw.
+    expect(() => pushChunk!({ kind: 'message_chunk', role: 'agent', messageId: 'm2', chunkText: 'b', accumulatedText: 'the rest' })).not.toThrow();
+    finish!();
+    await new Promise((r) => setTimeout(r, 0));
+  });
+
+  it('reports a failure that lands after the panel was closed', async () => {
+    let pushChunk: ((u: NormalizedUpdate) => void) | null = null;
+    let fail: ((e: unknown) => void) | null = null;
+    const ask = vi.fn<SideChatAsk>(async (_text, onChunk) => {
+      pushChunk = onChunk;
+      return new Promise<AcpResponse>((_resolve, reject) => { fail = reject; });
+    });
+    const { panel } = makePanel({ ask: ask as SideChatAsk });
+    const sent = panel.send('hello');
+    await new Promise((r) => setTimeout(r, 0));
+    pushChunk!({ kind: 'message_chunk', role: 'agent', messageId: 'm1', chunkText: 'a', accumulatedText: 'half an answer' });
+
+    panel.close();
+    fail!(new Error('stream cut'));
+
+    // The abort the close provoked rejects after the transcript is gone; writing
+    // the failure line needed a bubble that no longer had anywhere to live.
+    await expect(sent).resolves.toBeUndefined();
+    expect(container.querySelectorAll('.co-ober-side-chat-msg')).toHaveLength(0);
+  });
+
+  it('refuses to ask while the main conversation is generating', async () => {
+    const { panel, ask } = makePanel({ isMainBusy: () => true });
     await panel.send('hello');
 
     expect(ask).not.toHaveBeenCalled();

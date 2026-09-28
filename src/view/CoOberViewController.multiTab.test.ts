@@ -2158,6 +2158,27 @@ describe('CoOberViewController — closed means closed (0.2.6 stage 3)', () => {
     });
   });
 
+  describe('an auto reconnect', () => {
+    it('releases the queue the crash left parked', async () => {
+      const [tabA] = twoTabs();
+      const client = clientFor();
+      const rt = rtOf(h, tabA);
+      rt.promptQueue.push({ text: 'queued while down', refs: [] });
+      rt.capacityParked = true;
+
+      h.controller.bindClientHandlers();
+      const calls = (client.setClientHandlers as ReturnType<typeof vi.fn>).mock.calls;
+      const handlers = calls[calls.length - 1][0] as { onReconnect: () => Promise<void> };
+      await handlers.onReconnect();
+
+      // The disconnect that led here cleared every tab's busy flag, so the drain
+      // that sat inside the busy check could never run: the panel came back
+      // reading Connected over a prompt waiting on a turn already dead.
+      await vi.waitFor(() => expect(client.sendMessage).toHaveBeenCalledTimes(1));
+      expect(rt.promptQueue).toHaveLength(0);
+    });
+  });
+
   describe('a fresh session for a rewind', () => {
     it('lands in the tab that asked, not the one on screen', async () => {
       const [tabA, tabB] = twoTabs();

@@ -60,12 +60,29 @@ describe('ContextResolver', () => {
     const longContent = 'a'.repeat(10000);
     const files = new Map([['long.md', { basename: 'long', content: longContent }]]);
     const vault = createMockVault(files);
-    const resolver = new ContextResolver(vault, 8000);
+    const resolver = new ContextResolver(vault, () => 8000);
 
     const result = await resolver.resolveNote('long.md');
 
     expect(result!.content.length).toBe(8015); // 8000 + '... [truncated]'
     expect(result!.content.endsWith('... [truncated]')).toBe(true);
+  });
+
+  it('cuts at the ceiling the setting holds now, not the one held at open', async () => {
+    const longContent = 'a'.repeat(10000);
+    const files = new Map([['long.md', { basename: 'long', content: longContent }]]);
+    const vault = createMockVault(files);
+    let ceiling = 4000;
+    const resolver = new ContextResolver(vault, () => ceiling);
+
+    const before = await resolver.resolveNote('long.md');
+    ceiling = 2000;
+    const after = await resolver.resolveNote('long.md');
+
+    // The pane was already open when the number moved in Settings; a frozen
+    // ceiling would keep cutting at 4000 while the screen says 2000.
+    expect(before!.content).toHaveLength(4015);
+    expect(after!.content).toHaveLength(2015);
   });
 
   it('should resolve multiple notes', async () => {
