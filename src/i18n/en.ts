@@ -178,6 +178,8 @@ const en = {
     accessDenied: 'That operation was refused: {detail}',
     connectionLostMidTurn: 'The connection to the agent was lost while this turn was in flight; the reply was not completed.',
     unknown: 'Something went wrong',
+    retry: 'Retry',
+    restart: 'Restart and retry',
   },
 
   rewind: {

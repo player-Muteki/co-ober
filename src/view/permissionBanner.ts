@@ -1,5 +1,6 @@
 import type { ElicitationAnswer, ElicitationField, ElicitationRequest, PermissionDecision, PermissionRequest } from '../types';
 import { t, onLocaleChange, lookupLocaleString } from '../i18n/index';
+import { isImeComposing } from '../utils/ime';
 import { PERMISSION_MAX_LOCATIONS, PERMISSION_SUMMARY_MAX_KEYS, PERMISSION_TRUNCATE_LENGTH } from '../constants';
 
 /** Points the banner at the tab that produced the request (multi-tab sessions). */
@@ -131,6 +132,11 @@ export class PermissionBanner {
     banner.createDiv({ cls: 'perm-key-hint', text: t().permission.keyHint });
     banner.tabIndex = 0;
     banner.onkeydown = (e: KeyboardEvent) => {
+      // The prompt asks for text in the reader's own language, and Escape is how
+      // an input engine throws away the half-typed candidate. That key belongs to
+      // the engine, not to this banner — taking it here retired the whole request
+      // as unanswered while the reader was only discarding a word.
+      if (isImeComposing(e)) return;
       if (e.key !== 'Escape') return;
       e.preventDefault();
       e.stopPropagation();

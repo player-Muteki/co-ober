@@ -76,6 +76,13 @@ export function renderLiveThinkingBlock(
   const timerEl = header.createSpan({ cls: 'co-ober-thinking-timer', text: thinkingElapsed(0) });
   const dotEl = header.createSpan({ cls: 'co-ober-thinking-dot', text: '···' });
 
+  // Both names the reader hears carry the key that produced them, so a locale
+  // switch relabels the block that is already on screen instead of leaving it
+  // named in the language the turn started in.
+  labelEl.dataset.i18nText = 'thinking.header';
+  timerEl.dataset.i18nCount = 'thinking.elapsed';
+  timerEl.dataset.seconds = '0';
+
   const body = wrapper.createDiv({ cls: 'co-ober-thinking-body' });
 
   const collapsibleState: CollapsibleState = { isExpanded: false };
@@ -98,6 +105,7 @@ export function renderLiveThinkingBlock(
   // Live timer: update every second
   state.timerInterval = setInterval(() => {
     const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+    state.timerEl.dataset.seconds = String(elapsed);
     state.timerEl.textContent = thinkingElapsed(elapsed);
   }, THINKING_TIMER_INTERVAL_MS);
 
@@ -165,6 +173,7 @@ function renderTruncatedBody(
     cls: 'co-ober-thinking-show-all',
     text: t().thinking.showAll,
   });
+  showAllBtn.dataset.i18nText = 'thinking.showAll';
   showAllBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     onShowAll();
@@ -200,7 +209,10 @@ export function finalizeThinkingBlock(state: ThinkingState): number {
 
   const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
   state.labelEl.textContent = t().thinking.thought;
+  state.labelEl.dataset.i18nText = 'thinking.thought';
   state.timerEl.textContent = thinkingDuration(elapsed);
+  state.timerEl.dataset.i18nCount = 'thinking.elapsedFor';
+  state.timerEl.dataset.seconds = String(elapsed);
 
   // Remove dot indicator
   const dot = state.header.querySelector('.co-ober-thinking-dot');
@@ -232,10 +244,12 @@ export function renderStoredThinkingBlock(
   header.setAttribute('tabindex', '0');
 
   const label = durationSeconds ? t().thinking.thought : t().thinking.header;
-  const durationText = durationSeconds ? thinkingDuration(durationSeconds) : '';
-  header.createSpan({ cls: 'co-ober-thinking-label', text: label });
-  if (durationText) {
-    header.createSpan({ cls: 'co-ober-thinking-timer', text: durationText });
+  const labelEl = header.createSpan({ cls: 'co-ober-thinking-label', text: label });
+  labelEl.dataset.i18nText = durationSeconds ? 'thinking.thought' : 'thinking.header';
+  if (durationSeconds) {
+    const timerEl = header.createSpan({ cls: 'co-ober-thinking-timer', text: thinkingDuration(durationSeconds) });
+    timerEl.dataset.i18nCount = 'thinking.elapsedFor';
+    timerEl.dataset.seconds = String(durationSeconds);
   }
 
   const body = wrapper.createDiv({ cls: 'co-ober-thinking-body' });

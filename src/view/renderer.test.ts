@@ -757,6 +757,28 @@ describe('ChatRenderer', () => {
       const box = container.querySelector('.co-ober-thinking-block') as HTMLElement;
       expect(box?.classList.contains('is-thinking')).toBe(false);
     });
+
+    it('says the settled thinking over in the language just chosen', () => {
+      renderer.appendThinking('deep thought');
+      renderer.finalizeCurrentThinking();
+
+      const label = container.querySelector('.co-ober-thinking-label') as HTMLElement;
+      const timer = container.querySelector('.co-ober-thinking-timer') as HTMLElement;
+      expect(label.textContent).toBe('Thought');
+      expect(timer.textContent).toBe('for 0s');
+
+      setLocale('zh');
+      try {
+        renderer.refreshLocale();
+        // The duration is the half with a number in it: the repaint has to rebuild
+        // the phrase around the seconds this block actually took rather than print
+        // the template it looked up, and a settled block never ticks to fix itself.
+        expect(label.textContent).toBe('已思考');
+        expect(timer.textContent).toBe('持续 0秒');
+      } finally {
+        setLocale('en');
+      }
+    });
   });
 
   describe('a render the reader is in the middle of', () => {
@@ -1009,6 +1031,28 @@ describe('ChatRenderer', () => {
         setLocale('en');
         renderer.refreshLocale();
         expect(kindEl.textContent).toBe('Search');
+      } finally {
+        setLocale('en');
+      }
+    });
+
+    it('renames the status glyph in the language the reader switched to', () => {
+      renderer.addToolCall('call-stat', 'Read a note', 'read', {});
+      renderer.updateToolCall('call-stat', 'completed', undefined, undefined, undefined, undefined, 'read');
+      flushToolRenders();
+
+      const stat = container.querySelector('.tc-stat') as HTMLElement;
+      // The name of the state lives only on the icon: aria-label and title. Left
+      // untagged, a card finished before the switch went on telling a screen
+      // reader "Completed" in a transcript that now says 已完成 everywhere else.
+      expect(stat.dataset.i18nLabel).toBe('tool.status.done');
+      expect(stat.getAttribute('aria-label')).toBe('Completed');
+
+      setLocale('zh');
+      try {
+        renderer.refreshLocale();
+        expect(stat.getAttribute('aria-label')).toBe('已完成');
+        expect(stat.getAttribute('title')).toBe('已完成');
       } finally {
         setLocale('en');
       }

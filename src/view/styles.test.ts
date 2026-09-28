@@ -22,6 +22,24 @@ describe('the stylesheet and the DOM it is answerable to', () => {
     expect(css).toMatch(/\.co-ober-arc-meter\[data-tooltip\]:focus-visible::after/);
   });
 
+  it('anchors a fence\'s copy button to the fence', () => {
+    // renderer.ts appends the button into the <pre> and styles it position:
+    // absolute. With nothing establishing the fence as the containing block, the
+    // nearest positioned ancestor is the message (.co-ober-msg), so every fence
+    // in one answer parked its button on the same corner of the bubble — over
+    // the timestamp, and over each other.
+    expect(css).toMatch(/\.co-ober-code-block\s*\{[^}]*position:\s*relative/);
+    expect(css).toMatch(/\.co-ober-copy-btn\s*\{[^}]*position:\s*absolute/);
+  });
+
+  it('styles the way back out of an error, including while it is working', () => {
+    // addError builds this button and disables it while the retry runs. Unstyled,
+    // it ran into the sentence reporting the failure as part of the report, and a
+    // pressed button was indistinguishable from one nobody had pressed yet.
+    expect(css).toMatch(/\.co-ober-error-action\s*\{/);
+    expect(css).toMatch(/\.co-ober-error-action:disabled\s*\{[^}]*opacity/);
+  });
+
   it('drops no rule for a class no code applies', () => {
     // A whole block styled .co-ober-tool-status with its own spinner. Nothing in
     // src/ ever wrote that class, so it was a status icon no tool card had —

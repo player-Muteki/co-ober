@@ -80,6 +80,19 @@ describe('thinkingBlockRenderer', () => {
       }
     });
 
+    it('leaves the live names as keys the locale repaint can read back', () => {
+      const state = renderLiveThinkingBlock(container);
+      // The block is on screen while the reader may still change language, so the
+      // label and the counting timer both carry what produced their text — and the
+      // seconds, since the wording is the only thing that holds them together.
+      expect(state.labelEl.dataset.i18nText).toBe('thinking.header');
+      expect(state.timerEl.dataset.i18nCount).toBe('thinking.elapsed');
+      expect(state.timerEl.dataset.seconds).toBe('0');
+      vi.advanceTimersByTime(3000);
+      expect(state.timerEl.dataset.seconds).toBe('3');
+      cleanupThinkingBlock(state);
+    });
+
     it('stays collapsed while streaming content', () => {
       const state = renderLiveThinkingBlock(container);
       appendThinkingContent(state, 'reasoning...');
@@ -126,6 +139,18 @@ describe('thinkingBlockRenderer', () => {
       expect(state.wrapper.classList.contains('is-collapsed')).toBe(true);
     });
 
+    it('hands the settled names over as keys, not as the words they were drawn in', () => {
+      const state = renderLiveThinkingBlock(container);
+      vi.advanceTimersByTime(2000);
+      finalizeThinkingBlock(state);
+      // A finished block never ticks again, so without the key and the number
+      // behind its text a language switch left "Thought for 2s" sitting in an
+      // otherwise Chinese transcript until the conversation was reloaded.
+      expect(state.labelEl.dataset.i18nText).toBe('thinking.thought');
+      expect(state.timerEl.dataset.i18nCount).toBe('thinking.elapsedFor');
+      expect(state.timerEl.dataset.seconds).toBe('2');
+    });
+
     it('stops the live timer after finalization', () => {
       const state = renderLiveThinkingBlock(container);
       vi.advanceTimersByTime(1500);
@@ -149,6 +174,7 @@ describe('thinkingBlockRenderer', () => {
       const showAll = state.body.querySelector('.co-ober-thinking-show-all') as HTMLButtonElement;
       expect(showAll).not.toBeNull();
       expect(showAll.textContent).toBe('Show all ›');
+      expect(showAll.dataset.i18nText).toBe('thinking.showAll');
 
       showAll.click();
       expect(state.showingFull).toBe(true);
@@ -188,6 +214,17 @@ describe('thinkingBlockRenderer', () => {
       expect(wrapper.querySelector('.co-ober-thinking-timer')?.textContent).toBe('for 12s');
       expect(wrapper.querySelector('.co-ober-thinking-header')?.getAttribute('aria-label'))
         .toBe('Extended thinking - click to expand');
+    });
+
+    it('tags a restored block with the keys its names came from', () => {
+      const wrapper = renderStoredThinkingBlock(container, 'was thinking', 12);
+      // A restored transcript is on screen for as long as the reader keeps the
+      // tab open, which can outlast the language it was read in.
+      const label = wrapper.querySelector('.co-ober-thinking-label') as HTMLElement;
+      const timer = wrapper.querySelector('.co-ober-thinking-timer') as HTMLElement;
+      expect(label.dataset.i18nText).toBe('thinking.thought');
+      expect(timer.dataset.i18nCount).toBe('thinking.elapsedFor');
+      expect(timer.dataset.seconds).toBe('12');
     });
 
     it('truncates long content on first expand and restores it via "Show all"', () => {

@@ -180,6 +180,8 @@ const zh: Locale = {
     accessDenied: '该操作被拒绝：{detail}',
     connectionLostMidTurn: '这一轮回复进行中时连接断开了，回复未完成。',
     unknown: '出现未知错误',
+    retry: '重试',
+    restart: '重启并重试',
   },
 
   rewind: {

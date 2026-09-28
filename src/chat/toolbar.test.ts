@@ -298,6 +298,26 @@ describe('InputToolbar permission cycle', () => {
     expect(container.querySelector('.co-ober-perm-label')?.textContent).toBe('🛡️ Readonly');
     expect(container.querySelector('.co-ober-perm-toggle')?.classList.contains('mod-readonly')).toBe(true);
   });
+
+  it('names the tier in the tooltip in the language the button speaks', () => {
+    const container = document.createElement('div') as HTMLDivElement;
+    const toolbar = new InputToolbar(container, {});
+
+    setLocale('zh');
+    try {
+      toolbar.updatePermission('yolo');
+      const toggle = container.querySelector('.co-ober-perm-toggle') as HTMLElement;
+      // The label read 放行 while the tooltip read 权限模式：yolo — an internal id
+      // no reader chose, standing in for the tier the next tool call runs under.
+      expect(toggle.getAttribute('title')).toBe(
+        t().toolbar.permTitle.replace('{mode}', t().toolbar.permYolo),
+      );
+      expect(toggle.getAttribute('title')).not.toContain('yolo');
+      expect(toggle.getAttribute('aria-label')).toBe(toggle.getAttribute('title'));
+    } finally {
+      setLocale('en');
+    }
+  });
 });
 
 describe('InputToolbar cycle button a11y', () => {

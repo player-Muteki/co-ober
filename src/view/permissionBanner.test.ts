@@ -649,4 +649,27 @@ describe('PermissionBanner keyboard access', () => {
     await expect(answered).resolves.toBeNull();
     banner.dispose();
   });
+
+  it('leaves an Escape that belonged to the input engine alone', async () => {
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+    const answered = banner.showElicitation({
+      sessionId: 'session-a',
+      elicitationId: 'el-ime',
+      message: 'Which file?',
+      fields: [{ key: 'path', label: 'Path', kind: 'text', required: true }],
+      omittedFields: [],
+    } as any);
+
+    const input = container.querySelector('.perm-field-input') as HTMLElement;
+    // A reader typing the answer in Chinese presses Escape to throw away the
+    // half-built candidate. That key was answering the prompt as nobody answered
+    // it, and the words they had typed went with the request.
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true, isComposing: true }));
+    expect(banner.isPending()).toBe(true);
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await expect(answered).resolves.toEqual({ action: 'cancel' });
+    banner.dispose();
+  });
 });

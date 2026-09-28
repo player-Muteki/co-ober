@@ -2052,7 +2052,7 @@ export class CoOberViewController {
         if (e instanceof AcpAbortError) {
           // User cancelled, don't show error
         } else if (e instanceof AcpProcessExitError) {
-          rt.renderer.addError(humanizeError(e), 'restart', async () => {
+          rt.renderer.addError(humanizeError(e), t().error.restart, async () => {
             await this.reconnect();
             await this.retryTurn(config, text, refs, imageParts, rt);
           });
@@ -2062,7 +2062,7 @@ export class CoOberViewController {
           // timeout used to be the only failure with a way back, and the bare
           // "timed out" sentence was what every other path already replaces
           // with the method and how long it waited.
-          rt.renderer.addError(humanizeError(e), 'retry', retryAction);
+          rt.renderer.addError(humanizeError(e), t().error.retry, retryAction);
         } else {
           rt.renderer.addError(humanizeError(e));
         }

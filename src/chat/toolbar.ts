@@ -380,8 +380,13 @@ export class InputToolbar {
       plan: t().toolbar.permPlan,
       yolo: t().toolbar.permYolo,
     };
-    this.permLabelEl.setText(labels[this.currentPermission] ?? t().toolbar.permSafe);
-    const hint = t().toolbar.permTitle.replace('{mode}', this.currentPermission);
+    const label = labels[this.currentPermission] ?? t().toolbar.permSafe;
+    this.permLabelEl.setText(label);
+    // The tooltip named the internal id while the word beside it named the mode
+    // in the reader's own language, so a Chinese UI hovered the button and was
+    // told "yolo" — the mode is not a name the user chose, it is the tier the
+    // next tool call will run under.
+    const hint = t().toolbar.permTitle.replace('{mode}', label);
     this.permToggleEl.setAttribute('title', hint);
     this.permToggleEl.setAttribute('aria-label', hint);
     this.permToggleEl.className = 'co-ober-perm-toggle';

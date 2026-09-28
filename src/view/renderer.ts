@@ -1054,11 +1054,20 @@ export class ChatRenderer {
       if (label !== undefined) {
         el.textContent = label
           .replace('{count}', el.dataset.count ?? '')
+          .replace('{seconds}', el.dataset.seconds ?? '')
           .replace('{detail}', el.dataset.i18nDetail ?? '');
       }
     });
     this.container.querySelectorAll<HTMLElement>('[data-i18n-kind]').forEach((el) => {
       el.textContent = getToolDisplayName(el.dataset.i18nKind ?? '');
+    });
+    // Names that live only in the accessibility tree — a status glyph whose word
+    // a screen reader hears but no label element shows.
+    this.container.querySelectorAll<HTMLElement>('[data-i18n-label]').forEach((el) => {
+      const label = lookupLocaleString(el.dataset.i18nLabel ?? '');
+      if (label === undefined) return;
+      el.setAttribute('aria-label', label);
+      el.title = label;
     });
     // Collapsible headers rebuild their aria-label from the stored base plus
     // the current expand/collapse word and expanded state.

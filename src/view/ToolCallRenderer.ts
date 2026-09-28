@@ -266,13 +266,13 @@ export function updateToolCallElement(
     statusEl.empty();
     setIcon(statusEl, 'loader');
     statusEl.addClass('spin');
-    nameStatus(state, t().tool.status.running);
+    nameStatus(state, 'tool.status.running');
   } else if (status === 'completed') {
     wrapper.classList.add('status-completed');
     statusEl.empty();
     setIcon(statusEl, 'check');
     statusEl.addClass('tc-stat-done');
-    nameStatus(state, t().tool.status.done);
+    nameStatus(state, 'tool.status.done');
 
     // Render body content for non-write/edit tools. The body is cleared first
     // because an agent that repeats the finished frame — or answers a failure
@@ -292,7 +292,7 @@ export function updateToolCallElement(
     statusEl.empty();
     setIcon(statusEl, 'x');
     statusEl.addClass('tc-stat-fail');
-    nameStatus(state, t().tool.status.failed);
+    nameStatus(state, 'tool.status.failed');
     if (rawOutput) {
       body.empty();
       const message =
@@ -312,7 +312,7 @@ export function updateToolCallElement(
     statusEl.empty();
     setIcon(statusEl, 'circle');
     statusEl.addClass('tc-stat-wait');
-    nameStatus(state, t().tool.status.queued);
+    nameStatus(state, 'tool.status.queued');
   }
 }
 
@@ -320,8 +320,12 @@ export function updateToolCallElement(
  * Give the status glyph the name of the state it stands for. It is the only
  * thing on the card that says what the call is doing, and a reader with the
  * icon hidden — or reading it through a screen reader — gets nothing else.
+ * The key goes on the element too, because a card that was finished before the
+ * language changed kept answering in the old one.
  */
-function nameStatus(state: ToolCallState, label: string): void {
+function nameStatus(state: ToolCallState, key: string): void {
+  const label = lookupLocaleString(key) ?? '';
+  state.statusEl.dataset.i18nLabel = key;
   state.statusEl.setAttribute('aria-label', label);
   state.statusEl.setAttribute('title', label);
 }

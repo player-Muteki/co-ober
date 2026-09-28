@@ -486,6 +486,32 @@
   border-radius: var(--radius-s);
 }
 
+/* The way back the error line offers. Nothing in the stylesheet styled this
+   button, so it ran into the sentence above it as though it were part of the
+   report, and the disabled state the code sets while the retry is in flight was
+   invisible — a pressed button looked exactly like an unpressed one. */
+.co-ober-error-action {
+  display: block;
+  width: fit-content;
+  margin-top: 8px;
+  padding: 2px 10px;
+  font-size: var(--font-smaller);
+  color: var(--text-accent);
+  background: none;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+}
+
+.co-ober-error-action:hover {
+  background: var(--background-modifier-hover);
+}
+
+.co-ober-error-action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* Context chips */
 .co-ober-context-chips {
   display: flex;
@@ -1449,6 +1475,14 @@
 }
 
 /* Code block copy button */
+/* The fence has to be the thing the button is measured against. The only
+   positioned ancestor otherwise is the message itself, so every fence in a long
+   answer parked its button on the same corner of the bubble — all but the last
+   one hidden behind it, off the code they belonged to. */
+.co-ober-code-block {
+  position: relative;
+}
+
 .co-ober-copy-btn {
   position: absolute;
   top: 4px;

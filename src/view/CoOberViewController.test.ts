@@ -1194,7 +1194,7 @@ describe('CoOberViewController', () => {
       // reader was left to retype the question to get the turn going again.
       expect(deps.renderer.addError).toHaveBeenCalledWith(
         `${t().error.unknown}: network error`,
-        'retry',
+        t().error.retry,
         expect.any(Function),
       );
       expect(controller.isBusy()).toBe(false);
@@ -1312,10 +1312,33 @@ describe('CoOberViewController', () => {
       // reader needs the status it went away with.
       expect(deps.renderer.addError).toHaveBeenCalledWith(
         expect.stringContaining('code 1'),
-        'restart',
+        t().error.restart,
         expect.any(Function),
       );
       expect(controller.isBusy()).toBe(false);
+    });
+
+    it('writes the way back out of an error in the language being read', async () => {
+      const client = createMockClient({
+        sendMessage: vi.fn().mockRejectedValue(new Error('network error')),
+      });
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      setLocale('zh');
+      try {
+        await controller.send('hello', []);
+
+        // The button was handed the lowercase id the code names the action by, so
+        // a reader in Chinese was offered "retry" next to an error line in Chinese.
+        expect(deps.renderer.addError).toHaveBeenCalledWith(
+          expect.any(String),
+          zhLocale.error.retry,
+          expect.any(Function),
+        );
+      } finally {
+        setLocale('en');
+      }
     });
 
     it('names the call and the wait when a turn runs out mid-request', async () => {
@@ -1330,7 +1353,7 @@ describe('CoOberViewController', () => {
       // indistinguishable from one that ran out on a file read or a terminal
       // wait — the difference between retrying and changing the agent.
       const addError = deps.renderer.addError as unknown as ReturnType<typeof vi.fn>;
-      const retryCall = addError.mock.calls.find((c) => c[1] === 'retry');
+      const retryCall = addError.mock.calls.find((c) => c[1] === t().error.retry);
       expect(retryCall).toBeDefined();
       expect(String(retryCall![0])).toContain('session/prompt');
       expect(String(retryCall![0])).toContain('30000');
@@ -2656,7 +2679,7 @@ describe('CoOberViewController', () => {
 
       expect(deps.renderer.addError).toHaveBeenCalledWith(
         `${t().error.unknown}: send error`,
-        'retry',
+        t().error.retry,
         expect.any(Function),
       );
       expect(controller.isBusy()).toBe(false);
@@ -3369,7 +3392,7 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
 
       await controller.send('look', []);
 
-      const retryCall = addError.mock.calls.find((c) => c[1] === 'retry');
+      const retryCall = addError.mock.calls.find((c) => c[1] === t().error.retry);
       expect(retryCall).toBeDefined();
       await (retryCall![2] as () => Promise<void>)();
 
