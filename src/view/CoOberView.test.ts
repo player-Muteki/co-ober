@@ -1042,6 +1042,20 @@ describe('the context meter', () => {
     expect(meterOf(view).hasAttribute('data-tooltip')).toBe(false);
   });
 
+  it('does not announce a dash as an empty window to a screen reader', async () => {
+    const view = await openMeterView();
+    // "0" would be read as "the window is empty" on the same frame that shows
+    // a dash meaning "not reported". The meter drops its numeric value and
+    // names the state instead, then swaps back once a real reading arrives.
+    view.updateContextMeter(null);
+    expect(meterOf(view).hasAttribute('aria-valuenow')).toBe(false);
+    expect(meterOf(view).getAttribute('aria-valuetext')).toBe(t().usage.notReported);
+
+    view.updateContextMeter(usageAt(30));
+    expect(meterOf(view).getAttribute('aria-valuenow')).toBe('30');
+    expect(meterOf(view).hasAttribute('aria-valuetext')).toBe(false);
+  });
+
   it('keeps a counted zero looking like a reading', async () => {
     const view = await openMeterView();
     view.updateContextMeter({ totalTokens: 0, inputTokens: 0, outputTokens: 0, contextTokens: 0, contextWindow: 100000 });

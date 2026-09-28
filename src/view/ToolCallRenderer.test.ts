@@ -418,6 +418,20 @@ describe('ToolCallRenderer', () => {
       expect(section.querySelector('.co-ober-patch-file-name')?.textContent).toBe('a.ts');
       expect(section.querySelector('.co-ober-patch-op')?.textContent).toBe('UPDATE');
     });
+
+    it('speaks the patch operation chip in the reader language', () => {
+      setLocale('zh');
+      const state = createToolCallElement(container, 'tc', 'apply_patch', 'Patch');
+      updateToolCallElement(state, 'completed', 'apply_patch', undefined, [
+        textItem(['*** Update File: a.ts', ' ctx', '-old', '+new'].join('\n')),
+      ]);
+      const op = state.body.querySelector('.co-ober-patch-op') as HTMLElement;
+      // A literal "UPDATE" told a Chinese UI an internal tag beside a
+      // localized delete note; the chip now reads the reader's word and
+      // carries the key a locale switch re-speaks it from.
+      expect(op.textContent).toBe('更新');
+      expect(op.dataset.i18nText).toBe('tool.patchOp.update');
+    });
   });
 
   describe('updateToolCallElement — write/edit diffs', () => {

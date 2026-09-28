@@ -328,7 +328,7 @@ describe('ChatRenderer', () => {
       );
       const footer = wrap.querySelector('.co-ober-response-footer');
       expect(footer?.querySelector('.co-ober-baked-duration')?.textContent).toContain('3');
-      expect(footer?.querySelector('.co-ober-msg-usage')?.textContent).toBe('↑1200 · ↓80 · $0.0123');
+      expect(footer?.querySelector('.co-ober-msg-usage')?.textContent).toBe('↑1200 · ↓80 · 0.0123');
     });
 
     it('re-renders a persisted tool_use block with its native error', () => {
@@ -379,7 +379,7 @@ describe('ChatRenderer', () => {
 
   describe('formatMessageUsage', () => {
     it('formats token deltas and cost', () => {
-      expect(formatMessageUsage({ inputTokens: 100, outputTokens: 20, cost: 0.001 })).toBe('↑100 · ↓20 · $0.0010');
+      expect(formatMessageUsage({ inputTokens: 100, outputTokens: 20, cost: 0.001 })).toBe('↑100 · ↓20 · 0.0010');
       expect(formatMessageUsage({ inputTokens: 100, outputTokens: 20, cost: 0 })).toBe('↑100 · ↓20');
       expect(formatMessageUsage({ totalTokens: 500 })).toBe('500 tokens');
       expect(formatMessageUsage({})).toBe('');
@@ -397,8 +397,17 @@ describe('ChatRenderer', () => {
       expect(formatMessageUsage({ cost: 0.5, costCurrency: 'BTC' })).toBe('BTC 0.5000');
     });
 
+    it('renders a cost with no currency as a bare number, not dollars', () => {
+      // The agent named an amount but no currency; prepending "$" would
+      // invent one it never reported.
+      expect(formatMessageUsage({ cost: 1.25 })).toBe('1.2500');
+    });
+
     it('maps currency symbols via currencySymbol', () => {
-      expect(currencySymbol()).toBe('$');
+      // A bare number names no currency: "$" would assert one the agent
+      // never reported, so the no-code case stays empty.
+      expect(currencySymbol()).toBe('');
+      expect(currencySymbol('USD')).toBe('$');
       expect(currencySymbol('EUR')).toBe('€');
       expect(currencySymbol('ZZZ')).toBe('ZZZ ');
     });
@@ -539,7 +548,7 @@ describe('ChatRenderer', () => {
     it('attaches a native usage footer when restoring with stats', () => {
       renderer.appendText('Hello', 'msg-1', 1, { inputTokens: 100, outputTokens: 20, cost: 0.001 });
       const msg = container.querySelector('.co-ober-msg.assistant');
-      expect(msg?.querySelector('.co-ober-msg-usage')?.textContent).toBe('↑100 · ↓20 · $0.0010');
+      expect(msg?.querySelector('.co-ober-msg-usage')?.textContent).toBe('↑100 · ↓20 · 0.0010');
       // The footer never replaces the message body.
       expect(msg?.querySelector('.co-ober-msg-body')).not.toBeNull();
     });
@@ -553,7 +562,7 @@ describe('ChatRenderer', () => {
         { outputTokens: 40, durationMs: 4000 },
       );
       const msg = container.querySelector('.co-ober-msg.assistant');
-      expect(msg?.querySelector('.co-ober-msg-usage')?.textContent).toBe('↑100 · ↓20 · $0.0010 · 10.0 tok/s');
+      expect(msg?.querySelector('.co-ober-msg-usage')?.textContent).toBe('↑100 · ↓20 · 0.0010 · 10.0 tok/s');
     });
 
     it('renders throughput alone when no native usage exists', () => {

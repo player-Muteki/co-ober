@@ -39,7 +39,9 @@ export function formatMessageUsage(usage: MessageUsage): string {
 
 /**
  * Glyph for a currency code; unknown codes render as "CODE " so a non-USD
- * amount is never misread as dollars.
+ * amount is never misread as dollars. The same reasoning covers an amount with
+ * no code at all: a bare number claims no currency, where "$" would assert one
+ * the agent never named.
  */
 export function currencySymbol(currency?: string): string {
   switch (currency) {
@@ -51,8 +53,9 @@ export function currencySymbol(currency?: string): string {
     case 'GBP':
       return '£';
     case 'USD':
-    case undefined:
       return '$';
+    case undefined:
+      return '';
     default:
       return `${currency} `;
   }

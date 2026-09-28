@@ -1219,7 +1219,11 @@ export class CoOberView extends ItemView {
       this.meterEl.addClass('empty');
       this.meterEl.removeClass('warning', 'critical');
       this.meterPctEl.setText('—');
-      this.meterEl.setAttribute('aria-valuenow', '0');
+      // A screen reader hears this value, and "0" said the window was empty on
+      // the same reading that put a dash — "not reported" — on screen. The meter
+      // goes value-less and names the state instead.
+      this.meterEl.removeAttribute('aria-valuenow');
+      this.meterEl.setAttribute('aria-valuetext', t().usage.notReported);
       this.meterArcFill.setAttribute('stroke-dasharray', `0 ${ARC_LEN}`);
       this.meterEl.removeAttribute('data-tooltip');
       return;
@@ -1233,6 +1237,7 @@ export class CoOberView extends ItemView {
     const filled = (pct / 100) * ARC_LEN;
     this.meterArcFill.setAttribute('stroke-dasharray', `${filled} ${ARC_LEN}`);
     this.meterEl.setAttribute('aria-valuenow', String(pct));
+    this.meterEl.removeAttribute('aria-valuetext');
 
     this.meterPctEl.setText(`${pct}%`);
 

@@ -607,8 +607,19 @@ function renderApplyPatchExpanded(
         const icon = fd.operation === 'add' ? 'file-plus' : fd.operation === 'delete' ? 'trash' : 'file-pen';
         setIcon(fileHeader.createSpan({ cls: 'co-ober-patch-file-icon' }), icon);
         fileHeader.createSpan({ cls: 'co-ober-patch-file-name', text: fd.filePath });
-        const opText = fd.operation === 'add' ? 'ADD' : fd.operation === 'delete' ? 'DELETE' : 'UPDATE';
-        fileHeader.createSpan({ cls: `co-ober-patch-op co-ober-patch-op-${fd.operation}`, text: opText });
+        // The operation chip is a word the reader reads, not an internal tag —
+        // left as a literal it told a Chinese UI "UPDATE" beside a localized
+        // delete note. The key rides along so a locale switch re-speaks it.
+        const opKey = fd.operation === 'add'
+          ? 'tool.patchOp.add'
+          : fd.operation === 'delete'
+            ? 'tool.patchOp.delete'
+            : 'tool.patchOp.update';
+        const opEl = fileHeader.createSpan({
+          cls: `co-ober-patch-op co-ober-patch-op-${fd.operation}`,
+          text: lookupLocaleString(opKey) ?? fd.operation.toUpperCase(),
+        });
+        opEl.dataset.i18nText = opKey;
 
         if (fd.diffLines.length > 0) {
           renderDiffContent(section.createDiv({ cls: 'co-ober-patch-diff' }), fd.diffLines);
