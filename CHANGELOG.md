@@ -1,3 +1,30 @@
+## 0.2.13 - 2026-09-28
+
+No new capabilities. This release takes back the names a shared surface borrows when nothing has reported one, shows each panel the state its own turn is in, and finishes the round where a change of language renames the words a screen reader hears too.
+
+### Changed
+
+- **The bar names only what this session spoke**: no model, no tier and no effort is named for a session that never reported one, since the bar is the prompt's own header and falling back to the first option claimed it as the setting the next send would go out under — a dropped agent, a session still introducing itself, or a locale switch mid-session all relabelled an untouched tier as *Default*.
+- **Stepping back through the modes comes in at the end of the list** when nothing is named as current, the way stepping forward enters at its start, instead of landing one short of the wrap every other press performs.
+- **A chip that resends nothing is not offered**: the way back into a question arrives on every failure that can actually be replayed — a rejected send and a timed-out one are the same reader-problem — and a turn with no retry path gets a plain error instead.
+- **An inline edit answers from the messages this turn wrote**, so a failed send, a turn of tool calls alone, a leftover thought, or simply an earlier turn no longer has its reply offered as the diff for this selection and written into the editor on *Apply*.
+- **Stop works during `session/new`**: the turn is claimed the moment the composer hands it over, so requiring a session id made the button a no-op for the whole handshake while the answer kept arriving underneath — and no cancel is sent for a session that does not exist yet.
+- **Closing the last tab clears the shared surfaces**: the composer, send button and context arc lose the projection of a conversation that just stopped existing, which left a welcome screen whose bar still said *stop* and an arc still full of a context no longer there.
+- **A reported zero is the reading it is**: the frame after a compaction empties the meter instead of leaving the figure from before it, which had been read as an absence.
+- **Each message of a side-chat answer gets its own bubble**: the stream restarts its accumulated text at every new id, and pouring both halves into the one waiting bubble let the second overwrite the first with no trace of the gap; a failure that follows landed text is added below it rather than written over the words already said.
+- **A referenced note is cut at the ceiling Settings holds now**, not the one the panel happened to open under, so the figure on the Settings screen and the figure the agent receives stop disagreeing.
+- **The custom-agent row names only what will be attached**: an agent with a blank instruction or an unknown skill reference is dropped without a word, and a stored pick this build can no longer offer reads as *None* rather than naming a tier nothing will ever carry.
+- **An exported transcript keeps the picture and the steps**: a turn that answered in tool calls alone came out as an empty header, and a screenshot left no trace in the note that was its point.
+- **A side chat closed mid-answer stops painting what arrives after it is gone**, since the abort the close itself provokes re-entered code that needs a transcript to write into and threw.
+- **Reconnect releases the queue a crash parked**, so the panel no longer reads *Connected* over a prompt waiting on a turn already dead — that drain sat inside a busy check the disconnect preceding it always clears.
+- **A content search that could not run says so** in the line already written for it, instead of answering a locked database with the same silence as no matches.
+- **The tool-card legend stops claiming a state nothing produces**, and the retry line an agent failure leaves behind names the way back out in the language being read.
+- **Changing the language renames what a screen reader hears**: a completed tool card kept announcing the language it happened to finish in, and a finished or restored thinking block sat as "Thought for 12s" frozen in English in an otherwise Chinese transcript until the conversation was reloaded — both now carry the key that produced them, and the seconds the wording needs to be rebuilt.
+- **The permission button stops telling a Chinese UI "yolo"** on hover: its tooltip named the internal id while the word beside it named the mode, and the mode is not a name the user chose but the tier the next tool call runs under.
+- **An Escape that belonged to the input engine is left alone**: answering a permission question in the reader's own language no longer loses the whole question to the keystroke that discards a half-typed candidate.
+- **A code fence anchors its own copy button**: with no containing block every fence in a long reply parked its button on the same corner of the message, so the reader could not tell which block the button copied.
+- **The error action is drawn as a button, including while it is working** — it had no styling at all, so a pressed *retry* looked identical to an idle one and gave no sign that the second try it promised was running.
+
 ## 0.2.12 - 2026-09-28
 
 No new capabilities. This release finishes the cards a stopped turn leaves behind, greets a restored pane with the state the agent is actually in, and stops the screen from moving out from under the reader.
