@@ -1,3 +1,25 @@
+## 0.2.14 - 2026-09-28
+
+No new capabilities. This release stops the commands we host from reporting an ending nobody saw, lets a tool card say only what its latest frame actually said, and takes back the figures — a currency, a meter reading, an operation tag — a shared surface asserted when nothing had named them.
+
+### Changed
+
+- **Asking a command to stop is no longer reported as its ending**: a SIGTERM the agent watched for answers as the exit that eventually arrived, rather than the `{exitCode: null, signal: null}` this client invented on its own behalf — a pair that prints no line at all, which made a command still running read back as one that finished quietly.
+- **A wait ends when the output is finished, not when the process is gone**: a terminal or output read pulls the whole log, not the version whose tail was still in the pipe — the same move the agent's own stdio made.
+- **Releasing a terminal answers the waits still held for it**, the way dispose already does, instead of leaving a caller parked on its own deadline for a terminal the manager had just said it released.
+- **Killing a terminal we created but have no process for says nothing is left to stop**, rather than returning false and delivering "Terminal not found" for an id the agent was handed by this very client — its own documented contract always said only an id we never had answers that.
+- **A command that refuses to spawn leaves no record behind**: writing the terminal before spawning meant a rejected start stayed listed as running, was counted by stop-all, and could never be released by anyone who had been given no id to release.
+- **A patch frame replaces the snapshot it describes**: an agent that re-sends a finished output no longer shows that output twice, and a key it withdrew (an exit code it took back) no longer stays on the card as current — the content and raw input/output are set to what the latest frame says, not concatenated onto or spread underneath it.
+- **A write/edit card stops declaring its own terminal state mid-stream**: it no longer stamps *completed*, empties the status glyph, or collapses the body a frame after the reader opened it to watch the text arrive — that look belongs to whoever sets the status.
+- **A restored tool call with neither a status nor an error settles to a named "no result recorded" dash** rather than keeping the live ellipsis, so a conversation that stopped the moment it was written down does not advertise a command still running.
+- **A thinking block the reader opened is left open** when the turn finalizes it — the reader's own toggle now outranks the auto-collapse, the ruling this round already made for tool cards.
+- **A collapsible header that composes its announcement reads it off its own visible words**, so a locale switch and a programmatic collapse re-speak the aria-label in the language and expansion state now in force instead of the ones it was born in.
+- **A side-chat turn that answers with tool calls only, or stops before any text, terminalises to "no text response"** rather than leaving the bubble saying "Thinking…" with nothing left to think.
+- **A tab that is both generating and holding a queued turn is named "generating, more queued"** instead of only its wait, which had introduced a working tab as one standing by.
+- **A cost reported without a currency is not dressed in "$"**: a bare amount names no currency, and a dollar sign asserted one the agent never chose (an unknown code still spells itself out, so a non-USD figure is never misread as dollars).
+- **The context meter's dash stops announcing "0" to a screen reader**: the value read as "the window is empty" on the very frame that put "not reported" on screen; the meter goes value-less and names the state instead, handing the number back the moment a real reading arrives.
+- **The patch operation chip reads the reader's language**: a Chinese UI was being told "UPDATE" beside a delete note it could read; the chip now carries the key so a locale switch re-speaks it, as the rest of the transcript already does.
+
 ## 0.2.13 - 2026-09-28
 
 No new capabilities. This release takes back the names a shared surface borrows when nothing has reported one, shows each panel the state its own turn is in, and finishes the round where a change of language renames the words a screen reader hears too.
