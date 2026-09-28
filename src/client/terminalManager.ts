@@ -127,7 +127,16 @@ export class TerminalManager {
 		};
 
 		this.terminals.set(terminalId, instance);
-		this.spawnProcess(terminalId, params.command, args, cwd, params.env);
+		try {
+			this.spawnProcess(terminalId, params.command, args, cwd, params.env);
+		} catch (e) {
+			// A command `spawn` refused outright leaves no process to stop, read or
+			// release. Leaving its record behind made it a terminal the agent was
+			// never given the id of — still counted by stopAllRunning, still listed
+			// as running, and unreachable by whoever would have cleaned it up.
+			this.terminals.delete(terminalId);
+			throw e;
+		}
 
 		return instance;
 	}
@@ -144,7 +153,12 @@ export class TerminalManager {
 		return {
 			output: instance.output,
 			truncated: instance.outputTruncated === true,
-			exitStatus: instance.status !== 'running'
+			// Only what this process actually reported. A kill we asked for is not
+			// an exit we saw: handing back `{exitCode: null, signal: null}` for a
+			// command that had merely been signalled told the agent the work had
+			// ended, and `terminalContentFrom` prints nothing at all for that pair,
+			// so a live command read back as one that finished silently.
+			exitStatus: instance.exitObserved === true
 				? { exitCode: instance.exitCode, signal: instance.signal }
 				: undefined,
 		};
@@ -170,11 +184,18 @@ export class TerminalManager {
 		}
 
 		if (!proc) {
-			return false;
+			// Its own documented contract: only an id we never had answers false.
+			// A terminal we created but have no live process for is already stopped
+			// — refusing here made the handler answer "Terminal not found" for a
+			// terminal the agent had been handed the id of, which sends it retrying
+			// a cleanup that can never succeed.
+			return true;
 		}
 
 		try {
 			proc.kill('SIGTERM');
+			// What we did is ask it to stop, not know that it did. The status says
+			// so; the exit status stays unreported until the process reports one.
 			instance.status = 'killed';
 			return true;
 		} catch {
@@ -197,6 +218,11 @@ export class TerminalManager {
 
 		this.terminals.delete(terminalId);
 		this.processes.delete(terminalId);
+		// Forget the waits too, the way dispose does. A caller parked on this
+		// terminal will not see its exit through us any more, so leaving the waiter
+		// in the map handed it a timer and a deadline for a terminal this manager
+		// had just said it released.
+		this.resolveExitWaiter(terminalId);
 		return true;
 	}
 
@@ -206,7 +232,7 @@ export class TerminalManager {
 			return null;
 		}
 
-		if (instance.status !== 'running') {
+		if (instance.exitObserved === true) {
 			return { exitCode: instance.exitCode, signal: instance.signal };
 		}
 
@@ -329,6 +355,9 @@ export class TerminalManager {
 				term.status = 'exited';
 				term.exitCode = null;
 				term.signal = null;
+				// There will be no exit to wait for: this process is finished as
+				// much as it will ever be.
+				term.exitObserved = true;
 			}
 			this.processes.delete(terminalId);
 			this.resolveExitWaiter(terminalId);
@@ -337,11 +366,25 @@ export class TerminalManager {
 		proc.on('exit', (code, signal) => {
 			const term = this.terminals.get(terminalId);
 			if (term) {
-				term.status = 'exited';
+				if (term.status !== 'killed') term.status = 'exited';
 				term.exitCode = code;
 				term.signal = signal;
+				term.exitObserved = true;
 			}
 			this.processes.delete(terminalId);
+			// Not here. 'exit' fires while stdout and stderr may still hold
+			// buffered frames, so a wait answered on it let the agent read the
+			// log a moment later and get a version cut mid-write, presented by
+			// `terminal/output` as the command's whole output. AcpSubprocess made
+			// this same move for the agent's own pipe in 0.2.11; hosted commands
+			// are the same pipe-shaped problem.
+		});
+
+		proc.on('close', () => {
+			// The process is gone and both streams have ended: from here the output
+			// we hold is all the output there will be. A terminal that reports only
+			// 'close' never told us how it ended, so its exit stays unobserved and
+			// the wait answers what it can — nothing seen.
 			this.resolveExitWaiter(terminalId);
 		});
 	}

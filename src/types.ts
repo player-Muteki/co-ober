@@ -323,6 +323,13 @@ export interface TerminalInstance {
 	outputByteLimit?: number;
 	exitCode: number | null;
 	signal: string | null;
+	/**
+	 * True once this process has actually finished — it reported an exit, or it
+	 * never started. Asking a command to stop is not that: until then the exit
+	 * status stays unreported rather than being handed back as `{null, null}`,
+	 * which reads to the agent as a process that ended and said nothing.
+	 */
+	exitObserved?: boolean;
 	createdAt: number;
 }
 

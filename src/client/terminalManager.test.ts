@@ -241,6 +241,9 @@ describe('TerminalManager', () => {
 
 			const proc = vi.mocked(spawn).mock.results[0].value as unknown as { emit: (e: string, ...a: unknown[]) => void };
 			proc.emit('exit', 0, null);
+			// A real ChildProcess closes its streams after it exits, and this
+			// manager answers a wait only once the output has drained.
+			proc.emit('close', 0, null);
 
 			await expect(first).resolves.toEqual({ exitCode: 0, signal: null });
 			await expect(second).resolves.toEqual({ exitCode: 0, signal: null });
@@ -396,5 +399,121 @@ describe('TerminalManager — a command that never started (0.2.6 stage 3)', () 
 		lastProc().emit('error', Object.assign(new Error('nope'), { code: 'ENOENT' }));
 
 		await expect(waiter).resolves.toEqual({ exitCode: null, signal: null });
+	});
+});
+
+interface FakeProc {
+	emit: (event: string, ...args: unknown[]) => void;
+	stdout: EventEmitter;
+	stderr: EventEmitter;
+	kill: ReturnType<typeof vi.fn>;
+}
+
+describe('TerminalManager — an exit is what the process reported (0.2.14 stage 1)', () => {
+	let manager: TerminalManager;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		manager = new TerminalManager({ timeoutMs: 5000, maxOutputBytes: 1000 });
+	});
+
+	afterEach(() => {
+		manager.dispose();
+	});
+
+	function lastProc(): FakeProc {
+		const results = vi.mocked(spawn).mock.results;
+		return results[results.length - 1].value as unknown as FakeProc;
+	}
+
+	it('reports no exit status for a command that was only asked to stop', () => {
+		const instance = manager.create({ command: 'sleep 30' }, '/vault');
+		manager.kill(instance.terminalId);
+
+		// `{exitCode: null, signal: null}` is the shape that means "it ended, and
+		// here is nothing to say otherwise". Signing that on our own SIGTERM told
+		// the agent the work was over — and terminalContentFrom prints no line at
+		// all for that pair, so a command still running read back as one that
+		// finished quietly.
+		const result = manager.output(instance.terminalId);
+		expect(result.exitStatus).toBeUndefined();
+		expect(instance.status).toBe('killed');
+	});
+
+	it('does not answer a wait while the command is only stopped, not ended', async () => {
+		const instance = manager.create({ command: 'sleep 30' }, '/vault');
+		manager.kill(instance.terminalId);
+		let settled = false;
+		const waiter = manager.waitForExit(instance.terminalId).then((r) => { settled = true; return r; });
+
+		await Promise.resolve();
+		expect(settled).toBe(false);
+
+		lastProc().emit('exit', 143, 'SIGTERM');
+		lastProc().emit('close', 143, 'SIGTERM');
+
+		// What the process actually said, rather than the ask.
+		await expect(waiter).resolves.toEqual({ exitCode: 143, signal: 'SIGTERM' });
+	});
+
+	it('answers a wait once the output has drained, so the log read after it is whole', async () => {
+		const instance = manager.create({ command: 'git log' }, '/vault');
+		let settled = false;
+		const waiter = manager.waitForExit(instance.terminalId).then((r) => { settled = true; return r; });
+
+		const proc = lastProc();
+		proc.stdout.emit('data', 'commit a\n');
+		proc.emit('exit', 0, null);
+		// 'exit' fires while the pipe may still hold frames. Resolving here is how
+		// an agent got an answer, then a `terminal/output` reading of a log that was
+		// still being written — and called that the command's whole output.
+		await Promise.resolve();
+		expect(settled).toBe(false);
+
+		proc.stdout.emit('data', 'commit b\n');
+		proc.emit('close', 0, null);
+
+		await expect(waiter).resolves.toEqual({ exitCode: 0, signal: null });
+		expect(manager.output(instance.terminalId).output).toBe('commit a\ncommit b\n');
+	});
+
+	it('answers a wait still held when the terminal is released', async () => {
+		const instance = manager.create({ command: 'sleep 30' }, '/vault');
+		const waiter = manager.waitForExit(instance.terminalId);
+
+		expect(manager.release(instance.terminalId)).toBe(true);
+
+		// The manager has forgotten this terminal, so no exit will ever come to it
+		// through us. Leaving the waiter in the map stranded whoever called
+		// waitForExit on their own deadline for a terminal already reported
+		// released — dispose answers its waits the same way.
+		await expect(waiter).resolves.toBeNull();
+	});
+
+	it('says nothing is left to stop, rather than that the terminal is missing', () => {
+		const instance = manager.create({ command: 'sleep 30' }, '/vault');
+		// The state a hosted command can genuinely be in: the record is ours, the
+		// process is not.
+		Reflect.get(manager, 'processes').delete(instance.terminalId);
+
+		expect(manager.kill(instance.terminalId)).toBe(true);
+		expect(manager.get(instance.terminalId)).toBeDefined();
+		// A false here is what makes the handler answer "Terminal not found" for an
+		// id the agent was handed by this very client, so it retries a cleanup that
+		// can never succeed.
+		expect(manager.kill('term-does-not-exist')).toBe(false);
+	});
+
+	it('leaves no running terminal behind when spawn refuses outright', () => {
+		vi.mocked(spawn).mockImplementationOnce(() => {
+			throw new Error('spawn /bin/ls EINVAL');
+		});
+
+		expect(() => manager.create({ command: 'ls' }, '/vault')).toThrow('EINVAL');
+
+		// The record was written before the spawn, so a refused start left a
+		// terminal listed as running that no caller had an id for: stopAllRunning
+		// counted it, and nothing could release it.
+		expect(manager.getAll()).toHaveLength(0);
 	});
 });
