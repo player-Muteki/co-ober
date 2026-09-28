@@ -1,3 +1,20 @@
+## 0.2.15 - 2026-09-28
+
+No new capabilities. This release keeps a figure honest when it is read back from storage rather than reported live, finishes the rule that a settled block says it has settled, and takes back the labels a locale switch, a bare tab, or a freshly opened panel still painted in a state that no longer held.
+
+### Changed
+
+- **A cost read back from the session database names no currency it never carried**: the native-usage path defaulted an unpriced amount to USD, so a resumed conversation advertised a dollar figure for money this client never saw priced — the same rule the message-derived path already keeps, at the one read that still broke it.
+- **A tool call rebuilt from an evicted status settles to *pending*, not *completed***: the normalizer's own rule is that no missing status may fake completion, and one rebuild branch still contradicted it, stamping an outcome onto a card whose last real signal had been dropped.
+- **A restored thinking block with no duration reads “Thought”, not “Thinking”**: a block that finished before this panel opened cannot advertise itself as still in progress, and the tense now holds whether or not the number that lets “for Ns” rebuild was ever recorded.
+- **An interrupted answer re-speaks itself when the language changes**: the badge and its follow-up hint were written as words rather than keys, so a row frozen mid-turn kept announcing the language it happened to stop in; the separator between them sits outside both keyed spans.
+- **A restored interrupt footer keeps its lowercase after a locale switch**: it was repainted in title case because the settled word was a bare string, not a key plus the casing marker every other lower-cased label already carries.
+- **A failed reconnect stays named after a language change**: the button has three labels but only enabled/disabled to read them from, so a repaint flattened “Reconnect (failed)” back to a fresh offer — the retry it promises has already been tried.
+- **The context meter re-speaks its tooltip and its “not reported” value on a locale switch**: an otherwise-Chinese transcript kept reading “Context:” in English, because the meter's wording was refreshed only when a new reading arrived.
+- **`/add-dir` is offered only once a session exists to carry the directory**: its own body already refused without one, but the palette listed it anyway, so a bare tab could select it and press enter into a command that sent nothing — the gate now reads what `/model` reads.
+- **A freshly opened panel shows the permission tier actually saved**: the toolbar is born on a hardcoded *safe* and only left it on a change or a refresh, so the chip named a tier nothing was running under until the first touch.
+- **A tab that is generating while holding a queued turn keeps the working look**: the waiting-slot dim — faint ring, dimmed badge, faint number — is scoped away from a streaming tab, so it no longer paints a beating tab as standing by, agreeing with the name the last release gave it.
+
 ## 0.2.14 - 2026-09-28
 
 No new capabilities. This release stops the commands we host from reporting an ending nobody saw, lets a tool card say only what its latest frame actually said, and takes back the figures — a currency, a meter reading, an operation tag — a shared surface asserted when nothing had named them.
