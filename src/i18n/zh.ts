@@ -255,6 +255,12 @@ const zh: Locale = {
     noMatches: '无匹配',
     noMatchesFound: '未找到匹配',
     noResult: '无结果',
+    status: {
+      queued: '排队中',
+      running: '执行中',
+      done: '已完成',
+      failed: '失败',
+    },
     source: '来源：{url}',
     exitCode: '退出码：{code}',
     moreMatches: '... 另有 {count} 条匹配',

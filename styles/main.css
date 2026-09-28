@@ -2303,6 +2303,17 @@ body.theme-light .co-ober-msg.user .co-ober-msg-body {
 .co-ober-tool-call-header .tc-stat.tc-stat-fail {
   color: var(--text-error);
 }
+/* Queued, not started: a static hollow mark in the faintest tone, against
+   running's accent-tinted spinner. Without its own look a call waiting to run
+   was indistinguishable from one that had finished quietly. */
+.co-ober-tool-call-header .tc-stat.tc-stat-wait {
+  color: var(--text-faint);
+}
+.co-ober-tool-call.status-pending .tc-icon,
+.co-ober-tool-call.status-pending .tc-kind,
+.co-ober-tool-call.status-pending .tc-file {
+  color: var(--text-faint);
+}
 
 /* ── Diff stats (+N -M) in write/edit tool headers ── */
 .tc-diff-stats {

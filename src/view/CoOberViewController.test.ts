@@ -1355,8 +1355,8 @@ describe('CoOberViewController', () => {
 
       await controller.stopGeneration();
 
-      expect(addToolCall).toHaveBeenCalledWith('call-ghost', 'Search', 'search', {}, undefined);
-      expect(updateToolCall).toHaveBeenCalledWith('call-ghost', 'failed');
+      expect(addToolCall).toHaveBeenCalledWith('call-ghost', 'Search', 'search', {}, undefined, 'pending');
+      expect(updateToolCall).toHaveBeenCalledWith('call-ghost', 'failed', { error: t().interrupted.badge });
     });
 
     it('stamps the interrupt into the stored answer, not only onto the live panel', async () => {

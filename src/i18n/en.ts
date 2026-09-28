@@ -253,6 +253,12 @@ const en = {
     noMatches: 'No matches',
     noMatchesFound: 'No matches found',
     noResult: 'No result',
+    status: {
+      queued: 'Queued',
+      running: 'Running',
+      done: 'Completed',
+      failed: 'Failed',
+    },
     source: 'Source: {url}',
     exitCode: 'Exit code: {code}',
     moreMatches: '... {count} more matches',

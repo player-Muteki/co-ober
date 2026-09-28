@@ -238,7 +238,7 @@ export function updateToolCallElement(
   }
 
   // Status classes
-  wrapper.classList.remove('status-running', 'status-completed', 'status-error', 'status-blocked');
+  wrapper.classList.remove('status-pending', 'status-running', 'status-completed', 'status-error', 'status-blocked');
   statusEl.className = 'tc-stat';
 
   // Handle write/edit tools through dedicated renderer
@@ -265,24 +265,33 @@ export function updateToolCallElement(
     statusEl.empty();
     setIcon(statusEl, 'loader');
     statusEl.addClass('spin');
+    nameStatus(state, t().tool.status.running);
   } else if (status === 'completed') {
     wrapper.classList.add('status-completed');
     statusEl.empty();
     setIcon(statusEl, 'check');
     statusEl.addClass('tc-stat-done');
+    nameStatus(state, t().tool.status.done);
 
-    // Render body content for non-write/edit tools
-    if (kind !== 'write' && kind !== 'edit' && content && content.length > 0) {
-      renderToolBodyContent(body, kind, content, rawOutput);
+    // Render body content for non-write/edit tools. The body is cleared first
+    // because an agent that repeats the finished frame — or answers a failure
+    // with the success it meant — must replace the result, not stack a second
+    // copy of the output underneath the first.
+    if (kind !== 'write' && kind !== 'edit') {
+      body.empty();
+      if (content && content.length > 0) {
+        renderToolBodyContent(body, kind, content, rawOutput);
+      }
     }
 
     // Auto-collapse on completion
-    collapseElement(wrapper, state.header, state.collapsibleState);
+    autoCollapseToolCall(state);
   } else if (status === 'failed') {
     wrapper.classList.add('status-error');
     statusEl.empty();
     setIcon(statusEl, 'x');
     statusEl.addClass('tc-stat-fail');
+    nameStatus(state, t().tool.status.failed);
     if (rawOutput) {
       body.empty();
       const message =
@@ -294,12 +303,36 @@ export function updateToolCallElement(
       body.createDiv({ text: message });
     }
     // Auto-collapse on failure as well
-    collapseElement(wrapper, state.header, state.collapsibleState);
+    autoCollapseToolCall(state);
   } else {
-    // pending
+    // pending — the call is queued, not yet started. Without its own look it is
+    // indistinguishable from a card that finished quietly.
+    wrapper.classList.add('status-pending');
     statusEl.empty();
     setIcon(statusEl, 'circle');
+    statusEl.addClass('tc-stat-wait');
+    nameStatus(state, t().tool.status.queued);
   }
+}
+
+/**
+ * Give the status glyph the name of the state it stands for. It is the only
+ * thing on the card that says what the call is doing, and a reader with the
+ * icon hidden — or reading it through a screen reader — gets nothing else.
+ */
+function nameStatus(state: ToolCallState, label: string): void {
+  state.statusEl.setAttribute('aria-label', label);
+  state.statusEl.setAttribute('title', label);
+}
+
+/**
+ * Settle a card the turn left open. The reader opening one by hand outranks the
+ * turn boundary: collapsing it back buries the output they went looking for, and
+ * on a failure it drew the error line and hid it in the same breath.
+ */
+export function autoCollapseToolCall(state: ToolCallState): void {
+  if (state.collapsibleState.userToggled) return;
+  collapseElement(state.wrapper, state.header, state.collapsibleState);
 }
 
 /**
@@ -466,6 +499,12 @@ function renderBashExpanded(container: HTMLElement, text: string, rawOutput?: Re
         text: renderTruncatedText(error, 10),
       });
     }
+  }
+
+  // A command that ran and printed nothing expands to an empty box, which reads
+  // as a card that failed to load rather than as a silent success.
+  if (container.children.length === 0) {
+    container.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.noContent });
   }
 }
 

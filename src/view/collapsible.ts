@@ -17,6 +17,13 @@ import { t } from '../i18n/index';
 
 export interface CollapsibleState {
   isExpanded: boolean;
+  /**
+   * Set the first time the reader opens or shuts this block themselves.
+   * Programmatic collapse — a turn boundary settling a card — is allowed to
+   * close a block that came up open on its own, but not one the reader put
+   * where it is.
+   */
+  userToggled?: boolean;
 }
 export interface CollapsibleOptions {
   /** Initial expanded state (default: false) */
@@ -71,6 +78,7 @@ export function setupCollapsible(
 
   const toggleExpand = () => {
     state.isExpanded = !state.isExpanded;
+    state.userToggled = true;
     if (state.isExpanded) {
       wrapperEl.removeClass('is-collapsed');
       headerEl.setAttribute('aria-expanded', 'true');

@@ -186,6 +186,93 @@ describe('ToolCallRenderer', () => {
     });
   });
 
+  describe('what the status mark says', () => {
+    it('gives a queued call a look of its own', () => {
+      const state = createToolCallElement(container, 'tc', 'execute', 'Run', { command: 'make' });
+
+      updateToolCallElement(state, 'pending', 'execute');
+
+      // A call waiting its turn and a call that finished without a word both
+      // used to draw the same quiet card, so the reader could not tell whether
+      // anything was still coming.
+      expect(state.wrapper.classList.contains('status-pending')).toBe(true);
+      expect(state.statusEl.classList.contains('tc-stat-wait')).toBe(true);
+      expect(state.statusEl.classList.contains('spin')).toBe(false);
+      expect(state.statusEl.getAttribute('aria-label')).toBe('Queued');
+    });
+
+    it('names the state each glyph stands for', () => {
+      const state = createToolCallElement(container, 'tc', 'execute', 'Run', { command: 'make' });
+
+      updateToolCallElement(state, 'in_progress', 'execute');
+      expect(state.statusEl.getAttribute('aria-label')).toBe('Running');
+      updateToolCallElement(state, 'completed', 'execute');
+      expect(state.statusEl.getAttribute('aria-label')).toBe('Completed');
+      updateToolCallElement(state, 'failed', 'execute');
+      expect(state.statusEl.getAttribute('aria-label')).toBe('Failed');
+    });
+
+    it('drops the running look once the call reaches a terminal state', () => {
+      const state = createToolCallElement(container, 'tc', 'execute', 'Run', { command: 'make' });
+      updateToolCallElement(state, 'in_progress', 'execute');
+
+      updateToolCallElement(state, 'completed', 'execute', undefined, [textItem('built')]);
+
+      expect(state.wrapper.classList.contains('status-running')).toBe(false);
+      expect(state.statusEl.classList.contains('spin')).toBe(false);
+    });
+
+    it('replaces the body when a finished frame arrives, instead of stacking a second copy', () => {
+      const state = createToolCallElement(container, 'tc', 'think', 'Think');
+      updateToolCallElement(state, 'completed', 'think', undefined, [textItem('the first answer')]);
+
+      updateToolCallElement(state, 'completed', 'think', undefined, [textItem('the second answer')]);
+
+      expect(state.body.textContent).toContain('the second answer');
+      expect(state.body.textContent).not.toContain('the first answer');
+    });
+
+    it('keeps a card the reader opened open when the turn settles it', () => {
+      const state = createToolCallElement(container, 'tc', 'execute', 'Run', { command: 'make' });
+      state.header.click();
+      expect(state.collapsibleState.isExpanded).toBe(true);
+
+      updateToolCallElement(state, 'completed', 'execute', undefined, [textItem('the output they went looking for')]);
+
+      expect(state.wrapper.classList.contains('is-collapsed')).toBe(false);
+      expect(state.collapsibleState.isExpanded).toBe(true);
+    });
+
+    it('shows a failure to a reader who had the card open, and hides it from nobody', () => {
+      const state = createToolCallElement(container, 'tc', 'execute', 'Run', { command: 'false' });
+      state.header.click();
+
+      updateToolCallElement(state, 'failed', 'execute', { error: 'make: *** Error 1' });
+
+      // Drawing the error line and collapsing the card in the same breath left
+      // the message on screen for no reader at all.
+      expect(state.body.textContent).toContain('make: *** Error 1');
+      expect(state.wrapper.classList.contains('is-collapsed')).toBe(false);
+    });
+
+    it('settles a card nobody opened', () => {
+      const state = createToolCallElement(container, 'tc', 'execute', 'Run', { command: 'make' });
+
+      updateToolCallElement(state, 'completed', 'execute', undefined, [textItem('built')]);
+
+      expect(state.wrapper.classList.contains('is-collapsed')).toBe(true);
+      expect(state.collapsibleState.isExpanded).toBe(false);
+    });
+
+    it('tells a command that printed nothing apart from a card that never painted', () => {
+      const state = createToolCallElement(container, 'tc', 'bash', 'Run', { command: 'touch x' });
+
+      updateToolCallElement(state, 'completed', 'bash', undefined, [textItem('')]);
+
+      expect(state.body.textContent).toBe('No content');
+    });
+  });
+
   describe('the kind a card remembers', () => {
     it('is the kind as the agent named it, not the label drawn on screen', () => {
       setLocale('zh');

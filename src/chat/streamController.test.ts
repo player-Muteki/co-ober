@@ -2,7 +2,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { StreamController } from './streamController';
 import type { NormalizedUpdate } from '../types';
-import { setLocale } from '../i18n/index';
+import { setLocale, t } from '../i18n/index';
 
 describe('StreamController', () => {
   let deps: any;
@@ -297,9 +297,10 @@ describe('StreamController', () => {
     });
     // Pending tool calls are buffered (Phase 4), not rendered immediately
     expect(deps.renderer.addToolCall).not.toHaveBeenCalled();
-    // Flushing should render them
+    // Flushing should render them, carrying the status the card was buffered at
+    // so a running call shows a spinner the moment it appears.
     controller.handleChunk({ kind: 'plan', entries: [] });
-    expect(deps.renderer.addToolCall).toHaveBeenCalledWith('call-1', 'Search', 'search', { q: 'test' }, undefined);
+    expect(deps.renderer.addToolCall).toHaveBeenCalledWith('call-1', 'Search', 'search', { q: 'test' }, undefined, 'pending');
   });
 
   describe('a tool call reported in several frames', () => {
@@ -330,7 +331,7 @@ describe('StreamController', () => {
       // The later frames describe the same call going forward, so they update the
       // buffered copy rather than queueing another card that would freeze at the
       // status it happened to be buffered with.
-      expect(deps.renderer.addToolCall).toHaveBeenCalledWith('call-dup', 'Search a.md', 'search', { q: 'a.md' }, undefined);
+      expect(deps.renderer.addToolCall).toHaveBeenCalledWith('call-dup', 'Search a.md', 'search', { q: 'a.md' }, undefined, 'in_progress');
     });
 
     it('keeps the single card updatable and leaves one block for a reload to render', () => {
@@ -368,6 +369,42 @@ describe('StreamController', () => {
       const toolBlocks = (session.messages[0].contentBlocks ?? []).filter((b) => b.type === 'tool_use');
       expect(toolBlocks).toHaveLength(1);
       expect(toolBlocks[0]).toMatchObject({ toolCallId: 'call-dup', toolStatus: 'completed' });
+    });
+
+    it('routes a frame that arrives after its card was drawn onto that card', () => {
+      controller.handleChunk(frame('pending'));
+      // Any non-tool frame drains the buffer, so the card is on screen and no
+      // longer reachable through it.
+      controller.handleChunk({ kind: 'plan', entries: [] });
+      deps.renderer.addToolCall.mockClear();
+      deps.renderer.updateToolCall.mockClear();
+
+      controller.handleChunk(frame('in_progress'));
+
+      expect(deps.renderer.addToolCall).not.toHaveBeenCalled();
+      expect(deps.renderer.updateToolCall).toHaveBeenCalledWith(
+        'call-dup',
+        'in_progress',
+        undefined,
+        [],
+        { q: 'a.md' },
+        undefined,
+        'search',
+      );
+    });
+
+    it('leaves a finished call finished when an out-of-order frame arrives late', () => {
+      controller.handleChunk(frame('pending'));
+      controller.handleChunk(frame('completed'));
+      deps.renderer.addToolCall.mockClear();
+      deps.renderer.updateToolCall.mockClear();
+
+      controller.handleChunk(frame('in_progress'));
+
+      // Re-opening a step that already reported would draw a second card for it
+      // and leave the first one spinning under a finished answer.
+      expect(deps.renderer.addToolCall).not.toHaveBeenCalled();
+      expect(deps.renderer.updateToolCall).not.toHaveBeenCalled();
     });
 
     it('still gives two calls in flight their own cards', () => {
@@ -820,10 +857,10 @@ describe('StreamController', () => {
 
     controller.finalizeBufferedToolCalls();
 
-    expect(deps.renderer.addToolCall).toHaveBeenCalledWith('call-b1', 'Read', 'read', {}, undefined);
-    expect(deps.renderer.addToolCall).toHaveBeenCalledWith('call-b2', 'Search', 'search', {}, undefined);
-    expect(deps.renderer.updateToolCall).toHaveBeenCalledWith('call-b1', 'failed');
-    expect(deps.renderer.updateToolCall).toHaveBeenCalledWith('call-b2', 'failed');
+    expect(deps.renderer.addToolCall).toHaveBeenCalledWith('call-b1', 'Read', 'read', {}, undefined, 'pending');
+    expect(deps.renderer.addToolCall).toHaveBeenCalledWith('call-b2', 'Search', 'search', {}, undefined, 'in_progress');
+    expect(deps.renderer.updateToolCall).toHaveBeenCalledWith('call-b1', 'failed', { error: t().interrupted.badge });
+    expect(deps.renderer.updateToolCall).toHaveBeenCalledWith('call-b2', 'failed', { error: t().interrupted.badge });
 
     // Buffer is emptied — a second call is a no-op
     deps.renderer.addToolCall.mockClear();
@@ -860,6 +897,112 @@ describe('StreamController', () => {
     expect(toolBlock).toMatchObject({ toolCallId: 'call-b3', toolStatus: 'failed' });
   });
 
+  it('finalizeBufferedToolCalls reaches a card that was flushed before the stop', () => {
+    controller.handleChunk({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'call-drained',
+      title: 'Read',
+      toolKind: 'read',
+      status: 'in_progress',
+      rawInput: {},
+      contents: [],
+    });
+    // A plan frame drains the buffer, so the card is on screen and the buffer
+    // this method used to work through is empty.
+    controller.handleChunk({ kind: 'plan', entries: [] });
+    deps.renderer.updateToolCall.mockClear();
+
+    controller.finalizeBufferedToolCalls();
+
+    expect(deps.renderer.updateToolCall).toHaveBeenCalledWith('call-drained', 'failed', { error: t().interrupted.badge });
+  });
+
+  it('persists a turn of only tool calls so its cards survive a reload', () => {
+    const session: { messages: Array<Record<string, unknown>>; updatedAt: number } = { messages: [], updatedAt: 0 };
+    deps.sessionStore.get.mockReturnValue(session);
+    controller.handleChunk({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'call-only',
+      title: 'Bash',
+      toolKind: 'execute',
+      status: 'in_progress',
+      rawInput: {},
+      contents: [],
+    });
+    controller.handleChunk({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'call-only',
+      title: 'Bash',
+      toolKind: 'execute',
+      status: 'completed',
+      rawInput: {},
+      contents: [],
+    });
+
+    controller.finalizeBufferedToolCalls();
+
+    expect(deps.sessionStore.append).toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({
+        role: 'assistant',
+        type: 'tool-call',
+        contentBlocks: [expect.objectContaining({ type: 'tool_use', toolCallId: 'call-only', toolStatus: 'completed' })],
+      }),
+    );
+  });
+
+  it('writes the tool-only message once, however many times the turn is finalized', () => {
+    controller.handleChunk({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'call-twice',
+      title: 'Read',
+      toolKind: 'read',
+      status: 'pending',
+      rawInput: {},
+      contents: [],
+    });
+    deps.sessionStore.append.mockClear();
+
+    controller.finalizeBufferedToolCalls();
+    controller.finalizeBufferedToolCalls();
+
+    expect(deps.sessionStore.append).toHaveBeenCalledOnce();
+  });
+
+  it('attaches a card that surfaced after its answer was written to that answer', () => {
+    const session: { messages: Array<{ contentBlocks?: Array<Record<string, unknown>> }>; updatedAt: number } = {
+      messages: [],
+      updatedAt: 0,
+    };
+    deps.sessionStore.get.mockReturnValue(session);
+    controller.handleChunk({
+      kind: 'message_chunk',
+      role: 'agent',
+      messageId: 'msg-tail',
+      chunkText: 'Working on it',
+      accumulatedText: 'Working on it',
+    });
+    controller.handleChunk({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'call-tail',
+      title: 'Read',
+      toolKind: 'read',
+      status: 'in_progress',
+      rawInput: {},
+      contents: [],
+    });
+    // Stop arrives with no further chunk to run the sync that normally collects
+    // this card onto the message above it.
+    controller.finalizeBufferedToolCalls();
+
+    expect(session.messages).toHaveLength(1);
+    expect(session.messages[0].contentBlocks).toEqual([
+      expect.objectContaining({ type: 'text', text: 'Working on it' }),
+      expect.objectContaining({ type: 'tool_use', toolCallId: 'call-tail', toolStatus: 'failed' }),
+    ]);
+    expect(deps.sessionStore.append).not.toHaveBeenCalled();
+  });
+
   it('reset() finalizes buffered tool calls before clearing state', () => {
     controller.handleChunk({
       kind: 'tool_call_snapshot',
@@ -873,8 +1016,8 @@ describe('StreamController', () => {
 
     controller.reset();
 
-    expect(deps.renderer.addToolCall).toHaveBeenCalledWith('call-b4', 'Read', 'read', {}, undefined);
-    expect(deps.renderer.updateToolCall).toHaveBeenCalledWith('call-b4', 'failed');
+    expect(deps.renderer.addToolCall).toHaveBeenCalledWith('call-b4', 'Read', 'read', {}, undefined, 'pending');
+    expect(deps.renderer.updateToolCall).toHaveBeenCalledWith('call-b4', 'failed', { error: t().interrupted.badge });
     expect(deps.state.resetStreamingState).toHaveBeenCalled();
   });
 

@@ -220,6 +220,63 @@ describe('ChatRenderer', () => {
       expect(wrap.querySelector('.tc-stat')?.classList.contains('tc-stat-done')).toBe(true);
     });
 
+    it('settles a persisted call that never reached a terminal state', () => {
+      const wrap = document.createElement('div');
+      renderer.renderStructuredMessage(
+        {
+          role: 'assistant',
+          content: '',
+          type: 'text',
+          timestamp: 1,
+          contentBlocks: [
+            {
+              type: 'tool_use',
+              toolCallId: 'call-open',
+              toolTitle: 'Bash',
+              toolKind: 'bash',
+              toolStatus: 'in_progress',
+            },
+          ],
+        },
+        wrap,
+      );
+      // The transcript holds whatever status the last frame wrote. A turn that
+      // was stopped, or a process that died mid-tool, leaves it open, and no
+      // later frame will ever arrive to close it — so a spinner would run
+      // forever on a conversation that cannot update again.
+      expect(wrap.querySelector('.co-ober-tool-call')?.classList.contains('status-running')).toBe(false);
+      expect(wrap.querySelector('.tc-stat')?.classList.contains('tc-stat-fail')).toBe(true);
+      expect(wrap.querySelector('.co-ober-tool-call-body')?.textContent).toContain(t().interrupted.badge);
+    });
+
+    it('keeps a persisted failure failed and its own message intact', () => {
+      const wrap = document.createElement('div');
+      renderer.renderStructuredMessage(
+        {
+          role: 'assistant',
+          content: '',
+          type: 'text',
+          timestamp: 1,
+          contentBlocks: [
+            {
+              type: 'tool_use',
+              toolCallId: 'call-fail',
+              toolTitle: 'Bash',
+              toolKind: 'bash',
+              toolStatus: 'failed',
+              toolError: 'exit code 3',
+            },
+          ],
+        },
+        wrap,
+      );
+      // The clamp is for open states only. Replacing a stored error with
+      // "interrupted" would rewrite what the tool actually reported.
+      expect(wrap.querySelector('.co-ober-tool-call')?.classList.contains('status-error')).toBe(true);
+      expect(wrap.querySelector('.co-ober-tool-call-body')?.textContent).toContain('exit code 3');
+      expect(wrap.querySelector('.co-ober-tool-call-body')?.textContent).not.toContain(t().interrupted.badge);
+    });
+
     it('renders text blocks in order', () => {
       const wrap = document.createElement('div');
       renderer.renderStructuredMessage(
@@ -722,6 +779,25 @@ describe('ChatRenderer', () => {
       expect(box.classList.contains('is-collapsed')).toBe(false);
       header.click();
       expect(box.classList.contains('is-collapsed')).toBe(true);
+    });
+
+    it('closes the answer bubble so the text after a card starts its own', () => {
+      renderer.appendText('before the call', 'msg-1');
+      renderer.addToolCall('call-1', 'Search', 'search', {});
+      renderer.appendText('after the call', 'msg-1');
+
+      const order = Array.from(container.children).map((el) => (el.querySelector('.co-ober-tool-call') ? 'card' : 'bubble'));
+      // The text streamed after a tool call used to be appended to the bubble
+      // above the card, so the order on screen stopped matching the block order
+      // a reload paints.
+      expect(order).toEqual(['bubble', 'card', 'bubble']);
+    });
+
+    it('paints the status a card was surfaced with, so a running call says so at once', () => {
+      renderer.addToolCall('call-1', 'Bash', 'bash', {}, undefined, 'in_progress');
+
+      expect(container.querySelector('.co-ober-tool-call')?.classList.contains('status-running')).toBe(true);
+      expect(container.querySelector('.tc-stat')?.classList.contains('spin')).toBe(true);
     });
   });
 

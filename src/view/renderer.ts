@@ -11,11 +11,11 @@ import {
   cleanupThinkingBlock,
   type ThinkingState,
 } from './thinkingBlockRenderer';
-import { collapseElement } from './collapsible';
 import { openImagePreview } from './imagePreview';
 import {
   createToolCallElement,
   updateToolCallElement,
+  autoCollapseToolCall,
   getToolDisplayName,
   type ToolCallState,
 } from './ToolCallRenderer';
@@ -784,10 +784,30 @@ export class ChatRenderer {
     });
   }
 
-  addToolCall(id: string, title: string, kind: string, input: Record<string, unknown> | undefined, locations?: { path: string }[]): void {
+  addToolCall(
+    id: string,
+    title: string,
+    kind: string,
+    input: Record<string, unknown> | undefined,
+    locations?: { path: string }[],
+    status?: string,
+  ): void {
+    // A card is its own block in the transcript, so the answer that follows it
+    // has to start a new bubble. Without this the text streamed after a tool
+    // call was appended to the bubble *above* the card, and the on-screen order
+    // stopped matching the blocks a reload renders.
+    this.currentAssistantEl = null;
+    this.currentAssistantWrap = null;
+    this.currentAssistantText = '';
     const wrap = this.container.createDiv({ cls: 'co-ober-msg assistant' });
     const toolState = createToolCallElement(wrap, id, kind, title, input, locations);
     this.toolCallStates.set(id, toolState);
+    // A card surfaced while its call is still open has to say so right away:
+    // a long-running command sends no further frame until it finishes, so the
+    // status glyph would have shown the placeholder through the whole run.
+    if (status === 'pending' || status === 'in_progress') {
+      updateToolCallElement(toolState, status, kind, undefined, undefined, input, locations);
+    }
   }
 
   // ============================================
@@ -895,12 +915,14 @@ export class ChatRenderer {
 
   /**
    * Collapse a tool call programmatically. Safe to call even if the
-   * tool call doesn't exist or is already collapsed.
+   * tool call doesn't exist or is already collapsed. A card the reader opened
+   * by hand stays open — this is the turn boundary settling the card, not a
+   * request to shut it.
    */
   collapseToolCall(id: string): void {
     const toolState = this.toolCallStates.get(id);
     if (!toolState) return;
-    collapseElement(toolState.wrapper, toolState.header, toolState.collapsibleState);
+    autoCollapseToolCall(toolState);
   }
 
   setPlanEntries(entries: Array<{ content: string; status: string; priority?: string }>): void {
@@ -1148,12 +1170,19 @@ export class ChatRenderer {
             block.toolTitle ?? block.toolCallId,
           );
           if (block.toolStatus || block.toolError) {
-            const status = block.toolStatus ?? 'failed';
+            // A transcript can carry a call that never reached a terminal state
+            // — the turn was stopped, or the process died mid-tool. Painting
+            // that verbatim leaves a spinner running forever on a conversation
+            // that will never update again, so the open states land on the same
+            // failed look a live interruption produces. The reason is chosen
+            // here rather than stored, so `data.json` keeps no localized copy.
+            const persisted = block.toolStatus ?? 'failed';
+            const wasOpen = persisted === 'pending' || persisted === 'in_progress';
             updateToolCallElement(
               state,
-              status,
+              wasOpen ? 'failed' : persisted,
               block.toolKind ?? '',
-              block.toolError ? { error: block.toolError } : undefined,
+              block.toolError ? { error: block.toolError } : wasOpen ? { error: t().interrupted.badge } : undefined,
             );
           }
         }

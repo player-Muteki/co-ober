@@ -78,6 +78,12 @@ export class StreamController {
   // The transcript message this turn's chunks landed on, so a Stop can stamp
   // its marker into that message instead of an older answer.
   private lastTurnMessage: SerializedMessage | null = null;
+  // Whether this turn has written an assistant message yet. That happens inside
+  // saveAssistantChunk, which only a text or thinking chunk triggers, so a turn
+  // of nothing but tool calls never writes one and the cards stream away on
+  // reload. The finalize sweep reads this to add the missing message exactly
+  // once.
+  private turnPersisted = false;
 
   constructor(deps: StreamControllerDeps) {
     this.deps = deps;
@@ -140,9 +146,31 @@ export class StreamController {
           // stayed on screen frozen at the status they were buffered with, and
           // each became its own content block, which is how the duplicates
           // survived a reload.
-          const buffered = this.pendingToolBuffer.find((tc) => tc.toolCallId === ch.toolCallId);
-          if (buffered) Object.assign(buffered, ch);
-          else this.pendingToolBuffer.push({ ...ch });
+          // Frames for a call whose card is already on screen don't belong on the
+          // buffer: flushing it a second time drew another card under the same
+          // id, and only the newest copy could be written to, so the step that
+          // was actually running went quiet. Update the one that is there.
+          const surfaced = this.toolBlocks.get(ch.toolCallId);
+          if (surfaced) {
+            const open = surfaced.toolStatus !== 'completed' && surfaced.toolStatus !== 'failed';
+            if (open) {
+              surfaced.toolStatus = ch.status;
+              if (ch.toolKind) surfaced.toolKind = ch.toolKind;
+              renderer.updateToolCall(
+                ch.toolCallId,
+                ch.status,
+                ch.rawOutput,
+                ch.contents,
+                ch.rawInput,
+                ch.locations,
+                ch.toolKind,
+              );
+            }
+          } else {
+            const buffered = this.pendingToolBuffer.find((tc) => tc.toolCallId === ch.toolCallId);
+            if (buffered) Object.assign(buffered, ch);
+            else this.pendingToolBuffer.push({ ...ch });
+          }
         } else {
           // Flush any buffered pending tools, then update completed/failed
           this.flushToolBuffer();
@@ -299,6 +327,7 @@ export class StreamController {
     this.unsupportedChunks.clear();
     this.persistedImages.clear();
     this.lastTurnMessage = null;
+    this.turnPersisted = false;
     this.deps.state.resetStreamingState();
   }
 
@@ -313,6 +342,7 @@ export class StreamController {
     this.currentContentBlocks = [];
     this.toolBlocks.clear();
     this.lastTurnMessage = null;
+    this.turnPersisted = false;
   }
 
   /**
@@ -341,19 +371,47 @@ export class StreamController {
   }
 
   /**
-   * Render any buffered pending/in_progress tool calls and put them in a
-   * terminal state, so a turn that ends (or dies) mid-tool never loses the
-   * call or leaves a permanent spinner.
+   * Put every tool call this turn left open into a terminal state, so a turn
+   * that ends (or dies) mid-tool never loses the call or leaves a permanent
+   * spinner.
    */
   finalizeBufferedToolCalls(): void {
-    if (this.pendingToolBuffer.length === 0) return;
-    const ids = this.pendingToolBuffer.map((tc) => tc.toolCallId);
+    // The buffer is not the only place an open call hides. Flushing it is what
+    // puts a card on screen, so by the time a Stop arrives the call the reader
+    // is watching has usually left the buffer already — and this method, which
+    // used to return as soon as it was empty, never reached it. The card kept
+    // spinning on a turn no agent would ever finish.
     this.flushToolBuffer();
-    for (const id of ids) {
-      this.deps.renderer.updateToolCall(id, 'failed');
-      const block = this.toolBlocks.get(id);
-      if (block) block.toolStatus = 'failed';
+    for (const [id, block] of this.toolBlocks) {
+      if (block.toolStatus !== 'pending' && block.toolStatus !== 'in_progress') continue;
+      block.toolStatus = 'failed';
+      // The interruption is the only reason this call has no output, and a card
+      // that fails silently reads as a broken tool rather than a stopped turn.
+      this.deps.renderer.updateToolCall(id, 'failed', { error: t().interrupted.badge });
     }
+    if (this.currentContentBlocks.length === 0) return;
+    if (this.turnPersisted) {
+      // A card can surface after its answer was written — the tool frames land
+      // between two text chunks — and the message only collects cards the next
+      // chunk brings. A turn stopped before that kept its steps on screen and
+      // lost them on disk.
+      const msg = this.lastTurnMessage;
+      if (msg) {
+        const blocks = msg.contentBlocks ?? [];
+        let added = false;
+        for (const cb of this.currentContentBlocks) {
+          if (cb.type === 'tool_use' && !blocks.includes(cb)) {
+            blocks.push(cb);
+            added = true;
+          }
+        }
+        msg.contentBlocks = blocks;
+        if (added) this.scheduleSave();
+      }
+      return;
+    }
+    this.saveMessage('assistant', '', 'tool-call', [...this.currentContentBlocks]);
+    this.turnPersisted = true;
   }
 
   /**
@@ -365,7 +423,11 @@ export class StreamController {
     if (this.pendingToolBuffer.length === 0) return;
     const { renderer } = this.deps;
     for (const tc of this.pendingToolBuffer) {
-      renderer.addToolCall(tc.toolCallId, tc.title, tc.toolKind, tc.rawInput, tc.locations);
+      // The status the card was buffered at is handed to the renderer, so a call
+      // that is running shows a spinner the moment it appears rather than after
+      // its next frame — which, for a short call, is never.
+      const status = tc.status === 'in_progress' ? 'in_progress' : 'pending';
+      renderer.addToolCall(tc.toolCallId, tc.title, tc.toolKind, tc.rawInput, tc.locations, status);
       // Track tool call in content blocks for ordering, with enough
       // metadata (title/kind/status) to re-render it after a restore.
       const block: ContentBlock = {
@@ -373,7 +435,7 @@ export class StreamController {
         toolCallId: tc.toolCallId,
         toolTitle: tc.title,
         toolKind: tc.toolKind,
-        toolStatus: tc.status === 'in_progress' ? 'in_progress' : 'pending',
+        toolStatus: status,
       };
       this.currentContentBlocks.push(block);
       this.toolBlocks.set(tc.toolCallId, block);
@@ -417,6 +479,7 @@ export class StreamController {
       session.messages.push(message);
       this.assistantMessages.set(key, message);
       this.lastTurnMessage = message;
+      this.turnPersisted = true;
       // Insertion-ordered map: evicting the oldest reference keeps a very
       // long session from retaining every assistant message forever.
       if (this.assistantMessages.size > MAX_TRACKED_ASSISTANT_MESSAGES) {
@@ -437,6 +500,7 @@ export class StreamController {
         return;
       }
       this.lastTurnMessage = msg;
+      this.turnPersisted = true;
       msg.content = accumulatedText;
       // Update contentBlocks text
       if (msg.contentBlocks) {
