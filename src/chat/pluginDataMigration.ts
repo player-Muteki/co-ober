@@ -149,6 +149,25 @@ export function migratePluginDataSessions(sessions: unknown, activeSessionId: un
   return { sessions: list, activeSessionId: active };
 }
 
+/**
+ * Whether a migrated list carries one sessionId twice. This build's own writer
+ * cannot produce that — the snapshot comes out of a Map keyed by sessionId — so
+ * a duplicate is a partial merge, a foreign writer, or a hand edit: exactly the
+ * artifacts the versioned-file gates above exist for. hydrate() writes both
+ * records into the same key and the later one silently wins, so the load
+ * "succeeds", restore-from-backup never runs, and one conversation is gone from
+ * the screen and from the next autosave. A list this loader cannot honour
+ * without dropping a conversation is a damaged store, not a smaller one.
+ */
+export function hasDuplicateSessionIds(sessions: readonly { sessionId: string }[]): boolean {
+  const seen = new Set<string>();
+  for (const session of sessions) {
+    if (seen.has(session.sessionId)) return true;
+    seen.add(session.sessionId);
+  }
+  return false;
+}
+
 export interface TabShellState {
   openTabs: TabShell[];
   activeTabId: string | null;

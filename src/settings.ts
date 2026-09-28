@@ -263,7 +263,7 @@ export class CoOberSettingsTab extends PluginSettingTab {
       .addButton((b) => b.setButtonText(labels.customAgents.add)
         .onClick(async () => {
           const agent: CustomAgentDefinition = {
-            id: `agent-${Date.now()}`,
+            id: nextRuleId(s.customAgents, 'agent-'),
             enabled: true,
             name: labels.customAgents.defaultName,
             description: '',
@@ -304,7 +304,7 @@ export class CoOberSettingsTab extends PluginSettingTab {
       .addButton((b) => b.setButtonText(labels.customSkills.add)
         .onClick(async () => {
           const skill: CustomSkillDefinition = {
-            id: `skill-${Date.now()}`,
+            id: nextRuleId(s.customSkills, 'skill-'),
             enabled: true,
             name: labels.customSkills.defaultName,
             description: '',

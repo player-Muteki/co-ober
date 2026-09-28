@@ -46,6 +46,8 @@ export class FileCommandStorage implements CommandSource {
     const defs: SlashCommandDef[] = [];
     const unreadable: string[] = [];
     const shapeless: string[] = [];
+    const ambiguous: string[] = [];
+    const takenNames = new Map<string, string>();
     const files = this.collectFiles();
 
     for (const file of files) {
@@ -62,6 +64,21 @@ export class FileCommandStorage implements CommandSource {
         const name = file.basename;
         // Skip non-user-invocable commands
         if (parsed.frontmatter.userInvocable === false || parsed.frontmatter['user-invocable'] === false) continue;
+
+        // The trigger is the bare basename while the scan runs several
+        // directories deep, so `.opencode/commands/a/review.md` and
+        // `.../b/review.md` define the same command and the registry keeps
+        // whichever it was handed first. A command the reader can see on disk
+        // then never appears — or worse, runs the other file's template — with
+        // nothing said about it. Name the file that lost, and take the shallowest
+        // path as the winner so which template reaches the agent is not decided
+        // by vault enumeration order.
+        const taken = takenNames.get(name.toLowerCase());
+        if (taken !== undefined) {
+          ambiguous.push(file.path);
+          continue;
+        }
+        takenNames.set(name.toLowerCase(), file.path);
 
         const description = parsed.frontmatter.description ?? '';
         const argumentHint = parsed.frontmatter.argumentHint ?? parsed.frontmatter['argument-hint'];
@@ -90,7 +107,7 @@ export class FileCommandStorage implements CommandSource {
       }
     }
 
-    this.reportSkipped(unreadable, shapeless);
+    this.reportSkipped(unreadable, shapeless, ambiguous);
     this.cached = defs;
     return defs;
   }
@@ -100,8 +117,8 @@ export class FileCommandStorage implements CommandSource {
    * like a broken file, so name the files — once per distinct set, because the
    * watcher rescans on every edit and the same broken file must not shout again.
    */
-  private reportSkipped(unreadable: string[], shapeless: string[]): void {
-    const signature = `${unreadable.join('|')}#${shapeless.join('|')}`;
+  private reportSkipped(unreadable: string[], shapeless: string[], ambiguous: string[]): void {
+    const signature = `${unreadable.join('|')}#${shapeless.join('|')}#${ambiguous.join('|')}`;
     if (signature === this.lastReported) return;
     this.lastReported = signature;
     if (unreadable.length > 0) {
@@ -109,6 +126,9 @@ export class FileCommandStorage implements CommandSource {
     }
     if (shapeless.length > 0) {
       new Notice(t().notice.commandFilesShapeless.replace('{files}', listForNotice(shapeless)));
+    }
+    if (ambiguous.length > 0) {
+      new Notice(t().notice.commandFilesAmbiguous.replace('{files}', listForNotice(ambiguous)));
     }
   }
 
@@ -150,7 +170,12 @@ export class FileCommandStorage implements CommandSource {
 
   private collectFiles(): TFile[] {
     const allMd = this.vault.getMarkdownFiles();
-    return allMd.filter((f) => this.matchesPattern(f.path));
+    // Shallowest first, then by path: two files that share a basename are
+    // resolved in this order, so the winner is a property of the tree and not
+    // of how the vault happened to enumerate it today.
+    return allMd
+      .filter((f) => this.matchesPattern(f.path))
+      .sort((a, b) => a.path.split('/').length - b.path.split('/').length || a.path.localeCompare(b.path));
   }
 
   private matchesPattern(path: string): boolean {

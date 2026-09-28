@@ -352,9 +352,17 @@ export function addSyncRuleBlock(containerEl: HTMLElement, rule: SyncRule, setti
     };
   }
 
-export function nextRuleId(existing: Array<{ id: string }>): string {
+/**
+ * A collision-free id for a newly added record. The timestamp alone is enough
+ * for two records added in the same millisecond to share an id, and the delete
+ * handlers here all filter by id — so a shared id means deleting one record
+ * takes its sibling with it. `prefix` keeps the reader's own convention (the
+ * custom-agent and custom-skill ids are `agent-<ts>` / `skill-<ts>`) while the
+ * taken check still sees the ids as they are actually stored.
+ */
+export function nextRuleId(existing: Array<{ id: string }>, prefix = ''): string {
   const taken = new Set(existing.map((rule) => rule.id));
-  const base = Date.now().toString();
+  const base = `${prefix}${Date.now()}`;
   if (!taken.has(base)) return base;
   let n = 1;
   while (taken.has(`${base}-${n}`)) n += 1;

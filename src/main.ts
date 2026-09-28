@@ -16,6 +16,7 @@ import {
   isLoadableSessionEntry,
   migratePluginDataSessions,
   migratePluginDataTabs,
+  hasDuplicateSessionIds,
   readSchemaVersion,
   sanitizeLoadedSettings,
   PLUGIN_DATA_SCHEMA_VERSION,
@@ -162,6 +163,17 @@ export default class CoOberPlugin extends Plugin {
       // An intentionally empty history writes `sessions: []` and stays fine.
       if (storedVersion >= 1 && Array.isArray(storedSessions) && storedSessions.length > 0 && restored.sessions.length === 0) {
         throw new Error('data.json session list carries no loadable conversation');
+      }
+      // A second gate on the same evidence: hydrate() writes two records that
+      // share a sessionId into the same Map key and the later one wins, so the
+      // load reports success, restore-from-backup never runs, and the
+      // conversation the reader expected is gone from the screen and from the
+      // next autosave. This build cannot produce that shape — the snapshot comes
+      // out of a Map keyed by sessionId — so a duplicate is a partial merge, a
+      // foreign writer or a hand edit, and failing here is the only moment the
+      // loss is still reversible.
+      if (storedVersion >= 1 && hasDuplicateSessionIds(restored.sessions)) {
+        throw new Error('data.json lists one session id twice');
       }
       const surviving = new Set(restored.sessions.map((session) => session.sessionId));
       const tabs = migratePluginDataTabs(data.openTabs, data.activeTabId, surviving, restored.activeSessionId);
@@ -568,7 +580,12 @@ function backupIsLoadable(raw: string): boolean {
   // over the live file, fail the load right after, and leave the copy this
   // promotion just set aside as the only remaining data.json.
   if (version >= 1 && Array.isArray(sessions) && sessions.length > 0) {
-    if (migratePluginDataSessions(sessions, null).sessions.length === 0) return false;
+    const migrated = migratePluginDataSessions(sessions, null);
+    if (migrated.sessions.length === 0) return false;
+    // The duplicate-id gate the load runs too: promoting a copy whose two
+    // records collapse into one session would fail the very next load, and the
+    // file this promotion set aside would be the only remaining data.json.
+    if (hasDuplicateSessionIds(migrated.sessions)) return false;
   }
   return true;
 }

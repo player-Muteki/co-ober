@@ -60,6 +60,42 @@ describe('CoOberSettingsTab locale refresh', () => {
     expect(plugin.savePluginData).toHaveBeenCalledTimes(2);
   });
 
+  it('gives two agents added in the same millisecond different ids', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+    // Re-found each time: the first add re-renders the whole tab.
+    const clickAdd = (text: string) => {
+      const button = [...tab.containerEl.querySelectorAll('button')]
+        .find((b) => b.textContent === text) as HTMLButtonElement;
+      button.click();
+    };
+
+    clickAdd('+ Add Custom Agent');
+    await flushPromises();
+    clickAdd('+ Add Custom Agent');
+    await flushPromises();
+
+    // Both records would carry `agent-1700000000000`, and every delete handler
+    // here filters by id — so removing one agent removed the other with it.
+    const ids = plugin.settings.customAgents.map((agent) => agent.id);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+    expect(ids.every((id) => id.startsWith('agent-'))).toBe(true);
+
+    clickAdd('+ Add Custom Skill');
+    await flushPromises();
+    clickAdd('+ Add Custom Skill');
+    await flushPromises();
+    const skillIds = plugin.settings.customSkills.map((skill) => skill.id);
+    expect(skillIds).toHaveLength(2);
+    expect(new Set(skillIds).size).toBe(2);
+    expect(skillIds.every((id) => id.startsWith('skill-'))).toBe(true);
+    now.mockRestore();
+  });
+
   it('renames custom agent and skill IDs while preserving references', async () => {
     setLocale('en');
     const plugin = createPlugin({ refreshLocale: vi.fn() });

@@ -39,5 +39,11 @@ export function sanitizeNoteName(title: string): string {
 		.replace(/[\\/:*?"<>|#^[\]]/g, ' ')
 		.replace(/\s+/g, ' ')
 		.trim();
-	return cleaned.length > 0 ? cleaned.slice(0, 80) : 'chat';
+	if (cleaned.length === 0) return 'chat';
+	// The 80-unit cut is a code-unit boundary, so a title whose 80th unit is the
+	// first half of a pair (an emoji, most CJK outside the BMP) leaves a lone
+	// high surrogate in the filename — a name no note can be read back from.
+	// Drop the orphan rather than shorten the ceiling: the reader loses one
+	// glyph they could not have typed into the name anyway.
+	return cleaned.slice(0, 80).replace(/[\uD800-\uDBFF]$/, '');
 }

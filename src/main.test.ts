@@ -350,6 +350,43 @@ describe('CoOberPlugin.loadData foreign session list', () => {
     loadSpy.mockRestore();
   });
 
+  it('fails a stamped file that lists one session id twice', async () => {
+    // hydrate() writes both records into the same Map key and the later one
+    // wins, so a list that names a conversation twice restores fewer
+    // conversations than it claims — silently, and as a *successful* load, so
+    // restore-from-backup never offered itself and the next autosave wrote the
+    // collapsed file. This build's own writer cannot produce the shape.
+    const record = (title: string) => ({ sessionId: 'ses-dup', title, createdAt: 1, updatedAt: 2, messages: [] });
+    const loadSpy = vi.spyOn(Plugin.prototype, 'loadData').mockResolvedValue({
+      schemaVersion: 2,
+      settings: {},
+      sessions: [record('first'), record('second')],
+      activeSessionId: 'ses-dup',
+    });
+    const plugin = new CoOberPlugin({} as never, {} as never);
+
+    await expect(plugin.loadData()).rejects.toThrow('lists one session id twice');
+    loadSpy.mockRestore();
+  });
+
+  it('loads a stamped file whose every session id is distinct', async () => {
+    const loadSpy = vi.spyOn(Plugin.prototype, 'loadData').mockResolvedValue({
+      schemaVersion: 2,
+      settings: {},
+      sessions: [
+        { sessionId: 'ses-a', title: 'A', createdAt: 1, updatedAt: 2, messages: [] },
+        { sessionId: 'ses-b', title: 'B', createdAt: 1, updatedAt: 3, messages: [] },
+      ],
+      activeSessionId: 'ses-a',
+    });
+    const plugin = new CoOberPlugin({} as never, {} as never);
+
+    const data = await plugin.loadData();
+
+    expect(data?.sessions.map((s) => s.sessionId)).toEqual(['ses-a', 'ses-b']);
+    loadSpy.mockRestore();
+  });
+
   it('leaves a pre-schema file without a session list on the legacy defaults path', async () => {
     const loadSpy = vi.spyOn(Plugin.prototype, 'loadData').mockResolvedValue({
       defaultModel: 'x',
@@ -528,6 +565,31 @@ describe('CoOberPlugin corrupted data recovery', () => {
       expect([...files.keys()]).toContain(DATA);
       expect(Notice.messages.some((m) => m.includes('last complete save'))).toBe(true);
       expect(Notice.messages.some((m) => m.includes('starting with defaults'))).toBe(false);
+    });
+
+    it('refuses a backup that would load as fewer conversations than it names', async () => {
+      Notice.messages.length = 0;
+      // Two records, one sessionId: promoting this copy would set the damaged
+      // file as data.json, hydrate one conversation instead of two, report the
+      // load a success, and bury the live file's shape under the next autosave.
+      const dup = JSON.stringify({
+        schemaVersion: 2,
+        settings: {},
+        sessions: [
+          { sessionId: 'ses-a', title: 'A', createdAt: 1, updatedAt: 2, messages: [] },
+          { sessionId: 'ses-a', title: 'B', createdAt: 1, updatedAt: 3, messages: [] },
+        ],
+        activeSessionId: 'ses-a',
+      });
+      const { plugin, files } = createBackupPlugin({
+        loadData: [() => Promise.reject(new Error('bad json'))],
+        backup: dup,
+      });
+
+      await plugin.onload();
+
+      expect(plugin.sessionStore.hydrate).toHaveBeenCalledWith([], null);
+      expect([...files.keys()].some((p) => p.includes('.corrupt-'))).toBe(true);
     });
 
     it('keeps the defaults path when the backup will not parse either', async () => {

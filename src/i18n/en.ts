@@ -391,6 +391,7 @@ const en = {
     saveFailed: 'Co-Ober failed to save chat data — recent changes may be lost',
     commandFilesUnreadable: 'Co-Ober could not read {files}; those slash commands are missing until the file is fixed',
     commandFilesShapeless: '{files} has no frontmatter, so it was not registered as a slash command',
+    commandFilesAmbiguous: '{files} shares a command name with another file, so only the first one was registered',
   },
 
   usage: {

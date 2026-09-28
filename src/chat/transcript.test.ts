@@ -89,4 +89,15 @@ describe('sanitizeNoteName', () => {
   it('caps length', () => {
     expect(sanitizeNoteName('x'.repeat(200)).length).toBeLessThanOrEqual(80);
   });
+
+  it('never leaves half of a pair at the cap', () => {
+    const name = sanitizeNoteName(`${'x'.repeat(79)}😀tail`);
+    // A lone high surrogate is a filename no note can be read back from.
+    expect(name).not.toMatch(/[\uD800-\uDBFF]$/);
+    expect(name).toBe('x'.repeat(79));
+  });
+
+  it('keeps a pair that ends exactly at the cap', () => {
+    expect(sanitizeNoteName(`${'x'.repeat(78)}😀tail`)).toBe(`${'x'.repeat(78)}😀`);
+  });
 });

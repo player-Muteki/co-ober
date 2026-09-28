@@ -133,6 +133,12 @@ function parseFrontmatter(raw: string): CommandFrontmatter {
         const nestedObj: Record<string, string[]> = {};
         if (nestedValue.startsWith('[')) {
           nestedObj[nestedKey] = parseInlineArray(nestedValue);
+          // The line is consumed, so the cursor has to move past it. Without
+          // this the block loop re-reads the same nested line forever: the
+          // format this file's own header documents (`hooks:` / `pre: ["echo"]`)
+          // hung the vault scan, which runs on Obsidian's main thread, so the
+          // whole application froze on a command file the user could not read.
+          i++;
         } else if (!nestedValue) {
           // Block array under nested key
           const arr: string[] = [];
@@ -149,6 +155,7 @@ function parseFrontmatter(raw: string): CommandFrontmatter {
           nestedObj[nestedKey] = arr;
         } else {
           nestedObj[nestedKey] = [String(parseScalar(nestedValue))];
+          i++;
         }
         result[key] = { ...(result[key] as object ?? {}), ...nestedObj };
         continue;

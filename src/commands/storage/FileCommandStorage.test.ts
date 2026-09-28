@@ -127,3 +127,78 @@ describe('FileCommandStorage — a command that disappears from the / popover', 
     expect(Notice.messages).toEqual([]);
   });
 });
+
+describe('FileCommandStorage — two command files sharing a name', () => {
+  beforeEach(() => {
+    setLocale('en');
+    Notice.messages.length = 0;
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('keeps the shallower file and names the one that lost', async () => {
+    const storage = new FileCommandStorage(
+      vaultWith([
+        { path: '.opencode/commands/team/daily/review.md', contents: GOOD },
+        { path: '.opencode/commands/review.md', contents: GOOD },
+      ]),
+    );
+
+    const defs = await storage.load();
+    expect(defs.map((def) => def.id)).toEqual(['file:review']);
+    expect(Notice.messages).toHaveLength(1);
+    expect(Notice.messages[0]).toContain('.opencode/commands/team/daily/review.md');
+    expect(Notice.messages[0]).not.toContain('no frontmatter');
+    expect(Notice.messages[0]).toContain('shares a command name');
+  });
+
+  it('does not let vault ordering choose which template reaches the agent', async () => {
+    const shallow = { path: '.opencode/commands/review.md', contents: '---\ndescription: shallow\n---\nShallow $ARGUMENTS\n' };
+    const deep = { path: '.opencode/commands/team/review.md', contents: '---\ndescription: deep\n---\nDeep $ARGUMENTS\n' };
+
+    const first = await new FileCommandStorage(vaultWith([deep, shallow])).load();
+    Notice.messages.length = 0;
+    const second = await new FileCommandStorage(vaultWith([shallow, deep])).load();
+
+    expect(first.map((def) => def.template)).toEqual(['Shallow $ARGUMENTS']);
+    expect(second.map((def) => def.template)).toEqual(['Shallow $ARGUMENTS']);
+  });
+
+  it('treats two spellings of one name as the same command', async () => {
+    const storage = new FileCommandStorage(
+      vaultWith([
+        { path: '.opencode/commands/Review.md', contents: GOOD },
+        { path: '.opencode/commands/review.md', contents: GOOD },
+      ]),
+    );
+
+    const defs = await storage.load();
+    expect(defs).toHaveLength(1);
+    expect(Notice.messages).toHaveLength(1);
+    expect(Notice.messages[0]).toContain('shares a command name');
+  });
+
+  it('stays quiet when the rescans find the same collision', async () => {
+    const vault = vaultWith([
+      { path: '.opencode/commands/review.md', contents: GOOD },
+      { path: '.opencode/commands/team/review.md', contents: GOOD },
+    ]);
+    const storage = new FileCommandStorage(vault);
+
+    await storage.load();
+    await storage.load();
+    expect(Notice.messages).toHaveLength(1);
+  });
+
+  it('says nothing when the names differ', async () => {
+    const storage = new FileCommandStorage(
+      vaultWith([
+        { path: '.opencode/commands/review.md', contents: GOOD },
+        { path: '.opencode/commands/team/diff.md', contents: GOOD },
+        { path: '.opencode/commands/team/approve.md', contents: GOOD },
+      ]),
+    );
+
+    await expect(storage.load()).resolves.toHaveLength(3);
+    expect(Notice.messages).toEqual([]);
+  });
+});

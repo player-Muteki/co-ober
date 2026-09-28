@@ -393,6 +393,7 @@ const zh: Locale = {
     saveFailed: 'Co-Ober 保存聊天数据失败——最近的更改可能丢失',
     commandFilesUnreadable: 'Co-Ober 无法读取 {files}；修好这些文件之前，对应的斜杠命令不会出现',
     commandFilesShapeless: '{files} 没有 frontmatter，因此没有被注册为斜杠命令',
+    commandFilesAmbiguous: '{files} 与另一个文件重名，因此只注册了第一个',
   },
 
   usage: {
