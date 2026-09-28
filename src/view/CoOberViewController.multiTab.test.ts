@@ -1731,17 +1731,22 @@ describe('CoOberViewController — what belongs to a tab stays in that tab (0.2.
 
     it('is answered by the turn that asked, onto the editor it named', async () => {
       const [, tabB] = twoTabs();
-      clientFor();
+      // The transcript this tab's session holds grows when the turn runs, the
+      // way the store really does: the answer the panel reads back has to be
+      // distinguishable from whatever this conversation said before.
+      const messagesB: Array<{ role: string; content: string; type: string; timestamp: number }> = [
+        { role: 'assistant', content: 'an older answer', type: 'text', timestamp: 1 },
+      ];
+      clientFor({
+        sendMessage: vi.fn(async () => {
+          messagesB.push({ role: 'assistant', content: 'a tighter sentence', type: 'text', timestamp: 3 });
+          return { stopReason: 'end_turn', usage: { totalTokens: 10, inputTokens: 5, outputTokens: 5 } };
+        }),
+      });
       const editor = { replaceSelection: vi.fn() };
       editPanel().pendingState = { original: 'rough sentence', editor, tabId: tabB };
       (h.deps.sessionStore.get as ReturnType<typeof vi.fn>).mockImplementation((id: string) =>
-        id === 'ses-b'
-          ? {
-              sessionId: id,
-              messages: [{ role: 'assistant', content: 'a tighter sentence', type: 'text', timestamp: 2 }],
-              updatedAt: 2,
-            }
-          : { sessionId: id, messages: [], updatedAt: 0 },
+        id === 'ses-b' ? { sessionId: id, messages: messagesB, updatedAt: 3 } : { sessionId: id, messages: [], updatedAt: 0 },
       );
 
       await h.controller.send('tighten this', [], rtOf(h, tabB));
@@ -2760,5 +2765,76 @@ describe('CoOberViewController — every tab is told what is true (0.2.12 stage 
     // native enrichment is still running — or after it failed.
     expect(rtOf(h, tabB).renderer.addUserMessage).toHaveBeenCalledWith('what was said', 5, undefined);
     expect(rtOf(h, tabB).painted).toBe(true);
+  });
+});
+
+describe('CoOberViewController — the shared surfaces a tab leaves behind (0.2.13 stage 1)', () => {
+  let h: Harness;
+
+  beforeEach(() => {
+    h = createHarness();
+    commandRegistry.updateAcpCommands([]);
+    Notice.messages.length = 0;
+  });
+
+  it('takes the closed tab’s projection off the bar and the arc', async () => {
+    const client = createMockClient({
+      sendMessage: vi.fn().mockImplementation(() => new Promise<AcpResponse>(() => {})),
+    });
+    (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+    const tabId = h.controller.activeTabId();
+    const rt = rtOf(h, tabId);
+    rt.state.sessionId = 'ses-a';
+    rt.state.usage = { totalTokens: 900, inputTokens: 900 } as UsageInfo;
+    void h.controller.send('question A', []);
+    await tick();
+    expect(rt.busy).toBe(true);
+
+    const meter = vi.fn();
+    Object.assign(h.deps, { updateContextMeter: meter });
+    const setStreaming = h.deps.input.setStreaming as ReturnType<typeof vi.fn>;
+    const setSending = h.deps.toolbar.setSending as ReturnType<typeof vi.fn>;
+    setStreaming.mockClear();
+    setSending.mockClear();
+
+    await h.controller.closeTab(tabId);
+
+    // The strip starts a fresh tab, but nothing hands the shared bar or the arc
+    // to it: without this the welcome screen kept the stopped tab's *stop*
+    // button and an arc full of a context that no longer existed.
+    expect(h.controller.listTabIds()).toHaveLength(1);
+    expect(setStreaming).toHaveBeenLastCalledWith(false);
+    expect(setSending).toHaveBeenLastCalledWith(false);
+    expect(meter).toHaveBeenLastCalledWith(null);
+  });
+
+  it('answers Stop while the session is still being created', async () => {
+    let created!: (sid: string) => void;
+    const client = createMockClient({
+      createSession: vi.fn(
+        () => new Promise<string>((resolve) => { created = resolve; }),
+      ),
+    });
+    (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+    const rt = rtOf(h, h.controller.activeTabId());
+    void h.controller.send('question A', []);
+    await tick();
+    expect(rt.busy).toBe(true);
+    expect(rt.state.sessionId).toBeFalsy();
+
+    await h.controller.stopGeneration();
+
+    // There is no session to cancel yet, so Stop has to work on the local
+    // claim alone — pressing it during `session/new` used to be a no-op while
+    // the bar still read *stop* for a handshake that could take seconds.
+    expect(client.cancel).not.toHaveBeenCalled();
+    expect(rt.busy).toBe(false);
+    expect(rt.state.isStreaming).toBe(false);
+    expect(rt.renderer.removeAssistantPlaceholder).toHaveBeenCalled();
+
+    created('ses-late');
+    await tick();
+    await tick();
+    expect(client.sendMessage).not.toHaveBeenCalled();
   });
 });

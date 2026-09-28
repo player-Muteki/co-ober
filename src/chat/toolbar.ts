@@ -157,7 +157,11 @@ export class InputToolbar {
     this.modeOptions = [...options];
     this.currentMode = current;
     const selected = options.find(o => o.value === current);
-    this.modeCycleLabelEl.setText(selected?.label ?? options[0]?.label ?? '—');
+    // A tier the session never named is not the first tier on the list. The
+    // bar reads as the prompt's own header, so naming options[0] here claimed a
+    // mode the agent never confirmed and sent the reader into a turn under a
+    // tier they had not chosen.
+    this.modeCycleLabelEl.setText(selected?.label ?? (options.length > 0 ? t().toolbar.unset : '—'));
     this.modeCycleEl.classList.toggle('has-options', options.length > 1);
   }
 
@@ -173,7 +177,13 @@ export class InputToolbar {
   cycleModeReverse(): void {
     if (this.modeOptions.length <= 1) return;
     const idx = this.modeOptions.findIndex(o => o.value === this.currentMode);
-    const prev = this.modeOptions[(idx - 1 + this.modeOptions.length) % this.modeOptions.length];
+    // Nothing is named as current, so stepping back has to come in at the end
+    // of the list — the same place the forward press enters at its start.
+    // Against the raw index that absence is -1, which landed the reader on the
+    // second-to-last tier, one short of the wrap every other press performs.
+    const prev = idx < 0
+      ? this.modeOptions[this.modeOptions.length - 1]
+      : this.modeOptions[(idx - 1 + this.modeOptions.length) % this.modeOptions.length];
     this.currentMode = prev.value;
     this.modeCycleLabelEl.setText(prev.label);
     this.callbacks.onAgentChange?.(prev.value);
@@ -190,7 +200,9 @@ export class InputToolbar {
       this.modelLabelEl.setText(t().toolbar.noModels);
     } else {
       const selected = options.find(o => o.value === current);
-      this.modelLabelEl.setText(selected?.label ?? options[0].label);
+      // The dropdown marks nothing as chosen in this state (it compares against
+      // the same `current`); the label used to claim the first model anyway.
+      this.modelLabelEl.setText(selected?.label ?? t().toolbar.unset);
     }
   }
 
@@ -252,12 +264,13 @@ export class InputToolbar {
     this.currentEffort = current;
     this.renderEffortDropdown();
 
-    if (current) {
-      const selected = options.find(o => o.value === current);
-      this.effortLabelEl.setText(selected?.label ?? options[0]?.label ?? '—');
-    } else if (options.length > 0) {
-      this.effortLabelEl.setText(options[0].label);
-    }
+    // This branch used to name options[0] whenever no tier was confirmed, so
+    // the line above it — "no tier is named as the current one" — described an
+    // intention the label never kept: a dropped agent, or a session that has
+    // not reported its effort yet, still read "Default" as though it were in
+    // force for the next prompt.
+    const selected = options.find(o => o.value === current);
+    this.effortLabelEl.setText(selected?.label ?? (options.length > 0 ? t().toolbar.unset : '—'));
   }
 
   private renderEffortDropdown(): void {
@@ -474,14 +487,17 @@ export class InputToolbar {
   // ── Locale refresh ──
 
   refreshLocale(): void {
+    // The same rule the setters keep, so switching language does not relabel a
+    // tier nobody reported: an empty model list says there are no models, a
+    // populated one with nothing named says nothing is named.
     this.modelLabelEl.setText(
-      this.currentModel
-        ? (this.modelOptions.find(o => o.value === this.currentModel)?.label ?? t().toolbar.noModels)
-        : t().toolbar.noModels
+      this.modelOptions.length === 0
+        ? t().toolbar.noModels
+        : (this.modelOptions.find(o => o.value === this.currentModel)?.label ?? t().toolbar.unset)
     );
     this.renderModelDropdown();
     const selected = this.modeOptions.find(o => o.value === this.currentMode);
-    this.modeCycleLabelEl.setText(selected?.label ?? this.modeOptions[0]?.label ?? '—');
+    this.modeCycleLabelEl.setText(selected?.label ?? (this.modeOptions.length > 0 ? t().toolbar.unset : '—'));
     this.modeCycleEl.setAttribute('aria-label', t().toolbar.agentTitle);
     this.updatePermissionDisplay();
     this.attachBtnEl.title = this.attachBtnEl.disabled

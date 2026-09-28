@@ -369,6 +369,7 @@ const en = {
     applyFailed: 'Setting failed; reverted to the agent-side value',
     agentTitle: 'Agent mode',
     noModels: 'No models',
+    unset: 'Not set',
     effort: {
       default: 'Default',
       low: 'Low',

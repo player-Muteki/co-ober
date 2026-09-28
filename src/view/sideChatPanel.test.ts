@@ -93,8 +93,40 @@ describe('SideChatPanel', () => {
     expect(panel.isBusy()).toBe(false);
   });
 
-  it('refuses to ask while the main conversation is generating', async () => {
-    const { panel, ask } = makePanel({ isMainBusy: () => true });
+  it('gives each message of a several-message answer its own bubble', () => {
+    const { panel, handlers } = makePanel();
+    panel.open('one question');
+
+    // The normalizer restarts accumulated text at every new message id, so
+    // pouring both into the one waiting bubble let the second half overwrite
+    // the first — words the agent had said vanished with no trace of a gap.
+    handlers[0]({ kind: 'message_chunk', role: 'agent', messageId: 'm1', chunkText: 'a', accumulatedText: 'the first half' });
+    handlers[0]({ kind: 'message_chunk', role: 'agent', messageId: 'm2', chunkText: 'b', accumulatedText: 'the second half' });
+
+    const bubbles = container.querySelectorAll('.co-ober-side-chat-msg');
+    expect(bubbles[1].textContent).toBe('the first half');
+    expect(bubbles[2].textContent).toBe('the second half');
+    expect(bubbles[2].classList.contains('co-ober-side-chat-msg-agent')).toBe(true);
+    expect(bubbles[2].classList.contains('co-ober-side-chat-msg-thinking')).toBe(false);
+    panel.close();
+  });
+
+  it('leaves the words that landed above the failure that followed', async () => {
+    const ask = vi.fn<SideChatAsk>(async (_text, onChunk) => {
+      onChunk({ kind: 'message_chunk', role: 'agent', messageId: 'm1', chunkText: 'x', accumulatedText: 'a real sentence' });
+      throw new Error('stream cut');
+    });
+    const { panel } = makePanel({ ask: ask as SideChatAsk });
+    await panel.send('hello');
+
+    const bubbles = container.querySelectorAll('.co-ober-side-chat-msg');
+    expect(bubbles[1].textContent).toBe('a real sentence');
+    expect(bubbles[2].textContent).toContain('stream cut');
+    expect(bubbles[2].classList.contains('co-ober-side-chat-msg-error')).toBe(true);
+    panel.close();
+  });
+
+  it('refuses to ask while the main conversation is generating', async () => {    const { panel, ask } = makePanel({ isMainBusy: () => true });
     await panel.send('hello');
 
     expect(ask).not.toHaveBeenCalled();

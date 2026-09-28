@@ -44,7 +44,7 @@ import { buildSystemPrompt } from '../context/injection';
 import { expandWikilinkRefs } from '../context/wikilinks';
 import { buildHistoryBlock } from '../context/historyRewind';
 import { buildTranscriptMarkdown, sanitizeNoteName } from '../chat/transcript';
-import { AcpTimeoutError, AcpProcessExitError, AcpAbortError, AcpSessionMissingError, AcpStreamCapacityError } from '../client/AcpErrors';
+import { AcpProcessExitError, AcpAbortError, AcpSessionMissingError, AcpStreamCapacityError } from '../client/AcpErrors';
 import {
   readNativeMessageStats,
   readNativeSessionTodos,
@@ -400,6 +400,15 @@ export class CoOberViewController {
         this.activateRuntime(next);
       } else {
         this.activeRuntime = this.openRuntime(null);
+        // The composer, the send button and the context arc are shared surfaces,
+        // and activating a tab re-projects them from the tab coming forward.
+        // Closing the last one has no tab to hand them to, so the dead tab's
+        // projection stayed: a welcome screen whose bar still said *stop* for a
+        // turn that had just been deleted, and a context meter still full for a
+        // context that no longer existed.
+        this.deps.input.setStreaming(false);
+        this.deps.toolbar.setSending(false);
+        this.deps.updateContextMeter(null);
         this.updateQueueIndicator();
         this.callbacks.onShowWelcome(this.welcomeStatus());
         this.callbacks.onAutoRefActiveFile();
@@ -2029,20 +2038,26 @@ export class CoOberViewController {
         return;
       }
       if (rt.state.sessionId === sessionId) {
+        // A chip that resends nothing is worse than no chip: retryTurn returns
+        // at once when the turn carried no retryFn, so the way back into the
+        // question is only offered on the turns that can actually be replayed.
+        const retryAction = config.retryFn
+          ? (): Promise<void> => this.retryTurn(config, text, refs, imageParts, rt)
+          : undefined;
         if (e instanceof AcpAbortError) {
           // User cancelled, don't show error
-        } else if (e instanceof AcpTimeoutError) {
-          // The bare "timed out" sentence is what every other path already
-          // replaces with the method and how long it waited; a turn that ran
-          // out on one call looked identical to one that ran out on another.
-          rt.renderer.addError(humanizeError(e), 'retry', () =>
-            this.retryTurn(config, text, refs, imageParts, rt),
-          );
         } else if (e instanceof AcpProcessExitError) {
           rt.renderer.addError(humanizeError(e), 'restart', async () => {
             await this.reconnect();
             await this.retryTurn(config, text, refs, imageParts, rt);
           });
+        } else if (retryAction) {
+          // A timed-out RPC and a rejected one are the same reader-problem: a
+          // question that got no answer and a bubble above it saying so. The
+          // timeout used to be the only failure with a way back, and the bare
+          // "timed out" sentence was what every other path already replaces
+          // with the method and how long it waited.
+          rt.renderer.addError(humanizeError(e), 'retry', retryAction);
         } else {
           rt.renderer.addError(humanizeError(e));
         }
@@ -2405,6 +2420,13 @@ export class CoOberViewController {
         }
       }
     }
+    // Where this turn's answer begins in the transcript. The inline-edit panel
+    // reads back from it below, and taking the newest answer in the whole
+    // conversation instead would offer a diff built from some earlier turn's
+    // reply — then write words the model never produced for this selection into
+    // the editor the moment Apply was pressed.
+    const transcriptLenBeforeTurn =
+      this.deps.sessionStore.get(rt.state.sessionId ?? '')?.messages.length ?? 0;
     await this.executeAgentCall(
       text,
       refs,
@@ -2428,7 +2450,14 @@ export class CoOberViewController {
           }
           if (inlineEdit) {
             const session = this.deps.sessionStore.get(rt.state.sessionId ?? '');
-            const lastMsg = session?.messages.slice().reverse().find((m) => m.role === 'assistant');
+            // Only an answer this turn wrote. A turn that produced no assistant
+            // message — a send that failed, an agent that answered in tool calls
+            // alone, a stop before the first token — used to fall back to the
+            // previous turn's reply and label it the diff for this selection.
+            const thisTurn = session?.messages.slice(transcriptLenBeforeTurn) ?? [];
+            const lastMsg = thisTurn
+              .reverse()
+              .find((m) => m.role === 'assistant' && m.type !== 'thinking');
             // The editor travels with the claim: the panel already gave its
             // pending state up when this turn took it, so Apply would have no
             // selection to write back to.
@@ -2533,24 +2562,31 @@ export class CoOberViewController {
   async stopGeneration(): Promise<void> {
     const rt = this.activeRuntime;
     const c = this.deps.runtime.getClient();
-    if (!c || !rt.state.sessionId || (!rt.busy && !rt.state.isStreaming)) return;
+    // A turn is claimed the moment the composer hands it over, which is before
+    // the session it will run in exists. Requiring a session id here made Stop
+    // a no-op for the whole of `session/new`: the bar still showed *stop* for a
+    // handshake that could take seconds, pressing it did nothing, and the
+    // answer carried on arriving underneath.
+    if (!c || (!rt.busy && !rt.state.isStreaming)) return;
     const sessionId = rt.state.sessionId;
     // Increment genId FIRST so the in-flight executeAgentCall's finally block
     // skips stale state updates (busy=false, onFinally).
     ++rt.genId;
     this.deps.input.setStreaming(false);
     this.deps.toolbar.setSending(false);
-    try {
-      // Cancel the backend RPC before resetting local state,
-      // so the in-flight handler stops processing chunks immediately.
-      await c.cancel(sessionId);
-    } catch (e) {
-      console.error('[co-ober] cancel:', e);
+    if (sessionId) {
+      try {
+        // Cancel the backend RPC before resetting local state,
+        // so the in-flight handler stops processing chunks immediately.
+        await c.cancel(sessionId);
+      } catch (e) {
+        console.error('[co-ober] cancel:', e);
+      }
+      // The turn this banner belongs to is over, so the question it asked can no
+      // longer be answered in the context that asked it. Leaving it standing
+      // offered the user a choice whose outcome nobody will read.
+      this.deps.permissionBanner.dismiss([sessionId]);
     }
-    // The turn this banner belongs to is over, so the question it asked can no
-    // longer be answered in the context that asked it. Leaving it standing
-    // offered the user a choice whose outcome nobody will read.
-    this.deps.permissionBanner.dismiss([sessionId]);
     // Buffered pending/in_progress tool calls belonged to the interrupted
     // turn: render them terminal now so they neither vanish nor ghost into
     // the next turn (its finally is skipped by the genId bump above).

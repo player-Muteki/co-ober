@@ -371,6 +371,7 @@ const zh: Locale = {
     applyFailed: '设置失败，已回退为智能体侧当前值',
     agentTitle: 'Agent 模式',
     noModels: '无可用模型',
+    unset: '未设定',
     effort: {
       default: '默认',
       low: '低',

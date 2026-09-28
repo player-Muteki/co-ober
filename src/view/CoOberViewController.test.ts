@@ -1189,7 +1189,14 @@ describe('CoOberViewController', () => {
 
       await controller.send('hello', []);
 
-      expect(deps.renderer.addError).toHaveBeenCalledWith(`${t().error.unknown}: network error`);
+      // A prompt that failed on the network is replayable exactly as a prompt
+      // that timed out was: the composer had already drawn its bubble, and the
+      // reader was left to retype the question to get the turn going again.
+      expect(deps.renderer.addError).toHaveBeenCalledWith(
+        `${t().error.unknown}: network error`,
+        'retry',
+        expect.any(Function),
+      );
       expect(controller.isBusy()).toBe(false);
     });
 
@@ -1596,22 +1603,48 @@ describe('CoOberViewController', () => {
   });
 
   describe('an inline edit asked for by this tab', () => {
-    it('shows the diff of the reply that answered it', async () => {
-      const client = createMockClient();
-      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
-      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+    /**
+     * A store that behaves like the real one across a turn: the transcript the
+     * controller reads back is the array it grew while the turn ran, not a
+     * frozen snapshot taken before it.
+     */
+    function liveTranscript(
+      client: ReturnType<typeof createMockClient>,
+      existing: Array<{ role: string; content: string; type: string; timestamp: number }>,
+    ): Array<{ role: string; content: string; type: string; timestamp: number }> {
+      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+        messages: existing,
+        updatedAt: 2,
+      }));
+      (client.sendMessage as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+        existing.push({ role: 'assistant', content: 'a tighter sentence', type: 'text', timestamp: 3 });
+        return { stopReason: 'end_turn', usage: { totalTokens: 10, inputTokens: 5, outputTokens: 5 } };
+      });
+      return existing;
+    }
+
+    function editPanelShowingDiffs(): {
+      showDiff: ReturnType<typeof vi.fn>;
+      editor: { replaceSelection: ReturnType<typeof vi.fn> };
+      range: { from: { line: number; ch: number }; to: { line: number; ch: number } };
+    } {
+      const showDiff = vi.fn();
       const editor = { replaceSelection: vi.fn() };
       const range = { from: { line: 3, ch: 0 }, to: { line: 3, ch: 15 } };
-      const showDiff = vi.fn();
       deps.inlineEditPanel = {
         pendingState: { original: 'rough sentence', editor, tabId: controller.activeTabId(), range },
         clearState: vi.fn(),
         showDiffFromResponse: showDiff,
       } as unknown as MockDeps['inlineEditPanel'];
-      (deps.sessionStore.get as ReturnType<typeof vi.fn>).mockReturnValue({
-        messages: [{ role: 'assistant', content: 'a tighter sentence', type: 'text', timestamp: 2 }],
-        updatedAt: 2,
-      });
+      return { showDiff, editor, range };
+    }
+
+    it('shows the diff of the reply that answered it', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      const { showDiff, editor, range } = editPanelShowingDiffs();
+      liveTranscript(client, []);
 
       await controller.send('tighten this', []);
 
@@ -1620,6 +1653,43 @@ describe('CoOberViewController', () => {
       // range travels too: Apply has to land on the text that was asked about,
       // not wherever the cursor drifted to while the model thought.
       expect(showDiff).toHaveBeenCalledWith('rough sentence', 'a tighter sentence', editor, range);
+    });
+
+    it('does not answer an edit with a reply written for an earlier turn', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      const { showDiff } = editPanelShowingDiffs();
+      // The conversation already holds an answer from the turn before this one,
+      // and the turn the edit asked for produces nothing: a send that failed,
+      // an agent that answered in tool calls alone, a stop before the first
+      // token. Reading the newest assistant message anywhere in the transcript
+      // offered that stranger's words as the diff, and Apply wrote them into
+      // the editor the reader had selected text in.
+      liveTranscript(client, [{ role: 'assistant', content: 'an older answer', type: 'text', timestamp: 1 }]);
+      (client.sendMessage as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('network error'));
+
+      await controller.send('tighten this', []);
+
+      expect(showDiff).not.toHaveBeenCalled();
+    });
+
+    it('skips a thought the same turn left behind', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      const { showDiff } = editPanelShowingDiffs();
+      const messages = liveTranscript(client, []);
+      (client.sendMessage as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+        messages.push({ role: 'assistant', content: 'let me think', type: 'thinking', timestamp: 3 });
+        return { stopReason: 'end_turn', usage: { totalTokens: 10, inputTokens: 5, outputTokens: 5 } };
+      });
+
+      await controller.send('tighten this', []);
+
+      // The reasoning block is stored as an assistant message too; diffing
+      // against it would put the model's private notes into the document.
+      expect(showDiff).not.toHaveBeenCalled();
     });
   });
 
@@ -2584,7 +2654,11 @@ describe('CoOberViewController', () => {
 
       await fn.call(controller, 'failing msg');
 
-      expect(deps.renderer.addError).toHaveBeenCalledWith(`${t().error.unknown}: send error`);
+      expect(deps.renderer.addError).toHaveBeenCalledWith(
+        `${t().error.unknown}: send error`,
+        'retry',
+        expect.any(Function),
+      );
       expect(controller.isBusy()).toBe(false);
     });
   });

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { setLocale } from '../i18n/index';
+import { setLocale, t } from '../i18n/index';
 import { InputToolbar } from './toolbar';
 import { installObsidianDomHelpers } from '../test/domHelpers';
 
@@ -23,9 +23,76 @@ describe('InputToolbar locale refresh', () => {
     toolbar.refreshLocale();
 
     expect(container.querySelector('.co-ober-model-label')?.textContent).toBe('无可用模型');
-    expect(container.querySelector('.co-ober-effort-label')?.textContent).toBe('默认');
+    // Nothing reported a tier, so switching language must not invent one. This
+    // used to read 默认 ('Default') after a locale change: the list was empty,
+    // the session had named nothing, and refreshLocale fell back to the first
+    // built-in tier — relabelling the control to a tier no prompt would send,
+    // since effort only reaches the agent through an explicit pick.
+    expect(container.querySelector('.co-ober-effort-label')?.textContent).toBe('未设定');
     expect(container.querySelector('.co-ober-effort-option')?.textContent).toBe('默认');
     expect(container.querySelector('.co-ober-send-btn')?.classList.contains('mod-stop')).toBe(true);
+  });
+
+  it('names no tier after a locale switch that never named one', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const toolbar = new InputToolbar(container, {});
+    // The three controls agree on what an unconfirmed selection looks like:
+    // the list is offered, the label says nothing on it is in force.
+    toolbar.updateModels(
+      [
+        { value: 'openai/gpt-4', label: 'GPT-4' },
+        { value: 'anthropic/claude', label: 'Claude' },
+      ],
+      undefined,
+    );
+    toolbar.updateAgents([{ value: 'build', label: 'Build' }], 'ask');
+    toolbar.updateEffort(
+      [
+        { value: 'default', label: 'Default' },
+        { value: 'high', label: 'High' },
+      ],
+      undefined,
+    );
+
+    expect(container.querySelector('.co-ober-model-label')?.textContent).toBe(t().toolbar.unset);
+    // A current the agent reported that is not on the list is not a choice
+    // either: the bar cannot name a tier the session never offered.
+    expect(container.querySelector('.co-ober-mode-cycle-label')?.textContent).toBe(t().toolbar.unset);
+    expect(container.querySelector('.co-ober-effort-label')?.textContent).toBe(t().toolbar.unset);
+    // The dropdown still marks nothing as chosen, which is the other half of
+    // the same claim.
+    expect(container.querySelector('.co-ober-model-option.selected')).toBeNull();
+    expect(container.querySelector('.co-ober-effort-option.selected')).toBeNull();
+
+    setLocale('zh');
+    toolbar.refreshLocale();
+    expect(container.querySelector('.co-ober-model-label')?.textContent).toBe('未设定');
+    expect(container.querySelector('.co-ober-effort-label')?.textContent).toBe('未设定');
+    setLocale('en');
+  });
+
+  it('still names the tier the session did report', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const toolbar = new InputToolbar(container, {});
+    toolbar.updateModels(
+      [
+        { value: 'openai/gpt-4', label: 'GPT-4' },
+        { value: 'anthropic/claude', label: 'Claude' },
+      ],
+      'anthropic/claude',
+    );
+    toolbar.updateEffort(
+      [
+        { value: 'default', label: 'Default' },
+        { value: 'high', label: 'High' },
+      ],
+      'high',
+    );
+
+    expect(container.querySelector('.co-ober-model-label')?.textContent).toBe('Claude');
+    expect(container.querySelector('.co-ober-effort-label')?.textContent).toBe('High');
   });
 
   it('keeps the send button aria-label in sync with its icon and locale', () => {
@@ -133,6 +200,51 @@ describe('InputToolbar cycle mode', () => {
     expect(onAgentChange).toHaveBeenCalledWith('ask');
 
     toolbar.cycleModeReverse();
+    expect(onAgentChange).toHaveBeenCalledWith('build');
+  });
+
+  it('enters the cycle at the end when nothing is named as current', () => {
+    const container = document.createElement('div') as HTMLDivElement;
+    const onAgentChange = vi.fn();
+    const toolbar = new InputToolbar(container, { onAgentChange });
+
+    toolbar.updateAgents(
+      [
+        { value: 'build', label: 'Build' },
+        { value: 'ask', label: 'Ask' },
+        { value: 'plan', label: 'Plan' },
+      ],
+      undefined,
+    );
+
+    // Backwards from "nothing selected" used to land on the second-to-last
+    // tier: the missing selection is index -1, and the wrap arithmetic stepped
+    // off the end of the list by one. Forward enters at the start, so back has
+    // to enter at the end, or the two directions disagree about where an
+    // unselected bar starts.
+    toolbar.cycleModeReverse();
+    expect(onAgentChange).toHaveBeenCalledWith('plan');
+    expect(container.querySelector('.co-ober-mode-cycle-label')?.textContent).toBe('Plan');
+
+    toolbar.cycleModeReverse();
+    expect(onAgentChange).toHaveBeenCalledWith('ask');
+  });
+
+  it('enters the cycle at the start when nothing is named as current', () => {
+    const container = document.createElement('div') as HTMLDivElement;
+    const onAgentChange = vi.fn();
+    const toolbar = new InputToolbar(container, { onAgentChange });
+
+    toolbar.updateAgents(
+      [
+        { value: 'build', label: 'Build' },
+        { value: 'ask', label: 'Ask' },
+        { value: 'plan', label: 'Plan' },
+      ],
+      undefined,
+    );
+
+    toolbar.cycleMode();
     expect(onAgentChange).toHaveBeenCalledWith('build');
   });
 

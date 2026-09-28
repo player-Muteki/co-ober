@@ -644,8 +644,16 @@ describe('StreamController', () => {
     });
   });
 
-  it('handles mode update', () => {
-    controller.handleChunk({ kind: 'mode', currentModeId: 'mode-1', availableModes: [] });
+  it('takes a reported zero as the reading it is', () => {
+    controller.handleChunk({ kind: 'usage', totalTokens: 100, used: 90, size: 200000 });
+    // The frame after a compaction says the window is empty. Truthiness threw
+    // the zeros away, so the meter kept the figure from before the reading that
+    // emptied it, and a free window went on looking nearly full.
+    controller.handleChunk({ kind: 'usage', used: 0, size: 0 });
+    expect(deps.state.usage).toMatchObject({ contextTokens: 0, contextWindow: 0 });
+  });
+
+  it('handles mode update', () => {    controller.handleChunk({ kind: 'mode', currentModeId: 'mode-1', availableModes: [] });
     expect(deps.state.currentModeId).toBe('mode-1');
     expect(deps.state.availableModes).toEqual([]);
     expect(deps.onModeUpdate).toHaveBeenCalledWith('mode-1', []);

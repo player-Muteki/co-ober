@@ -132,18 +132,37 @@ export class SideChatPanel {
     this.appendBubble('user', text);
     const answerEl = this.appendBubble('agent', t().sideChat.thinking);
     answerEl.addClass('is-streaming');
+    // One bubble per message the side session is writing. A streamed answer
+    // that arrives as several messages restarts its accumulated text at each
+    // new id, so pouring every chunk into the one waiting bubble let the second
+    // message overwrite the first — words the agent had already said vanished
+    // off the panel with no trace of the gap.
+    const bubblesByMessage = new Map<string, HTMLDivElement>();
     try {
       await this.deps.ask(text, (u) => {
         if (u.kind === 'message_chunk' && u.role === 'agent') {
-          answerEl.setText(u.accumulatedText);
-          answerEl.removeClass('co-ober-side-chat-msg-thinking');
+          const key = u.messageId ?? '';
+          let target = bubblesByMessage.get(key);
+          if (!target) {
+            target = bubblesByMessage.size === 0 ? answerEl : this.appendBubble('agent', '');
+            bubblesByMessage.set(key, target);
+          }
+          target.setText(u.accumulatedText);
+          target.removeClass('co-ober-side-chat-msg-thinking');
           this.scrollToBottom();
         }
       });
     } catch (e) {
-      answerEl.setText(t().sideChat.failed.replace('{error}', humanizeError(e)));
-      answerEl.removeClass('co-ober-side-chat-msg-agent');
-      answerEl.addClass('co-ober-side-chat-msg-error');
+      // Nothing had arrived yet, so the waiting bubble is still the placeholder
+      // the reader was shown; it becomes the error in place. Once any text has
+      // landed, that text is the agent's and stays on screen, with the failure
+      // added below it rather than written over it.
+      const failingEl = bubblesByMessage.size === 0
+        ? answerEl
+        : this.appendBubble('agent', '');
+      failingEl.setText(t().sideChat.failed.replace('{error}', humanizeError(e)));
+      failingEl.removeClass('co-ober-side-chat-msg-agent');
+      failingEl.addClass('co-ober-side-chat-msg-error');
     } finally {
       answerEl.removeClass('is-streaming');
       this.busy = false;

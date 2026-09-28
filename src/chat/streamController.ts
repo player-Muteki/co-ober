@@ -258,9 +258,13 @@ export class StreamController {
       }
       case 'usage': {
         if (state.usage) {
-          if (ch.cost) state.usage.cost = ch.cost;
-          if (ch.size) state.usage.contextWindow = ch.size;
-          if (ch.used) state.usage.contextTokens = ch.used;
+          // A reported zero is a reading, not an absence. Truthiness threw the
+          // zeros away, so the frame after a compaction — "0 of 200k in use" —
+          // left the meter holding the figure from before it, and a free
+          // window kept looking nearly full to whoever had just emptied it.
+          if (ch.cost !== undefined) state.usage.cost = ch.cost;
+          if (ch.size !== undefined) state.usage.contextWindow = ch.size;
+          if (ch.used !== undefined) state.usage.contextTokens = ch.used;
         } else {
           state.usage = {
             totalTokens: ch.totalTokens ?? ch.used ?? 0,
