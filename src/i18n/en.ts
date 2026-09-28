@@ -98,6 +98,7 @@ const en = {
     forkUnsupported: 'This OpenCode agent does not support session forking, so side chat is unavailable.',
     busy: 'Wait for the current response to finish before asking the side chat.',
     failed: 'Side chat request failed: {error}',
+    noText: '(no text response)',
   },
 
   collapsible: {
@@ -124,6 +125,7 @@ const en = {
     new: 'Open a new tab',
     limitReached: 'Only {max} tabs can be open at once — close one first',
     waitingSlot: 'tab {index} is waiting for a stream slot',
+    streamingQueued: 'generating, more queued',
     unread: 'tab {index} finished while hidden',
     switchTo: 'Switch to tab {index}',
     streaming: 'generating',
@@ -263,7 +265,9 @@ const en = {
       running: 'Running',
       done: 'Completed',
       failed: 'Failed',
+      unrecorded: 'No result recorded',
     },
+    unnamedFile: 'Unnamed file',
     source: 'Source: {url}',
     exitCode: 'Exit code: {code}',
     moreMatches: '... {count} more matches',

@@ -127,8 +127,6 @@ describe('thinkingBlockRenderer', () => {
     it('removes the dot indicator, stores text and auto-collapses', () => {
       const state = renderLiveThinkingBlock(container);
       appendThinkingContent(state, 'the answer');
-      state.header.click();
-      expect(state.collapsibleState.isExpanded).toBe(true);
       vi.advanceTimersByTime(1000);
       finalizeThinkingBlock(state);
       expect(state.header.querySelector('.co-ober-thinking-dot')).toBeNull();
@@ -137,6 +135,22 @@ describe('thinkingBlockRenderer', () => {
       expect(state.header.getAttribute('aria-expanded')).toBe('false');
       expect(state.wrapper.classList.contains('is-thinking')).toBe(false);
       expect(state.wrapper.classList.contains('is-collapsed')).toBe(true);
+    });
+
+    it('leaves a block the reader opened alone when the turn settles it', () => {
+      const state = renderLiveThinkingBlock(container);
+      appendThinkingContent(state, 'the answer');
+      state.header.click();
+      expect(state.collapsibleState.isExpanded).toBe(true);
+      vi.advanceTimersByTime(1000);
+      finalizeThinkingBlock(state);
+      // Someone opened this to watch it think; hiding the text they went
+      // looking for the moment the block finished is the same overreach 0.2.13
+      // ruled out for tool cards. The dot and the live class still clear.
+      expect(state.collapsibleState.userToggled).toBe(true);
+      expect(state.collapsibleState.isExpanded).toBe(true);
+      expect(state.header.getAttribute('aria-expanded')).toBe('true');
+      expect(state.wrapper.classList.contains('is-thinking')).toBe(false);
     });
 
     it('hands the settled names over as keys, not as the words they were drawn in', () => {

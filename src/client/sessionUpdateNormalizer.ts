@@ -157,15 +157,24 @@ export class SessionUpdateNormalizer {
           this.toolCalls.set(raw.toolCallId, existing);
           this.trimMap(this.toolCalls, MAX_TOOL_CALLS);
         } else if (raw.content) {
-          existing.contents = existing.contents.concat(raw.content);
+          // A patch frame's `content` is the tool's content list as it stands
+          // now, not the next slice of it — the same reading `tool_call` itself
+          // takes (`contents: [...raw.content]`). Concatenating turned an agent
+          // that re-sends the finished output into a card showing that output
+          // twice, which is what 0.2.13 already stopped the renderer from doing
+          // to the body a frame replaced.
+          existing.contents = [...raw.content];
         }
 
         if (raw.status) existing.status = normalizeToolStatus(raw.status, existing.status);
         if (raw.title) existing.title = raw.title;
         if (raw.name) existing.toolName = raw.name;
         if (raw.kind) existing.toolKind = raw.kind;
-        if (raw.rawInput) existing.rawInput = { ...existing.rawInput, ...raw.rawInput };
-        if (raw.rawOutput) existing.rawOutput = { ...existing.rawOutput, ...raw.rawOutput };
+        // Replaced, for the same reason: a snapshot that no longer names a key
+        // withdrew it, and spreading the old value underneath kept an
+        // `exitCode` the agent had taken back on the card as current.
+        if (raw.rawInput) existing.rawInput = raw.rawInput;
+        if (raw.rawOutput) existing.rawOutput = raw.rawOutput;
         if (raw.locations) existing.locations = raw.locations;
 
         // Completed/failed tool calls are no longer needed for state tracking

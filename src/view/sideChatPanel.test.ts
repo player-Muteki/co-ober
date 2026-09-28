@@ -93,6 +93,18 @@ describe('SideChatPanel', () => {
     expect(panel.isBusy()).toBe(false);
   });
 
+  it('terminalises a bubble for a turn that never sent text', async () => {
+    const { panel } = makePanel();
+    await panel.send('hello');
+
+    // The ask resolved without an agent chunk (tool calls only, or a stop before
+    // any text). The waiting bubble had to stop saying "Thinking…".
+    const agentBubble = container.querySelectorAll('.co-ober-side-chat-msg')[1];
+    expect(agentBubble.textContent).toBe(t().sideChat.noText);
+    expect(agentBubble.classList.contains('co-ober-side-chat-msg-agent')).toBe(true);
+    expect(panel.isBusy()).toBe(false);
+  });
+
   it('gives each message of a several-message answer its own bubble', () => {
     const { panel, handlers } = makePanel();
     panel.open('one question');

@@ -163,7 +163,10 @@ export function createToolCallElement(
   const collapsibleState: CollapsibleState = { isExpanded: false };
   setupCollapsible(wrapper, header, body, collapsibleState, {
     initiallyExpanded: false,
-    baseAriaLabel: `${title}: ${summary || kind}`,
+    // The summary this card shows changes as input arrives, and the fallback is
+    // a word the locale owns. Rebuild the announcement from what the header
+    // actually says rather than from the strings it was created with.
+    baseAriaLabel: () => `${title}: ${summaryEl.textContent?.trim() || getToolDisplayName(kind)}`,
     scrollOnExpand: true,
   });
 
@@ -326,6 +329,25 @@ export function updateToolCallElement(
 function nameStatus(state: ToolCallState, key: string): void {
   const label = lookupLocaleString(key) ?? '';
   state.statusEl.dataset.i18nLabel = key;
+  state.statusEl.setAttribute('aria-label', label);
+  state.statusEl.setAttribute('title', label);
+}
+
+/**
+ * Settle a restored call the transcript says nothing about.
+ *
+ * A card is created wearing the in-flight `…` because a live call has not been
+ * answered yet. History that carries neither a status nor an error will never be
+ * answered — so leaving the mark up shows a command still running in a
+ * conversation that stopped the moment it was written down. The name says what
+ * is really known: no record. No status class goes on, because there is no state
+ * here to depict.
+ */
+export function settleUnrecordedToolCall(state: ToolCallState): void {
+  const label = lookupLocaleString('tool.status.unrecorded') ?? '';
+  state.statusEl.textContent = '–';
+  state.statusEl.className = 'tc-stat';
+  state.statusEl.dataset.i18nLabel = 'tool.status.unrecorded';
   state.statusEl.setAttribute('aria-label', label);
   state.statusEl.setAttribute('title', label);
 }

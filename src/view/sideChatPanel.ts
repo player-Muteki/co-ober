@@ -138,6 +138,7 @@ export class SideChatPanel {
     // message overwrite the first — words the agent had already said vanished
     // off the panel with no trace of the gap.
     const bubblesByMessage = new Map<string, HTMLDivElement>();
+    let failed = false;
     try {
       await this.deps.ask(text, (u) => {
         // Closing the panel takes the transcript away and aborts the ask; a chunk
@@ -168,8 +169,16 @@ export class SideChatPanel {
       failingEl.setText(t().sideChat.failed.replace('{error}', humanizeError(e)));
       failingEl.removeClass('co-ober-side-chat-msg-agent');
       failingEl.addClass('co-ober-side-chat-msg-error');
+      failed = true;
     } finally {
       answerEl.removeClass('is-streaming');
+      if (!failed && bubblesByMessage.size === 0) {
+        // A turn that answered with tool calls only, or stopped without ever
+        // sending text, left this bubble reading "Thinking…" with nothing left
+        // to think: the ask had returned, the panel was free again, and the one
+        // line that states the state stated it wrong.
+        answerEl.setText(t().sideChat.noText);
+      }
       this.busy = false;
     }
   }

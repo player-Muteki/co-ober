@@ -894,9 +894,33 @@ describe('ChatRenderer', () => {
     });
   });
 
+  describe('setPlanEntries status marks (0.2.14 stage 2)', () => {
+    const items = () => Array.from(container.querySelectorAll('.plan-item')).map((el) => el.textContent ?? '');
+
+    it('shows the open circle only for a pending entry, not an unknown one', () => {
+      renderer.setPlanEntries([
+        { content: 'known', status: 'pending' },
+        { content: 'unknown', status: 'archived' },
+      ]);
+      const marks = items();
+      expect(marks[0]).toBe('○ known');
+      // The open circle claims "not started yet", which only `pending` earns; a
+      // status this client does not know gets a neutral mark instead of lying.
+      expect(marks[1]).toBe('· unknown');
+    });
+
+    it('keeps the three marks it can name', () => {
+      renderer.setPlanEntries([
+        { content: 'a', status: 'completed' },
+        { content: 'b', status: 'in_progress' },
+        { content: 'c', status: 'pending' },
+      ]);
+      expect(items()).toEqual(['✓ a', '⟳ b', '○ c']);
+    });
+  });
+
   describe('setPlanStale', () => {
     const noteBody = () => container.querySelector('.co-ober-msg.system .co-ober-msg-body');
-
     it('says the plan could not be read instead of redrawing the old list', () => {
       renderer.setPlanEntries([{ content: 'step one', status: 'completed' }]);
       renderer.setPlanStale(true);

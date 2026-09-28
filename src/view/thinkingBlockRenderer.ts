@@ -119,7 +119,7 @@ export function renderLiveThinkingBlock(
   // Use unified collapsible with scroll-into-view
   setupCollapsible(wrapper, header, body, collapsibleState, {
     initiallyExpanded: false,
-    baseAriaLabel: t().thinking.extendedAria,
+    baseAriaLabel: () => t().thinking.extendedAria,
     scrollOnExpand: true,
     onExpand: () => handleThinkingExpand(state),
   });
@@ -221,8 +221,13 @@ export function finalizeThinkingBlock(state: ThinkingState): number {
   // Store final full text in body (hidden until expanded)
   state.body.textContent = state.fullText;
 
-  // Collapse after completion via unified collapsible
-  collapseElement(state.wrapper, state.header, state.collapsibleState);
+  // Collapse after completion via unified collapsible — except for a reader who
+  // opened this block to watch it think. The turn boundary settles a block that
+  // came up open on its own; it does not get to hide the text somebody put
+  // where it is, which is the ruling 0.2.13 already made for tool cards.
+  if (!state.collapsibleState.userToggled) {
+    collapseElement(state.wrapper, state.header, state.collapsibleState);
+  }
   state.wrapper.classList.remove('is-thinking');
 
   return elapsed;
@@ -260,7 +265,7 @@ export function renderStoredThinkingBlock(
 
   setupCollapsible(wrapper, header, body, collapsibleState, {
     initiallyExpanded: false,
-    baseAriaLabel: t().thinking.extendedAria,
+    baseAriaLabel: () => t().thinking.extendedAria,
     scrollOnExpand: true,
     onExpand: () => {
       // On first expand, truncate long content

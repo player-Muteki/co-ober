@@ -138,7 +138,13 @@ export class TabBar {
     if (tab.unread) badge.addClass('is-unread');
 
     let status = '';
-    if (tab.queued) status = t().tabs.waitingSlot.replace('{index}', String(number));
+    if (tab.streaming && tab.queued) {
+      // Both hold whenever a prompt is queued while an answer is streaming: the
+      // tab is working AND has work waiting for a slot. Naming only the wait
+      // introduced a tab that was generating as one standing by, in the title
+      // and to the screen reader that reads the pulse as hidden.
+      status = t().tabs.streamingQueued;
+    } else if (tab.queued) status = t().tabs.waitingSlot.replace('{index}', String(number));
     else if (tab.streaming) status = t().tabs.streaming;
     else if (tab.unread) status = t().tabs.unread.replace('{index}', String(number));
 

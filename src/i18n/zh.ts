@@ -100,6 +100,7 @@ const zh: Locale = {
     forkUnsupported: '当前 OpenCode agent 不支持会话 fork，无法使用侧边对话。',
     busy: '请等待当前回复结束后再向侧边对话提问。',
     failed: '侧边对话请求失败：{error}',
+    noText: '（没有文字回复）',
   },
 
   collapsible: {
@@ -126,6 +127,7 @@ const zh: Locale = {
     new: '新建标签',
     limitReached: '最多同时打开 {max} 个标签，请先关闭一个',
     waitingSlot: '标签 {index} 正在等待生成通道',
+    streamingQueued: '生成中，后续已排队',
     unread: '标签 {index} 在隐藏时完成了回复',
     switchTo: '切换到标签 {index}',
     streaming: '生成中',
@@ -265,7 +267,9 @@ const zh: Locale = {
       running: '执行中',
       done: '已完成',
       failed: '失败',
+      unrecorded: '未记录结果',
     },
+    unnamedFile: '未命名文件',
     source: '来源：{url}',
     exitCode: '退出码：{code}',
     moreMatches: '... 另有 {count} 条匹配',

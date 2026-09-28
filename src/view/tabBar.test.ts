@@ -79,6 +79,16 @@ describe('TabBar', () => {
     expect(titles[3]).toBe(`Chat tab-4 — ${t().tabs.unread.replace('{index}', '4')}`);
   });
 
+  it('names a tab that is generating with work still queued as generating, not idle', () => {
+    const { container } = createBar([tab({ tabId: 'tab-1', streaming: true, queued: true })]);
+    const badge = badges(container)[0];
+    // Both flags hold while a prompt waits behind a streaming answer. Saying
+    // only "waiting for a slot" introduced a working tab as one standing by.
+    expect(badge.getAttribute('title')).toBe(`Chat tab-1 — ${t().tabs.streamingQueued}`);
+    expect(badge.getAttribute('aria-label')).toContain(t().tabs.streamingQueued);
+    expect(badge.classList.contains('is-streaming')).toBe(true);
+  });
+
   it('shows a pulse and state class only while generating', () => {
     const { container } = createBar([tab({ tabId: 'tab-1', streaming: true }), tab({ tabId: 'tab-2', unread: true })]);
 

@@ -12,10 +12,12 @@ import {
   type ThinkingState,
 } from './thinkingBlockRenderer';
 import { openImagePreview } from './imagePreview';
+import { relabelCollapsibleHeaders } from './collapsible';
 import {
   createToolCallElement,
   updateToolCallElement,
   autoCollapseToolCall,
+  settleUnrecordedToolCall,
   getToolDisplayName,
   type ToolCallState,
 } from './ToolCallRenderer';
@@ -953,7 +955,17 @@ export class ChatRenderer {
     }
     this.planEl.querySelectorAll('.plan-item').forEach((el) => el.remove());
     for (const e of entries) {
-      const icon = e.status === 'completed' ? '✓' : e.status === 'in_progress' ? '⟳' : '○';
+      // The open circle means "not started yet", which is a claim only a
+      // `pending` entry earns. A status this client does not know fell through
+      // to it, so the checklist showed steps as untouched that it could not
+      // actually place — those get a neutral mark instead.
+      const icon = e.status === 'completed'
+        ? '✓'
+        : e.status === 'in_progress'
+          ? '⟳'
+          : e.status === 'pending'
+            ? '○'
+            : '·';
       this.planEl.createDiv({ cls: `plan-item status-${e.status}`, text: `${icon} ${e.content}` });
     }
     this.scrollToBottom();
@@ -1069,16 +1081,11 @@ export class ChatRenderer {
       el.setAttribute('aria-label', label);
       el.title = label;
     });
-    // Collapsible headers rebuild their aria-label from the stored base plus
-    // the current expand/collapse word and expanded state.
-    this.container.querySelectorAll<HTMLElement>('[data-i18n-toggle]').forEach((el) => {
-      const base = el.dataset.i18nToggle ?? '';
-      const expanded = el.getAttribute('aria-expanded') === 'true';
-      el.setAttribute(
-        'aria-label',
-        `${base} - ${expanded ? t().collapsible.collapse : t().collapsible.expand}`,
-      );
-    });
+    // Collapsible headers rebuild their aria-label from the base plus the
+    // current expand/collapse word and expanded state. The builder is what makes
+    // a composed base ("Edit: notes.md") re-spoken in the language now in force
+    // rather than the one the header was created in.
+    relabelCollapsibleHeaders(this.container);
   }
 
   /**
@@ -1227,6 +1234,8 @@ export class ChatRenderer {
               block.toolKind ?? '',
               block.toolError ? { error: block.toolError } : wasOpen ? { error: t().interrupted.badge } : undefined,
             );
+          } else {
+            settleUnrecordedToolCall(state);
           }
         }
         break;

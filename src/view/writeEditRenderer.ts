@@ -46,7 +46,6 @@ export function createWriteEditBlock(
   const header = wrapper.createDiv({ cls: 'co-ober-tool-call-header' });
   header.setAttribute('role', 'button');
   header.setAttribute('tabindex', '0');
-  header.setAttribute('aria-label', `${displayName}: ${filePath || 'file'} - ${t().collapsible.expand}`);
 
   const iconEl = header.createSpan({ cls: 'tc-icon' });
   const icon = kind === 'edit' ? 'file-pen' : 'file-plus';
@@ -63,7 +62,11 @@ export function createWriteEditBlock(
   const collapsibleState: CollapsibleState = { isExpanded: false };
   setupCollapsible(wrapper, header, body, collapsibleState, {
     initiallyExpanded: false,
-    baseAriaLabel: `${displayName}: ${filePath || 'file'}`,
+    // Read off the header's own visible words, so the announcement names the
+    // kind and file the card shows now — not the ones it was created with, in
+    // the language it was created in.
+    baseAriaLabel: () =>
+      `${nameEl.textContent ?? ''}: ${fileNameEl.textContent?.trim() || t().tool.unnamedFile}`,
     scrollOnExpand: true,
   });
 
@@ -82,24 +85,22 @@ export function updateWriteEditContent(
   newText: string,
 ): void {
   state.body.empty();
-  // Clear status — empty tc-stat is hidden via CSS so stats sit flush right
-  state.statusEl.textContent = '';
-  state.statusEl.className = 'tc-stat';
-
   // Compute and render stats in header
   const stats = computeDiffStats(oldText, newText);
   state.statsEl.empty();
   renderDiffStats(state.statsEl, stats);
 
-  // Add done class to wrapper so CSS can hide empty status
-  state.wrapper.addClass('status-completed');
-
   // Render diff in expanded body
   const diffLines = parseDiffLines(oldText, newText);
   renderDiffContent(state.body, diffLines);
 
-  // Collapse by default — user clicks to see the full diff
-  collapseElement(state.wrapper, state.header, state.collapsibleState);
+  // The state is not this function's to declare. A diff arrives on frames whose
+  // status may still be `in_progress` — a write streams its new text — and
+  // stamping `status-completed` here put the finished look, an emptied status
+  // glyph and a collapsed body on a card for a file that was still being
+  // written. Whoever opened it to watch found it shut again on the next frame,
+  // past the `userToggled` guard every other tool card honours. The caller's
+  // terminal branches own the class, the glyph and the collapse.
 }
 
 /**

@@ -143,10 +143,7 @@ describe('SessionUpdateNormalizer', () => {
       toolKind: 'search',
       status: 'completed',
       rawInput: { q: 'test' },
-      contents: [
-        { type: 'content', content: { type: 'text', text: 'Result 1' } },
-        { type: 'content', content: { type: 'text', text: 'Result 2' } },
-      ],
+      contents: [{ type: 'content', content: { type: 'text', text: 'Result 2' } }],
     });
   });
 
@@ -608,7 +605,7 @@ describe('a tool call that answers itself in one frame (0.2.5 stage 2)', () => {
     expect(snapshot.rawOutput).toEqual({ text: 'the body' });
   });
 
-  it('still merges a later frame’s output into it', () => {
+  it('replaces the rawOutput with what the latest frame says it is', () => {
     const normalizer = new SessionUpdateNormalizer();
     normalizer.normalize({
       sessionUpdate: 'tool_call',
@@ -623,6 +620,30 @@ describe('a tool call that answers itself in one frame (0.2.5 stage 2)', () => {
       rawOutput: { path: 'a.md' },
     } as SessionUpdate) as Extract<NormalizedUpdate, { kind: 'tool_call_snapshot' }>;
 
-    expect(after.rawOutput).toEqual({ bytes: 3, path: 'a.md' });
+    // A frame's rawOutput is the tool's output as it now stands, not another
+    // slice of it. Spreading the previous value underneath kept `bytes: 3` on
+    // the card as current after the agent stopped reporting it — the same lie
+    // the contents branch was fixed for.
+    expect(after.rawOutput).toEqual({ path: 'a.md' });
+  });
+
+  it('withdraws a key the latest frame drops', () => {
+    const normalizer = new SessionUpdateNormalizer();
+    normalizer.normalize({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'tc-2',
+      title: 'Bash',
+      rawOutput: { exitCode: 0, stdout: 'ok' },
+    } as SessionUpdate);
+    const after = normalizer.normalize({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'tc-2',
+      status: 'completed',
+      rawOutput: { stdout: 'ok' },
+    } as SessionUpdate) as Extract<NormalizedUpdate, { kind: 'tool_call_snapshot' }>;
+
+    // The snapshot no longer names exitCode, so the card must not keep claiming
+    // an exit code the agent took back.
+    expect(after.rawOutput).toEqual({ stdout: 'ok' });
   });
 });

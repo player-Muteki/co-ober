@@ -4,6 +4,7 @@ import { setIcon } from 'obsidian';
 import {
   createToolCallElement,
   updateToolCallElement,
+  settleUnrecordedToolCall,
   getToolDisplayName,
   getToolSummary,
   renderLinesExpanded,
@@ -135,6 +136,20 @@ describe('ToolCallRenderer', () => {
       expect(state.wrapper.dataset.toolId).toBe('tc-3');
       expect(state.kindEl.textContent).toBe('Write');
       expect(state.summaryEl.textContent).toBe('a.md');
+    });
+  });
+
+  describe('settleUnrecordedToolCall (0.2.14 stage 2)', () => {
+    it('replaces the live … with a no-result mark and no status class', () => {
+      const state = createToolCallElement(container, 'tc-x', 'execute', 'Run', { command: 'ls' });
+      expect(state.statusEl.textContent).toBe('…');
+      settleUnrecordedToolCall(state);
+      // History carried neither a status nor an error, so the call will never be
+      // answered; the dot had to come off and the honest name take its place.
+      expect(state.statusEl.textContent).toBe('–');
+      expect(state.statusEl.className).toBe('tc-stat');
+      expect(state.statusEl.dataset.i18nLabel).toBe('tool.status.unrecorded');
+      expect(state.statusEl.getAttribute('title')).toBe('No result recorded');
     });
   });
 
