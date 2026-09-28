@@ -1387,6 +1387,12 @@ export class CoOberViewController {
     }
     rt.renderer.collapseTurns?.();
     rt.painted = true;
+    // The welcome page is a sibling of the transcript, not a layer underneath
+    // it: a tab that came here empty and got a history painted over the
+    // shortcuts kept showing the shortcuts. Only the visible tab owns it —
+    // hiding it for a tab in the background would take it away from whoever is
+    // looking at an empty panel.
+    if (session.messages.length > 0 && this.isActiveTab(rt)) this.callbacks.onHideWelcome();
     await this.refreshNativePlan(session.sessionId, rt);
   }
 
@@ -1960,11 +1966,14 @@ export class CoOberViewController {
         if (e instanceof AcpAbortError) {
           // User cancelled, don't show error
         } else if (e instanceof AcpTimeoutError) {
-          rt.renderer.addError(t().error.timeout, 'retry', () =>
+          // The bare "timed out" sentence is what every other path already
+          // replaces with the method and how long it waited; a turn that ran
+          // out on one call looked identical to one that ran out on another.
+          rt.renderer.addError(humanizeError(e), 'retry', () =>
             this.retryTurn(config, text, refs, imageParts, rt),
           );
         } else if (e instanceof AcpProcessExitError) {
-          rt.renderer.addError(t().error.processExit, 'restart', async () => {
+          rt.renderer.addError(humanizeError(e), 'restart', async () => {
             await this.reconnect();
             await this.retryTurn(config, text, refs, imageParts, rt);
           });

@@ -126,6 +126,26 @@
   box-shadow: inset 0 0 0 1px var(--text-accent);
 }
 
+/* Waiting on the shared slot rather than working. The class was applied long
+   before any rule read it, so a parked tab looked exactly like an idle one while
+   its own tooltip promised a slot. A faint ring on a dimmed badge reads as
+   "not started", where the solid accent ring of an unread tab reads as "done and
+   unseen"; it comes last because the strip reports a queued tab over an unread
+   one when a badge somehow carries both. */
+.co-ober-tab.is-queued {
+  box-shadow: inset 0 0 0 1px var(--background-modifier-border-hover);
+  opacity: 0.72;
+}
+
+.co-ober-tab.is-queued.is-active {
+  opacity: 1;
+}
+
+.co-ober-tab.is-queued .co-ober-tab-number {
+  color: var(--text-faint);
+  font-weight: normal;
+}
+
 .co-ober-tab-close {
   border: none;
   background: transparent;

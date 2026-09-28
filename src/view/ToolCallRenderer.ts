@@ -45,6 +45,12 @@ export interface ToolCallState {
   summaryEl: HTMLElement;
   statusEl: HTMLElement;
   collapsibleState: CollapsibleState;
+  /**
+   * The kind as the agent named it, kept so an update that does not repeat it
+   * can ask rather than read it back off the label — which is localized, so in
+   * any language but English the answer was a display string that is no kind.
+   */
+  kind: string;
   /** Non-null when the tool is a write/edit type, for dedicated rendering */
   writeEditState?: WriteEditState;
 }
@@ -161,7 +167,7 @@ export function createToolCallElement(
     scrollOnExpand: true,
   });
 
-  return { wrapper, header, body, iconEl, kindEl, summaryEl, statusEl, collapsibleState };
+  return { wrapper, header, body, iconEl, kindEl, summaryEl, statusEl, collapsibleState, kind };
 }
 
 /**
@@ -197,6 +203,7 @@ function createWriteEditToolCall(
     summaryEl,
     statusEl,
     collapsibleState,
+    kind,
     writeEditState: bw,
   };
 }
@@ -219,6 +226,10 @@ export function updateToolCallElement(
   // Re-set icon if kind changed
   setIcon(iconEl, TOOL_ICONS[kind] || 'tool');
   state.kindEl.textContent = getToolDisplayName(kind);
+  // The locale repaint reads the kind back off this attribute, so a card whose
+  // kind changed mid-flight would otherwise come back wearing its old name.
+  state.kindEl.dataset.i18nKind = kind;
+  state.kind = kind;
 
   // Update summary if new input available
   if (rawInput) {

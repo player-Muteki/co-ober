@@ -111,6 +111,11 @@ export class TabBar {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       if (!tab.active) this.callbacks.onSelect(tab.tabId);
+      // Activating rebuilds the strip, so the badge this key was pressed on no
+      // longer exists; the arrow keys already land the reader on its successor
+      // and this keeps Enter from dropping the caret onto the document instead —
+      // from there the next arrow key reached nothing.
+      this.focusTab(tab.tabId);
       return;
     }
     const delta = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;

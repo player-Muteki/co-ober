@@ -133,7 +133,16 @@ export class StreamController {
         if (ch.status === 'pending' || ch.status === 'in_progress') {
           // Buffer pending/in_progress tool calls to prevent
           // interleaving mid-response during streaming.
-          this.pendingToolBuffer.push({ ...ch });
+          // One entry per call: an agent updates the same toolCallId as it
+          // goes — pending, then one in_progress after another — and pushing
+          // every frame put each copy on the buffer, so the flush drew a card
+          // per frame and kept only the last one writable. The earlier copies
+          // stayed on screen frozen at the status they were buffered with, and
+          // each became its own content block, which is how the duplicates
+          // survived a reload.
+          const buffered = this.pendingToolBuffer.find((tc) => tc.toolCallId === ch.toolCallId);
+          if (buffered) Object.assign(buffered, ch);
+          else this.pendingToolBuffer.push({ ...ch });
         } else {
           // Flush any buffered pending tools, then update completed/failed
           this.flushToolBuffer();

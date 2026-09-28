@@ -38,6 +38,10 @@ interface PermissionAwareView {
   refreshPermissionMode?: () => void;
 }
 
+interface ReconnectableView {
+  reconnectAgent: () => Promise<boolean>;
+}
+
 interface DiagnosticResult {
   label: string;
   ok: boolean;
@@ -105,7 +109,8 @@ export class CoOberSettingsTab extends PluginSettingTab {
       .setDesc(labels.reconnect.desc)
       .addButton((b) => b.setButtonText(labels.reconnect.button).setCta()
         .onClick(async () => {
-          const connected = await this.plugin.initClient();
+          const view = this.firstReconnectableView();
+          const connected = view ? await view.reconnectAgent() : await this.plugin.initClient();
           this.runtimeOptionsLoaded = false;
           await this.loadRuntimeOptions();
           new Notice(connected ? locale().settings.reconnect.success : locale().settings.reconnect.failed);
@@ -822,6 +827,19 @@ export class CoOberSettingsTab extends PluginSettingTab {
       const view = leaf.view as PermissionAwareView;
       view.refreshPermissionMode?.();
     }
+  }
+
+  /**
+   * Any open panel can serve a reconnect — they all drive the one shared client —
+   * so the first leaf that answers is the one asked. With no panel open there is
+   * no bound handler to re-point, and initClient() is the whole job.
+   */
+  private firstReconnectableView(): ReconnectableView | null {
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
+      const view = leaf.view as Partial<ReconnectableView>;
+      if (typeof view?.reconnectAgent === 'function') return view as ReconnectableView;
+    }
+    return null;
   }
 
   private validateOpencodePath(path: string): boolean {

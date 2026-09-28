@@ -164,8 +164,6 @@ const en = {
   },
 
   error: {
-    timeout: 'Request timed out',
-    processExit: 'OpenCode process exited',
     reconnected: 'Connection restored. The previous request was interrupted.',
     reconnectFailed: 'The agent could not be reached after repeated reconnect attempts. Click "Reconnect" to retry.',
     timedOut: 'The agent did not answer "{method}" within {ms} ms. It may still be working.',

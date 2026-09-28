@@ -886,7 +886,7 @@ export class ChatRenderer {
     if (!toolState) return;
     this.scheduleToolRender(id, () => {
       updateToolCallElement(
-        toolState, status, kind ?? toolState.kindEl.textContent?.toLowerCase() ?? '',
+        toolState, status, kind ?? toolState.kind,
         rawOutput, content, rawInput, locations,
       );
       this.scrollToBottom();

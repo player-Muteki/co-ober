@@ -92,6 +92,43 @@ describe('CoOberView runtime session sync', () => {
     expect(view.contentEl.querySelector('.co-ober-reconnect-btn')).not.toBeNull();
   });
 
+  describe('a reconnect asked for from outside the panel', () => {
+    it('runs the panel’s own reconnect and retires the button it came for', async () => {
+      setLocale('en');
+      const plugin = createPlugin({ settings: { autoConnect: false } });
+      const view = createView(plugin);
+      await view.onOpen();
+
+      const controller = Reflect.get(view, 'controller') as CoOberViewController;
+      const reconnect = vi.spyOn(controller, 'reconnect').mockResolvedValue(undefined);
+
+      await expect(view.reconnectAgent()).resolves.toBe(true);
+
+      // Settings used to call plugin.initClient() itself, which swaps the client
+      // out from under a panel still bound to the old one — the tab stayed dead,
+      // with its queue, its lost sessions and its toolbar untouched.
+      expect(reconnect).toHaveBeenCalledTimes(1);
+      expect(plugin.initClient).not.toHaveBeenCalled();
+      expect(view.contentEl.querySelector('.co-ober-reconnect-btn')).toBeNull();
+    });
+
+    it('reports the failure and leaves the retry on screen', async () => {
+      setLocale('en');
+      const plugin = createPlugin({ settings: { autoConnect: false } });
+      const view = createView(plugin);
+      await view.onOpen();
+
+      const controller = Reflect.get(view, 'controller') as CoOberViewController;
+      vi.spyOn(controller, 'reconnect').mockRejectedValue(new Error('no agent'));
+
+      await expect(view.reconnectAgent()).resolves.toBe(false);
+
+      const btn = view.contentEl.querySelector<HTMLButtonElement>('.co-ober-reconnect-btn');
+      expect(btn).not.toBeNull();
+      expect(btn!.disabled).toBe(false);
+    });
+  });
+
   it('names an unresolvable command instead of a doomed auto-connect', async () => {
     setLocale('en');
     Notice.messages.length = 0;

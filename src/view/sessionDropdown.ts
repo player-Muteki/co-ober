@@ -220,9 +220,20 @@ export class SessionDropdown {
 		// in-progress rename; the rename's own settle forces the rebuild.
 		if (!opts?.force && this.dropdownEl?.querySelector('.session-rename-input')) return;
 		const filter = this.searchValue;
+		// The rebuild throws away the input the reader is typing into. A pin
+		// toggle, or the native list simply arriving, used to drop the caret onto
+		// the document with the box still showing the text — so every keystroke
+		// after it went nowhere and the panel looked frozen.
+		const before = this.dropdownEl?.querySelector<HTMLInputElement>('.co-ober-session-search');
+		const caret = before && before === this.doc.activeElement ? before.selectionStart ?? filter.length : -1;
 		this.close();
 		this.searchValue = filter;
 		this.open();
+		if (caret < 0) return;
+		const after = this.dropdownEl?.querySelector<HTMLInputElement>('.co-ober-session-search');
+		if (!after) return;
+		after.focus();
+		after.setSelectionRange(caret, caret);
 	}
 
 	private async runContentSearch(query: string, onSettled: () => void): Promise<void> {

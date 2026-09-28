@@ -1133,8 +1133,32 @@ describe('CoOberViewController', () => {
 
       await controller.send('hello', []);
 
-      expect(deps.renderer.addError).toHaveBeenCalledWith(t().error.processExit, 'restart', expect.any(Function));
+      // The bare "OpenCode process exited" line said only that it went away; the
+      // reader needs the status it went away with.
+      expect(deps.renderer.addError).toHaveBeenCalledWith(
+        expect.stringContaining('code 1'),
+        'restart',
+        expect.any(Function),
+      );
       expect(controller.isBusy()).toBe(false);
+    });
+
+    it('names the call and the wait when a turn runs out mid-request', async () => {
+      const client = createMockClient({
+        sendMessage: vi.fn().mockRejectedValue(new AcpTimeoutError('session/prompt', 30000)),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      await controller.send('hello', []);
+
+      // "Request timed out" alone made a turn that ran out on the prompt
+      // indistinguishable from one that ran out on a file read or a terminal
+      // wait — the difference between retrying and changing the agent.
+      const addError = deps.renderer.addError as unknown as ReturnType<typeof vi.fn>;
+      const retryCall = addError.mock.calls.find((c) => c[1] === 'retry');
+      expect(retryCall).toBeDefined();
+      expect(String(retryCall![0])).toContain('session/prompt');
+      expect(String(retryCall![0])).toContain('30000');
     });
 
     it('does not let a superseded turn tear down the current turn state', async () => {

@@ -908,7 +908,7 @@ export class CoOberView extends ItemView {
     this.reconnectBtn.onclick = () => this.reconnect();
   }
 
-  private async reconnect(): Promise<void> {
+  private async reconnect(): Promise<boolean> {
     if (this.reconnectBtn) {
       this.reconnectBtn.textContent = t().reconnect.connecting;
       this.reconnectBtn.disabled = true;
@@ -916,12 +916,26 @@ export class CoOberView extends ItemView {
     try {
       await this.controller.reconnect();
       this.hideReconnectBtn();
+      return true;
     } catch {
       if (this.reconnectBtn) {
         this.reconnectBtn.textContent = t().reconnect.failed;
         this.reconnectBtn.disabled = false;
       }
+      return false;
     }
+  }
+
+  /**
+   * The entry point Settings' "Reconnect" button reaches for. Going through the
+   * controller, rather than plugin.initClient(), is the whole point: initClient
+   * swaps the client object out from under a panel that is still bound to the
+   * one it started with, so a reconnect pressed in Settings left every open tab's
+   * Send dead — and its parked queues, lost sessions and toolbar un-refreshed —
+   * until the panel happened to be reopened.
+   */
+  async reconnectAgent(): Promise<boolean> {
+    return this.reconnect();
   }
 
   private hideReconnectBtn(): void {

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { StreamController } from './streamController';
+import type { NormalizedUpdate } from '../types';
 import { setLocale } from '../i18n/index';
 
 describe('StreamController', () => {
@@ -299,6 +300,84 @@ describe('StreamController', () => {
     // Flushing should render them
     controller.handleChunk({ kind: 'plan', entries: [] });
     expect(deps.renderer.addToolCall).toHaveBeenCalledWith('call-1', 'Search', 'search', { q: 'test' }, undefined);
+  });
+
+  describe('a tool call reported in several frames', () => {
+    type ToolFrame = Extract<NormalizedUpdate, { kind: 'tool_call_snapshot' }>;
+
+    const frame = (
+      status: 'pending' | 'in_progress' | 'completed',
+      over: Partial<ToolFrame> = {},
+    ): ToolFrame => ({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'call-dup',
+      title: status === 'pending' ? 'Search' : 'Search a.md',
+      toolKind: 'search',
+      status,
+      rawInput: status === 'pending' ? { q: '' } : { q: 'a.md' },
+      contents: [],
+      ...over,
+    });
+
+    it('draws one card, wearing the newest frame it was told about', () => {
+      controller.handleChunk(frame('pending'));
+      controller.handleChunk(frame('in_progress'));
+      controller.handleChunk(frame('in_progress'));
+
+      controller.handleChunk({ kind: 'plan', entries: [] });
+
+      expect(deps.renderer.addToolCall).toHaveBeenCalledTimes(1);
+      // The later frames describe the same call going forward, so they update the
+      // buffered copy rather than queueing another card that would freeze at the
+      // status it happened to be buffered with.
+      expect(deps.renderer.addToolCall).toHaveBeenCalledWith('call-dup', 'Search a.md', 'search', { q: 'a.md' }, undefined);
+    });
+
+    it('keeps the single card updatable and leaves one block for a reload to render', () => {
+      const session: { messages: Array<{ contentBlocks?: Array<Record<string, unknown>> }>; updatedAt: number } = {
+        messages: [],
+        updatedAt: 0,
+      };
+      deps.sessionStore.get.mockReturnValue(session);
+
+      controller.handleChunk(frame('pending'));
+      controller.handleChunk(frame('in_progress'));
+      controller.handleChunk(frame('in_progress'));
+      controller.handleChunk({ kind: 'plan', entries: [] });
+
+      controller.handleChunk(frame('completed', { rawOutput: { res: 'ok' } }));
+
+      expect(deps.renderer.addToolCall).toHaveBeenCalledTimes(1);
+      expect(deps.renderer.updateToolCall).toHaveBeenCalledWith(
+        'call-dup',
+        'completed',
+        { res: 'ok' },
+        [],
+        { q: 'a.md' },
+        undefined,
+        'search',
+      );
+
+      controller.handleChunk({
+        kind: 'message_chunk',
+        role: 'agent',
+        messageId: 'msg-dup',
+        chunkText: 'Done',
+        accumulatedText: 'Done',
+      });
+      const toolBlocks = (session.messages[0].contentBlocks ?? []).filter((b) => b.type === 'tool_use');
+      expect(toolBlocks).toHaveLength(1);
+      expect(toolBlocks[0]).toMatchObject({ toolCallId: 'call-dup', toolStatus: 'completed' });
+    });
+
+    it('still gives two calls in flight their own cards', () => {
+      controller.handleChunk(frame('pending'));
+      controller.handleChunk({ ...frame('pending'), toolCallId: 'call-other', title: 'Read', toolKind: 'read' });
+
+      controller.handleChunk({ kind: 'plan', entries: [] });
+
+      expect(deps.renderer.addToolCall).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('handles tool_call_snapshot completed and processes syncEngine', async () => {

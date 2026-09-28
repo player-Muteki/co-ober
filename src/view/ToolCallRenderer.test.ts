@@ -186,6 +186,40 @@ describe('ToolCallRenderer', () => {
     });
   });
 
+  describe('the kind a card remembers', () => {
+    it('is the kind as the agent named it, not the label drawn on screen', () => {
+      setLocale('zh');
+      try {
+        const state = createToolCallElement(container, 'tc', 'read', 'Read');
+        expect(state.kind).toBe('read');
+        expect(state.kindEl.textContent).toBe('读取');
+        expect(state.kindEl.dataset.i18nKind).toBe('read');
+      } finally {
+        setLocale('en');
+      }
+    });
+
+    it('follows a card whose kind changed mid-flight, including the attribute the locale repaint reads', () => {
+      const state = createToolCallElement(container, 'tc', 'read', 'Read');
+
+      updateToolCallElement(state, 'in_progress', 'search');
+
+      expect(state.kind).toBe('search');
+      expect(state.kindEl.textContent).toBe(getToolDisplayName('search'));
+      // The repaint rebuilds every label from this attribute and nothing else, so
+      // a card left holding its original kind comes back from a locale switch
+      // wearing a name the agent stopped using — and in English that name is the
+      // only place the kind is written down.
+      expect(state.kindEl.dataset.i18nKind).toBe('search');
+      setLocale('zh');
+      try {
+        expect(getToolDisplayName(state.kindEl.dataset.i18nKind ?? '')).toBe('搜索');
+      } finally {
+        setLocale('en');
+      }
+    });
+  });
+
   describe('updateToolCallElement — empty-state strings', () => {
     it('shows "No content" for a completed read with no text', () => {
       const state = createToolCallElement(container, 'tc', 'read', 'Read', { file_path: '/x.md' });
@@ -309,6 +343,7 @@ describe('ToolCallRenderer', () => {
         kindEl: header.createSpan({ cls: 'tc-kind' }),
         summaryEl: header.createSpan({ cls: 'tc-file' }),
         statusEl: header.createSpan({ cls: 'tc-stat' }),
+        kind: 'write',
         collapsibleState: { isExpanded: false },
       };
       updateToolCallElement(state, 'completed', 'edit', undefined, [

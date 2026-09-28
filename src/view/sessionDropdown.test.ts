@@ -501,6 +501,45 @@ describe('SessionDropdown', () => {
       dd.destroy();
     });
 
+    it('hands the caret back to the search box when a refresh lands mid-search', async () => {
+      let resolveLoader: (sessions: unknown[]) => void = () => {};
+      const dd = makeDropdown(() => new Promise<unknown[]>((resolve) => { resolveLoader = resolve; }));
+      dd.open();
+
+      const before = container.querySelector('.co-ober-session-search') as HTMLInputElement;
+      before.focus();
+      before.value = 'Chat 2';
+      before.setSelectionRange(4, 4);
+      before.dispatchEvent(new Event('input'));
+
+      resolveLoader([{ sessionId: 'ses_native_1', title: 'Terminal chat' }]);
+      await new Promise((r) => setTimeout(r, 10));
+
+      // The refresh rebuilds the whole panel, so a caret left on the destroyed
+      // input lands on the document: the box still showed "Chat 2", but every
+      // keystroke after it went nowhere and the list looked frozen.
+      const after = container.querySelector('.co-ober-session-search') as HTMLInputElement;
+      expect(after.value).toBe('Chat 2');
+      expect(container.ownerDocument.activeElement).toBe(after);
+      expect(after.selectionStart).toBe(4);
+      dd.destroy();
+    });
+
+    it('leaves the caret where it was when nobody was typing in the box', async () => {
+      let resolveLoader: (sessions: unknown[]) => void = () => {};
+      const dd = makeDropdown(() => new Promise<unknown[]>((resolve) => { resolveLoader = resolve; }));
+      anchor.focus();
+      dd.open();
+
+      resolveLoader([{ sessionId: 'ses_native_1', title: 'Terminal chat' }]);
+      await new Promise((r) => setTimeout(r, 10));
+
+      // A refresh must not grab the keyboard from a reader who was working the
+      // rows by hand — only the box that already held the caret gets it back.
+      expect(container.ownerDocument.activeElement).toBe(anchor);
+      dd.destroy();
+    });
+
     it('does not render native section when loader is absent', () => {
       const dd = makeDropdown(null);
       dd.open();

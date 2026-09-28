@@ -418,11 +418,74 @@ describe('CoOberSettingsTab locale refresh', () => {
   });
 });
 
+describe('CoOberSettingsTab reconnect', () => {
+  function reconnectButton(tab: CoOberSettingsTab): HTMLButtonElement {
+    const button = [...tab.containerEl.querySelectorAll('button')]
+      .find((el) => el.textContent === 'Reconnect') as HTMLButtonElement | undefined;
+    expect(button).toBeDefined();
+    return button as HTMLButtonElement;
+  }
+
+  it('puts the open panel back on the agent instead of swapping the client under it', async () => {
+    setLocale('en');
+    const reconnectAgent = vi.fn().mockResolvedValue(true);
+    const plugin = createPlugin({ refreshLocale: vi.fn(), reconnectAgent });
+    const tab = new CoOberSettingsTab(plugin);
+
+    tab.display();
+    Notice.messages.length = 0;
+    reconnectButton(tab).click();
+    await flushPromises();
+    await flushPromises();
+
+    // initClient() by itself hands the plugin a new client while every open panel
+    // is still bound to the old one, so the tab stayed dead afterwards — and its
+    // parked queue, its lost sessions and its toolbar were never revisited. The
+    // panel's own reconnect does all of that and says whether it got through.
+    expect(reconnectAgent).toHaveBeenCalledTimes(1);
+    expect(plugin.initClient).not.toHaveBeenCalled();
+    expect(Notice.messages).toContain('Reconnected');
+  });
+
+  it('still connects when no panel is open to reconnect', async () => {
+    setLocale('en');
+    const reconnectAgent = vi.fn();
+    const plugin = createPlugin({ refreshLocale: vi.fn(), reconnectAgent });
+    plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+    const tab = new CoOberSettingsTab(plugin);
+
+    tab.display();
+    Notice.messages.length = 0;
+    reconnectButton(tab).click();
+    await flushPromises();
+    await flushPromises();
+
+    expect(reconnectAgent).not.toHaveBeenCalled();
+    expect(plugin.initClient).toHaveBeenCalled();
+    expect(Notice.messages).toContain('Reconnected');
+  });
+
+  it('says so when the panel could not reach the agent', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn(), reconnectAgent: vi.fn().mockResolvedValue(false) });
+    const tab = new CoOberSettingsTab(plugin);
+
+    tab.display();
+    Notice.messages.length = 0;
+    reconnectButton(tab).click();
+    await flushPromises();
+    await flushPromises();
+
+    expect(Notice.messages).toContain('Failed to reconnect');
+  });
+});
+
 function createPlugin(
   refreshedView: {
     refreshLocale: () => void;
     loadToolbarOptions?: () => void;
     refreshPermissionMode?: () => void;
+    reconnectAgent?: () => Promise<boolean>;
   },
   snapshot: {
     availableModes?: Array<{ id: string; name: string }>;

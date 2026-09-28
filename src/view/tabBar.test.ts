@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { TabBar } from './tabBar';
 import type { TabDescriptor } from './CoOberViewController';
@@ -110,8 +111,58 @@ describe('TabBar', () => {
     expect(callbacks.onSelect.mock.calls.map((c) => c[0])).toEqual(['tab-2', 'tab-1', 'tab-1']);
   });
 
-  it('closes an idle tab with a single click', () => {
-    const { container, callbacks } = createBar([tab({ tabId: 'tab-1' })]);
+  describe('the caret after a keyboard activation', () => {
+    const key = (el: HTMLElement, k: string): void => {
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+    };
+
+    function rebuildOnSelect(tabs: TabDescriptor[]) {
+      const created = createBar(tabs);
+      created.callbacks.onSelect.mockImplementation((tabId: unknown) => {
+        created.bar.render(
+          tabs.map((t) => ({ ...t, active: t.tabId === tabId })),
+          6,
+        );
+      });
+      return created;
+    }
+
+    it('stays on the badge Enter moved the conversation to, once the strip was rebuilt', () => {
+      const tabs = [tab({ tabId: 'tab-1', active: true }), tab({ tabId: 'tab-2' })];
+      const { container } = rebuildOnSelect(tabs);
+
+      badges(container)[1].focus();
+      key(badges(container)[1], 'Enter');
+
+      // Activating rerenders the strip, so the element that held focus no longer
+      // exists; without picking the caret back up it fell to the document and the
+      // next arrow key reached nothing — the reader was left outside the strip
+      // looking at a tab they could not leave.
+      expect(container.ownerDocument.activeElement?.getAttribute('data-tab-id')).toBe('tab-2');
+    });
+
+    it('stays put when Enter lands on the tab already in front', () => {
+      const tabs = [tab({ tabId: 'tab-1', active: true }), tab({ tabId: 'tab-2' })];
+      const { container, callbacks } = rebuildOnSelect(tabs);
+
+      badges(container)[0].focus();
+      key(badges(container)[0], ' ');
+
+      expect(callbacks.onSelect).not.toHaveBeenCalled();
+      expect(container.ownerDocument.activeElement?.getAttribute('data-tab-id')).toBe('tab-1');
+    });
+  });
+
+  it('styles the state it applies, so a parked tab is not left looking idle', () => {
+    const css = readFileSync('styles/main.css', 'utf8');
+
+    // The strip puts is-queued on a turn waiting for the shared slot. With no
+    // rule behind it the badge looked exactly like an idle one while its own
+    // tooltip promised a slot, so a state the code tracks never reached the eye.
+    expect(css).toMatch(/\.co-ober-tab\.is-queued\s*\{/);
+  });
+
+  it('closes an idle tab with a single click', () => {    const { container, callbacks } = createBar([tab({ tabId: 'tab-1' })]);
 
     closeButtons(container)[0].click();
 

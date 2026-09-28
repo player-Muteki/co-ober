@@ -632,6 +632,62 @@ describe('CoOberViewController — tab strip and shells (0.2.0 stage 3)', () => 
     expect((paint.mock.calls[0][0] as SessionRuntime).sessionId).toBe('ses-b');
   });
 
+  describe('the welcome page a painted transcript sits next to', () => {
+    /**
+     * The outer stub keeps `restoreTabShells` from firing a paint whose promise
+     * nobody holds; these tests want the real painting, so it comes back on only
+     * once the strip is in place.
+     */
+    function paintForReal(): ReturnType<typeof vi.fn> {
+      (h.controller.restoreSession as unknown as ReturnType<typeof vi.fn>).mockRestore();
+      return h.callbacks.onHideWelcome as unknown as ReturnType<typeof vi.fn>;
+    }
+
+    function strip(front: 'tab-1' | 'tab-2'): void {
+      withStored({ 'ses-a': 1, 'ses-b': 1 });
+      h.controller.restoreTabShells(
+        [{ tabId: 'tab-1', sessionId: 'ses-a' }, { tabId: 'tab-2', sessionId: 'ses-b' }],
+        front,
+      );
+    }
+
+    it('retires the shortcuts for the tab that just got a history', async () => {
+      strip('tab-2');
+      const hide = paintForReal();
+
+      await h.controller.restoreSession(rtOf(h, 'tab-2'));
+
+      // The welcome page is a sibling of the panel rather than a layer under it,
+      // so a tab that arrived empty and had a transcript painted beside the
+      // shortcuts kept offering them as the whole conversation.
+      expect(hide).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves the page alone for a tab that is not in front', async () => {
+      strip('tab-2');
+      const hide = paintForReal();
+
+      await h.controller.restoreSession(rtOf(h, 'tab-1'));
+
+      // One page serves whoever is looking: hiding it for the tab behind the
+      // front one would take the shortcuts away from an empty panel in view.
+      expect(hide).not.toHaveBeenCalled();
+    });
+
+    it('leaves the page up for a tab painted with nothing to show', async () => {
+      withStored({ 'ses-a': 1, 'ses-b': 0 });
+      h.controller.restoreTabShells(
+        [{ tabId: 'tab-1', sessionId: 'ses-a' }, { tabId: 'tab-2', sessionId: 'ses-b' }],
+        'tab-2',
+      );
+      const hide = paintForReal();
+
+      await h.controller.restoreSession(rtOf(h, 'tab-2'));
+
+      expect(hide).not.toHaveBeenCalled();
+    });
+  });
+
   it('paints a background shell on the first look, and never a second time', () => {
     withStored({ 'ses-a': 1, 'ses-b': 1 });
     h.controller.restoreTabShells(

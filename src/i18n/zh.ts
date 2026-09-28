@@ -166,8 +166,6 @@ const zh: Locale = {
   },
 
   error: {
-    timeout: '请求超时',
-    processExit: 'OpenCode 进程已退出',
     reconnected: '连接已恢复，之前的请求已中断。',
     reconnectFailed: '多次重连后仍无法联系 Agent，请点击“重新连接”重试。',
     timedOut: 'Agent 未在 {ms} 毫秒内响应“{method}”，它可能仍在处理。',

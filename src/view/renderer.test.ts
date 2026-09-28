@@ -769,6 +769,29 @@ describe('ChatRenderer', () => {
       // Should not throw
     });
 
+    it('keeps the kind the card was created with when a frame does not name one', () => {
+      setLocale('zh');
+      try {
+        renderer.addToolCall('call-zh', 'Search notes', 'search', {});
+        renderer.updateToolCall('call-zh', 'in_progress', undefined, undefined, undefined, undefined, undefined);
+        flushToolRenders();
+
+        const kindEl = container.querySelector('.tc-kind') as HTMLElement;
+        expect(kindEl.textContent).toBe('搜索');
+        // The label on screen, lowercased, used to be the fallback. So the
+        // attribute the locale repaint reads — and every branch that compares a
+        // kind to "search" or "read" — was handed a Chinese word that matches no
+        // locale key and no icon, and the card came back from a language switch
+        // named with that word rather than with the kind.
+        expect(kindEl.dataset.i18nKind).toBe('search');
+        setLocale('en');
+        renderer.refreshLocale();
+        expect(kindEl.textContent).toBe('Search');
+      } finally {
+        setLocale('en');
+      }
+    });
+
     it('renders diff content', () => {
       renderer.addToolCall('call-1', 'Edit', 'edit', {});
       renderer.updateToolCall(
