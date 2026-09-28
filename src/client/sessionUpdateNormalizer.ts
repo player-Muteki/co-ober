@@ -179,12 +179,17 @@ export class SessionUpdateNormalizer {
       case 'available_commands_update':
         return { kind: 'commands', commands: raw.availableCommands };
       case 'current_mode_update':
-        return { kind: 'mode', currentModeId: raw.currentModeId ?? null, availableModes: raw.availableModes ?? [] };
+        // Absence carried through, not turned into an empty list: the reader
+        // below only replaces the tab's modes when the frame named them, and a
+        // `?? []` here made every mode change that did not re-send the whole
+        // list look like an agent with no modes at all — which blanked the
+        // selector the reader was using.
+        return { kind: 'mode', currentModeId: raw.currentModeId ?? null, availableModes: raw.availableModes };
       case 'current_model_update':
         return {
           kind: 'model',
           currentModelId: raw.currentModelId ?? null,
-          availableModels: raw.availableModels ?? [],
+          availableModels: raw.availableModels,
         };
       case 'session_info_update':
         return { kind: 'session_info', sessionId: raw.sessionId, title: raw.title, cwd: raw.cwd };

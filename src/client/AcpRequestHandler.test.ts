@@ -657,3 +657,67 @@ describe('AcpRequestHandler capability-surface and not-found error shape (0.2.7 
     h.dispose();
   });
 });
+
+describe('0.2.11 stage 2 reading and waiting after the tier goes down', () => {
+  function callPrivate(h: AcpRequestHandler, method: string, params: Record<string, unknown>): Promise<unknown> {
+    const fn = Reflect.get(h, method) as (p: Record<string, unknown>) => Promise<unknown>;
+    return fn.call(h, params);
+  }
+
+  function closedTier() {
+    const h = makeHandler({});
+    Reflect.set(h, 'terminalManager', {
+      dispose: vi.fn(),
+      setConfig: vi.fn(),
+      stopAllRunning: vi.fn(),
+      output: vi.fn(() => ({ output: 'secret\n', truncated: false })),
+      waitForExit: vi.fn(() => Promise.resolve({ exitCode: 0, signal: null })),
+      kill: vi.fn(() => true),
+      release: vi.fn(() => true),
+      create: vi.fn(() => ({ terminalId: 't1', pid: 1 })),
+    });
+    h.setTerminalCapabilityMode('disabled');
+    return h;
+  }
+
+  it('refuses the agent a buffer it can no longer start a command for', async () => {
+    const h = closedTier();
+    // terminal/new was already gated; reading was not, so a manager left behind
+    // by the switch kept handing back the output of work just withdrawn.
+    await expect(callPrivate(h, 'handleTerminalOutput', { terminalId: 't1' })).rejects.toBeInstanceOf(AcpMethodNotFoundError);
+    expect(Reflect.get(h, 'terminalManager').output).not.toHaveBeenCalled();
+    h.dispose();
+  });
+
+  it('refuses a wait that would block the turn on that same work', async () => {
+    const h = closedTier();
+    await expect(callPrivate(h, 'handleTerminalWaitForExit', { terminalId: 't1' })).rejects.toBeInstanceOf(AcpMethodNotFoundError);
+    expect(Reflect.get(h, 'terminalManager').waitForExit).not.toHaveBeenCalled();
+    h.dispose();
+  });
+
+  it('keeps retiring a terminal that already exists', async () => {
+    const h = closedTier();
+    // Locking the door on the way out strands a process. kill/release produce
+    // nothing, so they stay open and the agent can clean up after itself.
+    expect(await callPrivate(h, 'handleTerminalKill', { terminalId: 't1' })).toEqual({});
+    expect(await callPrivate(h, 'handleTerminalRelease', { terminalId: 't1' })).toEqual({});
+    h.dispose();
+  });
+
+  it('still lets the reader open the card the agent was refused', async () => {
+    const h = closedTier();
+    // The tier answers what the agent may do, not what the user may see of work
+    // that already ran and is on screen.
+    expect(h.readTerminal('t1')).toMatchObject({ output: 'secret\n' });
+    h.dispose();
+  });
+
+  it('advertises no terminal to an agent the tier was closed for', () => {
+    const h = makeHandler({});
+    expect(h.buildClientCapabilities()).toMatchObject({ terminal: true });
+    h.setTerminalCapabilityMode('disabled');
+    expect(h.buildClientCapabilities()).not.toHaveProperty('terminal');
+    h.dispose();
+  });
+});

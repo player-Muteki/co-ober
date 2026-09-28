@@ -216,8 +216,11 @@ export type NormalizedUpdate =
   | { kind: 'tool_call_snapshot'; toolCallId: string; title: string; toolName?: string; toolKind: ToolKind; status: 'pending' | 'in_progress' | 'completed' | 'failed'; rawInput?: Record<string, unknown>; rawOutput?: Record<string, unknown>; locations?: { path: string }[]; contents: ToolCallContent[] }
   | { kind: 'plan'; entries: { content: string; status: string; priority: string }[] }
   | { kind: 'commands'; commands: AvailableCommand[] }
-  | { kind: 'mode'; currentModeId: string | null; availableModes: ModeOption[] }
-  | { kind: 'model'; currentModelId: string | null; availableModels: ModelOption[] }
+  // The list stays absent when the frame did not carry one: a `current_mode_update`
+  // naming only the mode says "the mode changed", not "this agent has no modes",
+  // and reading the two alike blanked the selector on a frame that meant neither.
+  | { kind: 'mode'; currentModeId: string | null; availableModes?: ModeOption[] }
+  | { kind: 'model'; currentModelId: string | null; availableModels?: ModelOption[] }
   | { kind: 'config_options'; configOptions: SessionConfigOption[] }
   | { kind: 'session_info'; sessionId?: string; title?: string; cwd?: string }
   | { kind: 'usage'; totalTokens?: number; inputTokens?: number; outputTokens?: number; thoughtTokens?: number; cost?: { amount: number; currency: string }; used?: number; size?: number }

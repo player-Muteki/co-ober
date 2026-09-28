@@ -249,6 +249,17 @@ describe('SessionUpdateNormalizer', () => {
     expect(normalizer.normalize(model)).toEqual({ kind: 'model', currentModelId: 'gpt4', availableModels: [] });
   });
 
+  it('carries a mode list the frame never mentioned as absent', () => {
+    // An agent that only says which mode is current sends no list at all.
+    // Reading that as [] is what emptied the tab's selector: absence and
+    // "there are none" are different answers to the reader.
+    const mode = normalizer.normalize({ sessionUpdate: 'current_mode_update', currentModeId: 'test' });
+    expect(mode).toEqual({ kind: 'mode', currentModeId: 'test', availableModes: undefined });
+
+    const model = normalizer.normalize({ sessionUpdate: 'current_model_update', currentModelId: 'gpt4' });
+    expect(model).toEqual({ kind: 'model', currentModelId: 'gpt4', availableModels: undefined });
+  });
+
   it('maps session_info_update directly', () => {
     const info: SessionUpdate = {
       sessionUpdate: 'session_info_update',

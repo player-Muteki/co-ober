@@ -542,6 +542,30 @@ describe('StreamController', () => {
     expect(deps.onModelsUpdate).toHaveBeenCalledWith('model-1', []);
   });
 
+  it('keeps the modes a frame that named only the current one was about', () => {
+    deps.state.availableModes = [{ id: 'plan', name: 'Plan' }];
+    // The push out to the toolbar still carries the list that survived, so the
+    // selector is re-projected rather than emptied.
+    controller.handleChunk({ kind: 'mode', currentModeId: 'plan', availableModes: undefined });
+    expect(deps.state.availableModes).toEqual([{ id: 'plan', name: 'Plan' }]);
+    expect(deps.onModeUpdate).toHaveBeenCalledWith('plan', [{ id: 'plan', name: 'Plan' }]);
+  });
+
+  it('keeps the models a frame that named only the current one was about', () => {
+    deps.state.availableModels = [{ modelId: 'claude-2', name: 'Claude 2' }];
+    controller.handleChunk({ kind: 'model', currentModelId: 'claude-2', availableModels: undefined });
+    expect(deps.state.availableModels).toEqual([{ modelId: 'claude-2', name: 'Claude 2' }]);
+    expect(deps.onModelsUpdate).toHaveBeenCalledWith('claude-2', [{ modelId: 'claude-2', name: 'Claude 2' }]);
+  });
+
+  it('honours a list an agent says is empty', () => {
+    deps.state.availableModes = [{ id: 'plan', name: 'Plan' }];
+    // Absence is the only thing that keeps the old list. An agent that answers
+    // with no modes at all is correcting the tab, not resting.
+    controller.handleChunk({ kind: 'mode', currentModeId: 'build', availableModes: [] });
+    expect(deps.state.availableModes).toEqual([]);
+  });
+
   it('handles session_info', () => {
     const session = { title: 'Old Title' };
     deps.sessionStore.get.mockReturnValue(session);

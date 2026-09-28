@@ -591,8 +591,13 @@ export class AcpRequestHandler {
   }
 
   private handleTerminalOutput(params: Record<string, unknown>): Promise<unknown> {
-    if (!this.terminalManager) {
-      return Promise.reject(new AcpMethodNotFoundError('Terminal manager not initialized'));
+    // The same gate `terminal/new` runs behind, not just the manager's presence.
+    // Turning the terminal off — plan or readonly tier, or the Settings toggle —
+    // stops the running commands, but a manager left behind by that switch still
+    // answered `terminal/output` with the buffer they had just withdrawn
+    // permission for, so the agent went on reading work it could no longer start.
+    if (this.terminalCapabilityMode !== 'enabled' || !this.terminalManager) {
+      return Promise.reject(new AcpMethodNotFoundError('Terminal access is disabled'));
     }
 
     const parsed = zTerminalIdParam.safeParse(params);
@@ -647,8 +652,12 @@ export class AcpRequestHandler {
   }
 
   private handleTerminalWaitForExit(params: Record<string, unknown>): Promise<unknown> {
-    if (!this.terminalManager) {
-      return Promise.reject(new AcpMethodNotFoundError('Terminal manager not initialized'));
+    // Waiting is reading, from here: it blocks the agent's turn on the exit of a
+    // command this client will no longer start. `kill` and `release` stay open
+    // for the same reason the door is not locked on the way out — they retire
+    // what already exists rather than producing anything.
+    if (this.terminalCapabilityMode !== 'enabled' || !this.terminalManager) {
+      return Promise.reject(new AcpMethodNotFoundError('Terminal access is disabled'));
     }
 
     const parsed = zTerminalIdParam.safeParse(params);

@@ -56,6 +56,13 @@ export class AcpJsonRpcTransport {
    * transcript at all — the client may report each one as drift.
    */
   onUnknownNotification?: (method: string) => void;
+  /**
+   * This transport stopped carrying messages, and only whoever owns the
+   * connection can say what that means. Readline's `close`/`error` and a failed
+   * write all end here, so a client that watched the subprocess alone kept
+   * reporting a live connection with nothing to write through.
+   */
+  onDisposed?: (error: Error) => void;
 
   constructor(
     private readonly streams: JsonRpcMessageStreams,
@@ -171,9 +178,13 @@ export class AcpJsonRpcTransport {
   dispose(error?: Error): void {
     if (this.disposed) return;
     this.disposed = true;
+    const cause = error ?? new AcpTransportError('Transport closed');
     this.readline?.close();
     this.readline = null;
-    this.rejectPending(error ?? new AcpTransportError('Transport closed'));
+    this.rejectPending(cause);
+    // Last, so whoever is listening hears it after every in-flight request has
+    // already been rejected and none of them can answer into a dead pipe.
+    this.onDisposed?.(cause);
   }
 
   private send(msg: Record<string, unknown>): void {

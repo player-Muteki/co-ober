@@ -492,6 +492,45 @@ describe('AcpJsonRpcTransport', () => {
     expect(transport.isClosed).toBe(true);
   });
 
+  it('tells its owner the pipe went away, with the cause the requests were given', async () => {
+    transport.start();
+    const seen: Error[] = [];
+    transport.onDisposed = (error) => seen.push(error);
+    const req = transport.request('m1');
+
+    input.end();
+    await expect(req).rejects.toThrow('JSON-RPC input closed');
+    // One event, one story: the caller's rejection and the notice to whoever
+    // owns the connection have to name the same cause.
+    expect(seen).toHaveLength(1);
+    expect(seen[0].message).toBe('JSON-RPC input closed');
+  });
+
+  it('reports the disposal once, whoever asked for it', async () => {
+    transport.start();
+    const disposed = vi.fn();
+    transport.onDisposed = disposed;
+
+    transport.dispose(new Error('gone'));
+    transport.dispose();
+    input.end();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(disposed).toHaveBeenCalledTimes(1);
+    expect((disposed.mock.calls[0][0] as Error).message).toBe('gone');
+  });
+
+  it('names a default cause when the disposal was asked for without one', async () => {
+    transport.start();
+    const disposed = vi.fn();
+    transport.onDisposed = disposed;
+
+    transport.dispose();
+
+    expect(disposed).toHaveBeenCalledTimes(1);
+    expect((disposed.mock.calls[0][0] as Error).message).toBe('Transport closed');
+  });
+
   it('handleLine() ignores empty/invalid JSON', async () => {
     transport.start();
     const handler = vi.fn();

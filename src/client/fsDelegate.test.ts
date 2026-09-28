@@ -256,3 +256,50 @@ describe('the lines an agent pointed at (0.2.5 stage 2)', () => {
 		expect(delegate.readTextFile('a.md').content).toBe('one\ntwo\nthree');
 	});
 });
+
+describe('a byte ceiling this build cannot honour (0.2.11 stage 2)', () => {
+	const file = (text: string) => {
+		(existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
+		(statSync as ReturnType<typeof vi.fn>).mockReturnValue({ isDirectory: () => false, size: text.length });
+		(readFileSync as ReturnType<typeof vi.fn>).mockReturnValue(text);
+	};
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('reads the note rather than nothing when the ceiling arrived as zero', () => {
+		file('one\ntwo\nthree');
+		// A data.json from an import or a hand edit can carry maxNoteSize: 0,
+		// which every previous caller accepted as a real ceiling — so every note
+		// an agent opened read back empty, which is not what "a small limit" means.
+		const narrow = new FsDelegate({ vaultPath: '/vault', maxBytes: 0 });
+
+		expect(narrow.readTextFile('a.md').content).toBe('one\ntwo\nthree');
+	});
+
+	it('does not hand a negative ceiling to the buffer', () => {
+		file('one\ntwo');
+		const narrow = new FsDelegate({ vaultPath: '/vault', maxBytes: -1 });
+		const result = narrow.readTextFile('a.md');
+
+		expect(result.error).toBeUndefined();
+		expect(result.content).toBe('one\ntwo');
+	});
+
+	it('keeps the ceiling that was in force when a later update says nothing', () => {
+		file('aaaaaaaaaaaa\nbbbbbbbbbbbb');
+		const narrow = new FsDelegate({ vaultPath: '/vault', maxBytes: 8 });
+		narrow.setMaxBytes(0);
+
+		expect(narrow.readTextFile('a.md', { line: 1 }).content.startsWith('aaaaaaaa')).toBe(true);
+	});
+
+	it('still takes a ceiling that means something', () => {
+		file('aaaaaaaaaaaa');
+		const narrow = new FsDelegate({ vaultPath: '/vault', maxBytes: 8000 });
+		narrow.setMaxBytes(4);
+
+		expect(narrow.readTextFile('a.md').content).toContain('truncated');
+	});
+});

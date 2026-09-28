@@ -124,7 +124,10 @@ const zModelOption = z.object({ modelId: z.string(), name: z.string() });
 // what made agent commands render bare in the slash menu.
 const zAvailableCommand = z.object({
   name: z.string(),
-  description: z.string(),
+  // Optional on the wire, and a command the slash menu can still run. Making it
+  // required here threw away named commands that simply had no blurb, which is a
+  // stricter reading than the consumer it feeds (`description ?? ''`).
+  description: z.string().catch(''),
   input: z.object({ hint: z.string().optional() }).nullish(),
 });
 // Same rule as one unreadable config option: a command this client cannot
@@ -138,6 +141,18 @@ const zAvailableCommands = z.array(z.unknown()).transform((items) => {
   }
   return readable;
 });
+/**
+ * The one reading of an agent's `availableCommands` that every path shares, for
+ * the same reason `parseConfigOptions` exists: a `session/new` or `session/load`
+ * result carries the same shape a notification does, and taking it on faith
+ * (`as AvailableCommand[]`) let a frame whose entry has no `name` reach
+ * `command.name.trim()` — which throws from inside the code that runs the
+ * moment the session is created, so the agent's session is left orphaned and the
+ * client never hears that it exists.
+ */
+export function parseAvailableCommands(items: unknown): z.infer<typeof zAvailableCommands> {
+  return Array.isArray(items) ? zAvailableCommands.parse(items) : [];
+}
 const zCost = z.object({ amount: z.number(), currency: z.string() });
 // Chunk content is deliberately permissive: text is the only shape the
 // transcript accumulates, but image/audio/resource payloads must parse so a

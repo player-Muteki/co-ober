@@ -15,6 +15,7 @@ import {
   zPlanUpdate,
   zPlanRemoved,
   zSessionUpdate,
+  parseAvailableCommands,
 } from './acpSchemas';
 
 const validTextContent = { type: 'text', text: 'hello' };
@@ -686,5 +687,28 @@ describe('frames the protocol allows and we threw away (0.2.6 stage 2)', () => {
 
     expect(r.success).toBe(true);
     if (r.success) expect(r.data.configOptions[0].currentValue).toBe(true);
+  });
+
+  describe('parseAvailableCommands', () => {
+    it('reads a name-only command as a command with an empty blurb', () => {
+      // A session/new answer with `{ name: 'deploy' }` and nothing else is a
+      // command the reader can run; requiring a description deleted it from the
+      // slash menu, which is a harsher reading than the consumer's own
+      // `description ?? ''`.
+      expect(parseAvailableCommands([{ name: 'deploy' }])).toEqual([{ name: 'deploy', description: '' }]);
+    });
+
+    it('reads an answer that is not a list as no commands at all', () => {
+      expect(parseAvailableCommands('all of them')).toEqual([]);
+      expect(parseAvailableCommands(undefined)).toEqual([]);
+    });
+
+    it('reads the same list a notification carries', () => {
+      const commands = parseAvailableCommands([
+        { name: 'compact', description: 'summarise' },
+        { description: 'nameless' },
+      ]);
+      expect(commands.map((c) => c.name)).toEqual(['compact']);
+    });
   });
 });

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { Mock } from 'vitest';
 
 const mocks = vi.hoisted(() => {
   class FakeSubprocess {
@@ -77,6 +78,15 @@ const mocks = vi.hoisted(() => {
     dispose(error?: Error): void {
       this.disposed = true;
       this.disposeError = error ?? null;
+    }
+
+    /** Set by the client; the real transport calls it when the pipe gives up. */
+    onDisposed?: (error: Error) => void;
+
+    fireDisposed(error = new Error('JSON-RPC input closed')): void {
+      this.disposed = true;
+      this.disposeError = error;
+      this.onDisposed?.(error);
     }
   }
 
@@ -840,6 +850,102 @@ describe('0.2.4 stage 2 teardown that cannot finish', () => {
 
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(Reflect.get(client, 'reconnectAttempts')).toBe(1);
+
+    errorLog.mockRestore();
+    await client.disconnect().catch(() => {});
+  });
+});
+
+describe('0.2.11 stage 2 the pipe dying on its own', () => {
+  beforeEach(() => {
+    FakeSubprocess.instances.length = 0;
+    FakeTransport.instances.length = 0;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function connectedClient(onClose: Mock<() => void>): Promise<AcpClient> {
+    const client = new AcpClient('opencode', '/vault');
+    client.onClose = onClose;
+    const connecting = client.connect();
+    await vi.advanceTimersByTimeAsync(0);
+    FakeTransport.instances[0].deferred.resolve({});
+    await connecting;
+    onClose.mockClear();
+    return client;
+  }
+
+  it('reports the loss and retries when the transport dies but the process does not', async () => {
+    vi.useFakeTimers();
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const onClose = vi.fn();
+    const client = await connectedClient(onClose);
+
+    // An EPIPE or a closed stdout is the whole connection going away, and
+    // nothing about the child says so: the client stayed lit and connected.
+    FakeTransport.instances[0].fireDisposed();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(client.isConnected()).toBe(false);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(Reflect.get(client, 'reconnectAttempts')).toBe(1);
+
+    errorLog.mockRestore();
+    await client.disconnect().catch(() => {});
+  });
+
+  it('takes the agent down with the pipe instead of leaving it running', async () => {
+    vi.useFakeTimers();
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const onClose = vi.fn();
+    const client = await connectedClient(onClose);
+
+    FakeTransport.instances[0].fireDisposed();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(FakeSubprocess.instances[0].shutdownCalls).toBe(1);
+
+    errorLog.mockRestore();
+    await client.disconnect().catch(() => {});
+  });
+
+  it('says nothing about a transport the client itself retired', async () => {
+    vi.useFakeTimers();
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const onClose = vi.fn();
+    const client = await connectedClient(onClose);
+
+    await client.disconnect();
+    onClose.mockClear();
+    FakeTransport.instances[0].fireDisposed();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(Reflect.get(client, 'reconnectAttempts')).toBe(0);
+
+    errorLog.mockRestore();
+  });
+
+  it('leaves a close during the handshake to the connect that is still running', async () => {
+    vi.useFakeTimers();
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const onClose = vi.fn();
+    const client = new AcpClient('opencode', '/vault');
+    client.onClose = onClose;
+
+    const connecting = client.connect();
+    await vi.advanceTimersByTimeAsync(0);
+    // The initialize answer has not landed, so that attempt still owns the
+    // teardown; reconnecting behind a launch that is about to fail is the retry
+    // storm the subprocess path already ruled out.
+    FakeTransport.instances[0].deferred.reject(new Error('initialize failed'));
+    FakeTransport.instances[0].fireDisposed();
+    await expect(connecting).rejects.toThrow('initialize failed');
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(Reflect.get(client, 'reconnectAttempts')).toBe(0);
 
     errorLog.mockRestore();
     await client.disconnect().catch(() => {});

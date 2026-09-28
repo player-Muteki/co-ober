@@ -612,6 +612,35 @@ describe('extractSessionSnapshot', () => {
     expect(snapshot.availableCommands.some((c) => c.name === 'compact')).toBe(true);
   });
 
+  it('drops a command the agent sent without a name instead of throwing on the list', () => {
+    // The cast this reading replaces handed the raw frame to
+    // `command.name.trim()`, which threw from inside the code that runs the
+    // moment a session is created: the agent kept the session it had just made,
+    // and the client never learned it existed.
+    const snapshot = extractSessionSnapshot({
+      availableCommands: [
+        { name: 'search', description: 'search files' },
+        { description: 'nobody named me' },
+        'not an object',
+        null,
+        42,
+      ],
+    });
+    expect(snapshot.availableCommands.map((c) => c.name)).toEqual(['search', 'compact']);
+  });
+
+  it('keeps a named command that arrived with no description', () => {
+    // The blurb is optional on the wire and the menu prints none without it, so
+    // a command with only a name is one the reader can still run.
+    const snapshot = extractSessionSnapshot({ availableCommands: [{ name: 'deploy' }] });
+    expect(snapshot.availableCommands.map((c) => c.name)).toEqual(['deploy', 'compact']);
+  });
+
+  it('reads a command list that is not a list as no list at all', () => {
+    const snapshot = extractSessionSnapshot({ availableCommands: 'none' });
+    expect(snapshot.availableCommands.map((c) => c.name)).toEqual(['compact']);
+  });
+
   it('should apply configOptions', () => {
     const snapshot = extractSessionSnapshot({
       configOptions: [
@@ -1323,6 +1352,25 @@ describe('sendMessage flow', () => {
         accumulatedText: 'Hello',
       }),
     );
+  });
+
+  it('reads a prompt answer that carried no result at all as a finished turn', async () => {
+    const client = new AcpClient('opencode');
+    Reflect.set(client, 'transport', { request: vi.fn().mockResolvedValue(undefined) });
+
+    // A frame with the request id and no `result` is what the transport hands
+    // back for that answer. z.object rejects `undefined`, so before this was
+    // read as an empty object the turn came home as an invalid-response error.
+    const res = await client.sendMessage('s1', [], vi.fn());
+    expect(res.stopReason).toBe('end_turn');
+  });
+
+  it('reads a prompt answer whose result was JSON null as a finished turn', async () => {
+    const client = new AcpClient('opencode');
+    Reflect.set(client, 'transport', { request: vi.fn().mockResolvedValue(null) });
+
+    const res = await client.sendMessage('s1', [], vi.fn());
+    expect(res.stopReason).toBe('end_turn');
   });
 
   it('routes each update only to its own session stream (side-chat isolation)', async () => {

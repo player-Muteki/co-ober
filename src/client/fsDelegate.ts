@@ -1,6 +1,7 @@
 import { normalize, relative, isAbsolute, sep, dirname } from 'path';
 import { existsSync, readFileSync, statSync, openSync, readSync, closeSync, writeFileSync, mkdirSync } from 'fs';
 import { TRUNCATION_MARKER } from '../constants';
+import { DEFAULT_SETTINGS } from '../types';
 
 export interface FsReadResult {
 	content: string;
@@ -35,6 +36,18 @@ export interface FsDelegateOptions {
 	vaultIo?: VaultWriteIo;
 }
 
+/**
+ * A byte ceiling this delegate can actually honour. The same rule the terminal
+ * manager applies to its own: a Settings box bounds the number and the loader
+ * rejects what is not a number at all, but a data.json from elsewhere — an
+ * import, a hand edit — can carry `maxNoteSize: 0`, which reads every note as
+ * empty, or a negative, which `Buffer.alloc` turns into an error the agent has
+ * no way to explain. Anything unusable leaves the ceiling already in force.
+ */
+function usableCeiling(value: number | undefined, current: number): number {
+	return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : current;
+}
+
 export interface FsReadWindow {
 	/** 1-based line to start reading from, as `ReadTextFileRequest.line` means it. */
 	line?: number;
@@ -49,12 +62,12 @@ export class FsDelegate {
 
 	constructor(options: FsDelegateOptions) {
 		this.vaultPath = this.normalizePath(options.vaultPath);
-		this.maxBytes = options.maxBytes;
+		this.maxBytes = usableCeiling(options.maxBytes, DEFAULT_SETTINGS.maxNoteSize);
 		this.vaultIo = options.vaultIo ?? null;
 	}
 
 	setMaxBytes(maxBytes: number): void {
-		this.maxBytes = maxBytes;
+		this.maxBytes = usableCeiling(maxBytes, this.maxBytes);
 	}
 
 	/**

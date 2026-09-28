@@ -59,6 +59,7 @@ import {
   zCompactionUpdate,
   zStateUpdate,
   parseConfigOptions,
+  parseAvailableCommands,
 } from './acpSchemas';
 import { z } from 'zod';
 
@@ -349,7 +350,10 @@ export function extractSessionSnapshot(result: Record<string, unknown>): AcpSess
   if (!result || typeof result !== 'object') return snapshot;
 
   if (Array.isArray(result.availableCommands)) {
-    snapshot.availableCommands = mergeAvailableCommands(result.availableCommands as AvailableCommand[]);
+    // Read through the same parser a notification already uses: this is the
+    // agent's `session/new` answer, and an entry without a name used to be
+    // handed to `command.name.trim()` as a cast said it was one of ours.
+    snapshot.availableCommands = mergeAvailableCommands(parseAvailableCommands(result.availableCommands));
   }
 
   if (result.sessionInfo) {
@@ -597,6 +601,10 @@ export class AcpClient implements OpencodeClient {
 
       transport = new AcpJsonRpcTransport({ input, output });
       this.transport = transport;
+      // Before start(): a pipe that is already broken disposes off the first
+      // readline event, and a hook fitted after that is attached to a transport
+      // nobody is listening to any more.
+      transport.onDisposed = (error) => this.handleTransportClose(transport, error);
       transport.start();
 
       // Initialize AcpRequestHandler (manages FS, terminal, permission handlers)
@@ -1011,7 +1019,14 @@ export class AcpClient implements OpencodeClient {
     });
     return this.requestWithFallback('prompt', { sessionId: id, prompt: parts.map(wirePromptPart) }, 0, signal)
       .then((res) => {
-        const parsed = zAcpResponse.safeParse(res);
+        // The transport answers `undefined` for a frame that carries the id but
+        // no result, and `null` for one whose result is JSON null — both are an
+        // agent that finished the turn and sent nothing with it. Parsing `res`
+        // as it arrived handed those two to z.object, which rejects a non-object
+        // outright, so a completed turn was reported as an invalid response and
+        // its text thrown away. An empty object is the same answer, read the way
+        // every other field here already degrades it.
+        const parsed = zAcpResponse.safeParse(res ?? {});
         if (!parsed.success) {
           throw new Error(t().acp.invalidResponse);
         }
@@ -1351,6 +1366,28 @@ export class AcpClient implements OpencodeClient {
     }
   }
 
+  /**
+   * The JSON-RPC pipe stopped carrying messages while the agent process was
+   * still alive: input closed, the stream errored, or a write hit EPIPE. Only
+   * `onClose` of the subprocess was wired before, so a transport that died on
+   * its own left `connected` true — Send stayed lit, the banner kept promising
+   * an answer, and no reconnect was ever scheduled.
+   */
+  private handleTransportClose(transport: AcpJsonRpcTransport | null, error: Error): void {
+    // Our own teardown clears this.transport before disposing, so a dispose the
+    // client asked for is not a loss to report back to it.
+    if (transport === null || this.transport !== transport) return;
+    // A close that races the in-flight handshake belongs to that connect(): its
+    // catch owns teardown.
+    if (this.connectingGeneration !== null && !this.connected) return;
+
+    console.error('[co-ober] JSON-RPC transport closed:', error);
+    // The child goes with the pipe. A transport that cannot carry a message is a
+    // connection that cannot answer, and leaving the agent running behind it
+    // parks a process no one can talk to until the next reconnect gets there.
+    void this.disposeConnection(error, true).then(this.announceClose, this.announceClose);
+  }
+
   private handleSubprocessClose(subprocess: AcpSubprocess, error?: Error): void {
     if (this.subprocess !== subprocess) return;
     // A close that races the in-flight handshake belongs to that connect():
@@ -1378,14 +1415,21 @@ export class AcpClient implements OpencodeClient {
     // conversation. Reporting only success here left Send lit and no process
     // behind it, with no reconnect scheduled, because the rejection had nowhere
     // to go.
-    const afterTeardown = (): void => {
-      this.onClose?.();
-      if (!this.isIntentionalDisconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
-        this.scheduleReconnect();
-      }
-    };
-    void this.disposeConnection(closeError).then(afterTeardown, afterTeardown);
+    void this.disposeConnection(closeError).then(this.announceClose, this.announceClose);
   }
+
+  /**
+   * One tail for both ways a connection ends — the process going away and the
+   * pipe going away without it. They used to be separate copies of this, and
+   * only the first was ever called, which is how a dead transport came to look
+   * like a live one.
+   */
+  private readonly announceClose = (): void => {
+    this.onClose?.();
+    if (!this.isIntentionalDisconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
+      this.scheduleReconnect();
+    }
+  };
 
   async reconnect(): Promise<void> {
     await this.disconnect().catch(() => {});
