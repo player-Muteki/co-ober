@@ -128,6 +128,29 @@ describe('CoOberView runtime session sync', () => {
       expect(btn).not.toBeNull();
       expect(btn!.disabled).toBe(false);
     });
+
+    it('re-speaks a failed reconnect button instead of flattening it to a fresh offer', async () => {
+      setLocale('en');
+      const plugin = createPlugin({ settings: { autoConnect: false } });
+      const view = createView(plugin);
+      await view.onOpen();
+
+      const controller = Reflect.get(view, 'controller') as CoOberViewController;
+      vi.spyOn(controller, 'reconnect').mockRejectedValue(new Error('no agent'));
+      await view.reconnectAgent();
+
+      expect(view.contentEl.querySelector('.co-ober-reconnect-btn')?.textContent).toBe('Reconnect (failed)');
+
+      // The button has three labels but only enabled/disabled to read them from;
+      // a locale repaint keyed off `disabled` alone reverted the "(failed)" to
+      // plain "Reconnect" — an idle offer over an attempt that just failed.
+      setLocale('zh');
+      view.refreshLocale();
+      const btn = view.contentEl.querySelector('.co-ober-reconnect-btn');
+      expect(btn?.textContent).toBe('连接失败');
+      expect(btn?.textContent).not.toBe(t().reconnect.text);
+      setLocale('en');
+    });
   });
 
   it('names an unresolvable command instead of a doomed auto-connect', async () => {
@@ -1054,6 +1077,26 @@ describe('the context meter', () => {
     view.updateContextMeter(usageAt(30));
     expect(meterOf(view).getAttribute('aria-valuenow')).toBe('30');
     expect(meterOf(view).hasAttribute('aria-valuetext')).toBe(false);
+  });
+
+  it('re-speaks the meter tooltip and the not-reported value when the language changes', async () => {
+    const view = await openMeterView();
+    view.updateContextMeter(usageAt(30));
+    expect(meterOf(view).getAttribute('data-tooltip')).toContain('Context:');
+
+    // The hover tooltip is built from localized words at render time. A locale
+    // switch brings no new token count, so the meter must rebuild its last
+    // reading rather than leave an English breakdown over a Chinese UI.
+    setLocale('zh');
+    view.refreshLocale();
+    expect(meterOf(view).getAttribute('data-tooltip')).toContain(t().usage.context);
+    expect(meterOf(view).getAttribute('data-tooltip')).not.toContain('Context:');
+
+    view.updateContextMeter(null);
+    expect(meterOf(view).getAttribute('aria-valuetext')).toBe(t().usage.notReported);
+    setLocale('en');
+    view.refreshLocale();
+    expect(meterOf(view).getAttribute('aria-valuetext')).toBe(t().usage.notReported);
   });
 
   it('keeps a counted zero looking like a reading', async () => {

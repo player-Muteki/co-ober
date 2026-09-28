@@ -507,13 +507,19 @@ export class ChatRenderer {
       this.currentAssistantEl = wrap.createDiv({ cls: 'co-ober-msg-body' });
     }
 
-    // Add interrupted indicator as styled inline elements
+    // Add interrupted indicator as styled inline elements. The badge and hint
+    // are sibling spans, each tagged with the key its words came from, so a
+    // locale switch re-speaks them in the language now in force rather than the
+    // one this turn happened to be interrupted in. The " · " separator is
+    // locale-neutral punctuation kept out of the keyed label — folding it into
+    // the hint's text would make the repaint either drop the separator or
+    // re-add it onto words that already changed.
     const indicatorEl = this.currentAssistantEl.createDiv({ cls: 'co-ober-interrupted-row' });
     const badgeEl = indicatorEl.createSpan({ cls: 'co-ober-interrupted-badge', text: t().interrupted.badge });
-    badgeEl.createSpan({
-      cls: 'co-ober-interrupted-hint',
-      text: ` \u00B7 ${t().interrupted.hint}`,
-    });
+    badgeEl.dataset.i18nText = 'interrupted.badge';
+    indicatorEl.createSpan({ cls: 'co-ober-interrupted-hint', text: ' \u00B7 ' });
+    const hintEl = indicatorEl.createSpan({ cls: 'co-ober-interrupted-hint', text: t().interrupted.hint });
+    hintEl.dataset.i18nText = 'interrupted.hint';
 
     // Also append to the text content so it renders in stored messages
     this.currentAssistantText += `\n\n*${t().interrupted.badge}*`;
@@ -1062,7 +1068,11 @@ export class ChatRenderer {
     });
     this.container.querySelectorAll<HTMLElement>('[data-i18n-text]').forEach((el) => {
       const label = lookupLocaleString(el.dataset.i18nText ?? '');
-      if (label !== undefined) el.textContent = label;
+      if (label === undefined) return;
+      // A lowercased label (the compact footer badge) must survive a repaint in
+      // its lowercased form, or switching language mid-session would flip it to
+      // title-case and misrender a style the reading had already been given.
+      el.textContent = el.dataset.i18nCase === 'lower' ? label.toLowerCase() : label;
     });
     this.container.querySelectorAll<HTMLElement>('[data-i18n-count]').forEach((el) => {
       const label = lookupLocaleString(el.dataset.i18nCount ?? '');
@@ -1148,7 +1158,9 @@ export class ChatRenderer {
       }
       if (msg.isInterrupt) {
         dot();
-        footer.createSpan({ cls: 'co-ober-interrupt-badge', text: t().interrupted.badge.toLowerCase() });
+        const interruptBadgeEl = footer.createSpan({ cls: 'co-ober-interrupt-badge', text: t().interrupted.badge.toLowerCase() });
+        interruptBadgeEl.dataset.i18nText = 'interrupted.badge';
+        interruptBadgeEl.dataset.i18nCase = 'lower';
       }
       if (msg.usage) {
         const usageText = formatMessageUsage(msg.usage);

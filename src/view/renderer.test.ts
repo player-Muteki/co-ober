@@ -169,14 +169,35 @@ describe('ChatRenderer', () => {
   describe('appendInterruptIndicator', () => {
     it('renders the localized badge and hint', () => {
       renderer.appendInterruptIndicator();
-      expect(container.querySelector('.co-ober-interrupted-badge')).not.toBeNull();
-      expect(container.querySelector('.co-ober-interrupted-hint')?.textContent).toContain('What should I do instead?');
+      expect(container.querySelector('.co-ober-interrupted-badge')?.textContent).toBe('Interrupted');
+      expect(container.querySelector('[data-i18n-text="interrupted.hint"]')?.textContent).toContain('What should I do instead?');
     });
 
     it('follows the active locale', () => {
       setLocale('zh');
       renderer.appendInterruptIndicator();
-      expect(container.querySelector('.co-ober-interrupted-hint')?.textContent).toContain('接下来做什么？');
+      expect(container.querySelector('[data-i18n-text="interrupted.hint"]')?.textContent).toContain('接下来做什么？');
+      setLocale('en');
+    });
+
+    it('tags the badge and hint with their keys and keeps the separator out of both', () => {
+      // The " · " is locale-neutral punctuation; folding it into a keyed span
+      // would make a repaint either swallow the separator or double it onto
+      // words that already changed language.
+      renderer.appendInterruptIndicator();
+      const badge = container.querySelector('.co-ober-interrupted-badge') as HTMLElement;
+      expect(badge.dataset.i18nText).toBe('interrupted.badge');
+      const hint = container.querySelector('[data-i18n-text="interrupted.hint"]') as HTMLElement;
+      expect(hint.textContent).toBe('What should I do instead?');
+      expect(hint.textContent).not.toContain('\u00B7');
+    });
+
+    it('re-speaks a live interrupted row when the language changes', () => {
+      renderer.appendInterruptIndicator();
+      setLocale('zh');
+      renderer.refreshLocale();
+      expect(container.querySelector('.co-ober-interrupted-badge')?.textContent).toBe('已中断');
+      expect(container.querySelector('[data-i18n-text="interrupted.hint"]')?.textContent).toBe('接下来做什么？');
       setLocale('en');
     });
   });
@@ -1284,6 +1305,23 @@ describe('ChatRenderer', () => {
       renderer.refreshLocale();
       expect(container.querySelector('.tc-kind')?.textContent).toBe('读取');
       setLocale('en');
+    });
+
+    it('keeps a restored interrupt footer lowercase and in the new language', () => {
+      // The footer badge is rendered lowercased to de-emphasize it; a repaint
+      // that re-spoke the raw title-case word would flip its style, so the
+      // lower-case intent rides a key the walker honours.
+      renderer.renderStructuredMessage(
+        { role: 'assistant', content: 'x', type: 'text', timestamp: 1, isInterrupt: true, contentBlocks: [{ type: 'text', text: 'x' }] },
+        container,
+      );
+      expect(container.querySelector('.co-ober-interrupt-badge')?.textContent).toBe('interrupted');
+      setLocale('zh');
+      renderer.refreshLocale();
+      expect(container.querySelector('.co-ober-interrupt-badge')?.textContent).toBe('已中断');
+      setLocale('en');
+      renderer.refreshLocale();
+      expect(container.querySelector('.co-ober-interrupt-badge')?.textContent).toBe('interrupted');
     });
 
     it('rebuilds collapsible aria-labels with the localized action word', () => {

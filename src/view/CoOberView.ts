@@ -106,6 +106,13 @@ export class CoOberView extends ItemView {
   private currentRefs: ContextRef[] = [];
   private manualRefs = new Set<string>();
   private reconnectBtn: HTMLButtonElement | null = null;
+  // The reconnect button has three labels (Reconnect / Reconnecting… / Reconnect
+  // (failed)) but only two DOM states to read them from (enabled/disabled). A
+  // locale repaint driven off `disabled` alone could not tell a failed button
+  // from a waiting one, so it reverted "(failed)" to plain "Reconnect" — naming
+  // an idle offer over an attempt that had just failed. This flag carries the
+  // third state so a repaint can re-speak it in the reader's language.
+  private reconnectFailed = false;
   private welcomeView!: WelcomeView;
   private keybindingMgr!: KeybindingManager;
   private dragDropManager!: DragDropManager;
@@ -127,6 +134,11 @@ export class CoOberView extends ItemView {
   private meterEl!: HTMLDivElement;
   private meterArcFill!: SVGCircleElement;
   private meterPctEl!: HTMLSpanElement;
+  // The meter's hover tooltip and its "not reported" value are built from
+  // localized words at render time. A locale switch has no new usage to react
+  // to, so it re-renders from the last reading it was given rather than leaving
+  // an English tooltip over a Chinese UI until the next token arrives.
+  private lastMeterUsage: UsageInfo | null = null;
 
   // Event listener references for cleanup on close
   private pasteHandler: ((e: ClipboardEvent) => void) | null = null;
@@ -856,9 +868,17 @@ export class CoOberView extends ItemView {
       if (btn) btn.title = t().message.jumpToLatest;
     }
     if (this.reconnectBtn) {
-      this.reconnectBtn.textContent = this.reconnectBtn.disabled ? t().reconnect.connecting : t().reconnect.text;
+      this.reconnectBtn.textContent = this.reconnectBtn.disabled
+        ? t().reconnect.connecting
+        : this.reconnectFailed
+          ? t().reconnect.failed
+          : t().reconnect.text;
     }
     this.meterEl?.setAttribute('aria-label', t().usage.contextMeterAria);
+    // Re-render the meter from its last reading so the hover tooltip and the
+    // "not reported" value are re-spoken in the new language now, rather than
+    // staying in the language the previous token count arrived in.
+    if (this.meterEl) this.updateContextMeter(this.lastMeterUsage);
     this.contextChipsEl?.querySelectorAll('.chip-remove').forEach((el) => {
       el.setAttribute('aria-label', t().input.removeChip);
     });
@@ -924,6 +944,7 @@ export class CoOberView extends ItemView {
       cls: 'co-ober-reconnect-btn',
       text: t().reconnect.text,
     });
+    this.reconnectFailed = false;
     this.reconnectBtn.onclick = () => this.reconnect();
   }
 
@@ -931,6 +952,7 @@ export class CoOberView extends ItemView {
     if (this.reconnectBtn) {
       this.reconnectBtn.textContent = t().reconnect.connecting;
       this.reconnectBtn.disabled = true;
+      this.reconnectFailed = false;
     }
     try {
       await this.controller.reconnect();
@@ -940,6 +962,7 @@ export class CoOberView extends ItemView {
       if (this.reconnectBtn) {
         this.reconnectBtn.textContent = t().reconnect.failed;
         this.reconnectBtn.disabled = false;
+        this.reconnectFailed = true;
       }
       return false;
     }
@@ -961,6 +984,7 @@ export class CoOberView extends ItemView {
     if (this.reconnectBtn) {
       this.reconnectBtn.remove();
       this.reconnectBtn = null;
+      this.reconnectFailed = false;
     }
   }
 
@@ -1207,6 +1231,7 @@ export class CoOberView extends ItemView {
   // ── Context arc meter (in header) ──
 
   updateContextMeter(usage: UsageInfo | null): void {
+    this.lastMeterUsage = usage;
     const R = 18;
     const ARC_LEN = Math.PI * R;
 
