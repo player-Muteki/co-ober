@@ -169,7 +169,12 @@ describe('TabBar', () => {
     // The strip puts is-queued on a turn waiting for the shared slot. With no
     // rule behind it the badge looked exactly like an idle one while its own
     // tooltip promised a slot, so a state the code tracks never reached the eye.
-    expect(css).toMatch(/\.co-ober-tab\.is-queued\s*\{/);
+    // The dim is scoped :not(.is-streaming): a tab that carries both classes is
+    // working, and painting it the waiting-slot look contradicted its pulse and
+    // its "generating, more queued" name. So a waiting tab still gets a rule —
+    // but never one that reaches past into a streaming tab.
+    expect(css).toMatch(/\.co-ober-tab\.is-queued:not\(\.is-streaming\)\s*\{/);
+    expect(css).not.toMatch(/\.co-ober-tab\.is-queued\s*\{[^}]*opacity:/);
   });
 
   it('closes an idle tab with a single click', () => {    const { container, callbacks } = createBar([tab({ tabId: 'tab-1' })]);

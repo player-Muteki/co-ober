@@ -347,6 +347,11 @@ export class CoOberView extends ItemView {
       onStop: () => this.input.triggerStop(),
       onAttachImage: () => this.openImagePicker(),
     });
+    // The bar is born on a hardcoded "safe" and only leaves it when a change is
+    // made or a refresh comes through. Opening a panel whose saved tier was not
+    // safe therefore showed "safe" until first touch, while requests were already
+    // handled under the tier actually in settings. Seed it from what is saved.
+    this.toolbar.updatePermission(this.plugin.settings.permissionMode);
 
     // ── Create controller ──
     const deps: ControllerDeps = {

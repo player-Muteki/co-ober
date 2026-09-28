@@ -3443,6 +3443,31 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
   });
 });
 
+describe('CoOberViewController — /add-dir availability', () => {
+  let deps: MockDeps;
+  let controller: CoOberViewController;
+
+  beforeEach(() => {
+    setLocale('en');
+    deps = createMockDeps();
+    controller = new CoOberViewController(deps, createMockCallbacks());
+  });
+
+  it('offers /add-dir only once a session exists to carry the directory', () => {
+    // The run body already refused without rt.state.sessionId; only the palette
+    // advertised it. While a client was up but no conversation had opened yet,
+    // /add-dir was listed as a session command a bare tab could select and run
+    // into a return that sent nothing. The gate now reads what the body reads,
+    // so /model's rule — no session, no session command — holds across the set.
+    const enabled = () => commandRegistry.find('add-dir')!.enabled!();
+    expect(enabled()).toBe(false);
+    (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(createMockClient());
+    expect(enabled()).toBe(false);
+    controller.state.sessionId = 'local-1';
+    expect(enabled()).toBe(true);
+  });
+});
+
 describe('CoOberViewController — side chat (/btw)', () => {
   let deps: MockDeps;
   let callbacks: ReturnType<typeof createMockCallbacks>;

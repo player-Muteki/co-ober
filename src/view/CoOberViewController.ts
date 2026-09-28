@@ -714,7 +714,7 @@ export class CoOberViewController {
       argumentHint: '[path/to/directory]',
       category: 'session',
       source: 'builtin',
-      enabled: () => client() !== null,
+      enabled: () => client() !== null && this.state.sessionId !== null,
       run: async (args: string, scope?: CommandScope) => {
         const rt = this.scopeRuntime(scope);
         const c = client();

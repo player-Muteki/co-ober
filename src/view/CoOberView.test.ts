@@ -596,6 +596,19 @@ describe('CoOberView tab panels', () => {
     expect(updates).toEqual(['readonly']);
   });
 
+  it('opens the bar already on the saved permission tier, not on a fresh "safe"', async () => {
+    // The toolbar is born on a hardcoded "safe" and only leaves it on a change
+    // or a refresh. A panel whose saved tier was yolo therefore read "safe" until
+    // the first touch — while the client was already handling requests under yolo
+    // — so the chip named a tier nothing was running under.
+    const plugin = createPlugin({ client: createClient(), settings: { permissionMode: 'yolo' } });
+    const view = await openView(plugin);
+
+    const label = view.contentEl.querySelector('.co-ober-perm-label')?.textContent;
+    expect(label).toBe(t().toolbar.permYolo);
+    expect(label).not.toBe(t().toolbar.permSafe);
+  });
+
   it('brings the jump-to-latest button back for a tab scrolled up in', async () => {
     const view = await openView(createPlugin({ client: createClient() }));
     const { tabA, tabB } = await openSecondTab(view);

@@ -48,6 +48,21 @@ describe('the stylesheet and the DOM it is answerable to', () => {
     expect(css).not.toContain('co-ober-tool-status');
   });
 
+  it('keeps a tab that is working-and-queued out of the waiting-slot dim', () => {
+    // tabBar.ts applies both .is-queued and .is-streaming to a tab that is
+    // generating while holding a queued turn. A bare .is-queued dim painted that
+    // working tab standing by — faint ring, 0.72 opacity, faint number — over its
+    // own beating pulse and its "generating, more queued" title. The dim is now
+    // scoped to :not(.is-streaming), so only a tab that is genuinely waiting loses
+    // its colour while a streaming tab keeps the pulse reading that matches its
+    // name.
+    expect(css).toMatch(/\.co-ober-tab\.is-queued:not\(\.is-streaming\)\s*\{[^}]*opacity:/);
+    expect(css).toMatch(/\.co-ober-tab\.is-queued:not\(\.is-streaming\)\.is-active\s*\{/);
+    expect(css).toMatch(/\.co-ober-tab\.is-queued:not\(\.is-streaming\) \.co-ober-tab-number\s*\{/);
+    // No bare dimming rule may survive to reach a streaming tab again.
+    expect(css).not.toMatch(/\.co-ober-tab\.is-queued\s*\{[^}]*opacity:/);
+  });
+
   describe('prefers-reduced-motion', () => {
     const mediaAt = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\)/g)].map((m) => m.index ?? -1);
 
