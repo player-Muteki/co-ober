@@ -386,6 +386,11 @@ describe('SessionUpdateNormalizer notice, compaction and tool name', () => {
     const upd = normalizer.normalize({ sessionUpdate: 'tool_call_update', toolCallId: 'tc9', status: 'completed', name: 'grep' });
     expect(upd).toEqual(expect.objectContaining({ toolName: 'grep', title: 'tc9' }));
   });
+
+  it('defaults a status-less rebuild to pending rather than faking completion', () => {
+    const upd = normalizer.normalize({ sessionUpdate: 'tool_call_update', toolCallId: 'tc10', name: 'read' });
+    expect(upd).toEqual(expect.objectContaining({ toolName: 'read', status: 'pending' }));
+  });
 });
 
 describe('SessionUpdateNormalizer v2 compaction state machine', () => {

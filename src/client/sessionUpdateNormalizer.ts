@@ -151,7 +151,12 @@ export class SessionUpdateNormalizer {
             title: raw.title ?? raw.toolCallId,
             toolName: raw.name,
             toolKind: raw.kind ?? 'other',
-            status: normalizeToolStatus(raw.status, 'completed'),
+            // A status-less update for an evicted tool says nothing about how
+            // it ended. Default to 'pending' — the same fallback a fresh
+            // tool_call uses — rather than minting a 'completed' this frame
+            // never reported. The file's own rule is that no missing status
+            // may fake completion.
+            status: normalizeToolStatus(raw.status, 'pending'),
             contents: raw.content ? [...raw.content] : [],
           };
           this.toolCalls.set(raw.toolCallId, existing);

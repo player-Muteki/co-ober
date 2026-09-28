@@ -2191,9 +2191,11 @@ export class CoOberViewController {
       outputTokens: usage.outputTokens,
       thoughtTokens: usage.reasoningTokens || undefined,
       // The native DB has no currency column; keep whatever currency the
-      // agent's own usage frames (or the resumed transcript's rows) reported
-      // before falling back to USD.
-      cost: { amount: usage.cost, currency: currencyHint ?? rt.state.usage?.cost?.currency ?? 'USD' },
+      // agent's own usage frames (or the resumed transcript's rows) reported.
+      // When none ever did, report none rather than naming USD for money this
+      // client never saw priced — currencySymbol renders an un-currencyed
+      // amount as a bare number.
+      cost: { amount: usage.cost, currency: currencyHint ?? rt.state.usage?.cost?.currency },
       contextWindow: rt.state.usage?.contextWindow,
       contextTokens: usage.contextTokens,
     };
@@ -2333,7 +2335,7 @@ export class CoOberViewController {
     if (used !== undefined) usage.contextTokens = used;
     if (size !== undefined) usage.contextWindow = size;
     if (costAmount !== undefined) {
-      usage.cost = { amount: costAmount, currency: typeof costObj?.currency === 'string' ? costObj.currency : 'USD' };
+      usage.cost = { amount: costAmount, currency: typeof costObj?.currency === 'string' ? costObj.currency : undefined };
     }
     rt.state.usage = usage;
     if (this.isActiveTab(rt)) this.deps.updateContextMeter(usage);

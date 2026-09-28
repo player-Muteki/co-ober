@@ -214,9 +214,11 @@ describe('thinkingBlockRenderer', () => {
   });
 
   describe('renderStoredThinkingBlock', () => {
-    it('labels a block without duration as "Thinking"', () => {
+    it('labels a block without duration as past-tense "Thought" with no timer', () => {
+      // A restored turn is finished even when its duration did not survive, so
+      // the header must not read as a thought still thinking.
       const wrapper = renderStoredThinkingBlock(container, 'stored text');
-      expect(wrapper.querySelector('.co-ober-thinking-label')?.textContent).toBe('Thinking');
+      expect(wrapper.querySelector('.co-ober-thinking-label')?.textContent).toBe('Thought');
       expect(wrapper.querySelector('.co-ober-thinking-timer')).toBeNull();
       expect(wrapper.querySelector('.co-ober-thinking-body')?.textContent).toBe('stored text');
       expect(wrapper.getAttribute('class')).toContain('co-ober-thinking-block');

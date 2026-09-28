@@ -1051,6 +1051,24 @@ describe('CoOberViewController', () => {
       expect(updateContextMeter).toHaveBeenCalled();
     });
 
+    it('does not invent a currency for a _meta cost that names none', async () => {
+      const client = createMockClient({
+        sendMessage: vi.fn().mockResolvedValue({
+          stopReason: 'end_turn',
+          _meta: { used: 12345, size: 200000, cost: { amount: 0.05 } },
+        }),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      const updateContextMeter = vi.fn();
+      deps.updateContextMeter = updateContextMeter;
+
+      await controller.send('hello', []);
+
+      expect(controller.state.usage?.cost).toEqual({ amount: 0.05 });
+      expect(controller.state.usage?.cost?.currency).toBeUndefined();
+    });
+
     it('renders, sends and persists pending image parts with the user message', async () => {
       const client = createMockClient();
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
@@ -1894,7 +1912,11 @@ describe('CoOberViewController', () => {
       await controller.resumeSession('paused-session');
 
       expect(readNativeSessionUsage).toHaveBeenCalledWith('paused-session');
-      expect(controller.state.usage?.cost).toEqual({ amount: 1.5, currency: 'USD' });
+      // The native DB row carried an amount but no currency; the client must
+      // not name one it never saw. 0.2.14 rendered an un-currencyed amount as
+      // a bare number, so a fabricated 'USD' here would be pure invention.
+      expect(controller.state.usage?.cost).toEqual({ amount: 1.5 });
+      expect(controller.state.usage?.cost?.currency).toBeUndefined();
       expect(controller.state.usage?.thoughtTokens).toBeUndefined();
       expect(controller.state.usage?.contextTokens).toBeUndefined();
     });
@@ -2046,7 +2068,7 @@ describe('CoOberViewController', () => {
         inputTokens: 1000,
         outputTokens: 200,
         thoughtTokens: 50,
-        cost: { amount: 0.42, currency: 'USD' },
+        cost: { amount: 0.42 },
         contextWindow: undefined,
         contextTokens: 32770,
       });

@@ -555,7 +555,7 @@ export interface UsageInfo {
   inputTokens: number;
   outputTokens: number;
   thoughtTokens?: number;
-  cost?: { amount: number; currency: string };
+  cost?: { amount: number; currency?: string };
   contextWindow?: number;
   contextTokens?: number;
   percentage?: number;

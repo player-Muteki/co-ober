@@ -248,10 +248,13 @@ export function renderStoredThinkingBlock(
   header.setAttribute('role', 'button');
   header.setAttribute('tabindex', '0');
 
-  const label = durationSeconds ? t().thinking.thought : t().thinking.header;
-  const labelEl = header.createSpan({ cls: 'co-ober-thinking-label', text: label });
-  labelEl.dataset.i18nText = durationSeconds ? 'thinking.thought' : 'thinking.header';
-  if (durationSeconds) {
+  // A restored block belongs to a turn already written down, so it is finished
+  // whether or not its duration survived. Nothing persists ContentBlock.duration
+  // today, so the old truthiness gate rendered every restored block with the
+  // present-tense "Thinking…" header — advertising a thought still thinking.
+  const labelEl = header.createSpan({ cls: 'co-ober-thinking-label', text: t().thinking.thought });
+  labelEl.dataset.i18nText = 'thinking.thought';
+  if (durationSeconds !== undefined) {
     const timerEl = header.createSpan({ cls: 'co-ober-thinking-timer', text: thinkingDuration(durationSeconds) });
     timerEl.dataset.i18nCount = 'thinking.elapsedFor';
     timerEl.dataset.seconds = String(durationSeconds);
