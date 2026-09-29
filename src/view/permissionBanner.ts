@@ -5,7 +5,14 @@ import { PERMISSION_MAX_LOCATIONS, PERMISSION_SUMMARY_MAX_KEYS, PERMISSION_TRUNC
 
 /** Points the banner at the tab that produced the request (multi-tab sessions). */
 export interface PermissionOrigin {
-  label: string;
+  /**
+   * 1-based tab number, spoken into `permission.originTab` at draw time. The
+   * finished label is not stored: a visible permission banner re-renders on a
+   * locale switch (see the constructor), and a chip frozen to the language it
+   * was created in would be the one thing on the banner that kept the old
+   * wording while the title, kind and buttons all re-spoke themselves.
+   */
+  tabIndex: number;
   onFocus(): void;
 }
 
@@ -102,7 +109,10 @@ export class PermissionBanner {
 
     if (pending.origin) {
       const origin = pending.origin;
-      const originEl = banner.createDiv({ cls: 'perm-origin', text: origin.label });
+      const originEl = banner.createDiv({
+        cls: 'perm-origin',
+        text: t().permission.originTab.replace('{index}', String(origin.tabIndex)),
+      });
       originEl.setAttribute('role', 'button');
       originEl.setAttribute('tabindex', '0');
       originEl.onclick = () => origin.onFocus();

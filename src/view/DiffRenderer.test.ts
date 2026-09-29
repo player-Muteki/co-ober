@@ -239,6 +239,11 @@ describe('DiffRenderer', () => {
       expect(childDivs(container).length).toBe(1);
       expect(container.children[0].classList.contains('diff-line')).toBe(true);
       expect(container.children[0].textContent).toBe('No changes');
+      // The line is written from t() once and then frozen on the card; the
+      // renderer's refreshLocale walks [data-i18n-text], so without the key a
+      // reader who switched language still saw "No changes" under a Chinese
+      // diff header.
+      expect((container.children[0] as HTMLElement).dataset.i18nText).toBe('diff.noChanges');
     });
 
     it('renders "No changes" when all lines are equal', () => {

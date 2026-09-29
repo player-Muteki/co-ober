@@ -278,7 +278,8 @@ export function renderDiffContent(
   const hunks = splitIntoHunks(diffLines, contextLines);
 
   if (hunks.length === 0) {
-    containerEl.createDiv({ cls: 'diff-line', text: t().diff.noChanges });
+    const emptyEl = containerEl.createDiv({ cls: 'diff-line', text: t().diff.noChanges });
+    emptyEl.dataset.i18nText = 'diff.noChanges';
     return;
   }
 

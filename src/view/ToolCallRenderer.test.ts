@@ -375,6 +375,19 @@ describe('ToolCallRenderer', () => {
       expect(grep.body.querySelector<HTMLElement>('.co-ober-tool-empty')?.dataset.i18nText).toBe('tool.noMatchesFound');
     });
 
+    it('tags the apply_patch fallback "No result" line the fetch site already carried', () => {
+      // 0.2.20 tagged the fetch path's tool.noResult but this is a second,
+      // independent site that mints the same empty line — an apply_patch with a
+      // content item the branch ignores, no diff text and no raw output. The
+      // repaint walks [data-i18n-text], so an untagged "No result" here kept the
+      // previous locale's word under a freshly-localized card.
+      const state = createToolCallElement(container, 'tc', 'apply_patch', 'Patch');
+      updateToolCallElement(state, 'completed', 'apply_patch', undefined, [{ type: 'terminal', terminalId: 't1' }]);
+      const empty = state.body.querySelector<HTMLElement>('.co-ober-tool-empty');
+      expect(empty?.textContent).toBe('No result');
+      expect(empty?.dataset.i18nText).toBe('tool.noResult');
+    });
+
     it('tags the bash silent-success empty line the same way', () => {
       // A command that printed nothing falls through the stdout/stderr/exit-code
       // branches into the same "No content" line; that path also needs the tag

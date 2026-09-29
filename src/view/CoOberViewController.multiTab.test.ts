@@ -568,9 +568,9 @@ describe('CoOberViewController — multi-tab runtimes (0.2.0 stage 2)', () => {
       await handlers.onPermissionRequest(request);
 
       const show = h.deps.permissionBanner.show as unknown as ReturnType<typeof vi.fn>;
-      const origin = show.mock.calls[0][1] as { label: string; onFocus: () => void };
+      const origin = show.mock.calls[0][1] as { tabIndex: number; onFocus: () => void };
       expect(show.mock.calls[0][0]).toBe(request);
-      expect(origin.label).toBe('Request from tab 1 — click to switch');
+      expect(origin.tabIndex).toBe(1);
       origin.onFocus();
       expect(h.controller.activeTabId()).toBe(tabA);
       expect(h.controller.activeTabId()).not.toBe(tabB);
@@ -2455,8 +2455,8 @@ describe('CoOberViewController — every answer belongs to the tab that asked (0
       } as unknown as PermissionRequest);
 
       const show = h.deps.permissionBanner.show as ReturnType<typeof vi.fn>;
-      const origin = show.mock.calls[0][1] as { label: string; onFocus: () => void };
-      expect(origin.label).toBe(t().permission.originTab.replace('{index}', '2'));
+      const origin = show.mock.calls[0][1] as { tabIndex: number; onFocus: () => void };
+      expect(origin.tabIndex).toBe(2);
       origin.onFocus();
       expect(h.controller.activeTabId()).toBe(tabB);
     });

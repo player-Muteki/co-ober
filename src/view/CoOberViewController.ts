@@ -1043,7 +1043,7 @@ export class CoOberViewController {
     const rt = this.findOwningRuntime(sessionId);
     if (!rt || rt === this.activeRuntime) return undefined;
     return {
-      label: t().permission.originTab.replace('{index}', String(this.tabIndexOf(rt) + 1)),
+      tabIndex: this.tabIndexOf(rt) + 1,
       onFocus: () => this.activateRuntime(rt),
     };
   }

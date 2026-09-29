@@ -48,8 +48,38 @@ describe('PermissionBanner', () => {
     });
   });
 
-  it('dismisses cleanly', () => {
+  it('re-speaks the origin chip in the new language when a visible permission re-renders', () => {
+    setLocale('en');
     const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    banner.show(
+      {
+        id: 'req-origin',
+        message: 'Edit a file?',
+        toolCall: { toolCallId: '1', status: 'pending', rawInput: {}, title: 'edit file', kind: 'edit', locations: [] },
+        options: [{ optionId: 'yes', name: 'Yes', kind: 'allow_once' }],
+      } as any,
+      { tabIndex: 1, onFocus: () => {} },
+    );
+
+    const chip = () => container.querySelector('.perm-origin')?.textContent ?? '';
+    expect(chip()).toContain('Request from tab 1');
+
+    // A visible permission banner redraws itself on a locale switch (unlike a
+    // half-filled elicitation, which keeps its language so an answer is not
+    // taken away). Everything on it re-spoke but the origin chip, which used to
+    // read the frozen label minted when the request arrived — so the banner's
+    // own tab pointer stayed English under a Chinese title and buttons.
+    setLocale('zh');
+    expect(chip()).toContain('来自标签');
+    expect(chip()).toContain('1');
+    expect(chip()).not.toContain('Request from tab');
+    setLocale('en');
+    banner.dismiss();
+  });
+
+  it('dismisses cleanly', () => {    const container = document.createElement('div');
     const banner = new PermissionBanner(container);
 
     banner.show({
