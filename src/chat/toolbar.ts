@@ -74,15 +74,15 @@ export class InputToolbar {
     // Custom model selector (hover + keyboard dropdown)
     this.modelSelectorEl = row.createDiv({ cls: 'co-ober-model-selector' });
     this.modelBtnEl = this.modelSelectorEl.createDiv({ cls: 'co-ober-model-btn' });
-    this.modelBtnEl.setAttribute('role', 'button');
-    this.modelBtnEl.setAttribute('tabindex', '0');
-    this.modelBtnEl.setAttribute('aria-haspopup', 'listbox');
-    this.modelBtnEl.setAttribute('aria-expanded', 'false');
     this.modelLabelEl = this.modelBtnEl.createSpan({ cls: 'co-ober-model-label' });
     this.modelLabelEl.setText(t().toolbar.noModels);
     this.modelDropdownEl = this.modelSelectorEl.createDiv({ cls: 'co-ober-model-dropdown' });
     this.modelDropdownEl.setAttribute('role', 'listbox');
     this.wireDropdown(this.modelSelectorEl, this.modelBtnEl, this.modelDropdownEl, '.co-ober-model-option:not(.empty)');
+    // A chooser only once there is something to choose. With no models reported
+    // the button still carried role=button, a tab stop and aria-haspopup=listbox,
+    // advertising a listbox whose only row is a non-activatable "No models" line.
+    this.applyModelOperability();
 
     // Mode cycle button (click or Enter/Space to cycle, once there is a cycle to make)
     this.modeCycleEl = row.createDiv({ cls: 'co-ober-mode-cycle' });
@@ -95,15 +95,14 @@ export class InputToolbar {
     // Custom effort selector (hover + keyboard dropdown)
     this.effortSelectorEl = row.createDiv({ cls: 'co-ober-effort-selector' });
     this.effortBtnEl = this.effortSelectorEl.createDiv({ cls: 'co-ober-effort-btn' });
-    this.effortBtnEl.setAttribute('role', 'button');
-    this.effortBtnEl.setAttribute('tabindex', '0');
-    this.effortBtnEl.setAttribute('aria-haspopup', 'listbox');
-    this.effortBtnEl.setAttribute('aria-expanded', 'false');
     this.effortLabelEl = this.effortBtnEl.createSpan({ cls: 'co-ober-effort-label' });
     this.effortLabelEl.setText('—');
     this.effortDropdownEl = this.effortSelectorEl.createDiv({ cls: 'co-ober-effort-dropdown' });
     this.effortDropdownEl.setAttribute('role', 'listbox');
     this.wireDropdown(this.effortSelectorEl, this.effortBtnEl, this.effortDropdownEl, '.co-ober-effort-option:not(.empty)');
+    // Same as the model button above: nothing offered means nothing to pick, so
+    // the button must not advertise an expandable listbox.
+    this.applyEffortOperability();
 
     // Generic controls for config options this client has no dedicated control for.
     this.extraConfigsEl = row.createDiv({ cls: 'co-ober-extra-configs' });
@@ -186,6 +185,46 @@ export class InputToolbar {
     }
   }
 
+  /**
+   * Advertise the model button as a chooser only when there is a choice to make.
+   * The dropdown's empty state is a single non-activatable "No models" row, so
+   * `role=button` + `aria-haspopup=listbox` + a tab stop were promising a listbox
+   * a reader could open but never select from — the mode chip's rule (above),
+   * read across the picker. With models present it is a real button again.
+   */
+  private applyModelOperability(): void {
+    const operable = this.modelOptions.length > 0;
+    this.modelSelectorEl.classList.remove('open');
+    if (operable) {
+      this.modelBtnEl.setAttribute('role', 'button');
+      this.modelBtnEl.setAttribute('tabindex', '0');
+      this.modelBtnEl.setAttribute('aria-haspopup', 'listbox');
+      this.modelBtnEl.setAttribute('aria-expanded', 'false');
+    } else {
+      this.modelBtnEl.removeAttribute('role');
+      this.modelBtnEl.removeAttribute('tabindex');
+      this.modelBtnEl.removeAttribute('aria-haspopup');
+      this.modelBtnEl.removeAttribute('aria-expanded');
+    }
+  }
+
+  /** The effort picker, under the same rule as the model picker. */
+  private applyEffortOperability(): void {
+    const operable = this.effortOptions.length > 0;
+    this.effortSelectorEl.classList.remove('open');
+    if (operable) {
+      this.effortBtnEl.setAttribute('role', 'button');
+      this.effortBtnEl.setAttribute('tabindex', '0');
+      this.effortBtnEl.setAttribute('aria-haspopup', 'listbox');
+      this.effortBtnEl.setAttribute('aria-expanded', 'false');
+    } else {
+      this.effortBtnEl.removeAttribute('role');
+      this.effortBtnEl.removeAttribute('tabindex');
+      this.effortBtnEl.removeAttribute('aria-haspopup');
+      this.effortBtnEl.removeAttribute('aria-expanded');
+    }
+  }
+
   cycleMode(): boolean {
     if (this.modeOptions.length <= 1) return false;
     const idx = this.modeOptions.findIndex(o => o.value === this.currentMode);
@@ -231,6 +270,7 @@ export class InputToolbar {
       // current of `undefined` (nothing reported) earns "Not set".
       this.modelLabelEl.setText(selected?.label ?? (current ? currentLabel ?? current : t().toolbar.unset));
     }
+    this.applyModelOperability();
   }
 
   private renderModelDropdown(): void {
@@ -298,6 +338,7 @@ export class InputToolbar {
     // force for the next prompt.
     const selected = options.find(o => o.value === current);
     this.effortLabelEl.setText(selected?.label ?? (options.length > 0 ? t().toolbar.unset : '—'));
+    this.applyEffortOperability();
   }
 
   private renderEffortDropdown(): void {
@@ -529,6 +570,7 @@ export class InputToolbar {
           ?? (this.currentModel ? this.currentModelLabel ?? this.currentModel : t().toolbar.unset))
     );
     this.renderModelDropdown();
+    this.applyModelOperability();
     const selected = this.modeOptions.find(o => o.value === this.currentMode);
     this.modeCycleLabelEl.setText(selected?.label ?? (this.modeOptions.length > 0 ? t().toolbar.unset : '—'));
     this.applyModeOperability();

@@ -1212,6 +1212,13 @@ export class CoOberViewController {
     // so no tier is named as the current one.
     this.deps.toolbar.updateEffort(this.builtInEfforts(), undefined);
     this.deps.toolbar.updateExtraConfigs([]);
+    // The slash palette is built from the command registry, which the agent kept
+    // repopulating over `available_commands_update`. Left alone, a disconnected
+    // tab still lists the dead agent's ACP commands: the reader picks one, it
+    // writes its own `/name` line, and the send path has no client to run it on.
+    // Same rule as the models/modes/configs above — nothing negotiated means
+    // nothing to offer.
+    commandRegistry.updateAcpCommands([]);
     // An image that cannot be sent must not stay attachable: the button offered
     // the dead agent's capability, so the reader staged a picture into a prompt
     // that has nowhere to go.

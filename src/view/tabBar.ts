@@ -170,7 +170,16 @@ export class TabBar {
     const close = badge.createEl('button', { cls: 'co-ober-tab-close', text: '×' });
     const label = t().tabs.close.replace('{index}', String(number));
     close.setAttribute('aria-label', label);
-    if (this.armed.has(tab.tabId)) this.paintArmed(close);
+    if (this.armed.has(tab.tabId)) {
+      // The ✓ means "click again to stop this tab and close it". Once the turn
+      // is over there is no stream left to stop, and the click handler below
+      // falls straight to a single-press close — so a repaint that re-painted
+      // the ✓ after streaming ended was advertising a stop and a two-step
+      // confirm that no longer exist. The arm only means something while the
+      // tab is still generating; past that it is stale and is dropped.
+      if (tab.streaming) this.paintArmed(close);
+      else this.disarmClose(tab.tabId);
+    }
     close.onclick = (e: MouseEvent) => {
       e.stopPropagation();
       if (tab.streaming && !this.armed.has(tab.tabId)) {

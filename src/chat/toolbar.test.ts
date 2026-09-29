@@ -390,6 +390,47 @@ describe('InputToolbar cycle button a11y', () => {
     expect(perm.getAttribute('aria-label')).toContain('Permission');
   });
 
+  it('advertises the model and effort pickers as listboxes only once they offer a choice', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const toolbar = new InputToolbar(container, {});
+
+    const model = container.querySelector('.co-ober-model-btn') as HTMLElement;
+    const effort = container.querySelector('.co-ober-effort-btn') as HTMLElement;
+
+    // Built with nothing reported: each dropdown's sole row is the non-activatable
+    // "No models"/"—" line, so a button role, a tab stop and aria-haspopup=listbox
+    // were promising a pickable listbox that a reader could open but never choose
+    // from. The mode chip's rule (above), read across the two pickers.
+    expect(model.getAttribute('role')).toBeNull();
+    expect(model.getAttribute('tabindex')).toBeNull();
+    expect(model.getAttribute('aria-haspopup')).toBeNull();
+    expect(model.getAttribute('aria-expanded')).toBeNull();
+    expect(effort.getAttribute('role')).toBeNull();
+    expect(effort.getAttribute('tabindex')).toBeNull();
+    expect(effort.getAttribute('aria-haspopup')).toBeNull();
+
+    // Models arrive → the model button is a real expandable chooser again.
+    toolbar.updateModels([{ value: 'openai/gpt-4', label: 'GPT-4' }], 'openai/gpt-4');
+    expect(model.getAttribute('role')).toBe('button');
+    expect(model.getAttribute('tabindex')).toBe('0');
+    expect(model.getAttribute('aria-haspopup')).toBe('listbox');
+    expect(model.getAttribute('aria-expanded')).toBe('false');
+
+    // Effort arrives → same, and only now; it stayed inert through the model update.
+    expect(effort.getAttribute('role')).toBeNull();
+    toolbar.updateEffort([{ value: 'high', label: 'High' }], 'high');
+    expect(effort.getAttribute('role')).toBe('button');
+    expect(effort.getAttribute('tabindex')).toBe('0');
+    expect(effort.getAttribute('aria-haspopup')).toBe('listbox');
+
+    // Reported then withdrawn: the chooser goes back to promising nothing.
+    toolbar.updateModels([], undefined);
+    expect(model.getAttribute('role')).toBeNull();
+    expect(model.getAttribute('aria-haspopup')).toBeNull();
+    setLocale('en');
+  });
+
   it('Enter and Space activate the cycle controls', () => {
     setLocale('en');
     const container = document.createElement('div') as HTMLDivElement;

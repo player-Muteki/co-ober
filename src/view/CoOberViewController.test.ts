@@ -326,6 +326,26 @@ describe('CoOberViewController', () => {
       );
       expect(deps.toolbar.updateExtraConfigs).toHaveBeenCalledWith([]);
     });
+
+    it("clears the dead agent's slash commands from the registry", () => {
+      // The palette is built from the command registry, which the agent kept
+      // repopulating over `available_commands_update`. Seed ACP commands, then
+      // disconnect: a disconnected tab must not still list the dead agent's
+      // commands, because the reader picking one writes its own `/name` line and
+      // the send path has no client left to run it.
+      commandRegistry.updateAcpCommands([
+        { name: 'deploy', description: 'Deploy the app' },
+        { name: 'rollback', description: 'Roll back a deploy' },
+      ]);
+      const acpBefore = commandRegistry.getAll().filter((d) => d.source === 'acp').map((d) => d.id);
+      expect(acpBefore).toEqual(expect.arrayContaining(['deploy', 'rollback']));
+
+      controller.handleDisconnect();
+
+      expect(commandRegistry.getAll().some((d) => d.source === 'acp')).toBe(false);
+      // Builtins survive — only the agent-synced entries are withdrawn.
+      expect(commandRegistry.getAll().some((d) => d.source === 'builtin')).toBe(true);
+    });
   });
 
   describe('0.2.12 stage 2 — panel and tab initialization', () => {

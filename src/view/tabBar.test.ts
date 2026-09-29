@@ -230,6 +230,26 @@ describe('TabBar', () => {
     expect(callbacks.onClose).toHaveBeenCalledWith('tab-1');
   });
 
+  it('drops the stale confirm once the turn the tab was armed for has ended', () => {
+    const { bar, container, callbacks } = createBar([tab({ tabId: 'tab-1', streaming: true })]);
+    closeButtons(container)[0].click();
+    expect(closeButtons(container)[0].textContent).toBe('✓');
+    callbacks.onClose.mockClear();
+
+    // The agent answers, so the tab stops generating before the confirm's timer
+    // runs out. The arm still holds the id, but re-painting its ✓ would claim a
+    // stream to stop and a two-step press that the finished turn no longer has.
+    bar.render([tab({ tabId: 'tab-1', streaming: false })], 6);
+
+    const close = closeButtons(container)[0];
+    expect(close.textContent).toBe('×');
+    expect(close.classList.contains('is-confirm')).toBe(false);
+    // And one press now closes — the confirm it stopped advertising is genuinely
+    // gone, not merely mislabelled.
+    close.click();
+    expect(callbacks.onClose).toHaveBeenCalledWith('tab-1');
+  });
+
   describe('the strip under a repaint it did not need', () => {
     const tabList = (): TabDescriptor[] => [
       tab({ tabId: 'tab-1', active: true }),
