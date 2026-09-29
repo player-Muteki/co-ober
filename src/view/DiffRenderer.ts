@@ -268,10 +268,12 @@ export function renderDiffContent(
       lineEl.createSpan({ text: line.text });
     }
     const remaining = diffLines.length - NEW_FILE_DISPLAY_CAP;
-    containerEl.createDiv({
+    const truncEl = containerEl.createDiv({
       cls: 'diff-line truncated',
       text: t().diff.moreLines.replace('{count}', String(remaining)),
     });
+    truncEl.dataset.i18nCount = 'diff.moreLines';
+    truncEl.dataset.count = String(remaining);
     return;
   }
 
@@ -294,10 +296,13 @@ export function renderDiffContent(
 
     for (const line of hunk.lines) {
       if (totalRendered >= MAX_DIFF_LINES) {
-        containerEl.createDiv({
+        const capRemaining = String(diffLines.length - totalRendered);
+        const capEl = containerEl.createDiv({
           cls: 'diff-line truncated',
-          text: t().diff.moreLines.replace('{count}', String(diffLines.length - totalRendered)),
+          text: t().diff.moreLines.replace('{count}', capRemaining),
         });
+        capEl.dataset.i18nCount = 'diff.moreLines';
+        capEl.dataset.count = capRemaining;
         return;
       }
 

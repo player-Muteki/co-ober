@@ -281,6 +281,13 @@ describe('DiffRenderer', () => {
       const truncated = divs[20];
       expect(truncated.classList.contains('truncated')).toBe(true);
       expect(truncated.textContent).toBe('... 5 more lines');
+      // The truncation line is built once from t() into the diff body, so with no
+      // i18n key a reader who switched language after seeing a capped new file kept
+      // "... 5 more lines" under an otherwise-re-localized card. It now rides
+      // data-i18n-count, which the renderer's refreshLocale re-speaks with the
+      // stored count.
+      expect((truncated as HTMLElement).dataset.i18nCount).toBe('diff.moreLines');
+      expect((truncated as HTMLElement).dataset.count).toBe('5');
     });
 
     it('renders a full new file without truncation when within the cap', () => {
@@ -303,6 +310,10 @@ describe('DiffRenderer', () => {
       expect(divs.length).toBe(51);
       expect(divs[50].classList.contains('truncated')).toBe(true);
       expect(divs[50].textContent).toBe('... 6 more lines');
+      // Same rule for the hunk-cap truncation line: it rides its count key so a
+      // language change re-speaks it rather than freezing "... 6 more lines".
+      expect((divs[50] as HTMLElement).dataset.i18nCount).toBe('diff.moreLines');
+      expect((divs[50] as HTMLElement).dataset.count).toBe('6');
     });
 
     it('separates distant hunks with a muted "..." line', () => {

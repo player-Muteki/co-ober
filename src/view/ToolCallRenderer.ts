@@ -565,10 +565,13 @@ function renderSearchExpanded(container: HTMLElement, result: string): void {
   }
 
   if (truncated) {
-    linesEl.createDiv({
+    const n = String(lines.length - maxLines);
+    const truncEl = linesEl.createDiv({
       cls: 'co-ober-tool-truncated',
-      text: t().tool.moreMatches.replace('{count}', String(lines.length - maxLines)),
+      text: t().tool.moreMatches.replace('{count}', n),
     });
+    truncEl.dataset.i18nCount = 'tool.moreMatches';
+    truncEl.dataset.count = n;
   }
 }
 
@@ -746,10 +749,13 @@ export function renderLinesExpanded(container: HTMLElement, result: string, maxL
   }
 
   if (truncated) {
-    linesEl.createDiv({
+    const n = String(lines.length - maxLines);
+    const truncEl = linesEl.createDiv({
       cls: 'co-ober-tool-truncated',
-      text: t().tool.moreLines.replace('{count}', String(lines.length - maxLines)),
+      text: t().tool.moreLines.replace('{count}', n),
     });
+    truncEl.dataset.i18nCount = 'tool.moreLines';
+    truncEl.dataset.count = n;
   }
 }
 

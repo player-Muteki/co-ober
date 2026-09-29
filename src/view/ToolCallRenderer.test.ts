@@ -425,14 +425,22 @@ describe('ToolCallRenderer', () => {
       expect(lineEls.length).toBe(20);
       // A search match carries no pointing-hand: nothing binds a click to it.
       expect(lineEls[0].classList.contains('hoverable')).toBe(false);
-      expect(state.body.querySelector('.co-ober-tool-truncated')?.textContent).toBe('... 5 more matches');
+      const truncEl = state.body.querySelector('.co-ober-tool-truncated') as HTMLElement;
+      expect(truncEl?.textContent).toBe('... 5 more matches');
+      // The count line froze in the language the search rendered in; riding
+      // data-i18n-count lets the renderer's refreshLocale re-speak it.
+      expect(truncEl.dataset.i18nCount).toBe('tool.moreMatches');
+      expect(truncEl.dataset.count).toBe('5');
     });
 
     it('truncates long file reads with "... N more lines"', () => {
       const state = createToolCallElement(container, 'tc', 'read', 'Read');
       updateToolCallElement(state, 'completed', 'read', undefined, [textItem(makeLines(20))]);
       expect(state.body.querySelectorAll('.co-ober-tool-line').length).toBe(15);
-      expect(state.body.querySelector('.co-ober-tool-truncated')?.textContent).toBe('... 5 more lines');
+      const truncEl = state.body.querySelector('.co-ober-tool-truncated') as HTMLElement;
+      expect(truncEl?.textContent).toBe('... 5 more lines');
+      expect(truncEl.dataset.i18nCount).toBe('tool.moreLines');
+      expect(truncEl.dataset.count).toBe('5');
     });
 
     it('renders the source URL for fetch results', () => {
