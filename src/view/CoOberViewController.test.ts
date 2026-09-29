@@ -1865,6 +1865,11 @@ describe('CoOberViewController', () => {
       await controller.switchSession('ses_x', 'opencode');
 
       expect(deps.renderer.addError).toHaveBeenCalledWith(t().session.loadNativeFailed);
+      // The catch that reaches this message wraps the whole sync, so a transport
+      // failure lands here too — a string naming "session/load not supported or
+      // session unavailable" would tell the reader one specific cause the code
+      // never actually observed. It stays cause-neutral.
+      expect(t().session.loadNativeFailed).not.toMatch(/session\/load|not supported|unavailable/i);
     });
   });
 

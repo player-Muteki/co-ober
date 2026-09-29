@@ -74,7 +74,8 @@ export class SessionDropdown {
 
 		const capabilities = this.getAgentCapabilities()?.sessionCapabilities;
 		const canList = capabilities?.list !== false;
-		const list = this.getRenderableSessions(this.sessionStore.list(), canList);
+		const storeRows = this.sessionStore.list();
+		const list = this.getRenderableSessions(storeRows, canList);
 		const dd = this.container.createDiv({ cls: 'co-ober-session-list' });
 
 		const rect = this.anchorEl.getBoundingClientRect();
@@ -115,7 +116,13 @@ export class SessionDropdown {
 				it.setAttribute('role', 'option');
 				it.setAttribute('aria-selected', String(s.sessionId === currentId));
 				it.createSpan({ text: s.title || s.sessionId, cls: 'session-label' });
-				this.createActionButton(it, 'session-pin', s.pinned ? '★' : '☆', true, s.pinned ? t().sessionDropdown.unpin : t().sessionDropdown.pin, async () => {
+				// Pinning writes to the local store, which only answers for a
+				// conversation it actually holds. When the agent cannot list
+				// sessions, the current one is shown as a placeholder row that may
+				// have no store entry; an enabled pin on such a row promised a
+				// persisting action setPinned would silently refuse.
+				const pinnable = storeRows.some((row) => row.sessionId === s.sessionId);
+				this.createActionButton(it, 'session-pin', s.pinned ? '★' : '☆', pinnable, !pinnable ? t().sessionDropdown.pinDisabled : s.pinned ? t().sessionDropdown.unpin : t().sessionDropdown.pin, async () => {
 					await this.callbacks.onTogglePin?.(s.sessionId, !(s.pinned === true));
 					this.rerender();
 				});

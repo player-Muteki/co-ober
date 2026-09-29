@@ -176,6 +176,32 @@ describe('SessionDropdown', () => {
       expect(rename.getAttribute('aria-label')).toBe('Rename is not supported by this OpenCode agent');
     });
 
+    it('refuses to pin a placeholder row no saved conversation backs', () => {
+      // With listing off the current session is still shown, even when it has
+      // no store entry. setPinned answers false for an id it does not hold, so
+      // an enabled star here promised a persisting action that would do nothing.
+      dropdown = new SessionDropdown(container, anchor, sessionStore as any, () => 'ghost-session', callbacks as any, () => ({ sessionCapabilities: { list: false } }));
+      dropdown.open();
+      const item = container.querySelector('.co-ober-session-item') as HTMLElement;
+      expect(item.querySelector('.session-label')?.textContent).toBe('ghost-session');
+      const pin = item.querySelector('.session-pin') as HTMLButtonElement;
+      expect(pin.disabled).toBe(true);
+      expect(pin.getAttribute('title')).toBe('This conversation is not saved to history yet, so it cannot be pinned');
+      expect(pin.getAttribute('aria-label')).toBe('This conversation is not saved to history yet, so it cannot be pinned');
+    });
+
+    it('still offers pin for a real saved conversation while listing is off', () => {
+      // The gate is store membership, not the list capability: this current
+      // session is a stored row, so its star stays live even though the agent
+      // cannot enumerate the rest.
+      dropdown = new SessionDropdown(container, anchor, sessionStore as any, () => 'session-2', callbacks as any, () => ({ sessionCapabilities: { list: false } }));
+      dropdown.open();
+      const item = container.querySelector('.co-ober-session-item') as HTMLElement;
+      const pin = item.querySelector('.session-pin') as HTMLButtonElement;
+      expect(pin.disabled).toBe(false);
+      expect(pin.getAttribute('title')).toBe('Pin session');
+    });
+
     it('moves the delete aria-label through confirm and back on timeout', () => {
       vi.useFakeTimers();
       try {
