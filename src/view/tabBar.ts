@@ -66,9 +66,14 @@ export class TabBar {
     const add = root.createEl('button', { cls: 'co-ober-tab-new', text: '+' });
     add.setAttribute('aria-label', t().tabs.new);
     if (tabs.length >= maxTabs) {
+      const limit = t().tabs.limitReached.replace('{max}', String(maxTabs));
       add.disabled = true;
       add.addClass('is-disabled');
-      add.setAttribute('title', t().tabs.limitReached.replace('{max}', String(maxTabs)));
+      add.setAttribute('title', limit);
+      // A disabled button still announces itself by its accessible name. Left as
+      // "Open a new tab", a screen reader offered an action this button cannot
+      // carry; the title already said why, so the name now says the same.
+      add.setAttribute('aria-label', limit);
     }
     add.onclick = () => this.callbacks.onNew();
 

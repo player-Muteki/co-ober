@@ -341,6 +341,19 @@ describe('TabBar', () => {
     expect(full.callbacks.onNew).not.toHaveBeenCalled();
   });
 
+  it('names the add button by what it can actually do', () => {
+    // Under the limit the button really opens a tab, so it says so. At the
+    // limit it is disabled and cannot, but its accessible name still promised
+    // "Open a new tab" — a screen reader offered an action with no effect. The
+    // name now follows the disabled state, matching the title.
+    const under = createBar([tab({ tabId: 'tab-1' })], 3);
+    expect(under.container.querySelector('.co-ober-tab-new')?.getAttribute('aria-label')).toBe(t().tabs.new);
+
+    const full = createBar([tab({ tabId: 'a' }), tab({ tabId: 'b' }), tab({ tabId: 'c' })], 3);
+    const add = full.container.querySelector('.co-ober-tab-new');
+    expect(add?.getAttribute('aria-label')).toBe(t().tabs.limitReached.replace('{max}', '3'));
+  });
+
   it('relabels itself when the locale changes', () => {
     const { container } = createBar([tab({ tabId: 'tab-1', active: true, unread: true })]);
     expect(badges(container)[0].getAttribute('title')).toBe(`Chat tab-1 — tab 1 finished while hidden`);

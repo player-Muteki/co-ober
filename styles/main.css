@@ -790,7 +790,9 @@
   pointer-events: none;
 }
 
-/* Mode cycle button */
+/* Mode cycle button — inert readout until there is more than one mode to
+   cycle through (see applyModeOperability); pointer + hover belong to that
+   case only, so a chip that cannot act never borrows the look of one that can. */
 .co-ober-mode-cycle {
   display: flex;
   align-items: center;
@@ -798,7 +800,7 @@
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
   background: var(--background-secondary);
-  cursor: pointer;
+  cursor: default;
   font-size: var(--font-smaller);
   color: var(--text-muted);
   transition: color 0.1s ease, border-color 0.1s ease;
@@ -806,13 +808,13 @@
   flex-shrink: 0;
 }
 
-.co-ober-mode-cycle:hover {
-  color: var(--text-normal);
-  border-color: var(--text-accent);
-}
-
 .co-ober-mode-cycle.has-options {
   cursor: pointer;
+}
+
+.co-ober-mode-cycle.has-options:hover {
+  color: var(--text-normal);
+  border-color: var(--text-accent);
 }
 
 .co-ober-mode-cycle-label {

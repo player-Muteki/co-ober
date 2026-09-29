@@ -116,20 +116,25 @@ export class PermissionBanner {
 
     if (pending.kind === 'elicitation') {
       this.renderElicitation(banner, pending.req);
-      this.makeOperable(banner);
+      this.makeOperable(banner, t().elicitation.keyHint);
       return;
     }
     this.renderPermission(banner, pending.req);
-    this.makeOperable(banner);
+    this.makeOperable(banner, t().permission.keyHint);
   }
 
   /**
    * A prompt the keyboard cannot reach is a prompt only the mouse can answer:
    * it takes focus as it appears, and Esc retires it as "unanswered" rather
    * than leaving the key to whatever the composer thinks it means.
+   *
+   * The hint is passed in, not read from one shared key: only the permission
+   * banner's first-focused control is a button, so Enter there genuinely
+   * chooses. An elicitation opens on a text field with no submit handler, so
+   * the same "Enter to choose" was a promise the keyboard could not keep.
    */
-  private makeOperable(banner: HTMLDivElement): void {
-    banner.createDiv({ cls: 'perm-key-hint', text: t().permission.keyHint });
+  private makeOperable(banner: HTMLDivElement, keyHint: string): void {
+    banner.createDiv({ cls: 'perm-key-hint', text: keyHint });
     banner.tabIndex = 0;
     banner.onkeydown = (e: KeyboardEvent) => {
       // The prompt asks for text in the reader's own language, and Escape is how

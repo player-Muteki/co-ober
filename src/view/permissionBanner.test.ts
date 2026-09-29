@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import { PermissionBanner } from './permissionBanner';
-import { setLocale } from '../i18n/index';
+import { setLocale, t } from '../i18n/index';
 import type { ElicitationAnswer } from '../types';
 import { installObsidianDomHelpers } from '../test/domHelpers';
 
@@ -586,6 +586,36 @@ describe('PermissionBanner keyboard access', () => {
     const hint = container.querySelector('.perm-key-hint');
     expect(hint?.textContent).toContain('Esc');
     banner.dispose();
+  });
+
+  it('only promises Enter where a button is what the keyboard reaches first', () => {
+    // A permission opens on an option button, so Enter genuinely chooses there
+    // and the full "Enter to choose · Esc" hint holds. An elicitation opens on a
+    // text field with no submit handler, so the shared hint was advertising an
+    // Enter-to-choose the field could not carry.
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    void banner.show(permission() as any);
+    expect(container.querySelector('.perm-key-hint')?.textContent).toBe(t().permission.keyHint);
+    banner.dispose();
+
+    const elicitContainer = document.createElement('div');
+    const elicitBanner = new PermissionBanner(elicitContainer);
+    void elicitBanner.showElicitation({
+      sessionId: 'session-a',
+      elicitationId: 'el-hint',
+      message: 'Which file?',
+      fields: [{ key: 'path', label: 'Path', kind: 'text', required: true }],
+      omittedFields: [],
+    } as any);
+    const elicitHint = elicitContainer.querySelector('.perm-key-hint')?.textContent ?? '';
+    expect(elicitHint).toBe(t().elicitation.keyHint);
+    expect(elicitHint).toContain('Esc');
+    expect(elicitHint.toLowerCase()).not.toContain('enter');
+    elicitBanner.dispose();
+    container.remove();
+    elicitContainer.remove();
   });
 
   it('answers Escape as nobody answered, which is not a refusal', async () => {

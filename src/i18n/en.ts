@@ -140,6 +140,7 @@ const en = {
 
   elicitation: {
     title: 'The agent is asking for input',
+    keyHint: 'Esc leaves it unanswered',
     accept: 'Send answer',
     decline: 'Decline',
     opened: 'I opened it',

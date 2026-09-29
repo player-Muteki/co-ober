@@ -84,15 +84,13 @@ export class InputToolbar {
     this.modelDropdownEl.setAttribute('role', 'listbox');
     this.wireDropdown(this.modelSelectorEl, this.modelBtnEl, this.modelDropdownEl, '.co-ober-model-option:not(.empty)');
 
-    // Mode cycle button (click or Enter/Space to cycle)
+    // Mode cycle button (click or Enter/Space to cycle, once there is a cycle to make)
     this.modeCycleEl = row.createDiv({ cls: 'co-ober-mode-cycle' });
-    this.modeCycleEl.setAttribute('role', 'button');
-    this.modeCycleEl.setAttribute('tabindex', '0');
-    this.modeCycleEl.setAttribute('aria-label', t().toolbar.agentTitle);
     this.modeCycleLabelEl = this.modeCycleEl.createSpan({ cls: 'co-ober-mode-cycle-label' });
     this.modeCycleLabelEl.setText('—');
     this.modeCycleEl.addEventListener('click', () => this.cycleMode());
     this.wireActivationKeys(this.modeCycleEl, () => this.cycleMode());
+    this.applyModeOperability();
 
     // Custom effort selector (hover + keyboard dropdown)
     this.effortSelectorEl = row.createDiv({ cls: 'co-ober-effort-selector' });
@@ -163,7 +161,29 @@ export class InputToolbar {
     // mode the agent never confirmed and sent the reader into a turn under a
     // tier they had not chosen.
     this.modeCycleLabelEl.setText(selected?.label ?? (options.length > 0 ? t().toolbar.unset : '—'));
-    this.modeCycleEl.classList.toggle('has-options', options.length > 1);
+    this.applyModeOperability();
+  }
+
+  /**
+   * Present the mode chip as whatever it actually is right now. With two or more
+   * agents to switch between it is a cycle button: focusable, pointer, labelled.
+   * With one agent (or none yet) cycleMode() can only return, so a button role,
+   * a tabindex into the tab order and a pointer cursor were all advertising a
+   * click that changed nothing — the reader was invited to press a control that
+   * could not answer. The label stays as a plain readout of the agent in force.
+   */
+  private applyModeOperability(): void {
+    const operable = this.modeOptions.length > 1;
+    this.modeCycleEl.classList.toggle('has-options', operable);
+    if (operable) {
+      this.modeCycleEl.setAttribute('role', 'button');
+      this.modeCycleEl.setAttribute('tabindex', '0');
+      this.modeCycleEl.setAttribute('aria-label', t().toolbar.agentTitle);
+    } else {
+      this.modeCycleEl.removeAttribute('role');
+      this.modeCycleEl.removeAttribute('tabindex');
+      this.modeCycleEl.removeAttribute('aria-label');
+    }
   }
 
   cycleMode(): void {
@@ -509,7 +529,7 @@ export class InputToolbar {
     this.renderModelDropdown();
     const selected = this.modeOptions.find(o => o.value === this.currentMode);
     this.modeCycleLabelEl.setText(selected?.label ?? (this.modeOptions.length > 0 ? t().toolbar.unset : '—'));
-    this.modeCycleEl.setAttribute('aria-label', t().toolbar.agentTitle);
+    this.applyModeOperability();
     this.updatePermissionDisplay();
     this.attachBtnEl.title = this.attachBtnEl.disabled
       ? t().toolbar.attachImageUnsupported

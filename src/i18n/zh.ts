@@ -142,6 +142,7 @@ const zh: Locale = {
 
   elicitation: {
     title: 'Agent 正在请求输入',
+    keyHint: 'Esc 表示未作答',
     accept: '提交回答',
     decline: '拒绝',
     opened: '我已打开',

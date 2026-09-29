@@ -346,16 +346,29 @@ describe('InputToolbar permission cycle', () => {
 });
 
 describe('InputToolbar cycle button a11y', () => {
-  it('exposes mode cycle and permission toggles as keyboard-operable buttons', () => {
+  it('exposes the mode cycle as a button only once there is a mode to change', () => {
     setLocale('en');
     const container = document.createElement('div') as HTMLDivElement;
-    new InputToolbar(container, {});
+    const toolbar = new InputToolbar(container, {});
 
     const mode = container.querySelector('.co-ober-mode-cycle') as HTMLElement;
     const perm = container.querySelector('.co-ober-perm-toggle') as HTMLElement;
+
+    // One agent offered → cycleMode() can only return, so a button role and a
+    // slot in the tab order invited a press that changed nothing.
+    toolbar.updateAgents([{ value: 'build', label: 'Build' }], 'build');
+    expect(mode.getAttribute('role')).toBeNull();
+    expect(mode.getAttribute('tabindex')).toBeNull();
+    expect(mode.classList.contains('has-options')).toBe(false);
+
+    // A genuine choice → a genuine cycle control.
+    toolbar.updateAgents([{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }], 'a');
     expect(mode.getAttribute('role')).toBe('button');
     expect(mode.getAttribute('tabindex')).toBe('0');
     expect(mode.getAttribute('aria-label')).toBe('Agent mode');
+    expect(mode.classList.contains('has-options')).toBe(true);
+
+    // The permission toggle always has tiers to move through, so it stays a button.
     expect(perm.getAttribute('role')).toBe('button');
     expect(perm.getAttribute('tabindex')).toBe('0');
     expect(perm.getAttribute('aria-label')).toContain('Permission');
@@ -384,6 +397,8 @@ describe('InputToolbar cycle button a11y', () => {
     setLocale('en');
     const container = document.createElement('div') as HTMLDivElement;
     const toolbar = new InputToolbar(container, {});
+    // Operable, so the mode chip carries an aria-label worth localizing.
+    toolbar.updateAgents([{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }], 'a');
     setLocale('zh');
     toolbar.refreshLocale();
 
