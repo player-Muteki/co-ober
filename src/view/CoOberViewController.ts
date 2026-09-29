@@ -1054,7 +1054,11 @@ export class CoOberViewController {
     const rt = this.findOwningRuntime(sessionId);
     if (!rt || rt === this.activeRuntime) return undefined;
     return {
-      tabIndex: this.tabIndexOf(rt) + 1,
+      // Read at draw time, not captured: a queued request from a tab that sits
+      // further right than it did when it arrived (an earlier tab having since
+      // closed) would otherwise name a position the reader cannot find when the
+      // banner finally shows. onFocus already resolves through the live runtime.
+      tabIndex: () => this.tabIndexOf(rt) + 1,
       onFocus: () => this.activateRuntime(rt),
     };
   }

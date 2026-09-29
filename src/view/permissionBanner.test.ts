@@ -60,7 +60,7 @@ describe('PermissionBanner', () => {
         toolCall: { toolCallId: '1', status: 'pending', rawInput: {}, title: 'edit file', kind: 'edit', locations: [] },
         options: [{ optionId: 'yes', name: 'Yes', kind: 'allow_once' }],
       } as any,
-      { tabIndex: 1, onFocus: () => {} },
+      { tabIndex: () => 1, onFocus: () => {} },
     );
 
     const chip = () => container.querySelector('.perm-origin')?.textContent ?? '';
@@ -76,6 +76,38 @@ describe('PermissionBanner', () => {
     expect(chip()).toContain('1');
     expect(chip()).not.toContain('Request from tab');
     setLocale('en');
+    banner.dismiss();
+  });
+
+  it('re-reads the requesting tab position when the banner redraws', () => {
+    setLocale('en');
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+    // The tab's place in the strip is a live fact, not the number the request
+    // happened to carry when it arrived: another tab can open or close first,
+    // and a chip pinned to the old position points the reader at a row that no
+    // longer holds the asking conversation.
+    let position = 3;
+    banner.show(
+      {
+        id: 'req-shift',
+        message: 'Edit a file?',
+        toolCall: { toolCallId: '1', status: 'pending', rawInput: {}, title: 'edit file', kind: 'edit', locations: [] },
+        options: [{ optionId: 'yes', name: 'Yes', kind: 'allow_once' }],
+      } as any,
+      { tabIndex: () => position, onFocus: () => {} },
+    );
+
+    const chip = () => container.querySelector('.perm-origin')?.textContent ?? '';
+    expect(chip()).toContain('Request from tab 3');
+
+    position = 2;
+    // A redraw — a locale switch, or the prompt reaching the front of the queue
+    // — speaks where the tab stands now, not where it stood at request time.
+    setLocale('zh');
+    setLocale('en');
+    expect(chip()).toContain('Request from tab 2');
+    expect(chip()).not.toContain('tab 3');
     banner.dismiss();
   });
 

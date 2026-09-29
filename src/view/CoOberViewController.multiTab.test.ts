@@ -569,12 +569,32 @@ describe('CoOberViewController — multi-tab runtimes (0.2.0 stage 2)', () => {
       await handlers.onPermissionRequest(request);
 
       const show = h.deps.permissionBanner.show as unknown as ReturnType<typeof vi.fn>;
-      const origin = show.mock.calls[0][1] as { tabIndex: number; onFocus: () => void };
+      const origin = show.mock.calls[0][1] as { tabIndex: () => number; onFocus: () => void };
       expect(show.mock.calls[0][0]).toBe(request);
-      expect(origin.tabIndex).toBe(1);
+      expect(origin.tabIndex()).toBe(1);
       origin.onFocus();
       expect(h.controller.activeTabId()).toBe(tabA);
       expect(h.controller.activeTabId()).not.toBe(tabB);
+    });
+
+    it('names the position the asking tab holds when the banner draws, not when it arrived', async () => {
+      const client = createMockClient();
+      const { tabA, tabB } = await openSecondTab(client);
+      const handlers = permissionHandlers(client);
+      h.controller.switchToTab(tabA);
+
+      await handlers.onPermissionRequest({ ...request, sessionId: 'ses-b' });
+      const show = h.deps.permissionBanner.show as unknown as ReturnType<typeof vi.fn>;
+      const origin = show.mock.calls[0][1] as { tabIndex: () => number; onFocus: () => void };
+      expect(origin.tabIndex()).toBe(2);
+
+      // A tab to the left closing takes the row the chip pointed at and moves
+      // every tab after it up one. The request is the same conversation, so it
+      // is the number that has to follow the strip — a captured position would
+      // name a row that no longer holds the turn waiting for an answer.
+      await h.controller.closeTab(tabA);
+      expect(h.controller.listTabIds()).toEqual([tabB]);
+      expect(origin.tabIndex()).toBe(1);
     });
 
     it('leaves the origin off for the tab the user is already looking at', async () => {
@@ -2476,8 +2496,8 @@ describe('CoOberViewController — every answer belongs to the tab that asked (0
       } as unknown as PermissionRequest);
 
       const show = h.deps.permissionBanner.show as ReturnType<typeof vi.fn>;
-      const origin = show.mock.calls[0][1] as { tabIndex: number; onFocus: () => void };
-      expect(origin.tabIndex).toBe(2);
+      const origin = show.mock.calls[0][1] as { tabIndex: () => number; onFocus: () => void };
+      expect(origin.tabIndex()).toBe(2);
       origin.onFocus();
       expect(h.controller.activeTabId()).toBe(tabB);
     });
