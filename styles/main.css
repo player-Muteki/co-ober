@@ -448,10 +448,6 @@
   color: var(--text-accent);
 }
 
-.co-ober-plan-panel .status-todo {
-  color: var(--text-muted);
-}
-
 /* Loading */
 .co-ober-loading {
   display: flex;

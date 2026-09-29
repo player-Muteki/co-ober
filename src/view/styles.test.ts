@@ -70,6 +70,21 @@ describe('the stylesheet and the DOM it is answerable to', () => {
     expect(css).toMatch(/\.co-ober-response-footer\s*\{[^}]*display:\s*flex/);
   });
 
+  it('drops the plan-panel rule that styled a status no ACP frame ever carries', () => {
+    // renderer.ts's setPlanEntries stamps `status-${e.status}` straight from the
+    // agent's plan entry, and the ACP status vocabulary is closed to pending /
+    // in_progress / completed / cancelled — no `todo` exists on that wire. The
+    // rule coloured a muted class no DOM node had, so the "not started yet"
+    // styling it promised was applied to nothing while the entries that are
+    // actually pending sit unstyled (which is correct: their ○ icon is what
+    // says pending, not a colour).
+    expect(css).not.toMatch(/\.co-ober-plan-panel \.status-todo/);
+    // The two states the wire does send keep their rules; the entry vocabulary
+    // is closed, and both of these are drawn on a plan-item today.
+    expect(css).toMatch(/\.co-ober-plan-panel \.status-completed\s*\{[^}]*line-through/);
+    expect(css).toMatch(/\.co-ober-plan-panel \.status-in_progress\s*\{[^}]*color/);
+  });
+
   it('colours every denial the banner can be offered', () => {
     // permissionBanner.ts paints `perm-${opt.kind}` straight from the agent's
     // option, and reject_always is one of the four kinds. With a rule for
