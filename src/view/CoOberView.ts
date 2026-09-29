@@ -1281,9 +1281,13 @@ export class CoOberView extends ItemView {
     const fmt = (n: number) => (n >= K_FORMAT_THRESHOLD ? `${(n / K_FORMAT_THRESHOLD).toFixed(1)}k` : String(n));
     const tooltip = [
       `${t().usage.context}: ${fmt(used)} / ${fmt(contextWindow)} ${t().usage.tokensUnit}`,
-      `${t().usage.input}: ${fmt(usage.inputTokens)}`,
+      // The meter reaches here on a context reading alone; an agent that
+      // reports used/size without per-turn tokens leaves inputTokens 0, and a
+      // tooltip that printed it unconditionally claimed "Input: 0" for a
+      // figure nobody gave. Show a token line only where there is a figure.
+      usage.inputTokens ? `${t().usage.input}: ${fmt(usage.inputTokens)}` : '',
       usage.thoughtTokens ? `${t().usage.thinking}: ${fmt(usage.thoughtTokens)}` : '',
-      `${t().usage.output}: ${fmt(usage.outputTokens)}`,
+      usage.outputTokens ? `${t().usage.output}: ${fmt(usage.outputTokens)}` : '',
       // The words arrive with the colour: a meter that had already gone orange
       // stayed quiet until a hardcoded 80, so the warning read two different
       // thresholds depending on whether the reader hovered.

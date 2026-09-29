@@ -265,6 +265,14 @@ export class StreamController {
           if (ch.cost !== undefined) state.usage.cost = ch.cost;
           if (ch.size !== undefined) state.usage.contextWindow = ch.size;
           if (ch.used !== undefined) state.usage.contextTokens = ch.used;
+          // A later frame that re-reports the token totals is a newer reading,
+          // not a duplicate: only cost/size/used were re-read here, so a
+          // usage_update carrying an updated input/output/total figure after the
+          // first frame was thrown away and the footer kept the stale count.
+          if (ch.totalTokens !== undefined) state.usage.totalTokens = ch.totalTokens;
+          if (ch.inputTokens !== undefined) state.usage.inputTokens = ch.inputTokens;
+          if (ch.outputTokens !== undefined) state.usage.outputTokens = ch.outputTokens;
+          if (ch.thoughtTokens !== undefined) state.usage.thoughtTokens = ch.thoughtTokens;
         } else {
           state.usage = {
             totalTokens: ch.totalTokens ?? ch.used ?? 0,

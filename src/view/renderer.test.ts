@@ -724,6 +724,21 @@ describe('ChatRenderer', () => {
       expect(el.textContent).toContain('45%');
       expect(el.title).toContain('Context: 45%');
     });
+
+    it('names no input/output figure the footer also refuses to assert', () => {
+      // A context-only reading leaves inputTokens/outputTokens at 0. The
+      // visible footer skips a zero, but the hover used to print
+      // "Input: 0, Output: 0" for a figure nobody ever reported.
+      renderer.showUsage({ totalTokens: 0, inputTokens: 0, outputTokens: 0, contextTokens: 4500, contextWindow: 10000 });
+      const title = (container.querySelector('.co-ober-usage') as HTMLElement).title;
+      expect(title).not.toContain('Input');
+      expect(title).not.toContain('Output');
+      // A turn that did report its tokens still says so in the tooltip.
+      renderer.showUsage({ totalTokens: 30, inputTokens: 20, outputTokens: 10 });
+      const titled = (container.querySelector('.co-ober-usage') as HTMLElement).title;
+      expect(titled).toContain('Input: 20');
+      expect(titled).toContain('Output: 10');
+    });
   });
 
   describe('contextPercentage', () => {

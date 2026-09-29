@@ -1123,7 +1123,17 @@ export class ChatRenderer {
     const rateSuffix = rate !== null ? ` | ${labels.rate}: ${ChatRenderer.formatRate(rate)}` : '';
     const pct = contextPercentage(usage);
     const ctxSuffix = pct !== null ? ` | ${labels.context}: ${pct}%` : '';
-    return `${labels.model}: ${usage.modelId ?? '?'} | ${labels.input}: ${usage.inputTokens}, ${labels.output}: ${usage.outputTokens}${usage.thoughtTokens ? `, ${labels.thinking}: ${usage.thoughtTokens}` : ''}${rateSuffix}${ctxSuffix}`;
+    // The visible footer already refuses to print a zero token count; the
+    // tooltip must not assert one the footer hides. These figures default to 0
+    // when an agent reports a context reading but no per-turn tokens, so
+    // printing them unconditionally read "Input: 0, Output: 0" for a turn that
+    // never said how much it spent.
+    const tokenParts: string[] = [];
+    if (usage.inputTokens) tokenParts.push(`${labels.input}: ${usage.inputTokens}`);
+    if (usage.outputTokens) tokenParts.push(`${labels.output}: ${usage.outputTokens}`);
+    if (usage.thoughtTokens) tokenParts.push(`${labels.thinking}: ${usage.thoughtTokens}`);
+    const tokenSuffix = tokenParts.length ? ` | ${tokenParts.join(', ')}` : '';
+    return `${labels.model}: ${usage.modelId ?? '?'}${tokenSuffix}${rateSuffix}${ctxSuffix}`;
   }
 
   private formatTimestamp(ts: number): string {

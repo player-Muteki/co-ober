@@ -1910,6 +1910,15 @@ export class CoOberViewController {
     // The claim is per-tab — another tab streaming is not this tab's problem.
     const currentGen = ++rt.genId;
     rt.streamCtrl.beginTurn();
+    // A turn that reports no usage of its own must not inherit the last one's
+    // token totals. The footer pairs these with this turn's elapsed time (so a
+    // Stop would compute a tokens/second rate from tokens it never spent) and
+    // the stamp writes them onto this turn's message; the totals are per-turn
+    // and reset here, while the context fields the meter reads are live
+    // session figures and carry over.
+    if (rt.state.usage) {
+      rt.state.usage = { ...rt.state.usage, totalTokens: 0, inputTokens: 0, outputTokens: 0, thoughtTokens: undefined };
+    }
     rt.busy = true;
     rt.state.isStreaming = true;
     const active = () => this.isActiveTab(rt);

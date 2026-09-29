@@ -1069,6 +1069,29 @@ describe('CoOberViewController', () => {
       expect(controller.state.usage?.cost?.currency).toBeUndefined();
     });
 
+    it('does not carry the previous turn’s token totals into a turn that reports none', async () => {
+      const client = createMockClient({
+        sendMessage: vi
+          .fn()
+          .mockResolvedValue({ stopReason: 'end_turn', usage: { totalTokens: 10, inputTokens: 5, outputTokens: 5 } }),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      await controller.send('one', []);
+      expect(controller.state.usage).toMatchObject({ totalTokens: 10, inputTokens: 5, outputTokens: 5 });
+
+      // A stop answers with no usage frame at all. The turn-end footer pairs
+      // state.usage with this turn's elapsed time and the stamp writes it onto
+      // this turn's message, so carrying turn one's totals made a stopped turn
+      // claim them — and a rate derived from tokens it never spent.
+      (client.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({ stopReason: 'cancelled' });
+      await controller.send('two', []);
+      expect(controller.state.usage?.totalTokens).toBe(0);
+      expect(controller.state.usage?.inputTokens).toBe(0);
+      expect(controller.state.usage?.outputTokens).toBe(0);
+    });
+
     it('renders, sends and persists pending image parts with the user message', async () => {
       const client = createMockClient();
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);

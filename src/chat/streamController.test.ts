@@ -653,6 +653,30 @@ describe('StreamController', () => {
     expect(deps.state.usage).toMatchObject({ contextTokens: 0, contextWindow: 0 });
   });
 
+  it('re-reads a newer token total instead of keeping the first frame’s', () => {
+    controller.handleChunk({ kind: 'usage', totalTokens: 100, inputTokens: 50, outputTokens: 50 });
+    // A later usage_update that re-reports the totals is a newer reading, not a
+    // duplicate. The merge only re-read cost/size/used, so the refreshed
+    // figures were thrown away and the footer kept the stale count.
+    controller.handleChunk({
+      kind: 'usage',
+      totalTokens: 180,
+      inputTokens: 100,
+      outputTokens: 80,
+      thoughtTokens: 20,
+      used: 200,
+      size: 200000,
+    });
+    expect(deps.state.usage).toMatchObject({
+      totalTokens: 180,
+      inputTokens: 100,
+      outputTokens: 80,
+      thoughtTokens: 20,
+      contextTokens: 200,
+      contextWindow: 200000,
+    });
+  });
+
   it('handles mode update', () => {    controller.handleChunk({ kind: 'mode', currentModeId: 'mode-1', availableModes: [] });
     expect(deps.state.currentModeId).toBe('mode-1');
     expect(deps.state.availableModes).toEqual([]);

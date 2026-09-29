@@ -1137,6 +1137,22 @@ describe('the context meter', () => {
     expect(meterOf(view).getAttribute('data-tooltip')).not.toContain(t().usage.approachingLimit);
   });
 
+  it('names no input/output token figure the meter never received', async () => {
+    const view = await openMeterView();
+    // A context-only reading reports used/size but no per-turn tokens. The
+    // tooltip used to print "Input: 0" and "Output: 0" for figures nobody gave.
+    view.updateContextMeter({ totalTokens: 0, inputTokens: 0, outputTokens: 0, contextTokens: 45000, contextWindow: 100000 });
+    const tip = meterOf(view).getAttribute('data-tooltip') ?? '';
+    expect(tip).toContain(t().usage.context);
+    expect(tip).not.toContain(t().usage.input);
+    expect(tip).not.toContain(t().usage.output);
+    // A reading that does carry tokens still lists them.
+    view.updateContextMeter({ totalTokens: 60, inputTokens: 40, outputTokens: 20, contextTokens: 45000, contextWindow: 100000 });
+    const listed = meterOf(view).getAttribute('data-tooltip') ?? '';
+    expect(listed).toContain(t().usage.input);
+    expect(listed).toContain(t().usage.output);
+  });
+
   it('hands the last band to the critical colour', async () => {
     const view = await openMeterView();
     view.updateContextMeter(usageAt(CONTEXT_METER_CRITICAL_PCT));
