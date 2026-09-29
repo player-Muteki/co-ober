@@ -110,7 +110,7 @@ const en = {
   permission: {
     title: 'Permission: {title}',
     moreLocations: '+{count} more',
-    unreadable: 'Permission request was unreadable and was cancelled.',
+    unreadable: 'Permission request could not be shown, and was cancelled.',
     originTab: 'Request from tab {index} — click to switch',
     keyHint: 'Enter to choose · Esc leaves it unanswered',
     granted: 'Co-Ober carried out {count} agent request(s) on this machine without a prompt — last: {detail}',
@@ -629,7 +629,7 @@ const en = {
       enabled: 'Enabled — agent can run commands',
       disabled: 'Disabled — no terminal access',
       timeout: 'Command Timeout (ms)',
-      timeoutDesc: 'Maximum time in milliseconds before a command is terminated (default 30000)',
+      timeoutDesc: 'How long, in milliseconds, Co-Ober waits for a command to report an exit before giving up on that wait (default 30000). The command itself is not stopped at the deadline — it keeps running on this machine.',
       maxOutput: 'Max Output Size (bytes)',
       maxOutputDesc: 'Maximum output buffer size in bytes (default 100000)',
     },

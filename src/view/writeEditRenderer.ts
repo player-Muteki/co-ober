@@ -85,6 +85,14 @@ export function updateWriteEditContent(
   newText: string,
 ): void {
   state.body.empty();
+  // The header's file name is chosen at card creation from the tool_call's
+  // input/locations. When those carried nothing — a write announced before its
+  // diff, an edit whose path rides only on the content frame — the header read
+  // the localized "unnamed file" while the body below drew a diff for a real
+  // path. The diff is the stronger evidence of which file this is, so the name
+  // follows it: the same basename the summary would have shown had it arrived.
+  const shownName = path.split(/[\\/]/).pop() ?? path;
+  if (shownName) state.fileNameEl.textContent = shownName;
   // Compute and render stats in header
   const stats = computeDiffStats(oldText, newText);
   state.statsEl.empty();

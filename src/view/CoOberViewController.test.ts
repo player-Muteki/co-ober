@@ -1543,6 +1543,20 @@ describe('CoOberViewController', () => {
       expect(deps.renderer.addError).toHaveBeenCalledWith(t().permission.unreadable);
     });
 
+    it('keeps the unreadable-permission line cause-neutral, since four causes share it', () => {
+      // onPermissionUnreadable fires for a malformed permission request, for a
+      // well-formed one with no selectable options, and for elicitation requests
+      // it cannot render — so a line blaming a failed parse ("was unreadable /
+      // 无法解析") told an empty-but-valid prompt's reader the request was
+      // unreadable when it was perfectly readable and simply had nothing to
+      // click. The wording now says only that it could not be shown.
+      const message = t().permission.unreadable.toLowerCase();
+      expect(message).toContain('could not be shown');
+      expect(message).not.toContain('unreadable');
+      expect(message).not.toContain('parse');
+      expect(message).not.toContain('malformed');
+    });
+
     it('retires the matching elicitation banner when the agent reports completion', () => {
       const client = createMockClient();
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);

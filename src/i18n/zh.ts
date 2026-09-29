@@ -112,7 +112,7 @@ const zh: Locale = {
   permission: {
     title: '权限：{title}',
     moreLocations: '另有 {count} 处',
-    unreadable: '权限请求无法解析，已取消。',
+    unreadable: '权限请求无法显示，已取消。',
     originTab: '来自标签 {index} 的请求——点击切换',
     keyHint: '回车选择 · Esc 表示未作答',
     granted: 'Co-Ober 未经询问在本机执行了 {count} 次 Agent 请求——最近一次：{detail}',
@@ -631,7 +631,7 @@ const zh: Locale = {
       enabled: '启用 — Agent 可以运行命令',
       disabled: '禁用 — 无终端访问权限',
       timeout: '命令超时（毫秒）',
-      timeoutDesc: '命令终止前的最大等待时间（默认 30000）',
+      timeoutDesc: 'Co-Ober 等待命令上报退出结果的时长（毫秒）；超过这个时间就放弃等待（默认 30000）。命令本身不会在到期时被终止，仍会在本机继续运行。',
       maxOutput: '最大输出大小（字节）',
       maxOutputDesc: '输出缓冲区的最大字节数（默认 100000）',
     },

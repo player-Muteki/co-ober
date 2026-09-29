@@ -623,6 +623,28 @@ describe('CoOberSettingsTab live capability push', () => {
     expect(client.setTerminalCapabilityMode).toHaveBeenCalledWith('enabled', 5000, 2048);
   });
 
+  it('describes the command timeout as a wait it does not enforce with a kill', () => {
+    // The deadline bounds how long Co-Ober waits for a command to report an
+    // exit; terminalManager's waitForExit timer only rejects the WAIT and never
+    // touches the process, so the old wording ("before a command is terminated")
+    // promised the reader that a slow command would be stopped at 30s when in
+    // fact it keeps running on the machine and only the observation gave up.
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+
+    const timeoutItem = [...tab.containerEl.querySelectorAll('.setting-item')]
+      .find((el) => el.textContent?.includes('Command Timeout (ms)'));
+    const desc = timeoutItem?.querySelector('.setting-item-description')?.textContent ?? '';
+    expect(desc.toLowerCase()).toContain('wait');
+    // Not the old claim that a command is terminated at the deadline.
+    expect(desc.toLowerCase()).not.toContain('terminat');
+    expect(desc.toLowerCase()).not.toContain('killed');
+    // And it says plainly the command survives the deadline.
+    expect(desc.toLowerCase()).toContain('keeps running');
+  });
+
   it('keeps a tier-forbidden capability closed when its dropdown is moved', async () => {
     setLocale('en');
     const plugin = createPlugin({ refreshLocale: vi.fn() });

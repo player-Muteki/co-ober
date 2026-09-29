@@ -80,4 +80,30 @@ describe('updateWriteEditContent (0.2.14 stage 2)', () => {
     expect(state.collapsibleState.isExpanded).toBe(true);
     expect(state.wrapper.classList.contains('is-collapsed')).toBe(false);
   });
+
+  it('re-names the header to the file the diff actually draws', () => {
+    // A write announced before its diff (or an edit whose path rides only on the
+    // content frame) is created with no name, so the header read the localized
+    // "unnamed file" while the body below drew a diff for a real path. The diff
+    // is the stronger evidence of which file this is, so the name now follows it.
+    const state = createWriteEditBlock(parent, 'tc-10', 'write');
+    expect(state.fileNameEl.textContent).toBe('');
+    updateWriteEditContent(state, '/deep/nested/notes.md', 'old\n', 'new\n');
+    // The basename, matching what the summary would have shown had it arrived.
+    expect(state.fileNameEl.textContent).toBe('notes.md');
+    // And the header's accessibility label, read off the header's own words,
+    // announces the file that is actually shown rather than "unnamed file".
+    relabelCollapsibleHeaders(parent);
+    expect(state.header.getAttribute('aria-label')).toContain('notes.md');
+    expect(state.header.getAttribute('aria-label')).not.toContain('Unnamed');
+  });
+
+  it('settles a header name to the basename when the diff carries a new path', () => {
+    // A full path arriving on the content frame still settles to the basename,
+    // the same shape the header was born with, rather than widening to the whole
+    // path or leaving a stale name above a diff for a different file.
+    const state = createWriteEditBlock(parent, 'tc-11', 'edit', 'old.md');
+    updateWriteEditContent(state, 'src/renamed.md', 'a\n', 'b\n');
+    expect(state.fileNameEl.textContent).toBe('renamed.md');
+  });
 });
