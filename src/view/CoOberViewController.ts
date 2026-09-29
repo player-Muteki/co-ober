@@ -433,11 +433,16 @@ export class CoOberViewController {
   tabDescriptors(): TabDescriptor[] {
     return this.listTabIds().map((tabId, index) => {
       const rt = this.runtimes.get(tabId) as SessionRuntime;
-      const title = rt.sessionId ? this.deps.sessionStore.get(rt.sessionId)?.title : undefined;
+      const raw = rt.sessionId ? this.deps.sessionStore.get(rt.sessionId)?.title : undefined;
       return {
         tabId,
         index,
-        title: title?.trim() ? title : t().tabs.untitled,
+        // The strip is a snapshot of facts, not of wording: baking the locale's
+        // "New conversation" in here froze an untitled tab in the language the
+        // list happened to be built in, so a later language switch re-spoke every
+        // other string on the badge but that one. The empty title is handed to
+        // renderTab, which says it in whatever words are in force at draw time.
+        title: raw?.trim() ? raw : '',
         streaming: rt.busy,
         queued: rt.promptQueue.length > 0,
         unread: rt.unread,

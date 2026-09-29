@@ -153,7 +153,10 @@ export class TabBar {
     else if (tab.streaming) status = t().tabs.streaming;
     else if (tab.unread) status = t().tabs.unread.replace('{index}', String(number));
 
-    badge.setAttribute('title', status ? `${tab.title} — ${status}` : tab.title);
+    // The strip says "New conversation" itself, in the words currently in force,
+    // rather than trusting a title the controller minted in some earlier locale.
+    const tooltipLabel = tab.title || t().tabs.untitled;
+    badge.setAttribute('title', status ? `${tooltipLabel} — ${status}` : tooltipLabel);
     const switchTo = t().tabs.switchTo.replace('{index}', String(number));
     badge.setAttribute('aria-label', status ? `${switchTo}: ${status}` : switchTo);
     badge.createDiv({ cls: 'co-ober-tab-number', text: String(number) });

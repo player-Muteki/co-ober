@@ -603,6 +603,23 @@ describe('ToolCallRenderer', () => {
       expect(state.body.querySelector('.co-ober-tool-unsupported')?.textContent).toBe(
         'Co-Ober cannot show image/svg+xml content from this tool.',
       );
+      // The named branch carries the MIME inside the sentence, so a locale
+      // repaint from the template would reprint "{type}"; it stays untagged.
+      expect(state.body.querySelector('.co-ober-tool-unsupported')?.getAttribute('data-i18n-text')).toBeNull();
+    });
+
+    it('tags an image refusal that named no format, so a language switch re-speaks it', () => {
+      const state = createToolCallElement(container, 'tc', 'fetch', 'Screenshot');
+      updateToolCallElement(state, 'completed', 'fetch', undefined, [imageItem('')]);
+
+      expect(state.body.querySelector('.co-ober-tool-unsupported')?.textContent).toBe(
+        'Co-Ober cannot show part of this tool result.',
+      );
+      // A fixed sentence with no value in it is the one an on-screen language
+      // switch can restore — the same key the unsupported-content twin carries.
+      expect(state.body.querySelector('.co-ober-tool-unsupported')?.getAttribute('data-i18n-text')).toBe(
+        'tool.unsupportedUnknown',
+      );
     });
 
     it('says an item is unsupported by the name the agent sent it under', () => {

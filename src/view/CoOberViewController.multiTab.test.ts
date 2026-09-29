@@ -758,7 +758,10 @@ describe('CoOberViewController — tab strip and shells (0.2.0 stage 3)', () => 
     rtOf(h, 'tab-2').promptQueue.push({ text: 'next', refs: [] });
 
     const badges = h.controller.tabDescriptors();
-    expect(badges.map((b) => b.title)).toEqual(['Note A', t().tabs.untitled]);
+    // The descriptor carries the store's title verbatim and an empty string for
+    // a conversation with none — the wording "New conversation" is the strip's to
+    // say at draw time, so switching language cannot leave this field in an old tongue.
+    expect(badges.map((b) => b.title)).toEqual(['Note A', '']);
     expect(badges.map((b) => b.streaming)).toEqual([true, false]);
     expect(badges.map((b) => b.unread)).toEqual([true, false]);
     expect(badges.map((b) => b.queued)).toEqual([false, true]);

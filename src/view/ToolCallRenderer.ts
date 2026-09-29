@@ -492,12 +492,16 @@ const RENDERABLE_IMAGE_MIME = /^(image\/(png|jpeg|gif|webp|bmp))$/i;
 
 function renderToolImage(body: HTMLElement, mimeType: string, data: string): void {
   if (!RENDERABLE_IMAGE_MIME.test(mimeType) || !data) {
-    body.createDiv({
+    const unsupportedEl = body.createDiv({
       cls: 'co-ober-tool-unsupported',
       text: mimeType
         ? t().tool.unsupportedContent.replace('{type}', mimeType)
         : t().tool.unsupportedUnknown,
     });
+    // Same rule as the unsupported-content twin: only the tagless reading is a
+    // fixed sentence the locale walker can reprint in the new tongue. The named
+    // variant carries its MIME in the string, so re-spoken it would read "{type}".
+    if (!mimeType) unsupportedEl.dataset.i18nText = 'tool.unsupportedUnknown';
     return;
   }
   const img = body.createEl('img', { cls: 'co-ober-tool-image' });

@@ -79,6 +79,20 @@ describe('TabBar', () => {
     expect(titles[3]).toBe(`Chat tab-4 — ${t().tabs.unread.replace('{index}', '4')}`);
   });
 
+  it('says an untitled tab in the words now in force, not the ones it was minted in', () => {
+    // The descriptor carries the store's title verbatim and an empty string when
+    // there is none; the strip supplies the "New conversation" fallback at draw
+    // time, so a language change re-speaks it rather than freezing the tab in the
+    // locale the list happened to be built under.
+    const tabs = [tab({ tabId: 'tab-1', title: '' })];
+    const { bar, container } = createBar(tabs);
+    expect(badges(container)[0].getAttribute('title')).toBe('New conversation');
+
+    setLocale('zh');
+    bar.render(tabs, 6);
+    expect(badges(container)[0].getAttribute('title')).toBe('新对话');
+  });
+
   it('names a tab that is generating with work still queued as generating, not idle', () => {
     const { container } = createBar([tab({ tabId: 'tab-1', streaming: true, queued: true })]);
     const badge = badges(container)[0];
