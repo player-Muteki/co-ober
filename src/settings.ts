@@ -22,7 +22,12 @@ interface AutoScrollView {
  * that was never stored.
  */
 function parseBoundedInt(raw: string, min: number, max: number): number | null {
-  const n = parseInt(raw, 10);
+  // The hint promises a whole number, so a value that is not exactly one has to
+  // be refused rather than quietly repaired. parseInt floored "8000.5" to 8000
+  // and truncated "12abc" to 12 — both stored while the box still showed text the
+  // field had just claimed to reject, so the number on screen was a claim the
+  // settings no longer stood behind.
+  const n = raw.trim() === '' ? Number.NaN : Number(raw);
   if (!Number.isInteger(n) || n < min || n > max) {
     new Notice(locale().settings.invalidNumber.replace('{min}', String(min)).replace('{max}', String(max)));
     return null;

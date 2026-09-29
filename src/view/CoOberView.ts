@@ -1154,6 +1154,7 @@ export class CoOberView extends ItemView {
       description?: string;
       category?: string;
       badge?: string;
+      badgeKey?: string;
       argumentHint?: string;
     }> = [];
 
@@ -1178,6 +1179,18 @@ export class CoOberView extends ItemView {
         mcp: t().badge.mcp,
         skill: t().badge.skill,
       };
+      // Colour the badge by a stable role, not by its translated word. The CSS
+      // buckets are named builtin/acp/custom/mcp/skill; `file` commands share the
+      // `custom` bucket, matching their label. Deriving the class from badgeLabel
+      // above meant a Chinese UI produced ac-badge-内置 etc., which no rule matched
+      // — the badge printed correctly but silently lost its colour.
+      const badgeKey: Record<string, string> = {
+        builtin: 'builtin',
+        acp: 'acp',
+        file: 'custom',
+        mcp: 'mcp',
+        skill: 'skill',
+      };
       for (const cmd of all) {
         allItems.push({
           value: cmd.trigger,
@@ -1185,6 +1198,7 @@ export class CoOberView extends ItemView {
           description: cmd.description,
           category: cmd.source === 'builtin' ? cmd.category : 'agent',
           badge: badgeLabel[cmd.source] ?? cmd.source.toUpperCase(),
+          badgeKey: badgeKey[cmd.source],
           argumentHint: cmd.argumentHint,
         });
       }

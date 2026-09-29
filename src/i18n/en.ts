@@ -584,6 +584,7 @@ const en = {
       envName: 'Name',
       envValue: 'Value',
       envAdd: '+ Add Variable',
+      headersAdd: '+ Add Header',
     },
     mcpHttpDisabled: 'not supported by current agent',
     mcpSseDisabled: 'not supported by current agent',

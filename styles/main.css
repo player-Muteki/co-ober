@@ -325,12 +325,6 @@
 }
 
 /* Thinking */
-.co-ober-thinking {
-  border: 1px dashed var(--background-modifier-border);
-  border-radius: var(--radius-s);
-  overflow: hidden;
-}
-
 .co-ober-thinking-header {
   padding: 4px 10px;
   font-size: var(--font-smaller);

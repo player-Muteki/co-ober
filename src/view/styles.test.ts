@@ -48,6 +48,17 @@ describe('the stylesheet and the DOM it is answerable to', () => {
     expect(css).not.toContain('co-ober-tool-status');
   });
 
+  it('drops the bare thinking wrapper no element carries', () => {
+    // thinkingBlockRenderer.ts builds the frame as .co-ober-thinking-block and
+    // its parts as .co-ober-thinking-header / -body / -label / …; it never paints
+    // a bare .co-ober-thinking. The dashed box that rule drew styled a container
+    // no DOM node had — the frame the reader saw belonged to -block.
+    expect(css).not.toMatch(/\.co-ober-thinking\s*\{/);
+    // The child classes the code does paint keep their rules.
+    expect(css).toMatch(/\.co-ober-thinking-header\s*\{/);
+    expect(css).toMatch(/\.co-ober-thinking-body\s*\{/);
+  });
+
   it('drops no rule for a tool state this client cannot reach, or a footer it does not name', () => {
     // ToolCallRenderer.ts adds exactly status-pending / -running / -completed /
     // -error, so three .status-blocked rules styled an amber card no frame could

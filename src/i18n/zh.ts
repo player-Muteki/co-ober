@@ -586,6 +586,7 @@ const zh: Locale = {
       envName: '名称',
       envValue: '值',
       envAdd: '+ 添加变量',
+      headersAdd: '+ 添加请求头',
     },
     mcpHttpDisabled: '当前 Agent 不支持',
     mcpSseDisabled: '当前 Agent 不支持',

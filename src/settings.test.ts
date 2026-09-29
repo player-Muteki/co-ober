@@ -694,6 +694,26 @@ describe('CoOberSettingsTab live capability push', () => {
     );
   });
 
+  it('refuses a value that is not exactly a whole number rather than repairing it', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+    const before = plugin.settings.maxNoteSize;
+    Notice.messages.length = 0;
+
+    // parseInt turned both of these into a stored integer while the field kept
+    // showing the rejected text: 4096.5 floored to 4096, 4096abc truncated to
+    // 4096. The hint says whole number, so neither may be accepted.
+    await changeInput(findTextSettingInput(tab, 'Max Note Reference Size'), '4096.5');
+    expect(plugin.settings.maxNoteSize).toBe(before);
+    await changeInput(findTextSettingInput(tab, 'Max Note Reference Size'), '4096abc');
+    expect(plugin.settings.maxNoteSize).toBe(before);
+    expect(Notice.messages).toContain(
+      locale().settings.invalidNumber.replace('{min}', '100').replace('{max}', '1000000'),
+    );
+  });
+
   it('rejects a non-numeric number field with the same hint', async () => {
     setLocale('en');
     const plugin = createPlugin({ refreshLocale: vi.fn() });

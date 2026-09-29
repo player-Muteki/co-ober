@@ -294,7 +294,7 @@ export function addMcpServerBlock(containerEl: HTMLElement, server: McpServerCon
         const addRow = headersDetails.createDiv({ cls: 'co-ober-mcp-header-add' });
         new Setting(addRow)
           .setName('')
-          .addButton((b) => b.setButtonText('+ Add Header')
+          .addButton((b) => b.setButtonText(labels.headersAdd)
             .onClick(async () => {
               if (!httpServer.headers) httpServer.headers = [];
               httpServer.headers.push({ name: '', value: '' });

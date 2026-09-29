@@ -213,4 +213,33 @@ describe('Autocomplete', () => {
       expect(autocomplete.isOpen()).toBe(false);
     });
   });
+
+  describe('badge colour follows a stable key, not the translated label', () => {
+    it('keeps the builtin bucket under a Chinese label', () => {
+      // The badge text is localised, but ac-badge-* is a CSS class and must not
+      // be: derived from "内置" it produced ac-badge-内置, which no rule matched,
+      // so a Builtin badge silently lost its colour the moment the UI was Chinese.
+      setLocale('zh');
+      autocomplete.open([{ value: 'compact', label: '/compact', badge: '内置', badgeKey: 'builtin' }], '/');
+      const badge = container.querySelector('.ac-badge') as HTMLElement;
+      expect(badge.textContent).toBe('内置');
+      expect(badge.classList.contains('ac-badge-builtin')).toBe(true);
+      expect(badge.className).not.toContain('内置');
+      setLocale('en');
+    });
+
+    it('maps a file command onto the custom bucket', () => {
+      autocomplete.open([{ value: 'deploy', label: '/deploy', badge: 'Custom', badgeKey: 'custom' }], '/');
+      expect(container.querySelector('.ac-badge')?.classList.contains('ac-badge-custom')).toBe(true);
+    });
+
+    it('paints a badge with no key as a plain badge rather than a phantom bucket', () => {
+      // The @-mention check-mark carries no category; it must not mint an
+      // ac-badge-✓ class that styles nothing.
+      autocomplete.open([{ value: 'note', label: '@note', badge: '✓' }], '@');
+      const badge = container.querySelector('.ac-badge') as HTMLElement;
+      expect(badge.classList.contains('ac-badge')).toBe(true);
+      expect(badge.className.trim()).toBe('ac-badge');
+    });
+  });
 });

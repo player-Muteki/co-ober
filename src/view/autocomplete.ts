@@ -9,6 +9,13 @@ export interface ACItem {
   category?: string;
   /** Badge text (Builtin / ACP / ✓ for selected). */
   badge?: string;
+  /**
+   * Stable, locale-independent colour bucket for the badge (builtin / acp /
+   * custom / mcp / skill). The class is built from this, never from the badge
+   * text: that text is translated, and deriving the class from it made a badge
+   * drop its colour in any language whose word for "Builtin" is not "builtin".
+   */
+  badgeKey?: string;
   /** Argument hint displayed in grey (e.g. "[path/to/dir]"). */
   argumentHint?: string;
 }
@@ -236,7 +243,11 @@ export class Autocomplete {
     }
 
     if (item.badge) {
-      row1.createSpan({ text: item.badge, cls: `ac-badge ac-badge-${item.badge.toLowerCase()}` });
+      // Colour follows the stable key, so the same "Builtin"/"内置" badge keeps
+      // its bucket across locales; a bare check-mark (no key) is just a badge.
+      const key = item.badgeKey?.toLowerCase();
+      const cls = key ? `ac-badge ac-badge-${key}` : 'ac-badge';
+      row1.createSpan({ text: item.badge, cls });
     }
 
     // Second row: argument hint + description
