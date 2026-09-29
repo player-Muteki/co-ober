@@ -11,7 +11,10 @@ export interface InputCallbacks {
   // Returns true when something else (an outstanding permission banner) owns
   // Escape, so the key must not reach the stop-the-stream fallback below.
   onEscape?: () => boolean;
-  onCycleMode?: (direction: 1 | -1) => void;
+  // Returns true when the cycle actually moved to another mode. With one agent
+  // (or none yet) there is nothing to step to, so the caller says "no" and Tab
+  // must be free to do what Tab does everywhere else on the page — move focus.
+  onCycleMode?: (direction: 1 | -1) => boolean;
   onToggleMention: () => void;
   onToggleSlash: () => void;
   onAddRef: (ref: ContextRef) => void;
@@ -50,8 +53,14 @@ export class ChatInput {
         if (this.callbacks.onEscape?.()) { e.preventDefault(); return; }
         if (this.streaming) { e.preventDefault(); this.callbacks.onStop(); return; }
       }
-      if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); this.callbacks.onCycleMode?.(1); return; }
-      if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); this.callbacks.onCycleMode?.(-1); return; }
+      if (e.key === 'Tab') {
+        // Tab is the site's focus key. Swallowing it when there is no second
+        // mode to step to traps keyboard users in the textarea and promises
+        // an action nothing carries out — the mode chip already refuses a
+        // role=button at ≤1 mode, this is the same rule read through the key.
+        const dir: 1 | -1 = e.shiftKey ? -1 : 1;
+        if (this.callbacks.onCycleMode?.(dir)) { e.preventDefault(); return; }
+      }
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.send(); return; }
       if (e.key === '@' && this.isAtWordBoundary()) { e.preventDefault(); this.callbacks.onToggleMention(); return; }
       if (e.key === '/' && this.isAtWordBoundary()) { e.preventDefault(); this.callbacks.onToggleSlash(); return; }

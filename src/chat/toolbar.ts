@@ -186,17 +186,18 @@ export class InputToolbar {
     }
   }
 
-  cycleMode(): void {
-    if (this.modeOptions.length <= 1) return;
+  cycleMode(): boolean {
+    if (this.modeOptions.length <= 1) return false;
     const idx = this.modeOptions.findIndex(o => o.value === this.currentMode);
     const next = this.modeOptions[(idx + 1) % this.modeOptions.length];
     this.currentMode = next.value;
     this.modeCycleLabelEl.setText(next.label);
     this.callbacks.onAgentChange?.(next.value);
+    return true;
   }
 
-  cycleModeReverse(): void {
-    if (this.modeOptions.length <= 1) return;
+  cycleModeReverse(): boolean {
+    if (this.modeOptions.length <= 1) return false;
     const idx = this.modeOptions.findIndex(o => o.value === this.currentMode);
     // Nothing is named as current, so stepping back has to come in at the end
     // of the list — the same place the forward press enters at its start.
@@ -208,6 +209,7 @@ export class InputToolbar {
     this.currentMode = prev.value;
     this.modeCycleLabelEl.setText(prev.label);
     this.callbacks.onAgentChange?.(prev.value);
+    return true;
   }
 
   // ── Model custom dropdown ──

@@ -155,6 +155,45 @@ describe('ChatInput', () => {
 			expect(onCycleMode).toHaveBeenCalledWith(-1);
 		});
 
+		it('leaves Tab to move focus when there is no second mode to step to', () => {
+			// The callback returns false when cycleMode() cannot actually change
+			// anything (one agent, or none yet — the same condition that already
+			// refuses a role=button on the mode chip). Swallowing the key then
+			// promised a cycle no code carried out and trapped the keyboard
+			// reader in the textarea, so the handler must let defaultPrevented
+			// stay false and let Tab do what Tab does everywhere else on the page.
+			const onCycleMode = vi.fn().mockReturnValue(false);
+			callbacks.onCycleMode = onCycleMode;
+			const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+			const event = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: false, bubbles: true, cancelable: true });
+			textarea.dispatchEvent(event);
+			expect(onCycleMode).toHaveBeenCalledWith(1);
+			expect(event.defaultPrevented).toBe(false);
+		});
+
+		it('consumes Tab when the cycle actually moved', () => {
+			// Two-sided contract: when a mode did change, the key must not also
+			// leak to focus navigation — that would put the reader one tab stop
+			// away from the composer with every cycle.
+			const onCycleMode = vi.fn().mockReturnValue(true);
+			callbacks.onCycleMode = onCycleMode;
+			const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+			const event = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: false, bubbles: true, cancelable: true });
+			textarea.dispatchEvent(event);
+			expect(onCycleMode).toHaveBeenCalledWith(1);
+			expect(event.defaultPrevented).toBe(true);
+		});
+
+		it('leaves Shift+Tab to move focus when there is no second mode to step back to', () => {
+			const onCycleMode = vi.fn().mockReturnValue(false);
+			callbacks.onCycleMode = onCycleMode;
+			const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+			const event = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true });
+			textarea.dispatchEvent(event);
+			expect(onCycleMode).toHaveBeenCalledWith(-1);
+			expect(event.defaultPrevented).toBe(false);
+		});
+
 		it('Enter sends message', () => {
 			const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
 			textarea.value = 'Test message';

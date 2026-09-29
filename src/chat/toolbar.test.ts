@@ -211,6 +211,22 @@ describe('InputToolbar cycle mode', () => {
     expect(container.querySelector('.co-ober-mode-cycle-label')?.textContent).toBe('Build');
   });
 
+  it('reports whether a cycle actually moved, so the caller may release the key', () => {
+    // The composer's Tab handler only swallows the key when a mode changed.
+    // At one agent (or none yet) cycleMode can only return, so it must say
+    // "no" — false — and let Tab keep doing what Tab does everywhere else.
+    const container = document.createElement('div') as HTMLDivElement;
+    const toolbar = new InputToolbar(container, { onAgentChange: vi.fn() });
+
+    toolbar.updateAgents([{ value: 'build', label: 'Build' }], 'build');
+    expect(toolbar.cycleMode()).toBe(false);
+    expect(toolbar.cycleModeReverse()).toBe(false);
+
+    toolbar.updateAgents([{ value: 'build', label: 'Build' }, { value: 'ask', label: 'Ask' }], 'build');
+    expect(toolbar.cycleMode()).toBe(true);
+    expect(toolbar.cycleModeReverse()).toBe(true);
+  });
+
   it('cycleModeReverse goes to previous agent and wraps around', () => {
     const container = document.createElement('div') as HTMLDivElement;
     const onAgentChange = vi.fn();

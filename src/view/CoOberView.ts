@@ -278,10 +278,9 @@ export class CoOberView extends ItemView {
         void this.stopGeneration();
       },
       onEscape: () => this.controller?.answerPendingPrompt() ?? false,
-      onCycleMode: (direction) => {
-        if (direction === 1) this.toolbar.cycleMode();
-        else this.toolbar.cycleModeReverse();
-      },
+      onCycleMode: (direction) => direction === 1
+        ? this.toolbar.cycleMode()
+        : this.toolbar.cycleModeReverse(),
       onToggleMention: () => this.showAC('@'),
       onToggleSlash: () => this.showAC('/'),
       onAddRef: (ref: ContextRef) => this.addChip(ref, 'manual'),
