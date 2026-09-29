@@ -1228,9 +1228,13 @@ export class CoOberViewController {
     // agent's models, modes and config choices: switching to them cannot work.
     this.deps.toolbar.updateAgents([], undefined);
     this.deps.toolbar.updateModels([], undefined);
-    // The effort list here is our own, but nothing is negotiating it any more,
-    // so no tier is named as the current one.
-    this.deps.toolbar.updateEffort(this.builtInEfforts(), undefined);
+    // The tier list may be ours, but choosing a tier still routes through
+    // setConfigOption on a client that no longer exists, so onEffortChange
+    // returns without doing anything. Leaving the picker populated and operable
+    // offered a control that silently no-ops — the same dead affordance the
+    // models/modes above withdraw — so it is emptied to match, and an empty list
+    // drops its operability (role/tabindex/aria) in the toolbar.
+    this.deps.toolbar.updateEffort([], undefined);
     this.deps.toolbar.updateExtraConfigs([]);
     // The slash palette is built from the command registry, which the agent kept
     // repopulating over `available_commands_update`. Left alone, a disconnected

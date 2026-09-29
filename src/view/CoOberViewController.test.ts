@@ -314,17 +314,11 @@ describe('CoOberViewController', () => {
 
       expect(deps.toolbar.updateAgents).toHaveBeenCalledWith([], undefined);
       expect(deps.toolbar.updateModels).toHaveBeenCalledWith([], undefined);
-      // The tier list is ours, so it stays on the bar; the selection was a
-      // negotiation with the agent that died, so nothing is named as in force.
-      expect(deps.toolbar.updateEffort).toHaveBeenCalledWith(
-        [
-          { value: 'default', label: t().toolbar.effort.default },
-          { value: 'low', label: t().toolbar.effort.low },
-          { value: 'medium', label: t().toolbar.effort.medium },
-          { value: 'high', label: t().toolbar.effort.high },
-        ],
-        undefined,
-      );
+      // Choosing a tier still routes through setConfigOption on a client that is
+      // gone, so onEffortChange returns without acting: leaving the picker
+      // populated offered a control that silently no-ops. It is emptied with the
+      // models/modes, and an empty list drops its operability in the toolbar.
+      expect(deps.toolbar.updateEffort).toHaveBeenCalledWith([], undefined);
       expect(deps.toolbar.updateExtraConfigs).toHaveBeenCalledWith([]);
     });
 

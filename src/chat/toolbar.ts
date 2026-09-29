@@ -580,16 +580,13 @@ export class InputToolbar {
       : t().toolbar.attachImage;
     // Relabel the options the agent actually offered (custom tiers like
     // minimal/xhigh would otherwise vanish under a hardcoded 4-tier list);
-    // agent-supplied names for unknown values pass through unchanged.
+    // agent-supplied names for unknown values pass through unchanged. An empty
+    // list stays empty: a live session always reaches here with either the
+    // agent's tiers or our built-in defaults, so the only time it is bare is a
+    // disconnected tab, and re-minting defaults there would hand back the dead
+    // control the disconnect just withdrew the moment the reader changed language.
     this.updateEffort(
-      this.effortOptions.length > 0
-        ? this.effortOptions.map((o) => ({ value: o.value, label: normalizeEffortLabel(o.value, o.label) }))
-        : [
-            { value: 'default', label: t().toolbar.effort.default },
-            { value: 'low', label: t().toolbar.effort.low },
-            { value: 'medium', label: t().toolbar.effort.medium },
-            { value: 'high', label: t().toolbar.effort.high },
-          ],
+      this.effortOptions.map((o) => ({ value: o.value, label: normalizeEffortLabel(o.value, o.label) })),
       this.currentEffort,
     );
     // The option names are the agent's own, but the tooltip around them is not.

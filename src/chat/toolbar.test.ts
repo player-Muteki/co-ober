@@ -23,13 +23,16 @@ describe('InputToolbar locale refresh', () => {
     toolbar.refreshLocale();
 
     expect(container.querySelector('.co-ober-model-label')?.textContent).toBe('无可用模型');
-    // Nothing reported a tier, so switching language must not invent one. This
-    // used to read 默认 ('Default') after a locale change: the list was empty,
-    // the session had named nothing, and refreshLocale fell back to the first
-    // built-in tier — relabelling the control to a tier no prompt would send,
-    // since effort only reaches the agent through an explicit pick.
-    expect(container.querySelector('.co-ober-effort-label')?.textContent).toBe('未设定');
-    expect(container.querySelector('.co-ober-effort-option')?.textContent).toBe('默认');
+    // An empty effort list stays withdrawn across a locale switch. Nothing was
+    // negotiating tiers, so an explicit pick has no client to reach — the same
+    // dead affordance the disconnect path now empties. This used to fall back to
+    // re-minting the built-in defaults (and once even named 默认 as selected);
+    // refreshLocale now maps the real (empty) list, so the picker offers nothing
+    // and the label reports none, exactly as the models row reads "No models".
+    expect(container.querySelector('.co-ober-effort-label')?.textContent).toBe('—');
+    const effortOptions = Array.from(container.querySelectorAll('.co-ober-effort-option'))
+      .filter((el) => !el.classList.contains('empty'));
+    expect(effortOptions).toHaveLength(0);
     expect(container.querySelector('.co-ober-send-btn')?.classList.contains('mod-stop')).toBe(true);
   });
 
@@ -159,6 +162,36 @@ describe('InputToolbar effort locale refresh', () => {
     const labels = Array.from(container.querySelectorAll('.co-ober-effort-option')).map((el) => el.textContent);
     expect(labels).toEqual(['最低', '极高', 'Turbo Mode']);
     expect(container.querySelector('.co-ober-effort-label')?.textContent).toBe('Turbo Mode');
+    setLocale('en');
+  });
+
+  it('keeps an emptied effort list withdrawn across a locale refresh', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const toolbar = new InputToolbar(container, {});
+    toolbar.updateEffort(
+      [
+        { value: 'default', label: 'Default' },
+        { value: 'high', label: 'High' },
+      ],
+      undefined,
+    );
+    // Disconnect empties the list; a live tab always reaches refreshLocale with
+    // the agent's tiers or the built-in defaults, so bare means nothing is negotiating.
+    toolbar.updateEffort([], undefined);
+    const btn = container.querySelector('.co-ober-effort-btn') as HTMLElement;
+    expect(btn.hasAttribute('role')).toBe(false);
+
+    setLocale('zh');
+    toolbar.refreshLocale();
+
+    // A language switch must not resurrect the default tiers for a dead agent,
+    // nor hand back a picker whose change silently no-ops.
+    expect(container.querySelector('.co-ober-effort-label')?.textContent).toBe('—');
+    const realOptions = Array.from(container.querySelectorAll('.co-ober-effort-option'))
+      .filter((el) => !el.classList.contains('empty'));
+    expect(realOptions).toHaveLength(0);
+    expect(btn.hasAttribute('role')).toBe(false);
     setLocale('en');
   });
 });

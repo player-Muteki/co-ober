@@ -394,9 +394,20 @@ describe('TabBar', () => {
 
     setLocale('zh');
 
-    expect(badges(container)[0].getAttribute('aria-label')).toContain('切换到标签 1');
+    expect(badges(container)[0].getAttribute('aria-label')).toContain('当前标签 1');
     expect(container.querySelector('.co-ober-tab-new')?.getAttribute('aria-label')).toBe(t().tabs.new);
     setLocale('en');
+  });
+
+  it('names the active tab as current, since switching to it is a no-op', () => {
+    // Selecting the tab you are already on — by mouse, Enter or Space — does
+    // nothing, so calling it "Switch to tab 1" promised a move that cannot
+    // happen; only an inactive badge can offer a switch.
+    const { container } = createBar([tab({ tabId: 'tab-1', active: true }), tab({ tabId: 'tab-2' })]);
+    const [first, second] = badges(container);
+
+    expect(first.getAttribute('aria-label')).toBe(t().tabs.current.replace('{index}', '1'));
+    expect(second.getAttribute('aria-label')).toBe(t().tabs.switchTo.replace('{index}', '2'));
   });
 
   it('goes away on dispose and ignores later renders', () => {

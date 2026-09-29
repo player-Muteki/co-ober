@@ -130,6 +130,7 @@ const en = {
     streamingQueued: 'generating, more queued',
     unread: 'tab {index} finished while hidden',
     switchTo: 'Switch to tab {index}',
+    current: 'Current tab {index}',
     streaming: 'generating',
     dangling: 'This conversation is no longer stored, so the tab is empty.',
     restoreFailed: 'This conversation could not be opened. Switch away and back to try again.',

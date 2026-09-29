@@ -132,6 +132,7 @@ const zh: Locale = {
     streamingQueued: '生成中，后续已排队',
     unread: '标签 {index} 在隐藏时完成了回复',
     switchTo: '切换到标签 {index}',
+    current: '当前标签 {index}',
     streaming: '生成中',
     dangling: '该对话已不再保存，标签为空。',
     restoreFailed: '该对话无法打开。请切换到别的标签再切回来重试。',

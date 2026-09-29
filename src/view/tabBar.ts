@@ -157,8 +157,12 @@ export class TabBar {
     // rather than trusting a title the controller minted in some earlier locale.
     const tooltipLabel = tab.title || t().tabs.untitled;
     badge.setAttribute('title', status ? `${tooltipLabel} — ${status}` : tooltipLabel);
-    const switchTo = t().tabs.switchTo.replace('{index}', String(number));
-    badge.setAttribute('aria-label', status ? `${switchTo}: ${status}` : switchTo);
+    // The badge promises an action the click handler will not take on the tab
+    // you are already reading: selecting the active tab (mouse, Enter or Space)
+    // is a no-op, so "Switch to tab N" named a move that cannot happen. The tab
+    // under the reader is named for what it is — the current one.
+    const name = (tab.active ? t().tabs.current : t().tabs.switchTo).replace('{index}', String(number));
+    badge.setAttribute('aria-label', status ? `${name}: ${status}` : name);
     badge.createDiv({ cls: 'co-ober-tab-number', text: String(number) });
     if (tab.streaming) {
       const pulse = badge.createDiv({ cls: 'co-ober-tab-pulse' });
