@@ -135,7 +135,7 @@ const en = {
   },
 
   draft: {
-    imagesDropped: '{count} staged image(s) were not kept with the restored drafts — images are never saved to disk.',
+    imagesDropped: '{count} staged image(s) were not kept with the restored drafts — a draft saves how many images were staged, not the images themselves.',
   },
 
   elicitation: {

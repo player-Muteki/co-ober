@@ -137,7 +137,7 @@ const zh: Locale = {
   },
 
   draft: {
-    imagesDropped: '恢复的草稿中有 {count} 张待发送图片未被保留 — 图片不会写入磁盘。',
+    imagesDropped: '恢复的草稿中有 {count} 张待发送图片未被保留 — 草稿只记录待发送图片的数量，而不保存图片本身。',
   },
 
   elicitation: {

@@ -846,6 +846,21 @@ describe('CoOberView tab panels', () => {
       expect(view.contentEl.querySelectorAll('.co-ober-chip[data-kind="image"]').length).toBe(0);
     });
 
+    it('says a draft kept the count, not that images never reach disk', async () => {
+      // A sent image IS persisted with the transcript (and only trimmed by the
+      // stored-image budget), so the old clause "images are never saved to disk"
+      // told the reader a rule the store itself breaks. The notice now states the
+      // narrower truth: a draft remembers how many images were staged, not the
+      // images themselves.
+      setLocale('en');
+      Notice.messages.length = 0;
+      await openView(storedDraftView([{ text: 'look at this', images: 2 }]));
+      const msg = Notice.messages.find((m) => m.includes('2 staged image'));
+      expect(msg).toBeDefined();
+      expect(msg).not.toMatch(/never saved to disk/i);
+      expect(msg).toMatch(/how many images were staged/i);
+    });
+
     it('writes a lost save into the transcript once per streak', async () => {
       const view = await openView(createPlugin({ client: createClient() }));
       const panel = panelEls(view)[0];
