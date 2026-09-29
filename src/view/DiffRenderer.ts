@@ -135,11 +135,21 @@ export function extractDiffData(
 // ── Existing utility functions ──
 
 /**
+ * Split text into the lines a diff should see. An empty file carries no lines
+ * at all, yet `''.split('\n')` yields `['']` — a single blank — so a creation
+ * read as one line deleted and an emptying as one line added. A newline still
+ * separates real lines, so only the wholly empty string collapses to nothing.
+ */
+function splitForDiff(text: string): string[] {
+  return text === '' ? [] : text.split('\n');
+}
+
+/**
  * Compute simple diff stats from old/new text.
  */
 export function computeDiffStats(oldText: string, newText: string): DiffStats {
-  const oldLines = oldText.split('\n');
-  const newLines = newText.split('\n');
+  const oldLines = splitForDiff(oldText);
+  const newLines = splitForDiff(newText);
   let added = 0;
   let removed = 0;
 
@@ -181,8 +191,8 @@ export function renderDiffStats(
  * Parse old/new text into DiffLine array.
  */
 export function parseDiffLines(oldText: string, newText: string): DiffLine[] {
-  const oldLines = oldText.split('\n');
-  const newLines = newText.split('\n');
+  const oldLines = splitForDiff(oldText);
+  const newLines = splitForDiff(newText);
   const maxLen = Math.max(oldLines.length, newLines.length);
   const lines: DiffLine[] = [];
 

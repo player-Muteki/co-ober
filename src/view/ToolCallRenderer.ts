@@ -743,6 +743,11 @@ function parseApplyPatchFileDiffs(patchText: string): ParsedFileDiff[] {
  */
 export function renderLinesExpanded(container: HTMLElement, result: string, maxLines: number): void {
   const lines = result.split(/\r?\n/);
+  // A trailing newline terminates the final line rather than opening a blank
+  // one, so drop the single empty segment it leaves. Left in, a three-line
+  // result split into four segments and advertised a "+N more lines" for a
+  // line that was never there — the same ghost renderSearchExpanded filters out.
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
   const truncated = lines.length > maxLines;
   const displayLines = truncated ? lines.slice(0, maxLines) : lines;
 

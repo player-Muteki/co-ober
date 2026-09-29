@@ -497,16 +497,26 @@ describe('ToolCallRenderer', () => {
   });
 
   describe('updateToolCallElement — write/edit diffs', () => {
-    it('renders diff stats and added/removed lines through the write/edit renderer', () => {
+    it('renders a creation (no oldText) as adds only, with no fabricated removal', () => {
       const state = createToolCallElement(container, 'tc', 'write', 'Write', { file_path: '/v/a.md' });
       updateToolCallElement(state, 'completed', 'write', undefined, [
         { type: 'diff', path: 'a.md', newText: 'line1\nline2' },
       ]);
-      expect(state.writeEditState?.statsEl.textContent).toBe('+2 -1');
+      expect(state.writeEditState?.statsEl.textContent).toBe('+2');
       expect(state.body.querySelector('.diff-line.added')).not.toBeNull();
-      expect(state.body.querySelector('.diff-line.removed')).not.toBeNull();
+      expect(state.body.querySelector('.diff-line.removed')).toBeNull();
       expect(state.wrapper.classList.contains('status-completed')).toBe(true);
       expect(state.wrapper.classList.contains('is-collapsed')).toBe(true);
+    });
+
+    it('renders added and removed lines for a real edit through the write/edit renderer', () => {
+      const state = createToolCallElement(container, 'tc', 'edit', 'Edit', { file_path: '/v/a.md' });
+      updateToolCallElement(state, 'completed', 'edit', undefined, [
+        { type: 'diff', path: 'a.md', oldText: 'one\ntwo', newText: 'one\nTWO' },
+      ]);
+      expect(state.writeEditState?.statsEl.textContent).toBe('+1 -1');
+      expect(state.body.querySelector('.diff-line.added')).not.toBeNull();
+      expect(state.body.querySelector('.diff-line.removed')).not.toBeNull();
     });
 
     it('falls back to inline diff rendering when no write/edit state exists', () => {
@@ -549,6 +559,12 @@ describe('ToolCallRenderer', () => {
       renderLinesExpanded(container, makeLines(12), 5);
       expect(container.querySelectorAll('.co-ober-tool-line').length).toBe(5);
       expect(container.querySelector('.co-ober-tool-truncated')?.textContent).toBe('... 7 more lines');
+    });
+
+    it('does not count a trailing newline as an extra line', () => {
+      renderLinesExpanded(container, 'a\nb\n', 1);
+      expect(container.querySelectorAll('.co-ober-tool-line').length).toBe(1);
+      expect(container.querySelector('.co-ober-tool-truncated')?.textContent).toBe('... 1 more lines');
     });
   });
 

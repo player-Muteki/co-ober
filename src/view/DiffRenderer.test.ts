@@ -134,6 +134,14 @@ describe('DiffRenderer', () => {
     it('returns zeros for identical text', () => {
       expect(computeDiffStats('a\nb', 'a\nb')).toEqual({ added: 0, removed: 0 });
     });
+
+    it('counts a creation (empty old text) as adds only', () => {
+      expect(computeDiffStats('', 'a\nb')).toEqual({ added: 2, removed: 0 });
+    });
+
+    it('counts an emptying (empty new text) as removals only', () => {
+      expect(computeDiffStats('a\nb', '')).toEqual({ added: 0, removed: 2 });
+    });
   });
 
   describe('renderDiffStats', () => {
@@ -181,11 +189,16 @@ describe('DiffRenderer', () => {
       ]);
     });
 
-    it('replaces empty line text with a space placeholder', () => {
-      const lines = parseDiffLines('', 'a');
-      expect(lines).toEqual([
-        { type: 'delete', text: ' ' },
+    it('treats an empty old text as a pure creation, with no phantom delete', () => {
+      expect(parseDiffLines('', 'a')).toEqual([
         { type: 'insert', text: 'a' },
+      ]);
+    });
+
+    it('replaces a genuinely empty changed line with a space placeholder', () => {
+      expect(parseDiffLines('x', 'x\n')).toEqual([
+        { type: 'equal', text: 'x' },
+        { type: 'insert', text: ' ' },
       ]);
     });
   });
