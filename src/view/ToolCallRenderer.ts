@@ -396,12 +396,16 @@ function renderToolBodyContent(
     } else if (item.type === 'unsupported') {
       // Parsing kept the wire tag precisely so this line can name it: an item
       // the reader never hears about is an item they assume the tool did not send.
-      body.createDiv({
+      const unsupportedEl = body.createDiv({
         cls: 'co-ober-tool-unsupported',
         text: item.originalType
           ? t().tool.unsupportedContent.replace('{type}', item.originalType)
           : t().tool.unsupportedUnknown,
       });
+      // Only the tagless reading is a fixed sentence the locale walker can
+      // reprint in the new tongue; the named variant carries its wire tag in
+      // the string, so re-spoken from the template it would read "{type}".
+      if (!item.originalType) unsupportedEl.dataset.i18nText = 'tool.unsupportedUnknown';
       hasStandaloneContent = true;
     }
   }

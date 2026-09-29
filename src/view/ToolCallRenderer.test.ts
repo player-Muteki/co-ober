@@ -598,6 +598,9 @@ describe('ToolCallRenderer', () => {
       );
       // The reader learns the item was lost, not that the tool said nothing.
       expect(state.body.querySelector('.co-ober-tool-empty')).toBeNull();
+      // The named variant carries its wire tag inside the sentence, so a locale
+      // repaint from the template would reprint "{type}"; it stays untagged.
+      expect(state.body.querySelector('.co-ober-tool-unsupported')?.getAttribute('data-i18n-text')).toBeNull();
     });
 
     it('reads a whole sentence when even the tag was unreadable', () => {
@@ -606,6 +609,11 @@ describe('ToolCallRenderer', () => {
 
       expect(state.body.querySelector('.co-ober-tool-unsupported')?.textContent).toBe(
         'Co-Ober cannot show part of this tool result.',
+      );
+      // A fixed sentence with no value in it is the one an on-screen language
+      // switch can restore, so it carries the key the refresh walker reads.
+      expect(state.body.querySelector('.co-ober-tool-unsupported')?.getAttribute('data-i18n-text')).toBe(
+        'tool.unsupportedUnknown',
       );
     });
 
