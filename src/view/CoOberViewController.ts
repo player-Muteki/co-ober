@@ -2970,9 +2970,18 @@ export class CoOberViewController {
     const models = this.filterCommonModelOptions(
       snapshot.availableModels.map((model) => ({ value: model.modelId, label: model.name })),
     );
+    // A session that reports no effort vocabulary falls back to the client's
+    // own tiers, because setting effort on a live session still reaches the
+    // agent. A tab with no session has no such line: onEffortChange routes the
+    // pick through setConfigOption on a sessionId it does not have and returns
+    // without acting, so the built-in list drew an operable picker over a
+    // control that could only ever refuse. It is withdrawn here exactly as the
+    // models and agents above already are, and as a disconnected bar's is.
     const efforts = effortConfig && effortConfig.options.length > 0
       ? effortConfig.options.map((o) => ({ value: o.value, label: normalizeEffortLabel(o.value, o.name) }))
-      : this.builtInEfforts();
+      : sid
+        ? this.builtInEfforts()
+        : [];
 
     rt.state.currentModelId = snapshot.currentModelId ?? selectValueOf(modelConfig) ?? null;
     if (!this.isActiveTab(rt)) return;

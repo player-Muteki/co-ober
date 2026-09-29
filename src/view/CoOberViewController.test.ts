@@ -2445,12 +2445,14 @@ describe('CoOberViewController', () => {
         })),
       });
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      controller.state.sessionId = 'ses-1';
 
       controller.loadToolbarOptions();
 
-      // The list is this client's own vocabulary, so it is still offered; the
-      // saved default is what a NEW session will be asked for, not something
-      // this session ever reported, so no tier is named as already in force.
+      // A live session that reports no effort vocabulary still gets the client's
+      // own tiers, because choosing one reaches the agent over that session. The
+      // saved default names no tier as already in force — this session never
+      // reported one.
       expect(deps.toolbar.updateEffort).toHaveBeenCalledWith(
         [
           { value: 'default', label: ef.default },
@@ -2460,6 +2462,31 @@ describe('CoOberViewController', () => {
         ],
         undefined,
       );
+    });
+
+    it('withdraws the effort picker on a connected tab with no conversation', () => {
+      // No session, so nothing to send a chosen tier to: onEffortChange reads the
+      // tab's sessionId, finds none, and returns without acting. Offering the
+      // built-in list here drew an operable picker over a control that could only
+      // refuse — the same false affordance a disconnected bar and a bare models
+      // row already avoid, so an empty projection is what this tab gets.
+      const updateEffort = vi.fn();
+      Object.assign(deps.toolbar, { updateEffort });
+      const client = createMockClient({
+        getSessionSnapshot: vi.fn(() => ({
+          configOptions: [],
+          availableCommands: [],
+          availableModels: [],
+          availableModes: [],
+          currentModelId: null,
+          currentModeId: null,
+        })),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      controller.loadToolbarOptions();
+
+      expect(updateEffort).toHaveBeenCalledWith([], undefined);
     });
 
     it('gates the attach button on the agent image prompt capability', () => {
