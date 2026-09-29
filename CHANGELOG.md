@@ -1,3 +1,19 @@
+## 0.2.17 - 2026-09-29
+
+No new capabilities. This release keeps a fresh turn, a later usage frame, and a filtered model list from reporting a figure or a name nobody handed them, stops a search line and a greyed pencil from offering an action nothing carries out, refuses a compaction its ending when the frame only said it failed, moves a list's accessible name onto the element that can answer to it, and takes the rules back off a diff card no code paints.
+
+### Changed
+
+- **A new turn that reports no usage carries no token total**: the per-turn figures were reset only where a report arrived, so a turn the agent answered without a usage frame opened on the previous turn's tokens — and divided them by the elapsed time to print a throughput that had never happened; the totals now clear the moment the turn starts.
+- **The context meter re-reads a newer token count instead of keeping the first frame's**: a later report that carried a bigger total was dropped on the floor, so the meter held the opening figure and called it current while the conversation kept spending.
+- **A usage row names no input or output figure it did not receive**: with the tokens still at zero the footer and its tooltip read "*Input: 0, Output: 0*", asserting two counts the report never gave — the parts that answered nothing are now left off entirely.
+- **A grep match stops inviting a click it cannot honour**: nothing binds a pointer to a tool line, yet every search match was stamped *hoverable*, so the stylesheet drew a pointing-hand and a hover highlight promising an action no handler would ever take.
+- **A disabled rename pencil says rename is unsupported**: an agent that cannot list sessions has nothing for the pencil to reach and the button sits greyed out, but its tooltip still read "Rename session" — promising the one thing the control could not carry, exactly the lie the fork and resume buttons already avoid.
+- **The model bar names the model actually running**: the picker is narrowed to the reader's common list, and a session can be live on a tier that filter dropped, so against a filtered-out current the bar printed "Not set"; it now speaks the model's real name in both the immediate label and the locale repaint — naming a model is not offering it, so the dropdown still marks nothing chosen.
+- **A failed or withdrawn compaction is not reported as compacted**: the case already guards against a terminal frame painting the "Compacted" boundary, but that guard sat behind the missing-id return, so a failure that carried no *compactionId* fell straight through and wrote the success note a real summarising earns — the status now reads before the id.
+- **The session list's name sits where it can be heard**: "Session list" rode on the role-less popup that merely wraps the panel, and an *aria-label* on an element with no role names nothing — so the *listbox* the rows live in reached a screen reader with no label at all; it now names the listbox itself.
+- **A diff card no code paints loses its rules**: `.co-ober-diff`, its cursor:pointer `.co-ober-diff-header`, a bare `.diff-stats` and a `.diff-path` styled a wrapper, a clickable header and two labels the renderers never mint — the tool header paints `tc-diff-stats` and the diff rows paint `co-ober-diff-body` and `diff-line`, all still styled.
+
 ## 0.2.16 - 2026-09-29
 
 No new capabilities. This release stops a terminal wait, a permission, and a session summary from reporting an ending or a figure nobody gave it, backfills the one field an old server record was missing before it left the wire unnamed, keeps a time this client cannot read from dating itself to 1970, and takes back the colour a denial was offered without and the style rules no painted class reaches.
