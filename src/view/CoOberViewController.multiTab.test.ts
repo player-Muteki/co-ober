@@ -1614,6 +1614,23 @@ describe('CoOberViewController — what survives a restart (0.2.2 stage 2)', () 
 
       expect(h.renderers.get(tabB)?.setSystemNote).toHaveBeenCalledWith('grants', 'permission.granted', 1, 'notes/b.md');
     });
+
+    it('starts the grant count over when the tab’s transcript is torn down', async () => {
+      // The grants note is painted into the transcript, exactly like the frame
+      // counters that already reset here. Leaving rt.unaskedGrants behind meant a
+      // fresh session's first un-prompted local write re-read "Co-Ober carried out
+      // N agent request(s) on this machine without a prompt" with the *previous*
+      // session's total — counting work whose lines are no longer on screen.
+      const client = createMockClient();
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      const [tabA] = twoTabs();
+      h.controller.noteCapabilityGrant({ sessionId: 'ses-a', kind: 'file-write', detail: 'notes/a.md' });
+      expect(rtOf(h, tabA).unaskedGrants).toBe(1);
+
+      await h.controller.newSession();
+
+      expect(rtOf(h, tabA).unaskedGrants).toBe(0);
+    });
   });
 
   describe('Escape and the waiting prompt', () => {

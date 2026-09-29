@@ -3081,6 +3081,13 @@ export class CoOberViewController {
     rt.droppedFrames = 0;
     rt.orphanFrames = 0;
     rt.orphanGrants = 0;
+    // The unasked-grants count drives the same transcript-painted note as the
+    // three above (`permission.granted`), so it is exempt for no reason: leaving
+    // it meant the next local grant re-read "Co-Ober carried out N agent
+    // request(s) on this machine without a prompt" with the pre-clear total into a
+    // freshly emptied transcript — a count of work whose lines are no longer on
+    // screen. It starts over with the transcript, exactly as its siblings do.
+    rt.unaskedGrants = 0;
     // The adopter paints this panel itself; a pending lazy restore must not
     // replay an old transcript into it afterwards.
     rt.needsRestore = false;
