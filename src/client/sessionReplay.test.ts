@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SessionReplayCollector } from './sessionReplay';
 import { setLocale } from '../i18n/index';
 import type { NormalizedUpdate } from '../types';
@@ -76,6 +76,24 @@ describe('SessionReplayCollector', () => {
     const messages = collector.finish();
     expect(messages[0]?.content).toBe('— Context compacted by the agent —');
     expect(messages[0]?.nativeMessageId).toBeUndefined();
+  });
+
+  it('leaves a replayed turn undated rather than stamping today onto it', () => {
+    // A message_chunk frame carries no timestamp. Using Date.now() here would
+    // hand every replayed turn the day the load ran and export it as if the
+    // agent had said so — transcript.ts and NativeSessionReader.ts both read
+    // `timestamp: 0` as "no time", and that is what a replay actually is.
+    const nowSpy = vi.spyOn(Date, 'now');
+    const collector = new SessionReplayCollector();
+    collector.handle(chunk('user', 'u1', 'q'));
+    collector.handle({ kind: 'compaction' });
+    collector.handle(chunk('agent', 'a1', 'a'));
+
+    const messages = collector.finish();
+
+    for (const m of messages) expect(m.timestamp).toBe(0);
+    expect(nowSpy).not.toHaveBeenCalled();
+    nowSpy.mockRestore();
   });
 });
 

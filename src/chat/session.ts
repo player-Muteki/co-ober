@@ -1,6 +1,6 @@
 import type { SessionMeta, SerializedMessage, SerializedSession, TabShell } from '../types';
 import { t } from '../i18n/index';
-import { MS_PER_DAY, STORED_IMAGE_BUDGET_BYTES } from '../constants';
+import { MS_PER_DAY, MAX_TIMESTAMP_MS, STORED_IMAGE_BUDGET_BYTES } from '../constants';
 
 export interface SessionStore {
   readonly activeId: string | null;
@@ -211,8 +211,15 @@ export class SessionRepository implements SessionStore {
         const meta: SessionMeta = {
           sessionId: session.sessionId,
           title: session.title,
-          updatedAt: new Date(session.updatedAt).toISOString(),
         };
+        // A migration-repaired record carries updatedAt 0 meaning "no date",
+        // not "January 1970"; and a past-cap value throws in toISOString()
+        // instead of reading. NativeSessionReader's contract is the same:
+        // yield no `updatedAt` rather than a wrong one, so sessionDropdown's
+        // `if (s.updatedAt)` actually skips it instead of rendering 1970.
+        if (session.updatedAt > 0 && session.updatedAt <= MAX_TIMESTAMP_MS) {
+          meta.updatedAt = new Date(session.updatedAt).toISOString();
+        }
         if (session.pinned) meta.pinned = true;
         return meta;
       });

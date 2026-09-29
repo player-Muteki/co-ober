@@ -540,6 +540,32 @@ describe('what retention may touch (0.2.5 stage 1)', () => {
     second.repository.prune({ maxMessages: 200, retentionDays: 30, now });
     expect(second.repository.get('aged')).toBeUndefined();
   });
+
+  it('gives an undated session no time on the wire rather than 1970', () => {
+    // The same 0 is what migration.ts writes for a record it could not repair
+    // to a real date; the dropdown guards on `if (s.updatedAt)`, so list()
+    // promising "1970-01-01T00:00:00.000Z" hung a wrong date on a session
+    // the database never timed — mirroring NativeSessionReader's contract.
+    const { repository } = createRepository();
+    repository.hydrate([createSession('undated', 0, 1)], null);
+
+    expect(repository.list()[0]?.updatedAt).toBeUndefined();
+  });
+
+  it('gives a past-cap session no time rather than throwing the listing down', () => {
+    // A stored epoch beyond MAX_TIMESTAMP_MS makes toISOString() throw; a
+    // single bad row used to take the whole dropdown with it. Yield no time
+    // for the damaged row so the readable ones still render.
+    const { repository } = createRepository();
+    repository.hydrate([
+      createSession('past-cap', 9e15, 1),
+      createSession('readable', now, 1),
+    ], null);
+
+    const rows = repository.list();
+    expect(rows.find((s) => s.sessionId === 'past-cap')?.updatedAt).toBeUndefined();
+    expect(rows.find((s) => s.sessionId === 'readable')?.updatedAt).toBe(new Date(now).toISOString());
+  });
 });
 
 function imageBlockSessionFor(id: string, messages: SerializedMessage[]): SerializedSession {

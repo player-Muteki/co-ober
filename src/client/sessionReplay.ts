@@ -35,16 +35,20 @@ export class SessionReplayCollector {
   }
 
   finish(): SerializedMessage[] {
-    const now = Date.now();
     const messages: SerializedMessage[] = [];
     for (const key of this.order) {
       const bucket = this.buckets.get(key);
       if (!bucket || !bucket.text.trim()) continue;
+      // A message_chunk frame carries no timestamp — using Date.now() here
+      // would stamp every replayed turn with the day the load ran and export
+      // it as if the agent had said so. The repo's own undatable sentinel is
+      // `timestamp: 0` (transcript.ts, NativeSessionReader.ts): render as no
+      // time at all, never as "today" or "1970".
       messages.push({
         role: bucket.role,
         type: bucket.type,
         content: bucket.text,
-        timestamp: now,
+        timestamp: 0,
         nativeMessageId: agentMessageId(bucket.messageId),
       });
     }
