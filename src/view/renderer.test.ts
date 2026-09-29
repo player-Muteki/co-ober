@@ -855,6 +855,33 @@ describe('ChatRenderer', () => {
     });
   });
 
+  describe('addStoredThinking', () => {
+    it('draws a restored thought past-tense, never ticking', () => {
+      // A saved transcript reaches paintTranscript as one finished block. The
+      // old code fed it to appendThinking, so it opened as a live "Thinking…"
+      // bubble — is-thinking plus a running timer — advertising work that had
+      // already been written down.
+      renderer.addStoredThinking('a thought from history');
+      const box = container.querySelector('.co-ober-thinking-block') as HTMLElement;
+      expect(box).not.toBeNull();
+      expect(box.classList.contains('is-thinking')).toBe(false);
+      const label = container.querySelector('.co-ober-thinking-label') as HTMLElement;
+      expect(label.textContent).toBe('Thought');
+    });
+
+    it('invents no duration for a thought that never reported one', () => {
+      renderer.addStoredThinking('a thought from history');
+      // Nothing persists a stored block's duration, so renderStoredThinkingBlock
+      // omits the timer entirely rather than stamping a fabricated "for Ns".
+      expect(container.querySelector('.co-ober-thinking-timer')).toBeNull();
+    });
+
+    it('leaves no live thinking state for the transcript to finalize', () => {
+      renderer.addStoredThinking('a thought from history');
+      expect(renderer.finalizeCurrentThinking()).toBe(0);
+    });
+  });
+
   describe('a render the reader is in the middle of', () => {
     let frames: FrameRequestCallback[];
 

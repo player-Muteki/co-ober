@@ -69,6 +69,7 @@ function createMockDeps(overrides: Partial<ControllerDeps> = {}): MockDeps {
       removeAssistantPlaceholder: noop,
       appendText: noop,
       appendThinking: noop,
+      addStoredThinking: noop,
       finalizeCurrentThinking: noop,
       appendInterruptIndicator: noop,
       flushTextRender: vi.fn().mockResolvedValue(undefined),
@@ -622,11 +623,7 @@ describe('CoOberViewController', () => {
         undefined,
         undefined,
       );
-      expect(deps.renderer.appendThinking).toHaveBeenCalledWith(
-        'thinking...',
-        expect.stringContaining('restore-'),
-        3000,
-      );
+      expect(deps.renderer.addStoredThinking).toHaveBeenCalledWith('thinking...', 3000);
     });
 
     it('routes assistant messages with content blocks to renderStructuredMessage', async () => {
@@ -2117,7 +2114,7 @@ describe('CoOberViewController', () => {
       expect(shared.messages[2]).toMatchObject({ role: 'assistant', type: 'text', content: 'hi' });
       expect(override.save).toHaveBeenCalled();
       expect(deps.renderer.addUserMessage).toHaveBeenCalledWith('question', expect.anything(), undefined);
-      expect(deps.renderer.appendThinking).toHaveBeenCalledWith('pondering', expect.anything(), expect.anything());
+      expect(deps.renderer.addStoredThinking).toHaveBeenCalledWith('pondering', expect.anything());
       expect(deps.renderer.appendText).toHaveBeenCalledWith('hi', expect.anything(), expect.anything(), undefined, undefined);
     });
 

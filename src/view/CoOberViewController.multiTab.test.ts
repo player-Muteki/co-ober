@@ -50,6 +50,7 @@ function createTabRenderer() {
     removeAssistantPlaceholder: vi.fn(),
     appendText: vi.fn(),
     appendThinking: vi.fn(),
+    addStoredThinking: vi.fn(),
     finalizeCurrentThinking: vi.fn(),
     appendInterruptIndicator: vi.fn(),
     flushTextRender: vi.fn().mockResolvedValue(undefined),

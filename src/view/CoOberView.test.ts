@@ -913,7 +913,7 @@ function createController(plugin: CoOberPlugin): CoOberViewController {
 	const deps: ControllerDeps = {
     renderer: {
       clear: noop, addUserMessage: noop, addAssistantPlaceholder: noop, removeAssistantPlaceholder: noop,
-      appendText: noop, appendThinking: noop, addError: noop, showUsage: noop, forceScrollToBottom: noop,
+      appendText: noop, appendThinking: noop, addStoredThinking: noop, addError: noop, showUsage: noop, forceScrollToBottom: noop,
       addToolCall: noop, updateToolCall: noop, setPlanEntries: noop, setPlanStale: noop,
       holdsReaderAttention: vi.fn(() => false),
       setSystemNote: noop, clearSystemNote: noop,

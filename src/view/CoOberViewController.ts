@@ -1500,7 +1500,7 @@ export class CoOberViewController {
         if (msg.contentBlocks && msg.contentBlocks.length > 0) {
           rt.renderer.renderStructuredMessage(msg);
         } else if (msg.type === 'thinking') {
-          rt.renderer.appendThinking(msg.content, restoreId, msg.timestamp);
+          rt.renderer.addStoredThinking(msg.content, msg.timestamp);
         } else {
           rt.renderer.appendText(msg.content, restoreId, msg.timestamp, msg.usage, msg.turnStats);
         }

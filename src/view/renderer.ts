@@ -757,6 +757,19 @@ export class ChatRenderer {
   }
 
   /**
+   * Draw a thinking block restored from a saved transcript. A stored message is
+   * one finished block, so it goes through renderStoredThinkingBlock, not
+   * appendThinking — the live path would mint a ticking "Thinking…" wrapper and
+   * a "for Ns" duration no frame ever reported for work that already ended.
+   */
+  addStoredThinking(text: string, timestamp?: number): void {
+    const wrap = this.container.createDiv({ cls: 'co-ober-msg assistant' });
+    this.stampTimestamp(wrap, timestamp);
+    renderStoredThinkingBlock(wrap, text);
+    this.scrollToBottom();
+  }
+
+  /**
    * Finalize the current live thinking block (auto-collapse, update label).
    * Returns the duration in seconds, or 0 if no thinking block was active.
    */
