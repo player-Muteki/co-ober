@@ -423,7 +423,8 @@ function renderToolBodyContent(
       if (text || outputText) {
         renderLinesExpanded(body, text || outputText!, 15);
       } else if (!emptyStateShown) {
-        body.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.noContent });
+        const emptyEl = body.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.noContent });
+        emptyEl.dataset.i18nText = 'tool.noContent';
       }
       return;
     }
@@ -433,7 +434,8 @@ function renderToolBodyContent(
       if (searchResult) {
         renderSearchExpanded(body, searchResult);
       } else if (!emptyStateShown) {
-        body.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.noMatches });
+        const emptyEl = body.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.noMatches });
+        emptyEl.dataset.i18nText = 'tool.noMatches';
       }
       return;
     }
@@ -448,7 +450,8 @@ function renderToolBodyContent(
           });
         }
       } else if (!emptyStateShown) {
-        body.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.noResult });
+        const emptyEl = body.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.noResult });
+        emptyEl.dataset.i18nText = 'tool.noResult';
       }
       return;
     }
@@ -531,7 +534,8 @@ function renderBashExpanded(container: HTMLElement, text: string, rawOutput?: Re
   // A command that ran and printed nothing expands to an empty box, which reads
   // as a card that failed to load rather than as a silent success.
   if (container.children.length === 0) {
-    container.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.noContent });
+    const emptyEl = container.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.noContent });
+    emptyEl.dataset.i18nText = 'tool.noContent';
   }
 }
 
@@ -541,7 +545,8 @@ function renderBashExpanded(container: HTMLElement, text: string, rawOutput?: Re
 function renderSearchExpanded(container: HTMLElement, result: string): void {
   const lines = result.split(/\r?\n/).filter(Boolean);
   if (lines.length === 0) {
-    container.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.noMatchesFound });
+    const emptyEl = container.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.noMatchesFound });
+    emptyEl.dataset.i18nText = 'tool.noMatchesFound';
     return;
   }
 
@@ -628,7 +633,8 @@ function renderApplyPatchExpanded(
         if (fd.diffLines.length > 0) {
           renderDiffContent(section.createDiv({ cls: 'co-ober-patch-diff' }), fd.diffLines);
         } else if (fd.operation === 'delete') {
-          section.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.fileDeleted });
+          const emptyEl = section.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.fileDeleted });
+          emptyEl.dataset.i18nText = 'tool.fileDeleted';
         }
         hasContent = true;
       }

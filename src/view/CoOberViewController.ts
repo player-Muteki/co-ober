@@ -65,6 +65,7 @@ import {
   MAX_OPEN_TABS,
   DEFAULT_OPEN_TABS,
   STREAM_SAVE_DEBOUNCE_MS,
+  MAX_TIMESTAMP_MS,
 } from '../constants';
 
 export interface ControllerCallbacks {
@@ -207,8 +208,16 @@ export class CoOberViewController {
     // Register builtin slash commands
     this.registerBuiltinCommands();
     // Builtin titles/descriptions are captured at registration time, so
-    // re-register them whenever the locale changes.
-    this.unsubscribeLocale = onLocaleChange(() => this.registerBuiltinCommands());
+    // re-register them whenever the locale changes. The queue indicator is
+    // painted the same way — `1 queued` / `N queued` / the remove button's
+    // aria label are read out of `t()` at render time — and is not rebuilt by
+    // any other repaint, so a language change left a waiting prompt speaking
+    // the previous language until the next queue mutation. Re-rendering it here
+    // is side-effect-free when the queue is empty (it only toggles a class).
+    this.unsubscribeLocale = onLocaleChange(() => {
+      this.registerBuiltinCommands();
+      this.updateQueueIndicator();
+    });
   }
 
   // ── Tab runtime management ──
@@ -1306,7 +1315,20 @@ export class CoOberViewController {
     const session = this.deps.sessionStore.getOrCreate(sessionId);
     if (session.messages.length > 0) return;
     session.messages.push(...replayed);
-    session.updatedAt = Date.now();
+    // The transcript just mirrored was written over some past stretch, and its
+    // messages carry the agent's own times (0 where a frame named none).
+    // Stamping `updatedAt` with the import wall-clock filed a native
+    // conversation the agent finished hours ago at the top of the list as "just
+    // now", so the reader reached for a session that had gone quiet. Derive it
+    // from the content instead: the newest real message time, or the same
+    // undated sentinel (0) sessionReplay's messages and 0.2.19's list() already
+    // speak for a transcript whose age we were never told.
+    let lastActivity = 0;
+    for (const message of replayed) {
+      const at = message.timestamp;
+      if (typeof at === 'number' && at > 0 && at <= MAX_TIMESTAMP_MS && at > lastActivity) lastActivity = at;
+    }
+    session.updatedAt = lastActivity;
     await this.deps.sessionStore.save();
   }
 

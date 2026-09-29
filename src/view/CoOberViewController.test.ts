@@ -3018,6 +3018,41 @@ describe('CoOberViewController', () => {
       expect(deps.sessionStore.save).not.toHaveBeenCalled();
     });
   });
+
+  describe('adoptReplay files the transcript at its own time, not the import time', () => {
+    async function adopt(replayed: Array<{ timestamp: number }>): Promise<{ updatedAt: number }> {
+      const session = { sessionId: 'native-1', opencodeSessionId: 'native-1', messages: [], createdAt: 0, updatedAt: 0 };
+      (deps.sessionStore.getOrCreate as ReturnType<typeof vi.fn>).mockReturnValue(session);
+      const wrapped = replayed.map((m) => ({ role: 'user' as const, content: 'x', type: 'text' as const, ...m }));
+      await (controller as unknown as {
+        adoptReplay(id: string, msgs: typeof wrapped): Promise<void>;
+      }).adoptReplay('native-1', wrapped);
+      return session;
+    }
+
+    it('derives updatedAt from the newest real message time', async () => {
+      // A native transcript the agent finished hours ago carried its own times;
+      // stamping Date.now() put it at the top of the list as "just now", and the
+      // reader reached for a conversation that had actually gone quiet.
+      const session = await adopt([{ timestamp: 1000 }, { timestamp: 7500 }, { timestamp: 4000 }]);
+      expect(session.updatedAt).toBe(7500);
+      expect(deps.sessionStore.save).toHaveBeenCalled();
+    });
+
+    it('leaves the session undated when the replayed messages carry no time', async () => {
+      // sessionReplay writes `timestamp: 0` for a streamed agent-replay (a frame
+      // names no time), and 0.2.19 taught list() to omit updatedAt rather than
+      // render 1970 when it reads 0. adoptReplay now honours the same sentinel
+      // instead of minting a fresh Date.now() the transcript never earned.
+      const session = await adopt([{ timestamp: 0 }, { timestamp: 0 }]);
+      expect(session.updatedAt).toBe(0);
+    });
+
+    it('ignores an out-of-range time rather than filing the session at 1970 or beyond', async () => {
+      const session = await adopt([{ timestamp: -5 }, { timestamp: 9e18 }]);
+      expect(session.updatedAt).toBe(0);
+    });
+  });
 });
 
 describe('CoOberViewController — 0.1.31 correctness patches', () => {
@@ -3832,6 +3867,31 @@ describe('CoOberViewController — queue visualization and auto titles', () => {
     expect(items[0].querySelector('.co-ober-queue-item-text')?.textContent).toBe('beta');
 
     (controller as unknown as { busy: boolean }).busy = false;
+    controller.queueIndicatorEl = null;
+  });
+
+  it('re-speaks a waiting prompt when the locale changes under it', () => {
+    // The queue indicator is painted from `t()` at render time and is not
+    // rebuilt by any other repaint, so it was the one toolbar-adjacent surface
+    // the locale subscription forgot: switching language left the waiting count
+    // in the language the prompt happened to queue under. registerBuiltinCommands
+    // re-ran; the queue line did not.
+    const el = document.createElement('div');
+    controller.queueIndicatorEl = el;
+    activeRt(controller).promptQueue.push({ text: 'waiting', refs: [] });
+    (controller as unknown as { updateQueueIndicator(rt?: SessionRuntime): void }).updateQueueIndicator(
+      activeRt(controller),
+    );
+    expect(el.querySelector('.co-ober-queue-text')?.textContent).toBe(t().queue.one);
+
+    setLocale('zh');
+    // setLocale fires the onLocaleChange listener the controller registered, and
+    // the listener now repaints the queue alongside re-registering builtins.
+    expect(el.querySelector('.co-ober-queue-text')?.textContent).toBe(zhLocale.queue.one);
+    expect(el.querySelector('.co-ober-queue-remove')?.getAttribute('aria-label')).toBe(zhLocale.queue.remove);
+
+    setLocale('en');
+    activeRt(controller).promptQueue.length = 0;
     controller.queueIndicatorEl = null;
   });
 

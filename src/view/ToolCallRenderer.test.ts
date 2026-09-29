@@ -346,6 +346,46 @@ describe('ToolCallRenderer', () => {
       updateToolCallElement(state, 'completed', 'grep', undefined, [textItem('\n\n')]);
       expect(state.body.querySelector('.co-ober-tool-empty')?.textContent).toBe('No matches found');
     });
+
+    it('tags the empty-state line so a locale switch re-speaks it', () => {
+      const state = createToolCallElement(container, 'tc', 'read', 'Read', { file_path: '/x.md' });
+      updateToolCallElement(state, 'completed', 'read', undefined, [{ type: 'terminal', terminalId: 't1' }]);
+      const empty = state.body.querySelector<HTMLElement>('.co-ober-tool-empty');
+      // The renderer's refreshLocale walks `[data-i18n-text]`, and the tool-body
+      // empty state was created eagerly once at completion, then frozen when the
+      // card collapsed. A reader who re-opened it after a language switch was
+      // still shown the "No content" of the previous locale, because nothing
+      // carried the key back to the repaint.
+      expect(empty?.dataset.i18nText).toBe('tool.noContent');
+    });
+
+    it('tags the search, fetch and no-lines-matched empty states too', () => {
+      // Each of these is a distinct string that the same repaint walks, and each
+      // sits on a card a reader may open again after a language change.
+      const search = createToolCallElement(container, 'tc', 'search', 'Search', { pattern: 'zzz' });
+      updateToolCallElement(search, 'completed', 'search', undefined, [{ type: 'terminal', terminalId: 't1' }]);
+      expect(search.body.querySelector<HTMLElement>('.co-ober-tool-empty')?.dataset.i18nText).toBe('tool.noMatches');
+
+      const fetch = createToolCallElement(container, 'tc', 'fetch', 'Fetch', { url: 'https://e.com' });
+      updateToolCallElement(fetch, 'completed', 'fetch', undefined, [{ type: 'terminal', terminalId: 't1' }]);
+      expect(fetch.body.querySelector<HTMLElement>('.co-ober-tool-empty')?.dataset.i18nText).toBe('tool.noResult');
+
+      const grep = createToolCallElement(container, 'tc', 'grep', 'Grep');
+      updateToolCallElement(grep, 'completed', 'grep', undefined, [textItem('\n\n')]);
+      expect(grep.body.querySelector<HTMLElement>('.co-ober-tool-empty')?.dataset.i18nText).toBe('tool.noMatchesFound');
+    });
+
+    it('tags the bash silent-success empty line the same way', () => {
+      // A command that printed nothing falls through the stdout/stderr/exit-code
+      // branches into the same "No content" line; that path also needs the tag
+      // or a Chinese reader who switched from English mid-session still sees
+      // "No content" under a "已完成" card.
+      const state = createToolCallElement(container, 'tc', 'bash', 'Run', { command: 'true' });
+      updateToolCallElement(state, 'completed', 'bash', undefined, [{ type: 'terminal', terminalId: 't1' }]);
+      const empty = state.body.querySelector<HTMLElement>('.co-ober-tool-empty');
+      expect(empty?.textContent).toBe('No content');
+      expect(empty?.dataset.i18nText).toBe('tool.noContent');
+    });
   });
 
   describe('updateToolCallElement — tool-specific bodies', () => {
