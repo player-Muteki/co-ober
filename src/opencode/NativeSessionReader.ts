@@ -1,4 +1,5 @@
 import type { SessionMeta } from '../types';
+import { MAX_TIMESTAMP_MS } from '../constants';
 import { resolveOpencodeDatabasePath, type PathFs } from './OpencodePaths';
 import { querySqliteJson, type SqliteReaderDeps, type SqliteRow } from './SqliteReader';
 
@@ -226,8 +227,16 @@ export function buildNativeSessionSearchSqlV2(cwd: string, query: string, limit:
 	].join(' ');
 }
 
+/**
+ * A row's `time_updated` as an ISO string, or no time at all when the value
+ * cannot be read as one. 0 is a real epoch — it would put a 1970 date on a
+ * session the database never timed — and anything past the largest date a
+ * `Date` holds makes `toISOString()` throw, which used to take the whole list
+ * down with it.
+ */
 function toIsoString(ms: unknown): string | undefined {
-	return typeof ms === 'number' && Number.isFinite(ms) ? new Date(ms).toISOString() : undefined;
+	if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0 || ms > MAX_TIMESTAMP_MS) return undefined;
+	return new Date(ms).toISOString();
 }
 
 export interface NativeSessionUsage {
@@ -636,12 +645,13 @@ export async function listNativeSessions(cwd: string, deps: NativeSessionReaderD
 		const additions = toOptionalNumber(row.summary_additions);
 		const deletions = toOptionalNumber(row.summary_deletions);
 		const files = toOptionalNumber(row.summary_files);
+		const updatedAt = toIsoString(row.time_updated);
 		const meta: SessionMeta = {
 			sessionId,
 			title: typeof row.title === 'string' && row.title.trim() ? row.title : sessionId,
 			cwd: typeof row.directory === 'string' ? row.directory : undefined,
-			updatedAt: toIsoString(row.time_updated),
 		};
+		if (updatedAt !== undefined) meta.updatedAt = updatedAt;
 		if (additions !== undefined) meta.additions = additions;
 		if (deletions !== undefined) meta.deletions = deletions;
 		if (files !== undefined) meta.files = files;

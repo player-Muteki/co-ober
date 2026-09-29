@@ -39,7 +39,12 @@ export function buildTranscriptMarkdown(session: SerializedSession): string {
 		if (msg.type !== 'text' && msg.type !== 'tool-call') continue;
 		const body = messageBody(msg);
 		if (!body) continue;
-		lines.push(`## ${ROLE_LABELS[msg.role]()} · ${formatTimestamp(msg.timestamp)}`, '', body, '');
+		// A message whose time is not known says so by saying nothing. The loader
+		// collapses a damaged timestamp to 0 (pluginDataMigration.ts), and 0 is a
+		// readable epoch — so an unread turn would be dated to 1970 in the exported
+		// note rather than left without a time.
+		const role = ROLE_LABELS[msg.role]();
+		lines.push(msg.timestamp > 0 ? `## ${role} · ${formatTimestamp(msg.timestamp)}` : `## ${role}`, '', body, '');
 	}
 	return lines.join('\n').trimEnd() + '\n';
 }

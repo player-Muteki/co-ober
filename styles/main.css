@@ -1458,7 +1458,12 @@
   margin-top: 4px;
 }
 
-.co-ober-permission-banner .perm-reject_once {
+/* Both denials read as one colour family: permissionBanner.ts paints
+ * `perm-${opt.kind}`, and an agent offering "Reject always" handed over a
+ * button styled only as a bare .perm-btn — no error colour at all — beside a
+ * red "Reject once" it had to be distinguished from. */
+.co-ober-permission-banner .perm-reject_once,
+.co-ober-permission-banner .perm-reject_always {
   background: var(--background-primary);
   color: var(--text-error);
   border-color: var(--text-error);
@@ -2049,9 +2054,6 @@ pre:focus-within .co-ober-copy-btn {
 .co-ober-tool-call.status-error {
   border-color: rgba(239, 68, 68, 0.4);
 }
-.co-ober-tool-call.status-blocked {
-  border-color: rgba(234, 179, 8, 0.4);
-}
 
 /* Diff line additions — diff-line.added/removed/context already exist,
    add truncated variant and stats label */
@@ -2140,16 +2142,6 @@ pre:focus-within .co-ober-copy-btn {
 .co-ober-subagent-block .subagent-name {
   font-weight: 600;
   color: var(--text-normal);
-}
-
-/* Baked footer (for historical messages) */
-.co-ober-baked-footer {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 4px 2px 0;
-  font-size: 10px;
-  color: var(--text-faint);
 }
 
 /* Interrupt indicator */
@@ -2290,8 +2282,7 @@ body.theme-light .co-ober-msg.user .co-ober-msg-body {
 }
 .co-ober-tool-call.status-running,
 .co-ober-tool-call.status-completed,
-.co-ober-tool-call.status-error,
-.co-ober-tool-call.status-blocked {
+.co-ober-tool-call.status-error {
   border: none;
 }
 .co-ober-tool-call-header {
@@ -2408,9 +2399,6 @@ body.theme-light .co-ober-msg.user .co-ober-msg-body {
 }
 .co-ober-tool-call.status-error .co-ober-tool-call-body {
   border-inline-start-color: var(--text-error);
-}
-.co-ober-tool-call.status-blocked .co-ober-tool-call-body {
-  border-inline-start-color: var(--color-orange);
 }
 
 /* Write/edit blocks — same tree-branch style */

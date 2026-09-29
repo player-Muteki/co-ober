@@ -48,6 +48,26 @@ describe('the stylesheet and the DOM it is answerable to', () => {
     expect(css).not.toContain('co-ober-tool-status');
   });
 
+  it('drops no rule for a tool state this client cannot reach, or a footer it does not name', () => {
+    // ToolCallRenderer.ts adds exactly status-pending / -running / -completed /
+    // -error, so three .status-blocked rules styled an amber card no frame could
+    // ever produce. The block commented "Baked footer (for historical messages)"
+    // styled .co-ober-baked-footer, while renderStructuredMessage paints that
+    // footer as .co-ober-response-footer — the same row, already styled above it.
+    expect(css).not.toContain('status-blocked');
+    expect(css).not.toContain('co-ober-baked-footer');
+    expect(css).toMatch(/\.co-ober-response-footer\s*\{[^}]*display:\s*flex/);
+  });
+
+  it('colours every denial the banner can be offered', () => {
+    // permissionBanner.ts paints `perm-${opt.kind}` straight from the agent's
+    // option, and reject_always is one of the four kinds. With a rule for
+    // reject_once only, a "Reject always" button carried no colour at all: a
+    // bare .perm-btn sitting beside a red one, reading as neither an allow nor a
+    // denial.
+    expect(css).toMatch(/\.co-ober-permission-banner \.perm-reject_always[^{]*\{[^}]*color:\s*var\(--text-error\)/);
+  });
+
   it('keeps a tab that is working-and-queued out of the waiting-slot dim', () => {
     // tabBar.ts applies both .is-queued and .is-streaming to a tab that is
     // generating while holding a queued turn. A bare .is-queued dim painted that

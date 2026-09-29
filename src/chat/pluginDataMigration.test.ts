@@ -9,6 +9,7 @@ import {
 import type { TabShellState } from './pluginDataMigration';
 import { DEFAULT_SETTINGS } from '../types';
 import { MAX_OPEN_TABS } from '../constants';
+import { buildMcpServers } from '../client/acp';
 
 function validMessage(overrides: Record<string, unknown> = {}) {
   return { role: 'user', content: 'hi', type: 'text', timestamp: 5, ...overrides };
@@ -327,5 +328,23 @@ describe('sanitizeLoadedSettings', () => {
   it('survives settings that are not an object at all', () => {
     expect(sanitizeLoadedSettings('all wrong', DEFAULT_SETTINGS)).toEqual(DEFAULT_SETTINGS);
     expect(sanitizeLoadedSettings(undefined, DEFAULT_SETTINGS)).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it('gives a server stored before transports existed the one the settings page already shows', () => {
+    const legacy = { id: 'fs', enabled: true, name: 'filesystem', command: 'npx', args: ['-y'] };
+    const typed = { id: 'api', enabled: true, name: 'api', type: 'http', url: 'http://localhost:3000' };
+    const headless = { id: 'odd', enabled: true, name: 'odd', args: [] };
+    const sanitized = sanitizeLoadedSettings({ mcpServers: [legacy, typed, headless] }, DEFAULT_SETTINGS);
+
+    // The settings block reads `server.type ?? 'stdio'` and shows the command,
+    // while the send path takes a missing type as the url branch, finds no url and
+    // drops the server without a word — an "enabled" toggle for a server no
+    // session was ever given.
+    expect(sanitized.mcpServers[0]).toMatchObject({ type: 'stdio', command: 'npx' });
+    expect(sanitized.mcpServers[1]).toEqual(typed);
+    // Nothing to name a transport by: left exactly as stored, not invented.
+    expect(sanitized.mcpServers[2]).toEqual(headless);
+
+    expect(buildMcpServers(sanitized.mcpServers).map((server) => server.name)).toEqual(['filesystem', 'api']);
   });
 });

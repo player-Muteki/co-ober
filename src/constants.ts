@@ -36,6 +36,8 @@ export const UNREADABLE_SUMMARY_MAX_CHARS = 240;
 export const MAX_TRACKED_ASSISTANT_MESSAGES = 500;
 /** Concurrent prompt streams the client admits before rejecting with a capacity error. */
 export const MAX_CONCURRENT_STREAMS = 4;
+/** The largest epoch a `Date` can represent; past it `toISOString()` throws instead of reading. */
+export const MAX_TIMESTAMP_MS = 8.64e15;
 /** Idle per-session normalizers kept alive before LRU eviction. */
 export const MAX_SESSION_NORMALIZERS = 32;
 /** Bounds of the maxOpenTabs setting; the persisted shell is trimmed to the upper bound. */

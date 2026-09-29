@@ -118,6 +118,24 @@ describe('listNativeSessions', () => {
 		expect(sessions[1].title).toBe('ses_b');
 	});
 
+	it('reads an unusable time_updated as no time rather than a date', async () => {
+		const sessions = await listNativeSessions('/vault', {
+			env: { HOME: '/home/u' },
+			fs: fakeFs,
+			sqlite: sqliteBacked([
+				{ id: 'ses_zero', title: 'Zero', directory: '/vault', time_updated: 0 },
+				{ id: 'ses_huge', title: 'Huge', directory: '/vault', time_updated: 9e15 },
+				{ id: 'ses_ok', title: 'Ok', directory: '/vault', time_updated: 1787369997497 },
+			]) as never,
+		});
+		// 0 is a readable epoch, so the dropdown dated a session the database
+		// never timed to 1970; anything past the largest date a Date holds makes
+		// toISOString() throw, which took the whole native list down with it.
+		expect(sessions[0]).not.toHaveProperty('updatedAt');
+		expect(sessions[1]).not.toHaveProperty('updatedAt');
+		expect(sessions[2]?.updatedAt).toBe(new Date(1787369997497).toISOString());
+	});
+
 	it('returns empty list when the database is missing', async () => {
 		const sessions = await listNativeSessions('/vault', {
 			env: { HOME: '/home/u' },

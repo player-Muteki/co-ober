@@ -135,6 +135,19 @@ describe('buildTranscriptMarkdown', () => {
     expect(md).toContain('## 用户 · ');
     setLocale('en');
   });
+
+  it('leaves a turn the loader could not date without a time', () => {
+    // pluginDataMigration.ts collapses a damaged timestamp to 0, and 0 is a
+    // readable epoch — so a turn with no time of its own was exported dated to
+    // 1970 rather than left standing without one.
+    const md = buildTranscriptMarkdown(session({
+      messages: [{ role: 'user', content: 'undated', type: 'text', timestamp: 0 }],
+    }));
+    expect(md).toContain('## User');
+    expect(md).toContain('undated');
+    expect(md).not.toContain('·');
+    expect(md).not.toContain('1970');
+  });
 });
 
 describe('sanitizeNoteName', () => {

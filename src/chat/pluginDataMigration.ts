@@ -1,6 +1,6 @@
 import type { CoOberSettings, ContextRef, SerializedMessage, SerializedSession, StoredDraft, TabShell } from '../types';
 import type { SerializedSessionState } from './session';
-import { MAX_OPEN_TABS } from '../constants';
+import { MAX_OPEN_TABS, MAX_TIMESTAMP_MS } from '../constants';
 
 /**
  * Schema version stamped on data.json. Older releases persisted no version
@@ -42,15 +42,14 @@ export function isLoadableSessionEntry(value: unknown): value is Record<string, 
 }
 
 /**
- * The largest epoch a `Date` can represent. A stored timestamp beyond it — or
- * the `Infinity` that `JSON.parse('1e999')` hands back, which is `typeof
- * 'number'` — is a damaged value: every render of the session list throws on
- * `toISOString()`, and retention can never prune the conversation (`Infinity <
- * cutoff` is false), so it survives to be re-stamped on every save. It
- * collapses to 0, which the loader reads as "unknown" and retention spares.
+ * A stored timestamp past `MAX_TIMESTAMP_MS` — or the `Infinity` that
+ * `JSON.parse('1e999')` hands back, which is `typeof 'number'` — is a damaged
+ * value: every render of the session list throws on `toISOString()`, and
+ * retention can never prune the conversation (`Infinity < cutoff` is false), so
+ * it survives to be re-stamped on every save. It collapses to 0, which renders
+ * as no time at all (transcript.ts, NativeSessionReader.ts) and which retention
+ * spares.
  */
-const MAX_TIMESTAMP_MS = 8.64e15;
-
 function toTimestamp(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= MAX_TIMESTAMP_MS ? value : 0;
 }
@@ -200,6 +199,22 @@ const SETTINGS_ENUM_FIELDS: Record<string, readonly string[]> = {
 };
 
 /**
+ * Servers stored before this plugin had http/sse carry no `type` at all — the
+ * settings model only had stdio then. The settings block reads such an entry as
+ * stdio (`server.type ?? 'stdio'`) and shows its command, while the send path
+ * takes the missing type as the url branch, finds no url, and drops the server
+ * without a word: a toggle reading "enabled" for a server no session ever got.
+ * Stamping the transport the settings page already names keeps that promise on
+ * every reader at once; anything else is left exactly as stored.
+ */
+function withLegacyMcpType(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  if (value.type === 'stdio' || value.type === 'http' || value.type === 'sse') return value;
+  if (typeof value.command === 'string' && value.command.trim()) return { ...value, type: 'stdio' };
+  return value;
+}
+
+/**
  * Loading settings is a shallow merge over DEFAULT_SETTINGS, so a field the
  * disk got wrong reaches the settings tab, the sync engine and the permission
  * tier as the wrong type — `"syncRules": "edit"` is a string where a `.filter`
@@ -225,6 +240,9 @@ export function sanitizeLoadedSettings(raw: unknown, defaults: CoOberSettings): 
   for (const [key, allowed] of Object.entries(SETTINGS_ENUM_FIELDS)) {
     const value = fields[key];
     if (value !== undefined && !allowed.includes(value as string)) fields[key] = fallbacks[key];
+  }
+  if (Array.isArray(fields.mcpServers)) {
+    fields.mcpServers = fields.mcpServers.map(withLegacyMcpType) as CoOberSettings['mcpServers'];
   }
   return merged;
 }
