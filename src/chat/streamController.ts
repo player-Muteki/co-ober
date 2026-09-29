@@ -275,7 +275,12 @@ export class StreamController {
           if (ch.thoughtTokens !== undefined) state.usage.thoughtTokens = ch.thoughtTokens;
         } else {
           state.usage = {
-            totalTokens: ch.totalTokens ?? ch.used ?? 0,
+            // Context occupancy is not a consumption figure. A first frame that
+            // only reports `used` must leave the token total unreported (0)
+            // rather than stamping the window reading onto the footer's
+            // "N tokens", which claims money of work the agent never said it
+            // did. The meter reads the window from contextTokens below.
+            totalTokens: ch.totalTokens ?? 0,
             inputTokens: ch.inputTokens ?? 0,
             outputTokens: ch.outputTokens ?? 0,
             thoughtTokens: ch.thoughtTokens,

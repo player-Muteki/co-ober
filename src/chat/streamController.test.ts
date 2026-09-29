@@ -653,6 +653,20 @@ describe('StreamController', () => {
     expect(deps.state.usage).toMatchObject({ contextTokens: 0, contextWindow: 0 });
   });
 
+  it('does not read window occupancy as tokens consumed on the first frame', () => {
+    // A usage_update that names `used` but no total is describing how full the
+    // context window is, not how many tokens the agent spent. Seeding the
+    // token total from it minted a footer figure ("45000 tokens") for work this
+    // frame never reported consuming — the merge branch already keeps the two
+    // apart, so the seed was the only place occupancy became a cost.
+    controller.handleChunk({ kind: 'usage', used: 45000, size: 200000 });
+    expect(deps.state.usage).toMatchObject({
+      totalTokens: 0,
+      contextTokens: 45000,
+      contextWindow: 200000,
+    });
+  });
+
   it('re-reads a newer token total instead of keeping the first frame’s', () => {
     controller.handleChunk({ kind: 'usage', totalTokens: 100, inputTokens: 50, outputTokens: 50 });
     // A later usage_update that re-reports the totals is a newer reading, not a

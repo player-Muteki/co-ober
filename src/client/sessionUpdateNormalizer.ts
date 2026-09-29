@@ -228,7 +228,15 @@ export class SessionUpdateNormalizer {
         if (raw.status === 'failed') {
           return { kind: 'notice', level: 'error', message: raw.error ?? t().stream.compactionFailed };
         }
-        if (raw.status === 'cancelled') return null;
+        // Withdrawn, not completed. Only the British spelling was recognised
+        // here, so a compaction the agent aborted — `canceled`, `aborted`,
+        // `rejected`, the very statuses normalizeToolStatus() above already
+        // reads as terminal — fell through both guards and painted the
+        // "Context compacted" boundary a real success earns. `cancelled` already
+        // said nothing; these spellings of the same withdrawal must agree.
+        if (raw.status === 'cancelled' || raw.status === 'canceled' || raw.status === 'aborted' || raw.status === 'rejected') {
+          return null;
+        }
         if (!raw.compactionId) return { kind: 'compaction', summary: raw.summary };
         if (this.startedCompactions.has(raw.compactionId)) {
           // A memory, not a toggle. Popping the id here let the third frame for

@@ -444,6 +444,16 @@ describe('SessionUpdateNormalizer v2 compaction state machine', () => {
     expect(normalizer.normalize({ sessionUpdate: 'compaction_update', status: 'cancelled' })).toBeNull();
   });
 
+  it('withdraws a compaction spelled the way normalizeToolStatus already reads it', () => {
+    // Only the British 'cancelled' was matched here, so 'canceled' / 'aborted' /
+    // 'rejected' — the same abort-shaped statuses normalizeToolStatus() maps to a
+    // terminal result — slipped past both guards and painted the "Context
+    // compacted" boundary for a summarising the agent had called off.
+    for (const status of ['canceled', 'aborted', 'rejected']) {
+      expect(normalizer.normalize({ sessionUpdate: 'compaction_update', compactionId: `w-${status}`, status })).toBeNull();
+    }
+  });
+
   it('keeps suppressing later patches for a compaction it has already pinned', () => {
     // The second frame used to take the id back out of the set, so a third
     // patch — an agent restating the finished summary — re-pinned the boundary
