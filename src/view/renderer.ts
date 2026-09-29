@@ -2,7 +2,7 @@ import type { App } from 'obsidian';
 import { MarkdownRenderer, setIcon, type Component } from 'obsidian';
 import { t, onLocaleChange, lookupLocaleString } from '../i18n/index';
 import type { UsageInfo, ContentBlock, SerializedMessage, ToolCallContent, ImageAttachment, MessageUsage, TurnStats } from '../types';
-import { COPY_BUTTON_RESET_MS, MIN_THROUGHPUT_SAMPLE_MS } from '../constants';
+import { COPY_BUTTON_RESET_MS, MIN_THROUGHPUT_SAMPLE_MS, MAX_TIMESTAMP_MS } from '../constants';
 import {
   renderLiveThinkingBlock,
   renderStoredThinkingBlock,
@@ -269,7 +269,7 @@ export class ChatRenderer {
 
   addUserMessage(text: string, timestamp?: number, images?: ImageAttachment[]): void {
     const wrap = this.container.createDiv({ cls: 'co-ober-msg user' });
-    wrap.dataset.timestamp = this.formatTimestamp(timestamp ?? Date.now());
+    this.stampTimestamp(wrap, timestamp);
     const body = wrap.createDiv({ cls: 'co-ober-msg-body' });
     body.textContent = text;
     if (text) this.addTextCopyButton(wrap, text);
@@ -454,7 +454,7 @@ export class ChatRenderer {
     this.currentAssistantText += text;
     if (!this.currentAssistantEl) {
       const wrap = this.container.createDiv({ cls: 'co-ober-msg assistant' });
-      wrap.dataset.timestamp = this.formatTimestamp(timestamp ?? Date.now());
+      this.stampTimestamp(wrap, timestamp);
       this.currentAssistantWrap = wrap;
       this.currentAssistantEl = wrap.createDiv({ cls: 'co-ober-msg-body' });
       if (usage || turnStats) this.attachUsageFooter(wrap, usage, turnStats);
@@ -471,7 +471,7 @@ export class ChatRenderer {
     this.currentAssistantWrap = null;
     this.currentAssistantText = '';
     const wrap = this.container.createDiv({ cls: 'co-ober-msg assistant' });
-    wrap.dataset.timestamp = this.formatTimestamp(Date.now());
+    this.stampTimestamp(wrap, Date.now());
     const body = wrap.createDiv({ cls: 'co-ober-msg-body' });
     body.createEl('img', {
       cls: 'co-ober-assistant-image',
@@ -745,7 +745,7 @@ export class ChatRenderer {
     // Create structured thinking block on first append
     if (!this.liveThinkingState) {
       const wrap = this.container.createDiv({ cls: 'co-ober-msg assistant' });
-      wrap.dataset.timestamp = this.formatTimestamp(timestamp ?? Date.now());
+      this.stampTimestamp(wrap, timestamp);
       this.liveThinkingState = renderLiveThinkingBlock(wrap);
     }
 
@@ -1139,6 +1139,20 @@ export class ChatRenderer {
   private formatTimestamp(ts: number): string {
     const date = new Date(ts);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  /**
+   * Stamp the hover time onto a message bubble, but only for a turn that
+   * actually carries one. A live message arrives with no timestamp argument
+   * and takes the current clock; a replayed message the database never timed
+   * arrives as the undatable sentinel (`timestamp: 0`, the same one
+   * transcript.ts and session.ts honour), and feeding that to `new Date`
+   * paints a 1970 minute as if the agent had reported it. A missing attribute
+   * is what the `[data-timestamp]` hover rule reads as "no time at all."
+   */
+  private stampTimestamp(wrap: HTMLElement, timestamp?: number): void {
+    const at = timestamp ?? Date.now();
+    if (at > 0 && at <= MAX_TIMESTAMP_MS) wrap.dataset.timestamp = this.formatTimestamp(at);
   }
 
   // ============================================================

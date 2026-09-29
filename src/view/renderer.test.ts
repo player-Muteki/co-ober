@@ -130,6 +130,35 @@ describe('ChatRenderer', () => {
       expect(msg?.dataset.timestamp).toBeDefined();
     });
 
+    it('leaves an undatable replayed turn with no hover time rather than a 1970 minute', () => {
+      // A session the database never timed comes back as the `timestamp: 0`
+      // sentinel (sessionReplay writes it; transcript.ts honours it). The old
+      // `?? Date.now()` only caught undefined, so 0 fell through and
+      // `new Date(0).toLocaleTimeString()` hung an invented minute — e.g.
+      // "08:00" — on a turn that had no time at all.
+      renderer.addUserMessage('replayed', 0);
+      const msg = container.querySelector('.co-ober-msg.user') as HTMLElement;
+      expect(msg.dataset.timestamp).toBeUndefined();
+      expect(container.querySelector('[data-timestamp]')).toBeNull();
+    });
+
+    it('still stamps a live message that names no time with the current clock', () => {
+      // The sentinel is a stored 0, not an omitted argument: a message the
+      // reader just sent passes no timestamp and must take now.
+      renderer.addUserMessage('just now');
+      const msg = container.querySelector('.co-ober-msg.user') as HTMLElement;
+      expect(msg.dataset.timestamp).toBeDefined();
+    });
+
+    it('treats a past-epoch timestamp as no time at all', () => {
+      // MAX_TIMESTAMP_MS is the same ceiling session.ts's list() gate and
+      // NativeSessionReader already apply; anything beyond it is unreadable,
+      // and toISOString/formatting would either throw or print a wrong date.
+      renderer.addUserMessage('corrupt', 8.64e15 + 1);
+      const msg = container.querySelector('.co-ober-msg.user') as HTMLElement;
+      expect(msg.dataset.timestamp).toBeUndefined();
+    });
+
     it('renders an image gallery with data URIs', () => {
       renderer.addUserMessage('Look', undefined, [
         { mimeType: 'image/png', data: 'AAA=' },

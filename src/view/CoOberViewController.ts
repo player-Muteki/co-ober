@@ -1944,9 +1944,13 @@ export class CoOberViewController {
     // Stop would compute a tokens/second rate from tokens it never spent) and
     // the stamp writes them onto this turn's message; the totals are per-turn
     // and reset here, while the context fields the meter reads are live
-    // session figures and carry over.
+    // session figures and carry over. A cost is stamped the same per-turn way
+    // (footer line and the message's `usage.cost`), so it resets too — the
+    // 0.2.17 reset named only the token totals and left the dollar figure
+    // behind, which let a turn that priced nothing advertise the previous
+    // turn's amount as its own.
     if (rt.state.usage) {
-      rt.state.usage = { ...rt.state.usage, totalTokens: 0, inputTokens: 0, outputTokens: 0, thoughtTokens: undefined };
+      rt.state.usage = { ...rt.state.usage, totalTokens: 0, inputTokens: 0, outputTokens: 0, thoughtTokens: undefined, cost: undefined };
     }
     rt.busy = true;
     rt.state.isStreaming = true;

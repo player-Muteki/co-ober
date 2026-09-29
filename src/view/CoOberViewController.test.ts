@@ -1112,6 +1112,28 @@ describe('CoOberViewController', () => {
       expect(controller.state.usage?.outputTokens).toBe(0);
     });
 
+    it('does not carry the previous turn’s cost into a turn that reports none', async () => {
+      // 0.2.17 reset the token totals at turn start but left the dollar figure
+      // behind. The footer pairs state.usage.cost with this turn's elapsed time
+      // and the stamp writes it onto this turn's message, so a stop that priced
+      // nothing kept showing — and recording — turn one's amount as its own.
+      const client = createMockClient({
+        sendMessage: vi.fn().mockResolvedValue({
+          stopReason: 'end_turn',
+          _meta: { used: 100, size: 1000, cost: { amount: 0.05, currency: 'USD' } },
+        }),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      await controller.send('one', []);
+      expect(controller.state.usage?.cost).toEqual({ amount: 0.05, currency: 'USD' });
+
+      (client.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({ stopReason: 'cancelled' });
+      await controller.send('two', []);
+      expect(controller.state.usage?.cost).toBeUndefined();
+    });
+
     it('renders, sends and persists pending image parts with the user message', async () => {
       const client = createMockClient();
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
