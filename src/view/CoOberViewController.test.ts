@@ -3617,6 +3617,30 @@ describe('CoOberViewController — /add-dir availability', () => {
   });
 });
 
+describe('CoOberViewController — /compact availability', () => {
+  let deps: MockDeps;
+  let controller: CoOberViewController;
+
+  beforeEach(() => {
+    setLocale('en');
+    deps = createMockDeps();
+    controller = new CoOberViewController(deps, createMockCallbacks());
+  });
+
+  it('offers /compact only once a session exists to summarize', () => {
+    // /compact sends a turn to the agent; on a disconnected or brand-new tab
+    // sendTextToAgent settles to a silent return, so the palette was advertising
+    // a command the current tab could not carry out — the /add-dir (0.2.15) and
+    // /fork (0.2.16) rulings, read for compact, which the set had left out.
+    const enabled = () => commandRegistry.find('compact')!.enabled!();
+    expect(enabled()).toBe(false);
+    (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(createMockClient());
+    expect(enabled()).toBe(false);
+    controller.state.sessionId = 'local-1';
+    expect(enabled()).toBe(true);
+  });
+});
+
 describe('CoOberViewController — /fork availability', () => {
   let deps: MockDeps;
   let controller: CoOberViewController;

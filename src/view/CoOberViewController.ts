@@ -662,6 +662,12 @@ export class CoOberViewController {
       description: t().slash.compact,
       category: 'session',
       source: 'builtin',
+      // /compact is a turn sent to the agent, so a tab with no client or no
+      // conversation cannot carry it: sendTextToAgent settles to a silent
+      // return there, and the command would be listed as selectable work that
+      // does nothing. The same ruling that took /add-dir (0.2.15) and /fork
+      // (0.2.16) off a bare tab, read for compact.
+      enabled: () => client() !== null && this.state.sessionId !== null,
       run: async (_args: string, scope?: CommandScope) => {
         const rt = this.scopeRuntime(scope);
         if (rt) await this.compactSession(rt);

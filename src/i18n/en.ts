@@ -550,7 +550,7 @@ const en = {
       desc: 'Auto-approve behavior for tool permissions',
       yolo: 'Yolo — auto-approve all',
       plan: 'Plan — auto-approve reads and searches; everything else is rejected',
-      safe: 'Safe — confirm all',
+      safe: 'Safe — confirm each permission prompt; an allowed client-side write or command still runs without asking and is recorded',
       readonly: 'Readonly — auto-approve reads, searches and fetches; writes and execution are rejected',
     },
     systemPrompt: {

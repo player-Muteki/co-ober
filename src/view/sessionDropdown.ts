@@ -107,13 +107,6 @@ export class SessionDropdown {
 				? list.filter(s => s.title?.toLowerCase().includes(filter.toLowerCase()))
 				: list;
 
-			if (filtered.length === 0) {
-				itemsContainer.createDiv({
-					cls: 'co-ober-session-empty',
-					text: t().session.empty,
-				});
-			}
-
 			const currentId = this.getCurrentSessionId();
 			for (const s of filtered) {
 				const it = itemsContainer.createDiv({
@@ -141,8 +134,20 @@ export class SessionDropdown {
 				};
 			}
 
-			this.renderNativeSection(itemsContainer, currentId, filter);
-			this.renderContentSection(itemsContainer, currentId, filter);
+			// "No sessions found" speaks for the whole dropdown, not just the local
+			// rows: the native and content sections paint clickable sessions into
+			// the panel below this line, so announcing nothing while listing them
+			// contradicted the list the reader could see and act on. A still-loading
+			// native fetch is not "nothing found" either.
+			const wasLoadingNative = this.nativeLoading;
+			const nativeRows = this.renderNativeSection(itemsContainer, currentId, filter);
+			const contentRows = this.renderContentSection(itemsContainer, currentId, filter);
+			if (filtered.length === 0 && nativeRows === 0 && contentRows === 0 && !wasLoadingNative) {
+				itemsContainer.createDiv({
+					cls: 'co-ober-session-empty',
+					text: t().session.empty,
+				});
+			}
 		};
 
 		searchInput?.addEventListener('input', () => {
@@ -168,10 +173,10 @@ export class SessionDropdown {
 		this.doc.addEventListener('mousedown', this.outsideHandler, true);
 	}
 
-	private renderNativeSection(itemsContainer: HTMLElement, currentId: string | null, filter: string): void {
-		if (!this.loadNativeSessions) return;
+	private renderNativeSection(itemsContainer: HTMLElement, currentId: string | null, filter: string): number {
+		if (!this.loadNativeSessions) return 0;
 		const dd = itemsContainer.parentElement;
-		if (!dd) return;
+		if (!dd) return 0;
 
 		const localIds = new Set(this.sessionStore.list().map((s) => s.sessionId));
 		const native = this.nativeSessions.filter((s) => !localIds.has(s.sessionId));
@@ -195,12 +200,12 @@ export class SessionDropdown {
 				console.error('[co-ober] native session list failed:', e);
 				if (this.dropdownEl) this.rerender();
 			});
-			return;
+			return 0;
 		}
 		if (this.nativeLoadError) {
 			itemsContainer.createDiv({ cls: 'co-ober-session-native-error', text: t().sessionDropdown.nativeError });
 		}
-		if (filteredNative.length === 0) return;
+		if (filteredNative.length === 0) return 0;
 
 		const section = dd.createDiv({ cls: 'co-ober-session-native-section' });
 		section.createDiv({ cls: 'co-ober-session-native-header', text: t().sessionDropdown.nativeSection });
@@ -219,6 +224,7 @@ export class SessionDropdown {
 				void this.callbacks.onSwitch(s.sessionId, 'opencode').catch((e) => this.reportActionError(e));
 			};
 		}
+		return filteredNative.length;
 	}
 
 	private rerender(opts?: { force?: boolean }): void {
@@ -264,24 +270,24 @@ export class SessionDropdown {
 		}
 	}
 
-	private renderContentSection(itemsContainer: HTMLElement, currentId: string | null, filter: string): void {
-		if (!this.searchNativeSessions || filter.trim().length < 2) return;
+	private renderContentSection(itemsContainer: HTMLElement, currentId: string | null, filter: string): number {
+		if (!this.searchNativeSessions || filter.trim().length < 2) return 0;
 		const dd = itemsContainer.parentElement;
-		if (!dd) return;
+		if (!dd) return 0;
 		if (this.contentSearchFailed) {
 			// A silent console warning leaves the user believing there are no
 			// matches; say out loud that the search itself failed.
 			itemsContainer.createDiv({ cls: 'co-ober-session-native-error', text: t().sessionDropdown.contentError });
-			return;
+			return 0;
 		}
-		if (this.contentResults.length === 0) return;
+		if (this.contentResults.length === 0) return 0;
 
 		const listed = new Set([
 			...this.sessionStore.list().map((s) => s.sessionId),
 			...this.nativeSessions.map((s) => s.sessionId),
 		]);
 		const extra = this.contentResults.filter((s) => !listed.has(s.sessionId));
-		if (extra.length === 0) return;
+		if (extra.length === 0) return 0;
 
 		const section = dd.createDiv({ cls: 'co-ober-session-content-section' });
 		section.createDiv({ cls: 'co-ober-session-native-header', text: t().sessionDropdown.contentSection });
@@ -297,6 +303,7 @@ export class SessionDropdown {
 				void this.callbacks.onSwitch(s.sessionId, 'opencode').catch((e) => this.reportActionError(e));
 			};
 		}
+		return extra.length;
 	}
 
 	close(): void {

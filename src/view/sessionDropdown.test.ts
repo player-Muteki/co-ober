@@ -653,6 +653,31 @@ describe('SessionDropdown', () => {
       expect(items[1].querySelector('.session-summary')).toBeNull();
       dd.destroy();
     });
+
+    it('does not announce "No sessions found" while native rows render below it', async () => {
+      // "No sessions found" was emitted straight from the local rows, then the
+      // native section painted clickable sessions into the very same panel below
+      // the line — so the dropdown said there was nothing to pick and listed
+      // sessions to pick at once.
+      sessionStore.list.mockReturnValue([]);
+      const dd = makeDropdown(async () => [{ sessionId: 'ses_native_1', title: 'Terminal chat' }]);
+      dd.open();
+      await new Promise((r) => setTimeout(r, 10));
+      expect(container.querySelector('.co-ober-session-native')).not.toBeNull();
+      expect(container.querySelector('.co-ober-session-empty')).toBeNull();
+      dd.destroy();
+    });
+
+    it('still announces "No sessions found" when the native loader returns nothing', async () => {
+      // Scoping the message to the whole panel must not swallow it: an empty
+      // local list and an empty native result really is an empty dropdown.
+      sessionStore.list.mockReturnValue([]);
+      const dd = makeDropdown(async () => []);
+      dd.open();
+      await new Promise((r) => setTimeout(r, 10));
+      expect(container.querySelector('.co-ober-session-empty')?.textContent).toBe('No sessions found');
+      dd.destroy();
+    });
   });
 
   describe('native content search', () => {

@@ -552,7 +552,7 @@ const zh: Locale = {
       desc: '工具权限的自动批准行为',
       yolo: 'Yolo — 全部自动批准',
       plan: 'Plan — 自动批准读取与搜索，其余一律拒绝',
-      safe: 'Safe — 全部确认',
+      safe: 'Safe — 逐一确认权限请求；已获放行的本机写入或命令仍会执行、不再询问，并记入对话',
       readonly: 'Readonly — 自动批准读取、搜索与抓取，拒绝一切写入与执行',
     },
     systemPrompt: {

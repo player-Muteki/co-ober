@@ -685,6 +685,24 @@ describe('CoOberSettingsTab live capability push', () => {
     expect(refreshPermissionMode).toHaveBeenCalledTimes(1);
   });
 
+  it('names what the Safe tier actually confirms rather than promising every action', () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+
+    // Safe defers to the capability settings, which default to enabled, so an
+    // allowed client-side write or command runs with no banner and is only
+    // recorded in the transcript. "confirm all" promised the one thing the tier
+    // does not do — it confirms the permission prompts the agent sends, not the
+    // capability grants it never sees before honouring them.
+    const safeOption = [...findDropdown(tab, 'Permission Mode').options]
+      .find((option) => option.value === 'safe');
+    expect(safeOption?.textContent).toContain('permission prompt');
+    expect(safeOption?.textContent).toContain('recorded');
+    expect(safeOption?.textContent).not.toMatch(/confirm all/i);
+  });
+
   it('passes an idle timeout of 0 through as disabled', async () => {
     setLocale('en');
     const plugin = createPlugin({ refreshLocale: vi.fn() });
