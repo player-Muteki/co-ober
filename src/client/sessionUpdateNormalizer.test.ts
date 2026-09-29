@@ -431,6 +431,19 @@ describe('SessionUpdateNormalizer v2 compaction state machine', () => {
     expect(norm).toEqual({ kind: 'notice', level: 'error', message: t().stream.compactionFailed });
   });
 
+  it('honours a failed or cancelled compaction even when it names no compactionId', () => {
+    // The terminal-status checks used to sit behind the `!compactionId` return,
+    // so an agent that reported a failed summarising without an id got the same
+    // "Compacted" boundary a genuine success writes — a withdrawn step shown as
+    // done. The status now reads first, id or not.
+    expect(normalizer.normalize({ sessionUpdate: 'compaction_update', status: 'failed', error: 'out of room' })).toEqual({
+      kind: 'notice',
+      level: 'error',
+      message: 'out of room',
+    });
+    expect(normalizer.normalize({ sessionUpdate: 'compaction_update', status: 'cancelled' })).toBeNull();
+  });
+
   it('keeps suppressing later patches for a compaction it has already pinned', () => {
     // The second frame used to take the id back out of the set, so a third
     // patch — an agent restating the finished summary — re-pinned the boundary

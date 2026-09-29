@@ -221,11 +221,15 @@ export class SessionUpdateNormalizer {
       case 'notice_update':
         return { kind: 'notice', level: raw.level, message: raw.message };
       case 'compaction_update': {
-        if (!raw.compactionId) return { kind: 'compaction', summary: raw.summary };
+        // Read the terminal status before the id, or a frame that carries a
+        // failure but no compactionId falls straight through the id guard below
+        // and paints the same "Compacted" boundary a real success earns — a
+        // compaction that failed, or one the agent withdrew, reported as done.
         if (raw.status === 'failed') {
           return { kind: 'notice', level: 'error', message: raw.error ?? t().stream.compactionFailed };
         }
         if (raw.status === 'cancelled') return null;
+        if (!raw.compactionId) return { kind: 'compaction', summary: raw.summary };
         if (this.startedCompactions.has(raw.compactionId)) {
           // A memory, not a toggle. Popping the id here let the third frame for
           // one compaction re-pin the boundary the first frame already wrote, so

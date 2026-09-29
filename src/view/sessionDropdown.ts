@@ -76,7 +76,6 @@ export class SessionDropdown {
 		const canList = capabilities?.list !== false;
 		const list = this.getRenderableSessions(this.sessionStore.list(), canList);
 		const dd = this.container.createDiv({ cls: 'co-ober-session-list' });
-		dd.setAttribute('aria-label', t().sessionDropdown.listboxAria);
 
 		const rect = this.anchorEl.getBoundingClientRect();
 		dd.setCssProps({
@@ -94,6 +93,7 @@ export class SessionDropdown {
 
 		const itemsContainer = dd.createDiv({ cls: 'co-ober-session-items' });
 		itemsContainer.setAttribute('role', 'listbox');
+		itemsContainer.setAttribute('aria-label', t().sessionDropdown.listboxAria);
 
 		const renderItems = (filter: string) => {
 			itemsContainer.empty();

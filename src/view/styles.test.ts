@@ -83,6 +83,22 @@ describe('the stylesheet and the DOM it is answerable to', () => {
     expect(css).not.toMatch(/\.co-ober-tab\.is-queued\s*\{[^}]*opacity:/);
   });
 
+  it('drops no rule for a diff chrome no code paints', () => {
+    // The diff renderer writes co-ober-diff-body with diff-line rows and
+    // tc-diff-stats in the tool header; it never mints a .co-ober-diff wrapper, a
+    // .co-ober-diff-header (with its cursor:pointer + :hover), a bare .diff-stats,
+    // or a .diff-path. Those blocks styled a card, a clickable header and two
+    // labels no element ever carried — a pointing-hand over nothing.
+    expect(css).not.toMatch(/\.co-ober-diff\s*\{/);
+    expect(css).not.toContain('co-ober-diff-header');
+    expect(css).not.toMatch(/\.diff-stats\s*\{/);
+    expect(css).not.toMatch(/\.diff-path\s*\{/);
+    // The chrome the code does paint keeps its rules.
+    expect(css).toMatch(/\.co-ober-diff-body\s*\{/);
+    expect(css).toMatch(/\.diff-line\.added\s*\{/);
+    expect(css).toMatch(/\.tc-diff-stats\s*\{/);
+  });
+
   describe('prefers-reduced-motion', () => {
     const mediaAt = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\)/g)].map((m) => m.index ?? -1);
 

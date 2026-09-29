@@ -1522,29 +1522,6 @@ pre:focus-within .co-ober-copy-btn {
 }
 
 /* Diff rendering */
-.co-ober-diff {
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-s);
-  margin: 4px 0;
-  overflow: hidden;
-}
-
-.co-ober-diff-header {
-  padding: 4px 8px;
-  background: var(--background-secondary);
-  font-size: var(--font-smaller);
-  font-family: var(--font-editor);
-  cursor: pointer;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.co-ober-diff-header:hover {
-  background: var(--background-modifier-hover);
-}
-
 .co-ober-diff-body {
   padding: 4px 0;
   font-size: var(--font-smaller);
@@ -2050,30 +2027,12 @@ pre:focus-within .co-ober-copy-btn {
 }
 
 /* Diff line additions — diff-line.added/removed/context already exist,
-   add truncated variant and stats label */
+   add the truncated variant the fold markers use */
 .diff-line.truncated {
   color: var(--text-faint);
   font-style: italic;
   padding: 0 8px;
   line-height: 1.4;
-}
-.diff-stats {
-  font-family: var(--font-monospace);
-  font-size: 10px;
-  color: var(--text-faint);
-  margin-left: auto;
-  flex-shrink: 0;
-}
-.diff-path {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-}
-.co-ober-diff-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 /* Compact boundary indicator */

@@ -825,7 +825,11 @@ describe('SessionDropdown', () => {
       dd.open();
       const items = container.querySelector('.co-ober-session-items');
       expect(items?.getAttribute('role')).toBe('listbox');
-      expect(container.querySelector('.co-ober-session-list')?.getAttribute('aria-label')).toBe('Session list');
+      // The accessible name belongs on the listbox, not the role-less popup that
+      // happens to wrap it — an aria-label on a plain div names nothing, so a
+      // screen reader reached the rows without the "Session list" it was promised.
+      expect(items?.getAttribute('aria-label')).toBe('Session list');
+      expect(container.querySelector('.co-ober-session-list')?.getAttribute('aria-label')).toBeNull();
       const rows = [...(items?.querySelectorAll('.co-ober-session-item') ?? [])] as HTMLElement[];
       expect(rows.length).toBeGreaterThan(0);
       for (const row of rows) expect(row.getAttribute('role')).toBe('option');
