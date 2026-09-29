@@ -3468,6 +3468,39 @@ describe('CoOberViewController — /add-dir availability', () => {
   });
 });
 
+describe('CoOberViewController — /fork availability', () => {
+  let deps: MockDeps;
+  let controller: CoOberViewController;
+
+  beforeEach(() => {
+    setLocale('en');
+    deps = createMockDeps();
+    controller = new CoOberViewController(deps, createMockCallbacks());
+  });
+
+  it('offers /fork only for a tab that holds a session to fork', () => {
+    // An agent saying it can fork is half the condition; the other half is this
+    // tab having something to fork. The gate read only the first, and selecting a
+    // builtin paints its own user line before running, so /fork in a bare tab
+    // wrote a "/fork" into the transcript for a command that returned quietly.
+    const forkCapable = createMockClient({
+      getAgentCapabilities: () => ({ sessionCapabilities: { fork: true } }),
+    });
+    const enabled = () => commandRegistry.find('fork')!.enabled!();
+    expect(enabled()).toBe(false);
+    (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(forkCapable);
+    expect(enabled()).toBe(false);
+    controller.state.sessionId = 'local-1';
+    expect(enabled()).toBe(true);
+  });
+
+  it('still refuses /fork for an agent that never offered the capability', () => {
+    (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(createMockClient());
+    controller.state.sessionId = 'local-1';
+    expect(commandRegistry.find('fork')!.enabled!()).toBe(false);
+  });
+});
+
 describe('CoOberViewController — side chat (/btw)', () => {
   let deps: MockDeps;
   let callbacks: ReturnType<typeof createMockCallbacks>;

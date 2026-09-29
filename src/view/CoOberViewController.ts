@@ -753,7 +753,12 @@ export class CoOberViewController {
       description: t().slash.fork,
       category: 'session',
       source: 'builtin',
-      enabled: () => caps()?.sessionCapabilities?.fork ?? false,
+      // The agent saying it can fork is only half of it: this tab has to hold a
+      // session to fork. Its run body already returns without a session id, and a
+      // selected builtin paints its own user line first, so a bare tab got
+      // "/fork" written into its transcript for a command that could not go
+      // anywhere — the /add-dir ruling from 0.2.15, read for the fork gate too.
+      enabled: () => (caps()?.sessionCapabilities?.fork ?? false) && client() !== null && this.state.sessionId !== null,
       run: async (_args: string, scope?: CommandScope) => {
         const rt = this.scopeRuntime(scope);
         if (!rt?.state.sessionId) return;

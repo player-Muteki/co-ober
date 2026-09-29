@@ -7,11 +7,17 @@ import type { AgentCapabilities, SessionMeta } from '../types';
 
 const DELETE_CONFIRM_TIMEOUT_MS = 3000;
 
-/** Diff-summary badge for OpenCode-native rows; null when nothing was changed. */
+/**
+ * Diff-summary badge for OpenCode-native rows; null when nothing was changed.
+ * The row names all three figures or none: the reader's own store reports each
+ * column separately, so a row that answered `additions` and said nothing about
+ * files or deletions used to be shown as "0 files +7 -0" — a count of changed
+ * files this client never read, and one that contradicts the +7 printed beside
+ * it. A figure nobody reported is not a zero.
+ */
 export function nativeSummaryText(s: SessionMeta): string | null {
-	const files = s.files ?? 0;
-	const additions = s.additions ?? 0;
-	const deletions = s.deletions ?? 0;
+	const { files, additions, deletions } = s;
+	if (files === undefined || additions === undefined || deletions === undefined) return null;
 	if (files === 0 && additions === 0 && deletions === 0) return null;
 	return t().sessionDropdown.summaryBadge
 		.replace('{files}', String(files))

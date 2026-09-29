@@ -304,19 +304,22 @@ describe('PermissionBanner', () => {
       ],
     });
 
-    it('settles the visible banner with its reject option and promotes the queue', async () => {
+    it('settles the visible banner as unanswered and promotes the queue', async () => {
       const container = document.createElement('div');
       const banner = new PermissionBanner(container);
 
       const first = banner.show(req('e1', 'First?') as any);
       const second = banner.show(req('e2', 'Second?') as any);
 
+      // The agent said this one was resolved elsewhere, so nobody clicked the
+      // banner. Resolving it with `decline` is a claim about what the user
+      // chose, and the wire turns any offered optionId into {outcome:'selected'}.
       banner.resolveExternally('e1');
-      expect(await first).toBe('decline');
+      expect(await first).toBeNull();
       expect(container.querySelector('.perm-title')?.textContent).toContain('Second?');
 
       banner.resolveExternally('e2');
-      expect(await second).toBe('decline');
+      expect(await second).toBeNull();
       expect(container.querySelector('.co-ober-permission-banner')).toBeNull();
     });
 
@@ -328,7 +331,7 @@ describe('PermissionBanner', () => {
       const queued = banner.show(req('e2', 'Second?') as any);
 
       banner.resolveExternally('e2');
-      expect(await queued).toBe('decline');
+      expect(await queued).toBeNull();
       expect(container.querySelector('.perm-title')?.textContent).toContain('First?');
 
       (container.querySelector('.perm-actions button') as HTMLButtonElement).click();
@@ -348,7 +351,7 @@ describe('PermissionBanner', () => {
       expect(await first).toBe('accept');
     });
 
-    it('falls back to reject_once when the settled request has no reject option', async () => {
+    it('settles a request with no reject option the same way, inventing no id', async () => {
       const container = document.createElement('div');
       const banner = new PermissionBanner(container);
 
@@ -359,8 +362,12 @@ describe('PermissionBanner', () => {
         options: [{ optionId: 'ok', name: 'OK', kind: 'allow_once' }],
       } as any);
 
+      // This is where the old fallback showed itself: with nothing to point at,
+      // it answered with a 'reject_once' the agent never offered, so it travelled
+      // as a cancelled outcome built from a made-up choice. Nobody answering is
+      // now said directly, whatever options the request happened to carry.
       banner.resolveExternally('e3');
-      expect(await promise).toBe('reject_once');
+      expect(await promise).toBeNull();
     });
   });
 });

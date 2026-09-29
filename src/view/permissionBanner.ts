@@ -370,20 +370,23 @@ export class PermissionBanner {
       pending.kind === 'permission'
         ? pending.req.toolCall.toolCallId === toolCallId
         : pending.req.elicitationId === toolCallId;
-    const rejectPermission = (req: PermissionRequest): string =>
-      req.options.find((o) => o.kind === 'reject_once' || o.kind === 'reject_always')?.optionId ?? 'reject_once';
 
     if (this.current && matches(this.current)) {
       const pending = this.current;
       this.showNext();
-      if (pending.kind === 'permission') pending.resolve(rejectPermission(pending.req));
-      else pending.resolve({ action: 'cancel' });
+      // Settled somewhere else, so nobody answered *this* banner — and a reject
+      // optionId is a claim about what the user chose. The wire turns it into
+      // {outcome:'selected'} whenever the agent offered that id, which is exactly
+      // why outcomeFor's guard does not catch it: the fabricated choice names a
+      // real option. `dismiss` already rules that an answer given on the user's
+      // behalf is "nobody answered"; the elicitation branch here answered that way
+      // all along, so the permission branch does too.
+      this.cancelUnanswered(pending);
       return;
     }
     const index = this.queue.findIndex(matches);
     if (index < 0) return;
     const [pending] = this.queue.splice(index, 1);
-    if (pending.kind === 'permission') pending.resolve(rejectPermission(pending.req));
-    else pending.resolve({ action: 'cancel' });
+    this.cancelUnanswered(pending);
   }
 }

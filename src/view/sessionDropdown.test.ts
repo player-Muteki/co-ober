@@ -838,6 +838,17 @@ describe('nativeSummaryText', () => {
     expect(nativeSummaryText({ sessionId: 's', additions: 5, deletions: 2, files: 3 })).toBe('3 files +5 -2');
     expect(nativeSummaryText({ sessionId: 's' })).toBeNull();
     expect(nativeSummaryText({ sessionId: 's', additions: 0, deletions: 0, files: 0 })).toBeNull();
-    expect(nativeSummaryText({ sessionId: 's', additions: 7 })).toBe('0 files +7 -0');
+  });
+
+  it('withholds the badge rather than reporting a figure the row never carried', () => {
+    // The native store sets each summary column on its own, so a partial row is
+    // normal. Filling the rest with 0 painted "0 files" beside a +7 that cannot
+    // both be true — an invented count, and one the badge contradicts itself.
+    setLocale('en');
+    expect(nativeSummaryText({ sessionId: 's', additions: 7 })).toBeNull();
+    expect(nativeSummaryText({ sessionId: 's', files: 2, additions: 7 })).toBeNull();
+    expect(nativeSummaryText({ sessionId: 's', files: 0, additions: 0, deletions: 0 })).toBeNull();
+    // A row that did answer all three still gets its badge, zeros included.
+    expect(nativeSummaryText({ sessionId: 's', files: 0, additions: 7, deletions: 0 })).toBe('0 files +7 -0');
   });
 });
