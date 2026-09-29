@@ -1085,6 +1085,17 @@ describe('the context meter', () => {
     expect(meterOf(view).getAttribute('aria-label')).toBe(t().usage.contextMeterAria);
   });
 
+  it('names the percentage scale the meter reports against', async () => {
+    const view = await openMeterView();
+    view.updateContextMeter(usageAt(45));
+    // The value put on the meter is a percentage, 0 to 100, but a meter's
+    // scale defaults to 0–1. Left unbounded, a screen reader heard "45" as a
+    // gauge driven far past full; the ends now say what the arc actually uses.
+    expect(meterOf(view).getAttribute('aria-valuenow')).toBe('45');
+    expect(meterOf(view).getAttribute('aria-valuemin')).toBe('0');
+    expect(meterOf(view).getAttribute('aria-valuemax')).toBe('100');
+  });
+
   it('dashes the meter before the agent reports any context', async () => {
     const view = await openMeterView();
     view.updateContextMeter(null);

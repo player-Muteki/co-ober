@@ -200,6 +200,13 @@ export class CoOberView extends ItemView {
     // Context arc meter (right of title)
     this.meterEl = header.createDiv({ cls: 'co-ober-arc-meter' });
     this.meterEl.setAttribute('role', 'meter');
+    // The value this meter reports is a percentage, 0 to 100. A meter's scale
+    // defaults to 0–1, so a screen reader hearing "45" on an unbounded meter
+    // read it as a gauge driven far past full — the honest "not reported"
+    // branch already drops the number, but every real reading was being named
+    // against a scale the arc never used. Spell the ends out.
+    this.meterEl.setAttribute('aria-valuemin', '0');
+    this.meterEl.setAttribute('aria-valuemax', '100');
     this.meterEl.setAttribute('aria-label', t().usage.contextMeterAria);
     // The percentage is readable at a glance but the detail behind it (which
     // tokens went where, how close to the limit) only arrived on a mouse

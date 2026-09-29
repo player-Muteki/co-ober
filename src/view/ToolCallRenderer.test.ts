@@ -576,6 +576,20 @@ describe('ToolCallRenderer', () => {
     it('appends a "more lines" suffix when over the limit', () => {
       expect(renderTruncatedText(makeLines(22), 20)).toBe(`${makeLines(20)}\n... 2 more lines`);
     });
+
+    it('does not truncate output that only fills the limit and ends in a newline', () => {
+      // A wrapped result already shows every line it has; the closing newline
+      // terminates line 20, it does not open a 21st. Truncating here cut short
+      // text the reader could see whole and advertised a line to scroll for.
+      const exact = `${makeLines(20)}\n`;
+      expect(renderTruncatedText(exact, 20)).toBe(exact);
+    });
+
+    it('counts a trailing newline as ending the last line, not adding one', () => {
+      // Twenty-one real lines ending in a newline hid "... 2 more lines" for a
+      // blank line nobody wrote — one line was genuinely kept back, not two.
+      expect(renderTruncatedText(`${makeLines(21)}\n`, 20)).toBe(`${makeLines(20)}\n... 1 more lines`);
+    });
   });
 
   describe('updateToolCallElement — image and unsupported content items', () => {

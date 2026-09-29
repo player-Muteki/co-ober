@@ -776,7 +776,14 @@ export function renderLinesExpanded(container: HTMLElement, result: string, maxL
  * Truncate text to a maximum number of lines, appending "X more lines".
  */
 export function renderTruncatedText(text: string, maxLines: number): string {
-  const lines = text.split('\n');
+  const lines = text.split(/\r?\n/);
+  // A trailing newline terminates the final line rather than opening a blank
+  // one, so drop the single empty segment it leaves. Left in, a wrapped output
+  // claimed a line nobody had to scroll for — and one that filled exactly
+  // `maxLines` before its closing newline was cut short with "... 1 more
+  // lines" over text the reader could already see whole. The same ghost
+  // renderLinesExpanded filters out.
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
   if (lines.length <= maxLines) return text;
   return lines.slice(0, maxLines).join('\n') + `\n${t().tool.moreLines.replace('{count}', String(lines.length - maxLines))}`;
 }
