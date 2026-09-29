@@ -22,6 +22,7 @@ const zh: Locale = {
     forkDisabled: '当前 OpenCode Agent 不支持分叉会话',
     resumeDisabled: '当前 OpenCode Agent 不支持恢复会话',
     closeDisabled: '当前 OpenCode Agent 不支持关闭会话',
+    renameDisabled: '当前 OpenCode Agent 不支持重命名会话',
     nativeSection: 'OpenCode 会话',
     loadingNative: '正在加载 OpenCode 会话…',
     nativeError: '原生会话读取失败（详见控制台）',

@@ -2436,6 +2436,41 @@ describe('CoOberViewController', () => {
       controller.loadToolbarOptions();
       expect(setEnabled).toHaveBeenCalledWith(true);
     });
+
+    it('hands the bar the real name of a current model the common list hides', () => {
+      // The picker is narrowed to the reader's common models, but the session is
+      // running one they left off that list. Naming the active model is not the
+      // same as offering it, so the controller still reports the model and its
+      // name; the bar used to see a filtered-out current and print "Not set",
+      // denying a tier the agent had actually confirmed.
+      const updateModels = vi.fn();
+      Object.assign(deps.toolbar, { updateModels });
+      deps.runtime.settings.commonModels = ['openai/gpt-4'];
+      const client = createMockClient({
+        getSessionSnapshot: vi.fn(() => ({
+          configOptions: [],
+          availableCommands: [],
+          availableModels: [
+            { modelId: 'openai/gpt-4', name: 'GPT-4' },
+            { modelId: 'anthropic/claude', name: 'Claude' },
+          ],
+          availableModes: [],
+          currentModelId: 'anthropic/claude',
+          currentModeId: null,
+        })),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      controller.state.sessionId = 'ses-1';
+
+      controller.loadToolbarOptions();
+
+      expect(updateModels).toHaveBeenCalledWith(
+        [{ value: 'openai/gpt-4', label: 'GPT-4' }],
+        'anthropic/claude',
+        'Claude',
+      );
+      deps.runtime.settings.commonModels = [];
+    });
   });
 
   describe('applyConfigOptions effort normalization', () => {
@@ -2477,7 +2512,7 @@ describe('CoOberViewController', () => {
         },
       ]);
 
-      expect(deps.toolbar.updateModels).toHaveBeenCalledWith([{ value: 'gpt-4', label: 'GPT-4' }], undefined);
+      expect(deps.toolbar.updateModels).toHaveBeenCalledWith([{ value: 'gpt-4', label: 'GPT-4' }], undefined, undefined);
     });
   });
 

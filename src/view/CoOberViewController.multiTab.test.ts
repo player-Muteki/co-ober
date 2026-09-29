@@ -2558,7 +2558,7 @@ describe('CoOberViewController — every answer belongs to the tab that asked (0
       // naming the saved default here would show a tier this conversation never
       // reported, in the same voice the agent's own answer uses.
       expect(h.deps.toolbar.updateAgents).toHaveBeenCalledWith([], undefined);
-      expect(h.deps.toolbar.updateModels).toHaveBeenCalledWith([], undefined);
+      expect(h.deps.toolbar.updateModels).toHaveBeenCalledWith([], undefined, undefined);
     });
 
     it('writes a background tab’s own choices into that tab, not into the bar', () => {

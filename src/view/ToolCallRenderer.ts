@@ -551,7 +551,11 @@ function renderSearchExpanded(container: HTMLElement, result: string): void {
 
   const linesEl = container.createDiv({ cls: 'co-ober-tool-lines' });
   for (const line of displayLines) {
-    const lineEl = linesEl.createDiv({ cls: 'co-ober-tool-line hoverable' });
+    // A search match is not clickable — nothing binds a click to a tool line —
+    // so it carries no cursor:pointer promise. renderSearchExpanded used to tag
+    // these `hoverable`, drawing a pointing-hand and a hover highlight that
+    // offered an action no handler would ever take.
+    const lineEl = linesEl.createDiv({ cls: 'co-ober-tool-line' });
     lineEl.setText(line);
   }
 
@@ -723,7 +727,7 @@ function parseApplyPatchFileDiffs(patchText: string): ParsedFileDiff[] {
  * Render lines with truncation — the unified "renderLinesExpanded" pattern.
  * Shows up to `maxLines` lines, then "X more lines" truncation.
  */
-export function renderLinesExpanded(container: HTMLElement, result: string, maxLines: number, hoverable = false): void {
+export function renderLinesExpanded(container: HTMLElement, result: string, maxLines: number): void {
   const lines = result.split(/\r?\n/);
   const truncated = lines.length > maxLines;
   const displayLines = truncated ? lines.slice(0, maxLines) : lines;
@@ -731,7 +735,6 @@ export function renderLinesExpanded(container: HTMLElement, result: string, maxL
   const linesEl = container.createDiv({ cls: 'co-ober-tool-lines' });
   for (const line of displayLines) {
     const lineEl = linesEl.createDiv({ cls: 'co-ober-tool-line' });
-    if (hoverable) lineEl.addClass('hoverable');
     lineEl.setText(line || ' ');
   }
 

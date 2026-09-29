@@ -162,6 +162,20 @@ describe('SessionDropdown', () => {
       expect(del.getAttribute('aria-label')).toBe('Close is not supported by this OpenCode agent');
     });
 
+    it('names rename unsupported on the disabled pencil instead of offering it', () => {
+      // An agent that cannot list sessions has nothing for the pencil to reach, so
+      // the button is disabled — yet its tooltip still read "Rename session",
+      // promising an action the greyed control could not carry, exactly the claim
+      // the fork and resume buttons already avoid.
+      dropdown = new SessionDropdown(container, anchor, sessionStore as any, () => 'session-1', callbacks as any, () => ({ sessionCapabilities: { list: false } }));
+      dropdown.open();
+      const item = container.querySelector('.co-ober-session-item') as HTMLElement;
+      const rename = item.querySelector('.session-rename') as HTMLButtonElement;
+      expect(rename.disabled).toBe(true);
+      expect(rename.getAttribute('title')).toBe('Rename is not supported by this OpenCode agent');
+      expect(rename.getAttribute('aria-label')).toBe('Rename is not supported by this OpenCode agent');
+    });
+
     it('moves the delete aria-label through confirm and back on timeout', () => {
       vi.useFakeTimers();
       try {

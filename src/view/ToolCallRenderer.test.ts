@@ -370,7 +370,8 @@ describe('ToolCallRenderer', () => {
       updateToolCallElement(state, 'completed', 'grep', undefined, [textItem(makeLines(25))]);
       const lineEls = state.body.querySelectorAll('.co-ober-tool-line');
       expect(lineEls.length).toBe(20);
-      expect(lineEls[0].classList.contains('hoverable')).toBe(true);
+      // A search match carries no pointing-hand: nothing binds a click to it.
+      expect(lineEls[0].classList.contains('hoverable')).toBe(false);
       expect(state.body.querySelector('.co-ober-tool-truncated')?.textContent).toBe('... 5 more matches');
     });
 
@@ -478,9 +479,9 @@ describe('ToolCallRenderer', () => {
       expect(container.querySelector('.co-ober-tool-truncated')).toBeNull();
     });
 
-    it('adds the hoverable class when requested', () => {
-      renderLinesExpanded(container, 'x', 10, true);
-      expect(container.querySelector('.co-ober-tool-line')?.classList.contains('hoverable')).toBe(true);
+    it('paints no click affordance on a line nothing can click', () => {
+      renderLinesExpanded(container, 'x', 10);
+      expect(container.querySelector('.co-ober-tool-line')?.classList.contains('hoverable')).toBe(false);
     });
 
     it('appends a localized truncation line beyond maxLines', () => {

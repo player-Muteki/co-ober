@@ -2934,7 +2934,11 @@ export class CoOberViewController {
     // the tier the next prompt would actually send, while every other projection
     // path (config options, mode and model updates) reports only what it was told.
     this.deps.toolbar.updateAgents(agents, snapshot.currentModeId ?? selectValueOf(modeConfig));
-    this.deps.toolbar.updateModels(models, snapshot.currentModelId ?? selectValueOf(modelConfig));
+    this.deps.toolbar.updateModels(
+      models,
+      rt.state.currentModelId ?? undefined,
+      snapshot.availableModels.find((model) => model.modelId === rt.state.currentModelId)?.name,
+    );
     this.deps.toolbar.updateEffort(efforts, selectValueOf(effortConfig));
     this.deps.toolbar.updateExtraConfigs(projectGenericConfigOptions(snapshot.configOptions));
     this.deps.toolbar.updatePermission(this.deps.runtime.settings.permissionMode);
@@ -2952,9 +2956,11 @@ export class CoOberViewController {
     if (!this.isActiveTab(rt)) return;
     for (const opt of opts) {
       if (opt.id === 'model') {
+        const currentModel = selectValueOf(opt);
         this.deps.toolbar.updateModels(
           this.filterCommonModelOptions(opt.options.map((o) => ({ value: o.value, label: o.name }))),
-          selectValueOf(opt),
+          currentModel,
+          opt.options.find((o) => o.value === currentModel)?.name,
         );
       }
       if (opt.id === 'effort') {
@@ -2988,6 +2994,7 @@ export class CoOberViewController {
     this.deps.toolbar.updateModels(
       this.filterCommonModelOptions(models.map((m) => ({ value: m.modelId, label: m.name }))),
       modelId ?? undefined,
+      models.find((m) => m.modelId === modelId)?.name,
     );
   }
 

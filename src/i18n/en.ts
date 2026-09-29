@@ -20,6 +20,7 @@ const en = {
     forkDisabled: 'Fork is not supported by this OpenCode agent',
     resumeDisabled: 'Resume is not supported by this OpenCode agent',
     closeDisabled: 'Close is not supported by this OpenCode agent',
+    renameDisabled: 'Rename is not supported by this OpenCode agent',
     nativeSection: 'OpenCode sessions',
     loadingNative: 'Loading OpenCode sessions…',
     nativeError: 'Native sessions unavailable (see console)',

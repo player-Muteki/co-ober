@@ -95,6 +95,31 @@ describe('InputToolbar locale refresh', () => {
     expect(container.querySelector('.co-ober-effort-label')?.textContent).toBe('High');
   });
 
+  it('names a model the agent reported even though the common list hides it', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const toolbar = new InputToolbar(container, {});
+    // The picker is filtered to the reader's common models, but the session is
+    // actually running a model that filter dropped. The controller still hands
+    // over that model and its name, so the bar tells the truth about what is in
+    // force rather than claiming "Not set" — the only nothing-set reading is an
+    // agent that reported no model at all.
+    toolbar.updateModels(
+      [{ value: 'openai/gpt-4', label: 'GPT-4' }],
+      'anthropic/claude',
+      'Claude',
+    );
+    expect(container.querySelector('.co-ober-model-label')?.textContent).toBe('Claude');
+    // The hidden model is not offered, so the dropdown marks nothing as chosen.
+    expect(container.querySelector('.co-ober-model-option.selected')).toBeNull();
+
+    // A locale repaint re-reads the same truth instead of dropping back to unset.
+    setLocale('zh');
+    toolbar.refreshLocale();
+    expect(container.querySelector('.co-ober-model-label')?.textContent).toBe('Claude');
+    setLocale('en');
+  });
+
   it('keeps the send button aria-label in sync with its icon and locale', () => {
     setLocale('en');
     const container = document.createElement('div') as HTMLDivElement;

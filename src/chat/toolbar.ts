@@ -26,6 +26,7 @@ export class InputToolbar {
   private modelDropdownEl: HTMLDivElement;
   private modelOptions: Array<{ value: string; label: string }> = [];
   private currentModel: string | undefined;
+  private currentModelLabel: string | undefined;
 
   // Mode cycle button
   private modeCycleEl: HTMLDivElement;
@@ -191,9 +192,10 @@ export class InputToolbar {
 
   // ── Model custom dropdown ──
 
-  updateModels(options: Array<{ value: string; label: string }>, current?: string): void {
+  updateModels(options: Array<{ value: string; label: string }>, current?: string, currentLabel?: string): void {
     this.modelOptions = [...options];
     this.currentModel = current;
+    this.currentModelLabel = currentLabel;
     this.renderModelDropdown();
 
     if (options.length === 0) {
@@ -202,7 +204,10 @@ export class InputToolbar {
       const selected = options.find(o => o.value === current);
       // The dropdown marks nothing as chosen in this state (it compares against
       // the same `current`); the label used to claim the first model anyway.
-      this.modelLabelEl.setText(selected?.label ?? t().toolbar.unset);
+      // A model the agent reported but the reader hid from the common list is
+      // still the model in force, so naming it is not the same lie — only a
+      // current of `undefined` (nothing reported) earns "Not set".
+      this.modelLabelEl.setText(selected?.label ?? (current ? currentLabel ?? current : t().toolbar.unset));
     }
   }
 
@@ -498,7 +503,8 @@ export class InputToolbar {
     this.modelLabelEl.setText(
       this.modelOptions.length === 0
         ? t().toolbar.noModels
-        : (this.modelOptions.find(o => o.value === this.currentModel)?.label ?? t().toolbar.unset)
+        : (this.modelOptions.find(o => o.value === this.currentModel)?.label
+          ?? (this.currentModel ? this.currentModelLabel ?? this.currentModel : t().toolbar.unset))
     );
     this.renderModelDropdown();
     const selected = this.modeOptions.find(o => o.value === this.currentMode);

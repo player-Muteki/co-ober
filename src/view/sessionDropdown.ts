@@ -126,7 +126,7 @@ export class SessionDropdown {
 					await this.callbacks.onTogglePin?.(s.sessionId, !(s.pinned === true));
 					this.rerender();
 				});
-				this.createActionButton(it, 'session-rename', '✎', capabilities?.list !== false, t().sessionDropdown.rename, async () => {
+				this.createActionButton(it, 'session-rename', '✎', capabilities?.list !== false, capabilities?.list !== false ? t().sessionDropdown.rename : t().sessionDropdown.renameDisabled, async () => {
 					this.startInlineRename(it, s);
 				});
 				this.createActionButton(it, 'session-fork', '⎇', capabilities?.fork === true, capabilities?.fork === true ? t().sessionDropdown.fork : t().sessionDropdown.forkDisabled, async () => {
