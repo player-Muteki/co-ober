@@ -431,6 +431,16 @@ describe('SessionUpdateNormalizer v2 compaction state machine', () => {
     expect(norm).toEqual({ kind: 'notice', level: 'error', message: t().stream.compactionFailed });
   });
 
+  it('keeps suppressing later patches for a compaction it has already pinned', () => {
+    // The second frame used to take the id back out of the set, so a third
+    // patch — an agent restating the finished summary — re-pinned the boundary
+    // and the transcript carried two "Compacted" notes for one summarising.
+    normalizer.normalize({ sessionUpdate: 'compaction_update', compactionId: 'c-7', status: 'in_progress' });
+    expect(normalizer.normalize({ sessionUpdate: 'compaction_update', compactionId: 'c-7', status: 'completed' })).toBeNull();
+    expect(normalizer.normalize({ sessionUpdate: 'compaction_update', compactionId: 'c-7', status: 'completed' })).toBeNull();
+    expect(normalizer.normalize({ sessionUpdate: 'compaction_update', compactionId: 'c-7', summary: 'x' })).toBeNull();
+  });
+
   it('reset() forgets pending compaction ids so a new stream re-pins', () => {
     normalizer.normalize({ sessionUpdate: 'compaction_update', compactionId: 'c-6', status: 'in_progress' });
     normalizer.reset();

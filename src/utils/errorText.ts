@@ -41,6 +41,10 @@ function fromProtocolCode(code: number | undefined, detail: string): string {
 
 function fromErrno(code: string, detail: string): string {
   if (code === 'ENOENT' || code === 'ENOTDIR') return fill(t().error.fileMissing, { detail });
+  // EISDIR is not a refusal: nothing was denied, and the file the operation
+  // wanted is there — as a folder. Saying "that operation was refused" sent the
+  // reader to permissions for what is a wrong kind of path.
+  if (code === 'EISDIR') return fill(t().error.pathIsFolder, { detail });
   return fill(t().error.accessDenied, { detail });
 }
 

@@ -180,6 +180,7 @@ const zh: Locale = {
     agentError: 'Agent 拒绝了请求：{detail}',
     fileMissing: '无法读取文件：{detail}',
     accessDenied: '该操作被拒绝：{detail}',
+    pathIsFolder: '这个路径是文件夹，不是文件：{detail}',
     connectionLostMidTurn: '这一轮回复进行中时连接断开了，回复未完成。',
     unknown: '出现未知错误',
     retry: '重试',

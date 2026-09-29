@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { AcpRequestHandler, parseElicitationForm } from './AcpRequestHandler';
-import { AcpInvalidParamsError, AcpMethodNotFoundError, AcpResourceNotFoundError } from './AcpErrors';
+import { AcpInvalidParamsError, AcpMethodNotFoundError, AcpResourceNotFoundError, AcpTimeoutError } from './AcpErrors';
 import { TerminalError } from './terminalManager';
 import type { AcpJsonRpcTransport } from './AcpJsonRpcTransport';
 import type { CapabilityGrant, PermissionDecision, PermissionRequest, TerminalCreateParams } from '../types';
@@ -459,6 +459,21 @@ describe('a terminal answer the protocol can read (0.2.5 stage 2)', () => {
   it('refuses to report an exit for a terminal it never had', async () => {
     const handler = terminalHandler({ waitForExit: async () => null });
     await expect(call(handler, 'handleTerminalWaitForExit', { terminalId: 't-404' })).rejects.toThrow(/t-404/);
+    handler.dispose();
+  });
+
+  it('answers a wait whose deadline ran out as the timeout, not as an ending', async () => {
+    // Nothing in WaitForTerminalExitResponse says "still running", so the
+    // not-knowing has to leave this handler the way it arrived: as a failure. A
+    // catch here that minted `{exitCode: null, signal: null}` would hand the
+    // agent the quiet-exit pair 0.2.14 took back — a printed absence of an exit,
+    // for a command nobody watched finish.
+    const handler = terminalHandler({
+      waitForExit: async () => {
+        throw new AcpTimeoutError('terminal/wait_for_exit', 1000);
+      },
+    });
+    await expect(call(handler, 'handleTerminalWaitForExit', { terminalId: 't1' })).rejects.toBeInstanceOf(AcpTimeoutError);
     handler.dispose();
   });
 

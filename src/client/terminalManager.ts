@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { DEFAULT_SETTINGS, type TerminalInstance, type TerminalCreateParams, type TerminalOutputResult } from '../types';
+import { AcpTimeoutError } from './AcpErrors';
 
 export interface TerminalManagerOptions {
 	timeoutMs: number;
@@ -63,6 +64,7 @@ function isAllowedCommand(command: string): boolean {
 
 interface ExitWaiter {
 	resolves: Array<(value: { exitCode: number | null; signal: string | null } | null) => void>;
+	rejects: Array<(reason: Error) => void>;
 	timeout: number;
 }
 
@@ -236,13 +238,14 @@ export class TerminalManager {
 			return { exitCode: instance.exitCode, signal: instance.signal };
 		}
 
-		return new Promise((resolve) => {
+		return new Promise((resolve, reject) => {
 			// A second wait on the same terminal must join the first waiter,
 			// not replace it — an overwritten resolver would hang that caller
 			// until dispose while the process is long gone.
 			const existing = this.exitWaiters.get(terminalId);
 			if (existing) {
 				existing.resolves.push(resolve);
+				existing.rejects.push(reject);
 				return;
 			}
 
@@ -250,15 +253,18 @@ export class TerminalManager {
 				const waiter = this.exitWaiters.get(terminalId);
 				this.exitWaiters.delete(terminalId);
 				// A wait that ran out is not an order to stop the command: the
-				// agent asked to observe an exit, not to cause one. Killing here
-				// both ended a process nobody asked us to end and then reported a
-				// SIGTERM we were the author of. Say nothing exited instead.
-				for (const r of waiter?.resolves ?? []) {
-					r({ exitCode: null, signal: null });
-				}
+				// agent asked to observe an exit, not to cause one. And it is not
+				// an exit either — answering the deadline with `{exitCode: null,
+				// signal: null}` signed the very pair 0.2.14 took back from the
+				// kill path, and `terminalContentFrom` prints no line for it, so a
+				// command still running read back as one that finished quietly.
+				// Nothing in the response can say "still going", so the not-knowing
+				// travels as an error instead of being dressed as an ending.
+				const reason = new AcpTimeoutError('terminal/wait_for_exit', this.timeoutMs);
+				for (const r of waiter?.rejects ?? []) r(reason);
 			}, this.timeoutMs);
 
-			this.exitWaiters.set(terminalId, { resolves: [resolve], timeout });
+			this.exitWaiters.set(terminalId, { resolves: [resolve], rejects: [reject], timeout });
 		});
 	}
 

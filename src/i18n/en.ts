@@ -178,6 +178,7 @@ const en = {
     agentError: 'The agent refused: {detail}',
     fileMissing: 'A file could not be read: {detail}',
     accessDenied: 'That operation was refused: {detail}',
+    pathIsFolder: 'That path is a folder rather than a file: {detail}',
     connectionLostMidTurn: 'The connection to the agent was lost while this turn was in flight; the reply was not completed.',
     unknown: 'Something went wrong',
     retry: 'Retry',

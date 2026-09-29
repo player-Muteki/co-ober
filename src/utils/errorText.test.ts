@@ -69,6 +69,17 @@ describe('humanizeError (0.2.5 stage 3)', () => {
     expect(denied).toBe(t().error.accessDenied.replace('{detail}', 'EACCES: permission denied, write'));
   });
 
+  it('names a folder where a file was wanted as the wrong kind of path', () => {
+    // Nothing was refused here: the path exists and the reader owns it, it is
+    // just a directory. Reporting EISDIR beside EACCES sent the reader to
+    // permissions to fix a target of the wrong shape.
+    const eaddir = new Error("EISDIR: illegal operation on a directory, read '/vault/notes'");
+    const line = humanizeError(eaddir);
+    expect(line).toBe(t().error.pathIsFolder.replace('{detail}', "EISDIR: illegal operation on a directory, read '/vault/notes'"));
+    expect(line).not.toBe(t().error.accessDenied.replace('{detail}', "EISDIR: illegal operation on a directory, read '/vault/notes'"));
+    expect(line).toContain('/vault/notes');
+  });
+
   it('keeps an unrecognized failure verbatim behind a label', () => {
     const line = humanizeError(new Error('weird thing at frame 7'));
     expect(line).toBe(`${t().error.unknown}: weird thing at frame 7`);

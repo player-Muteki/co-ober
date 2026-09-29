@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { EventEmitter } from 'node:events';
 import { TerminalManager } from './terminalManager';
+import { AcpTimeoutError } from './AcpErrors';
 
 // Mock child_process
 vi.mock('child_process', () => ({
@@ -249,7 +250,7 @@ describe('TerminalManager', () => {
 			await expect(second).resolves.toEqual({ exitCode: 0, signal: null });
 		});
 
-		it('leaves the command running and reports nothing exited when the shared deadline expires', async () => {
+		it('leaves the command running and says the wait ran out, when the shared deadline expires', async () => {
 			vi.useFakeTimers();
 			const localManager = new TerminalManager({ timeoutMs: 1000, maxOutputBytes: 1000 });
 			const instance = localManager.create({ command: 'sleep 5' }, '/vault');
@@ -263,8 +264,15 @@ describe('TerminalManager', () => {
 			// A wait that ran out is an observation, not an order to stop the
 			// command: the timeout must neither signal the process nor claim a
 			// SIGTERM it never sent.
-			await expect(first).resolves.toEqual({ exitCode: null, signal: null });
-			await expect(second).resolves.toEqual({ exitCode: null, signal: null });
+			await expect(first).rejects.toBeInstanceOf(AcpTimeoutError);
+			await expect(second).rejects.toBeInstanceOf(AcpTimeoutError);
+			// And it must not dress as an ending either. `{exitCode: null, signal:
+			// null}` is the pair that means "it ended, with nothing to say
+			// otherwise", and terminalContentFrom prints no line for it — answering
+			// a deadline with it reported a command nobody had seen finish as one
+			// that finished quietly.
+			await expect(first).rejects.toThrow(/terminal\/wait_for_exit/);
+			await expect(first).rejects.toThrow(/1000ms/);
 			expect(killSpy).not.toHaveBeenCalled();
 			expect(localManager.get(instance.terminalId)?.status).toBe('running');
 			localManager.dispose();

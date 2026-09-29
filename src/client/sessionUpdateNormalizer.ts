@@ -227,7 +227,10 @@ export class SessionUpdateNormalizer {
         }
         if (raw.status === 'cancelled') return null;
         if (this.startedCompactions.has(raw.compactionId)) {
-          this.startedCompactions.delete(raw.compactionId);
+          // A memory, not a toggle. Popping the id here let the third frame for
+          // one compaction re-pin the boundary the first frame already wrote, so
+          // the transcript carried a second "Compacted" note for a context that
+          // was summarised once.
           return null;
         }
         this.startedCompactions.add(raw.compactionId);
