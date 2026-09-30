@@ -146,10 +146,19 @@ export class SessionDropdown {
 			// the panel below this line, so announcing nothing while listing them
 			// contradicted the list the reader could see and act on. A still-loading
 			// native fetch is not "nothing found" either.
+			//
+			// The loading flag alone does not cover that second case. It clears on
+			// the first draw that shows the spinner, and a search keystroke re-runs
+			// renderItems directly without re-arming it — so once the fetch is still
+			// in flight but its spinner has been spent, filtering to nothing used to
+			// print "No sessions found" over a result set that had not arrived yet.
+			// nativeLoadedOnce flips only when that fetch settles, so it is the
+			// honest signal for "still pending".
 			const wasLoadingNative = this.nativeLoading;
+			const nativePending = !!this.loadNativeSessions && !this.nativeLoadedOnce;
 			const nativeRows = this.renderNativeSection(itemsContainer, currentId, filter);
 			const contentRows = this.renderContentSection(itemsContainer, currentId, filter);
-			if (filtered.length === 0 && nativeRows === 0 && contentRows === 0 && !wasLoadingNative) {
+			if (filtered.length === 0 && nativeRows === 0 && contentRows === 0 && !wasLoadingNative && !nativePending) {
 				itemsContainer.createDiv({
 					cls: 'co-ober-session-empty',
 					text: t().session.empty,

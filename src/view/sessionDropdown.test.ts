@@ -704,6 +704,27 @@ describe('SessionDropdown', () => {
       expect(container.querySelector('.co-ober-session-empty')?.textContent).toBe('No sessions found');
       dd.destroy();
     });
+
+    it('does not announce "No sessions found" to a search typed while the native fetch is pending', async () => {
+      // The loading flag that suppresses the message is spent after the first
+      // draw of its spinner, and a search keystroke re-renders without re-arming
+      // it. So filtering to nothing while the fetch still hung in the air printed
+      // "No sessions found" over a result set that had not arrived — and then
+      // retracted itself the instant that fetch landed.
+      sessionStore.list.mockReturnValue([]);
+      let resolveLoader: (sessions: unknown[]) => void = () => {};
+      const dd = makeDropdown(() => new Promise<unknown[]>((r) => { resolveLoader = r; }));
+      dd.open();
+      const search = container.querySelector('.co-ober-session-search') as HTMLInputElement;
+      search.value = 'zzz-no-match';
+      search.dispatchEvent(new Event('input'));
+      expect(container.querySelector('.co-ober-session-empty')).toBeNull();
+
+      resolveLoader([]);
+      await new Promise((r) => setTimeout(r, 10));
+      expect(container.querySelector('.co-ober-session-empty')?.textContent).toBe('No sessions found');
+      dd.destroy();
+    });
   });
 
   describe('native content search', () => {
