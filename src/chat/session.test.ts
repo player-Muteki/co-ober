@@ -227,7 +227,7 @@ describe('SessionRepository', () => {
     expect(repository.get('expired')).toBeUndefined();
     expect(repository.get('active')?.messages).toEqual([
       expect.objectContaining({ content: 'message 0' }),
-      expect.objectContaining({ type: 'text', role: 'system', content: '[3 earlier messages truncated]' }),
+      expect.objectContaining({ type: 'text', role: 'system', content: '[3 messages truncated]' }),
       expect.objectContaining({ content: 'message 4' }),
       expect.objectContaining({ content: 'message 5' }),
     ]);
@@ -707,7 +707,7 @@ describe('pruning happens on the save snapshot, not the live transcript (0.2.7 s
     // parseBoundedInt allows maxSessionMessages = 1, and the head/tail split
     // spends its single slot on the marker (retainedCount = 0), so one save
     // replaced the entire transcript — the turn being read included — with
-    // "[5 earlier messages truncated]".
+    // "[5 messages truncated]".
     const snapshot = repository.snapshot({ maxMessages: 1, retentionDays: 30, now });
 
     expect(snapshot.sessions[0].messages).toHaveLength(1);
@@ -725,8 +725,27 @@ describe('pruning happens on the save snapshot, not the live transcript (0.2.7 s
     // stays: the reader is told the history was trimmed rather than misled
     // into thinking the chat started mid-sentence.
     expect(snapshot.sessions[0].messages).toEqual([
-      expect.objectContaining({ role: 'system', content: '[5 earlier messages truncated]' }),
+      expect.objectContaining({ role: 'system', content: '[5 messages truncated]' }),
       expect.objectContaining({ role: 'user', content: 'message 5' }),
     ]);
+  });
+
+  it('does not call the omitted messages "earlier" when the oldest are kept', () => {
+    // The head/tail split keeps the first N and the last M and drops only what
+    // sits between them. At a four-message cap the earliest message is still on
+    // screen above the note, yet "[N earlier messages truncated]" read as though
+    // the front of the chat had been cut — pointing at rows the reader can see.
+    // The label now names the count without claiming which end went away.
+    setLocale('en');
+    const { repository } = createRepository();
+    repository.hydrate([createSession('open', now, 6)], 'open');
+
+    repository.prune({ maxMessages: 4, retentionDays: 30, now });
+
+    const kept = repository.get('open')?.messages ?? [];
+    const marker = kept.find((m) => m.role === 'system');
+    expect(marker?.content).toBe('[3 messages truncated]');
+    expect(marker?.content).not.toContain('earlier');
+    expect(kept[0]?.content).toBe('message 0');
   });
 });

@@ -63,7 +63,7 @@ const en = {
     syncUnsupported: 'This agent supports neither session/load nor session/resume, so the stored session cannot be re-attached. Your next message will start in a fresh agent session.',
     syncFailed: 'Could not resume the agent session',
     notSaved: 'Co-Ober could not write this conversation to disk — it only exists in this window until the next successful save.',
-    truncated: '[{count} earlier messages truncated]',
+    truncated: '[{count} messages truncated]',
     imagePurged: '[stored images were removed to free space]',
     defaultsNotApplied: 'The session was created, but Co-Ober could not apply: {items}',
   },

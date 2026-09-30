@@ -1138,7 +1138,7 @@ describe('StreamController', () => {
     // Prune rewrites session.messages (marker inserted, head dropped):
     // every cached numeric index shifts by one from here on.
     session.messages = [
-      { role: 'system', content: '[2 earlier messages truncated]', type: 'text', timestamp: 0 },
+      { role: 'system', content: '[2 messages truncated]', type: 'text', timestamp: 0 },
       ...session.messages.slice(2),
     ];
 

@@ -106,7 +106,7 @@ describe('CoOberPlugin persistence', () => {
 
     expect(saveData).toHaveBeenCalledWith(expect.objectContaining({
       sessions: [expect.objectContaining({ messages: expect.arrayContaining([
-        expect.objectContaining({ content: '[3 earlier messages truncated]' }),
+        expect.objectContaining({ content: '[3 messages truncated]' }),
       ]) })],
     }));
     saveData.mockRestore();
