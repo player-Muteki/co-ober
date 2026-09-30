@@ -1872,8 +1872,8 @@ describe('CoOberViewController — what belongs to a tab stays in that tab (0.2.
 
       handlers.onReconnectFailed();
 
-      expect(h.renderers.get(tabA)?.addError).toHaveBeenCalledWith(t().error.reconnectFailed);
-      expect(h.renderers.get(tabB)?.addError).toHaveBeenCalledWith(t().error.reconnectFailed);
+      expect(h.renderers.get(tabA)?.addError).toHaveBeenCalledWith(t().error.reconnectFailed, undefined, undefined, 'error.reconnectFailed');
+      expect(h.renderers.get(tabB)?.addError).toHaveBeenCalledWith(t().error.reconnectFailed, undefined, undefined, 'error.reconnectFailed');
     });
   });
 

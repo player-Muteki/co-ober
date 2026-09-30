@@ -560,9 +560,30 @@ describe('CoOberViewController', () => {
       const handlers = (client.setClientHandlers as ReturnType<typeof vi.fn>).mock.calls[0][0];
       handlers.onReconnectFailed();
 
-      expect(deps.renderer.addError).toHaveBeenCalledWith(t().error.reconnectFailed);
+      expect(deps.renderer.addError).toHaveBeenCalledWith(t().error.reconnectFailed, undefined, undefined, 'error.reconnectFailed');
       expect(controller.state.isConnected).toBe(false);
       expect(callbacks.onShowReconnectBtn).toHaveBeenCalled();
+    });
+
+    it('hands the reconnect-failed banner the key that drew it, so a language switch re-speaks it', () => {
+      // The line is fixed text with no runtime token, so it can be re-rendered
+      // from the locale. Without the key riding through to addError the banner
+      // stayed in whatever language it first surfaced in while the rest of the
+      // transcript moved on — a frozen string the walker could not reach.
+      // The mock renderer shares one spy across several methods, so give addError
+      // its own to read the reconnect call without a later renderer call landing
+      // in the same buffer.
+      const addError = vi.fn();
+      (deps.renderer as unknown as { addError: ReturnType<typeof vi.fn> }).addError = addError;
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      controller.bindClientHandlers();
+      const handlers = (client.setClientHandlers as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      handlers.onReconnectFailed();
+
+      const args = addError.mock.calls.find(([first]) => first === t().error.reconnectFailed)!;
+      expect(args[3]).toBe('error.reconnectFailed');
     });
   });
 

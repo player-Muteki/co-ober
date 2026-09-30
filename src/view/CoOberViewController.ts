@@ -1005,7 +1005,7 @@ export class CoOberViewController {
         void this.tryDrainAnyQueue();
       },
       onReconnectFailed: () => {
-        this.noteConnectionLost(t().error.reconnectFailed);
+        this.noteConnectionLost(t().error.reconnectFailed, 'error.reconnectFailed');
         this.handleDisconnect();
       },
       onPermissionUnreadable: (summary, sessionId) => {
@@ -1096,13 +1096,13 @@ export class CoOberViewController {
    * session has nothing to have lost, and the screen the reader is on carries
    * the line when no tab does.
    */
-  private noteConnectionLost(message: string): void {
+  private noteConnectionLost(message: string, messageKey?: string): void {
     const owned = [...this.runtimes.values()].filter((rt) => !!rt.state.sessionId);
     if (owned.length === 0) {
-      this.renderer.addError(message);
+      this.renderer.addError(message, undefined, undefined, messageKey);
       return;
     }
-    for (const rt of owned) rt.renderer.addError(message);
+    for (const rt of owned) rt.renderer.addError(message, undefined, undefined, messageKey);
   }
 
   /**
