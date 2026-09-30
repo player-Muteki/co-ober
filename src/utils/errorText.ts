@@ -33,7 +33,15 @@ function fromProtocolCode(code: number | undefined, detail: string): string {
   const cleaned = detail.trim();
   if (code === METHOD_NOT_FOUND) {
     const method = cleaned.replace(METHOD_NOT_FOUND_PREFIX, '').trim();
-    return fill(t().error.methodNotFound, { detail: method || cleaned });
+    // A conforming agent sends the stock JSON-RPC message "Method not found" with
+    // no colon, so the prefix above leaves it whole; a bare restatement leaves
+    // nothing. Either way there is no method name to show — quoting that prose in
+    // the "{detail}" slot would claim the agent lacks a request literally called
+    // "Method not found". Report the same fact through the generic error line.
+    if (method === '' || /^method not found$/i.test(method)) {
+      return fill(t().error.agentError, { detail: cleaned });
+    }
+    return fill(t().error.methodNotFound, { detail: method });
   }
   if (code === INTERNAL_ERROR) return fill(t().error.internalError, { detail: cleaned });
   return fill(t().error.agentError, { detail: cleaned });

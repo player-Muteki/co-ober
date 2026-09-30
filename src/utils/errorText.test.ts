@@ -48,6 +48,21 @@ describe('humanizeError (0.2.5 stage 3)', () => {
     expect(line).not.toContain('method not found:');
   });
 
+  it('does not name a request "Method not found" when the agent sent the stock prose', () => {
+    // JSON-RPC's canonical -32601 message is "Method not found" with no colon, so
+    // the prefix that strips an agent's restatement leaves it whole; a bare
+    // restatement leaves nothing. Either way there is no method name to show, and
+    // dropping the prose into the "{detail}" slot would read as: the agent lacks a
+    // request literally called "Method not found" — so fall through to the generic
+    // error line rather than invent a method.
+    const stock = humanizeError(new AcpProtocolError('Method not found', 'session/prompt', -32601));
+    expect(stock).toBe(t().error.agentError.replace('{detail}', 'Method not found'));
+    expect(stock).not.toMatch(/does not support/i);
+
+    const colonBare = humanizeError(new AcpProtocolError('method not found:', 'session/prompt', -32601));
+    expect(colonBare).not.toMatch(/does not support/i);
+  });
+
   it('reads a code that arrived inside the message text', () => {
     const plain = new Error('-32603: registry unreachable');
     const line = humanizeError(plain);

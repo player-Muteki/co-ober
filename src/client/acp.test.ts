@@ -1484,6 +1484,18 @@ describe('sendMessage flow', () => {
 });
 
 describe('requestWithFallback', () => {
+  it('says "disconnected", not "stdin not writable", when there is no transport at all', async () => {
+    // A null transport only exists outside connect()..disposeConnection(), so
+    // reaching this line means there is no live connection — commonly no
+    // OpenCode process. stdinNotWritable names a per-process I/O condition that
+    // is honest only at its spawn-time site; here it would tell the reader to
+    // fix a pipe when the real fact is that nothing is connected.
+    const client = new AcpClient('opencode');
+    await expect(
+      Reflect.get(client, 'requestWithFallback').call(client, 'newSession', { cwd: '/test' }),
+    ).rejects.toThrow(t().acp.disconnected);
+  });
+
   it('falls back to second candidate when first throws -32601', async () => {
     const client = new AcpClient('opencode');
     const transport = {

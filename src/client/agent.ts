@@ -69,7 +69,12 @@ export class AgentRuntime implements OpencodeClient {
           // activeStreamSessionId linger and any retry fails with
           // "A stream is already active".
           void this.acp.cancel(id);
-          reject(new AcpTimeoutError('sendMessage', timeoutMs));
+          // The idle watchdog fires on the prompt turn, which the wire knows as
+          // session/prompt; the timeout line quotes whatever name is handed here,
+          // so the client-internal "sendMessage" would tell the reader the agent
+          // failed to answer a request it never received. Every other AcpTimeoutError
+          // site passes its real wire method.
+          reject(new AcpTimeoutError('session/prompt', timeoutMs));
         }, timeoutMs);
       };
 

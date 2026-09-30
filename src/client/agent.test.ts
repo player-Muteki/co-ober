@@ -399,7 +399,13 @@ describe('AgentRuntime', () => {
 
       vi.advanceTimersByTime(5 * 60 * 1000 + 1);
 
-      await expect(promise).rejects.toThrow();
+      const err = await promise.then(() => null).catch((e) => e);
+      expect(err).toBeInstanceOf(AcpTimeoutError);
+      // The timeout line quotes this name into `did not answer "{method}"`, so it
+      // has to be the method the agent actually received (session/prompt) — the
+      // client-internal "sendMessage" would tell the reader about a request that
+      // never went on the wire.
+      expect(err.method).toBe('session/prompt');
       // The idle timeout must also abort the underlying stream, otherwise the
       // next send fails with "A stream is already active".
       expect(mockAcp.cancel).toHaveBeenCalledWith('session-1');

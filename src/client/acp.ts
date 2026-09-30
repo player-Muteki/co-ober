@@ -1295,7 +1295,12 @@ export class AcpClient implements OpencodeClient {
     timeoutMs?: number,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    if (!this.transport) throw new Error(t().acp.stdinNotWritable);
+    // The transport field only exists between connect() and disposeConnection().
+    // A null here means there is no live connection at all — often no OpenCode
+    // process — which is not the per-process I/O condition stdinNotWritable
+    // describes (that claim is honest only at its spawn-time site, where the
+    // child's stdin really is null). Report the state the code actually holds.
+    if (!this.transport) throw new Error(t().acp.disconnected);
 
     const cachedMethod = this.methodCache.get(logicalMethod);
     if (cachedMethod) {
