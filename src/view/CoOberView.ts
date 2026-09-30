@@ -1167,8 +1167,13 @@ export class CoOberView extends ItemView {
 
     if (mode === '@') {
       const notes = this.mention.listAllNotes();
-      const selectedRefs = this.mention.getAllRefs();
-      const selectedPaths = new Set(selectedRefs.map((r) => r.id));
+      // The ✓ is a claim about what the composer will actually send, so it has to
+      // read the same list send() reads (currentRefs), not ContextMention's
+      // internal set — only the @-menu path (handleACSelect) feeds that one. A
+      // note pulled in by drag-drop, the auto active-file ref, or onAddNoteRef is
+      // in currentRefs and goes out with the message, yet showed no check here,
+      // so the dropdown read "not added" over a note that already was.
+      const selectedPaths = new Set(this.currentRefs.map((r) => r.id));
       for (const n of notes) {
         allItems.push({
           value: n.path,

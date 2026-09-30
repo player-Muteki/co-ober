@@ -36,6 +36,33 @@ describe('InputToolbar locale refresh', () => {
     expect(container.querySelector('.co-ober-send-btn')?.classList.contains('mod-stop')).toBe(true);
   });
 
+  it('names a current model the agent reported even when the common list is empty', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const toolbar = new InputToolbar(container, {});
+    // The agent says a model is in force but none of the selectable list is
+    // offered to us (every provider hidden, say). updateModels' populated branch
+    // already names a current absent from the list; the empty branch printed "No
+    // models" regardless — contradicting the model that IS running. Both the
+    // setter and a later locale switch must keep naming it.
+    toolbar.updateModels([], 'weird/model', 'Weird');
+    const label = () => container.querySelector('.co-ober-model-label')?.textContent;
+    expect(label()).toBe('Weird');
+    setLocale('zh');
+    toolbar.refreshLocale();
+    expect(label()).toBe('Weird');
+    setLocale('en');
+
+    // With no friendly label supplied, the raw current is still better than a
+    // false "no models".
+    toolbar.updateModels([], 'weird/bare');
+    expect(label()).toBe('weird/bare');
+
+    // And nothing reported against an empty list still reads the honest none.
+    toolbar.updateModels([], undefined);
+    expect(label()).toBe('No models');
+  });
+
   it('names no tier after a locale switch that never named one', () => {
     setLocale('en');
     const container = document.createElement('div') as HTMLDivElement;

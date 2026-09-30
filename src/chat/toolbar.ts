@@ -265,18 +265,25 @@ export class InputToolbar {
     this.currentModelLabel = currentLabel;
     this.renderModelDropdown();
 
-    if (options.length === 0) {
-      this.modelLabelEl.setText(t().toolbar.noModels);
-    } else {
-      const selected = options.find(o => o.value === current);
-      // The dropdown marks nothing as chosen in this state (it compares against
-      // the same `current`); the label used to claim the first model anyway.
-      // A model the agent reported but the reader hid from the common list is
-      // still the model in force, so naming it is not the same lie — only a
-      // current of `undefined` (nothing reported) earns "Not set".
-      this.modelLabelEl.setText(selected?.label ?? (current ? currentLabel ?? current : t().toolbar.unset));
-    }
+    this.modelLabelEl.setText(this.modelLabelText());
     this.applyModelOperability();
+  }
+
+  /**
+   * The model selector's one-line reading of what is in force. A current the
+   * agent reported but the reader hid from the common list is still the model
+   * running, so it is named even when the selectable list is empty — claiming
+   * "No models" over a model that is in force contradicts the dropdown's own
+   * rule (a populated list that omits the current still names it). Only a
+   * current of undefined earns a no-selection line, and the two empty cases
+   * differ: nothing reported against an empty list is "no models", against a
+   * populated one simply nothing was named.
+   */
+  private modelLabelText(): string {
+    const named = this.modelOptions.find(o => o.value === this.currentModel)?.label
+      ?? (this.currentModel ? this.currentModelLabel ?? this.currentModel : null);
+    if (named) return named;
+    return this.modelOptions.length === 0 ? t().toolbar.noModels : t().toolbar.unset;
   }
 
   private renderModelDropdown(): void {
@@ -572,15 +579,10 @@ export class InputToolbar {
   // ── Locale refresh ──
 
   refreshLocale(): void {
-    // The same rule the setters keep, so switching language does not relabel a
-    // tier nobody reported: an empty model list says there are no models, a
-    // populated one with nothing named says nothing is named.
-    this.modelLabelEl.setText(
-      this.modelOptions.length === 0
-        ? t().toolbar.noModels
-        : (this.modelOptions.find(o => o.value === this.currentModel)?.label
-          ?? (this.currentModel ? this.currentModelLabel ?? this.currentModel : t().toolbar.unset))
-    );
+    // Re-spoke from the same rule updateModels uses, so a language switch can
+    // never relabel a model that is in force as "No models" (an empty list with
+    // a hidden current) or name a tier nobody reported.
+    this.modelLabelEl.setText(this.modelLabelText());
     this.renderModelDropdown();
     this.applyModelOperability();
     const selected = this.modeOptions.find(o => o.value === this.currentMode);

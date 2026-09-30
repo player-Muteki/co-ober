@@ -499,6 +499,33 @@ describe('CoOberView tab panels', () => {
     expect(input.textareaEl.value).toBe('draft for B');
   });
 
+  it('marks a note ✓ in the @-dropdown when it is already attached by another path', async () => {
+    // The ✓ is a claim about what send() will actually carry, so it must read
+    // currentRefs. Only the @-menu (handleACSelect) feeds ContextMention's
+    // internal set — a note pulled in by drag-drop or the auto active-file ref
+    // is in currentRefs and goes out with the message, yet showed no check, so
+    // the dropdown read "not added" over a note that already was.
+    const view = await openView();
+    const mention = Reflect.get(view, 'mention') as { listAllNotes: () => unknown[] };
+    mention.listAllNotes = vi.fn(() => [
+      { id: 'a.md', path: 'a.md', name: 'a', type: 'note' },
+      { id: 'b.md', path: 'b.md', name: 'b', type: 'note' },
+    ]);
+    const autocomplete = Reflect.get(view, 'autocomplete') as { open: (items: Array<{ value: string; badge?: string }>, mode: string) => void };
+    const openSpy = vi.fn();
+    autocomplete.open = openSpy;
+
+    // addChip on the non-@ path pushes onto currentRefs but never onto mention.
+    callPrivate(view, 'addChip', { id: 'a.md', type: 'note', name: 'a', path: 'a.md' }, 'manual');
+    expect((Reflect.get(view, 'currentRefs') as unknown[]).length).toBe(1);
+    expect((mention.listAllNotes as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0);
+
+    callPrivate(view, 'showAC', '@');
+    const items = openSpy.mock.calls[0][0] as Array<{ value: string; badge?: string }>;
+    expect(items.find((i) => i.value === 'a.md')?.badge).toBe('✓');
+    expect(items.find((i) => i.value === 'b.md')?.badge).toBeUndefined();
+  });
+
   /** A real second tab with its own runtime: the active one must be busy to be skipped. */
   async function openSecondTab(view: CoOberView): Promise<{ tabA: string; tabB: string }> {
     const controller = Reflect.get(view, 'controller') as CoOberViewController;
