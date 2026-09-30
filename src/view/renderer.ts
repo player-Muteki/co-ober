@@ -970,6 +970,15 @@ export class ChatRenderer {
   }
 
   setPlanEntries(entries: Array<{ content: string; status: string; priority?: string }>): void {
+    // Every caller that reaches here is delivering plan content the agent just
+    // produced — a live `plan` frame, or refreshNativePlan after a successful
+    // DB read. So the moment a checklist is (re)built, any earlier "could not be
+    // read from the agent, may be out of date" note is contradicted by the very
+    // rows we are about to paint. The wire-frame path used to skip the DB resync
+    // (it stamps lastPlanUpdateAt to now, which gates the post-turn refresh), so
+    // that caveat stayed on screen under a plan the agent had just streamed. A
+    // later failed resync re-marks it through setPlanStale(true).
+    this.clearSystemNote('planStale');
     if (!this.planEl) {
       this.planEl = this.container.createDiv({ cls: 'co-ober-plan-panel' });
       const titleEl = this.planEl.createDiv({ cls: 'plan-title', text: t().plan.title });

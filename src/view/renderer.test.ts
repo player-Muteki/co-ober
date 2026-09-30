@@ -1041,6 +1041,21 @@ describe('ChatRenderer', () => {
       renderer.setPlanStale(true);
       expect(container.querySelector('.co-ober-msg.system')).toBeNull();
     });
+
+    it('withdraws the stale note when a live plan frame repaints the list', () => {
+      // The wire-frame path stamps lastPlanUpdateAt to now, which gates out the
+      // post-turn DB resync, so a just-streamed plan used to sit under the
+      // "could not be read" caveat that the previous failed resync left up. The
+      // rows on screen now contradict that note, so painting them retires it.
+      renderer.setPlanEntries([{ content: 'step one', status: 'completed' }]);
+      renderer.setPlanStale(true);
+      expect(noteBody()).not.toBeNull();
+      renderer.setPlanEntries([{ content: 'step two', status: 'in_progress' }]);
+      expect(container.querySelector('.co-ober-msg.system')).toBeNull();
+      const items = container.querySelectorAll('.co-ober-plan-panel .plan-item');
+      expect(items.length).toBe(1);
+      expect(items[0]?.textContent).toContain('step two');
+    });
   });
 
   describe('addToolCall', () => {
