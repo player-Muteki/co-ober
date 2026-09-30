@@ -78,7 +78,7 @@ export class InputToolbar {
     this.modelLabelEl.setText(t().toolbar.noModels);
     this.modelDropdownEl = this.modelSelectorEl.createDiv({ cls: 'co-ober-model-dropdown' });
     this.modelDropdownEl.setAttribute('role', 'listbox');
-    this.wireDropdown(this.modelSelectorEl, this.modelBtnEl, this.modelDropdownEl, '.co-ober-model-option:not(.empty)');
+    this.wireDropdown(this.modelSelectorEl, this.modelBtnEl, this.modelDropdownEl, '.co-ober-model-option:not(.empty)', () => this.modelOptions.length > 0);
     // A chooser only once there is something to choose. With no models reported
     // the button still carried role=button, a tab stop and aria-haspopup=listbox,
     // advertising a listbox whose only row is a non-activatable "No models" line.
@@ -99,7 +99,7 @@ export class InputToolbar {
     this.effortLabelEl.setText('—');
     this.effortDropdownEl = this.effortSelectorEl.createDiv({ cls: 'co-ober-effort-dropdown' });
     this.effortDropdownEl.setAttribute('role', 'listbox');
-    this.wireDropdown(this.effortSelectorEl, this.effortBtnEl, this.effortDropdownEl, '.co-ober-effort-option:not(.empty)');
+    this.wireDropdown(this.effortSelectorEl, this.effortBtnEl, this.effortDropdownEl, '.co-ober-effort-option:not(.empty)', () => this.effortOptions.length > 0);
     // Same as the model button above: nothing offered means nothing to pick, so
     // the button must not advertise an expandable listbox.
     this.applyEffortOperability();
@@ -195,6 +195,11 @@ export class InputToolbar {
   private applyModelOperability(): void {
     const operable = this.modelOptions.length > 0;
     this.modelSelectorEl.classList.remove('open');
+    // The static aria attrs are withdrawn below, but the click/key listeners and
+    // the CSS live on the selector; has-options is what scopes pointer and the
+    // hover-pop to the case with a listbox to actually open — the mode chip's
+    // contract (applyModeOperability), read across the picker.
+    this.modelSelectorEl.classList.toggle('has-options', operable);
     if (operable) {
       this.modelBtnEl.setAttribute('role', 'button');
       this.modelBtnEl.setAttribute('tabindex', '0');
@@ -212,6 +217,7 @@ export class InputToolbar {
   private applyEffortOperability(): void {
     const operable = this.effortOptions.length > 0;
     this.effortSelectorEl.classList.remove('open');
+    this.effortSelectorEl.classList.toggle('has-options', operable);
     if (operable) {
       this.effortBtnEl.setAttribute('role', 'button');
       this.effortBtnEl.setAttribute('tabindex', '0');
@@ -468,9 +474,15 @@ export class InputToolbar {
     btnEl: HTMLElement,
     dropdownEl: HTMLElement,
     optionSelector: string,
+    canOpen: () => boolean,
   ): void {
     const isOpen = (): boolean => selectorEl.classList.contains('open');
     const open = (): void => {
+      // A withdrawn picker (no selectable rows) stays shut: opening would stamp
+      // aria-expanded="true" onto a role-less button and reveal a listbox holding
+      // only the non-activatable "No models"/"—" row — the empty-listbox lie the
+      // operability withdrawal was meant to stop, still reachable by mouse.
+      if (!canOpen()) return;
       selectorEl.classList.add('open');
       btnEl.setAttribute('aria-expanded', 'true');
       const first = dropdownEl.querySelector<HTMLElement>(optionSelector);

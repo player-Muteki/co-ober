@@ -585,13 +585,20 @@
   gap: 4px;
   padding: 3px 8px;
   border-radius: 3px;
-  cursor: pointer;
+  /* An empty picker is a readout, not a control: pointer, hover tint and the
+     dropdown-pop belong to the has-options case only (applyEffortOperability) —
+     the mode chip's rule, read across the picker. */
+  cursor: default;
   font-size: 11px;
   color: var(--text-muted);
   transition: color 0.1s ease;
 }
 
-.co-ober-effort-btn:hover {
+.co-ober-effort-selector.has-options .co-ober-effort-btn {
+  cursor: pointer;
+}
+
+.co-ober-effort-selector.has-options .co-ober-effort-btn:hover {
   color: var(--text-normal);
 }
 
@@ -621,7 +628,7 @@
   transition: opacity 0.15s ease, visibility 0.15s ease;
 }
 
-.co-ober-effort-selector:hover .co-ober-effort-dropdown {
+.co-ober-effort-selector.has-options:hover .co-ober-effort-dropdown {
   opacity: 1;
   visibility: visible;
 }
@@ -688,13 +695,19 @@
   border-radius: var(--radius-s);
   border: 1px solid var(--background-modifier-border);
   background: var(--background-secondary);
-  cursor: pointer;
+  /* Same contract as the effort picker: the look of a control is reserved for
+     the has-options case (applyModelOperability). */
+  cursor: default;
   font-size: var(--font-smaller);
   color: var(--text-muted);
   transition: color 0.1s ease, border-color 0.1s ease;
 }
 
-.co-ober-model-btn:hover {
+.co-ober-model-selector.has-options .co-ober-model-btn {
+  cursor: pointer;
+}
+
+.co-ober-model-selector.has-options .co-ober-model-btn:hover {
   color: var(--text-normal);
   border-color: var(--text-accent);
 }
@@ -729,7 +742,7 @@
   transition: opacity 0.15s ease, visibility 0.15s ease;
 }
 
-.co-ober-model-selector:hover .co-ober-model-dropdown {
+.co-ober-model-selector.has-options:hover .co-ober-model-dropdown {
   opacity: 1;
   visibility: visible;
 }

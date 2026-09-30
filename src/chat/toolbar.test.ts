@@ -498,6 +498,57 @@ describe('InputToolbar cycle button a11y', () => {
   });
 });
 
+describe('InputToolbar withdrawn picker stays inert', () => {
+  it('does not open on click or Enter, and never re-stamps aria-expanded, once the picker is withdrawn', () => {
+    // applyModelOperability removes role/tabindex/aria-haspopup on an empty list,
+    // but the click and key listeners from wireDropdown survive — so a mouse press
+    // called open() anyway, stamping aria-expanded="true" onto a now role-less div
+    // and revealing a listbox whose only row is the non-activatable "No models"
+    // line. A withdrawn picker must be genuinely shut.
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    document.body.appendChild(container);
+    const toolbar = new InputToolbar(container, {});
+    toolbar.updateModels([], undefined);
+    const btn = container.querySelector('.co-ober-model-btn') as HTMLElement;
+    const selector = container.querySelector('.co-ober-model-selector') as HTMLElement;
+    expect(btn.getAttribute('aria-expanded')).toBeNull();
+
+    btn.click();
+    expect(selector.classList.contains('open')).toBe(false);
+    expect(btn.getAttribute('aria-expanded')).toBeNull();
+
+    pressKey(btn, 'Enter');
+    expect(selector.classList.contains('open')).toBe(false);
+    expect(btn.getAttribute('aria-expanded')).toBeNull();
+
+    toolbar.dispose();
+    container.remove();
+  });
+
+  it('scopes the picker affordance to has-options, as the mode chip scopes its own', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const toolbar = new InputToolbar(container, {});
+    const modelSelector = container.querySelector('.co-ober-model-selector') as HTMLElement;
+    const effortSelector = container.querySelector('.co-ober-effort-selector') as HTMLElement;
+    // Built with nothing reported: pointer + hover-pop are gated on this class, so
+    // an empty picker must not wear the look of a control it is not.
+    expect(modelSelector.classList.contains('has-options')).toBe(false);
+    expect(effortSelector.classList.contains('has-options')).toBe(false);
+
+    toolbar.updateModels([{ value: 'm', label: 'M' }], 'm');
+    toolbar.updateEffort([{ value: 'high', label: 'High' }], 'high');
+    expect(modelSelector.classList.contains('has-options')).toBe(true);
+    expect(effortSelector.classList.contains('has-options')).toBe(true);
+
+    toolbar.updateModels([], undefined);
+    toolbar.updateEffort([], undefined);
+    expect(modelSelector.classList.contains('has-options')).toBe(false);
+    expect(effortSelector.classList.contains('has-options')).toBe(false);
+  });
+});
+
 function pressKey(target: Element, key: string): void {
   target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
 }
