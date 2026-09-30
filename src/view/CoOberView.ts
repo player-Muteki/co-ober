@@ -1153,7 +1153,7 @@ export class CoOberView extends ItemView {
 
   // ── Autocomplete ──
 
-  private showAC(mode: '@' | '/'): void {
+  private showAC(mode: '@' | '/'): boolean {
     this.closeAutocomplete();
     const allItems: Array<{
       value: string;
@@ -1222,7 +1222,15 @@ export class CoOberView extends ItemView {
       }
     }
 
+    // An @ with nothing to reference must not open a picker. The dropdown would
+    // render only "No matches" — a panel with zero role=option rows, so the key
+    // press would promise a mention menu the vault cannot supply. The slash
+    // branch above always lands at least one item, so only the empty note list
+    // declines here. Returning false lets the caller leave the "@" typed instead
+    // of swallowing the keystroke for an affordance with nothing behind it.
+    if (allItems.length === 0) return false;
     this.autocomplete?.open(allItems, mode);
+    return true;
   }
 
   private handleACSelect(value: string, mode: '@' | '/'): void {

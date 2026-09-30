@@ -526,6 +526,23 @@ describe('CoOberView tab panels', () => {
     expect(items.find((i) => i.value === 'b.md')?.badge).toBeUndefined();
   });
 
+  it('does not open an @ picker when the vault has no notes to reference', async () => {
+    // Pressing @ used to swallow the keystroke and raise a dropdown that could
+    // only say "No matches" — a panel with zero selectable rows, promising a
+    // mention menu the vault cannot supply. With an empty note list the toggle
+    // declines: open() stays untouched so no dead picker appears, and the false
+    // return lets the caller leave the @ typed.
+    const view = await openView();
+    const mention = Reflect.get(view, 'mention') as { listAllNotes: () => unknown[] };
+    mention.listAllNotes = vi.fn(() => []);
+    const autocomplete = Reflect.get(view, 'autocomplete') as { open: ReturnType<typeof vi.fn> };
+    const openSpy = vi.fn();
+    autocomplete.open = openSpy;
+
+    expect(callPrivate<boolean>(view, 'showAC', '@')).toBe(false);
+    expect(openSpy).not.toHaveBeenCalled();
+  });
+
   /** A real second tab with its own runtime: the active one must be busy to be skipped. */
   async function openSecondTab(view: CoOberView): Promise<{ tabA: string; tabB: string }> {
     const controller = Reflect.get(view, 'controller') as CoOberViewController;

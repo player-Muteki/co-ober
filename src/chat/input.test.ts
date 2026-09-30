@@ -269,6 +269,32 @@ describe('ChatInput', () => {
 			expect(callbacks.onToggleMention).not.toHaveBeenCalled();
 		});
 
+		it('@ is swallowed when a mention picker actually opens', () => {
+			// A live picker is worth taking the key away for — the dropdown is
+			// what the reader meant to summon.
+			callbacks.onToggleMention = vi.fn(() => true);
+			const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+			textarea.value = 'Hello ';
+			textarea.selectionStart = 6;
+			const event = new KeyboardEvent('keydown', { key: '@', cancelable: true });
+			textarea.dispatchEvent(event);
+			expect(event.defaultPrevented).toBe(true);
+		});
+
+		it('@ is left typed when the mention picker declines (empty vault)', () => {
+			// The old path called preventDefault unconditionally, so an @ into a
+			// vault with no notes vanished behind a "No matches" dropdown — the
+			// keystroke promised a menu with nothing to select and ate the
+			// character. A declined toggle must leave the @ in the text.
+			callbacks.onToggleMention = vi.fn(() => false);
+			const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+			textarea.value = 'Hello ';
+			textarea.selectionStart = 6;
+			const event = new KeyboardEvent('keydown', { key: '@', cancelable: true });
+			textarea.dispatchEvent(event);
+			expect(event.defaultPrevented).toBe(false);
+		});
+
 		it('/ triggers slash when at word boundary', () => {
 			const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
 			textarea.value = '\n';

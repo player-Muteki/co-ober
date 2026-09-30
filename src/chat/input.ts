@@ -15,8 +15,8 @@ export interface InputCallbacks {
   // (or none yet) there is nothing to step to, so the caller says "no" and Tab
   // must be free to do what Tab does everywhere else on the page — move focus.
   onCycleMode?: (direction: 1 | -1) => boolean;
-  onToggleMention: () => void;
-  onToggleSlash: () => void;
+  onToggleMention: () => boolean;
+  onToggleSlash: () => boolean;
   onAddRef: (ref: ContextRef) => void;
   onRemoveRef: (id: string) => void;
 }
@@ -62,8 +62,12 @@ export class ChatInput {
         if (this.callbacks.onCycleMode?.(dir)) { e.preventDefault(); return; }
       }
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.send(); return; }
-      if (e.key === '@' && this.isAtWordBoundary()) { e.preventDefault(); this.callbacks.onToggleMention(); return; }
-      if (e.key === '/' && this.isAtWordBoundary()) { e.preventDefault(); this.callbacks.onToggleSlash(); return; }
+      // Only swallow the trigger key when a picker actually opened. An @ into an
+      // empty vault shows nothing to select, so the character should reach the
+      // text instead of vanishing behind a dead dropdown — the same rule Tab
+      // already follows above through onCycleMode.
+      if (e.key === '@' && this.isAtWordBoundary()) { if (this.callbacks.onToggleMention()) { e.preventDefault(); return; } }
+      if (e.key === '/' && this.isAtWordBoundary()) { if (this.callbacks.onToggleSlash()) { e.preventDefault(); return; } }
     };
     this.textarea.addEventListener('keydown', this.keydownHandler);
 
