@@ -127,6 +127,16 @@ export class SideChatPanel {
   private submitFromInput(): void {
     const text = (this.inputEl?.value ?? '').trim();
     if (!text) return;
+    // Clearing the box before send() can refuse ate the draft. send() declines
+    // while a side turn is in flight or the main conversation is busy, drawing a
+    // "wait" line but sending nothing; wiping the text first left the reader with
+    // an empty box and a question that never went out. The box is emptied only on
+    // the path that actually proceeds — the same guards send() reads, so a refused
+    // Ask keeps its draft and still shows why it waited.
+    if (this.busy || this.deps.isMainBusy()) {
+      void this.send(text);
+      return;
+    }
     if (this.inputEl) this.inputEl.value = '';
     void this.send(text);
   }

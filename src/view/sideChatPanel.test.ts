@@ -53,6 +53,37 @@ describe('SideChatPanel', () => {
     expect(root?.querySelector('.co-ober-side-chat-textarea')).not.toBeNull();
   });
 
+  it('keeps the typed question when the Ask is refused while busy', () => {
+    const { panel, ask } = makePanel({ isMainBusy: () => true });
+    panel.open();
+
+    const textarea = container.querySelector('.co-ober-side-chat-textarea') as HTMLTextAreaElement;
+    const sendBtn = container.querySelector('.co-ober-side-chat-send') as HTMLButtonElement;
+    textarea.value = 'a question that cannot go out yet';
+
+    sendBtn.click();
+
+    // The refusal tells the reader to wait, but it must not also eat what they
+    // typed: an Ask that cannot be sent is not a send, so the draft stays put.
+    expect(ask).not.toHaveBeenCalled();
+    expect(textarea.value).toBe('a question that cannot go out yet');
+    expect(container.querySelector('.co-ober-side-chat-msg-error')?.textContent)
+      .toBe(t().sideChat.busy);
+  });
+
+  it('empties the box when an Ask actually proceeds', () => {
+    const { panel } = makePanel();
+    panel.open();
+
+    const textarea = container.querySelector('.co-ober-side-chat-textarea') as HTMLTextAreaElement;
+    const sendBtn = container.querySelector('.co-ober-side-chat-send') as HTMLButtonElement;
+    textarea.value = 'a question that can go out';
+
+    sendBtn.click();
+
+    expect(textarea.value).toBe('');
+  });
+
   it('open(question) immediately asks it and streams agent chunks into the bubble', async () => {
     const { panel, handlers, ask } = makePanel();
     panel.open('what is a fork?');
