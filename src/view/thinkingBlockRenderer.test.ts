@@ -211,6 +211,30 @@ describe('thinkingBlockRenderer', () => {
       expect(state.body.children.length).toBe(0);
       cleanupThinkingBlock(state);
     });
+
+    it('draws no "Show all" link for a block that fills the line budget exactly and ends in a newline', () => {
+      // The ghost renderLinesExpanded/renderTruncatedText dropped: 30 real lines
+      // plus their closing newline split into 31 segments, so a thought the reader
+      // can already see whole offered a "Show all" that revealed the same text.
+      const state = renderLiveThinkingBlock(container);
+      appendThinkingContent(state, makeLines(30) + '\n');
+      state.header.click();
+      expect(state.body.querySelector('.co-ober-thinking-show-all')).toBeNull();
+      expect(state.body.textContent).toBe(makeLines(30) + '\n');
+      cleanupThinkingBlock(state);
+    });
+
+    it('still truncates a block with a line genuinely beyond the budget', () => {
+      // Guards against dropping the trailing segment so far that a real overflow
+      // stops reading as truncated: 31 lines plus their newline must still hide one.
+      const state = renderLiveThinkingBlock(container);
+      appendThinkingContent(state, makeLines(31) + '\n');
+      state.header.click();
+      const textEl = state.body.querySelector('.co-ober-thinking-text') as HTMLElement;
+      expect(textEl.textContent).toBe(makeLines(30));
+      expect(state.body.querySelector('.co-ober-thinking-show-all')).not.toBeNull();
+      cleanupThinkingBlock(state);
+    });
   });
 
   describe('renderStoredThinkingBlock', () => {
@@ -266,6 +290,17 @@ describe('thinkingBlockRenderer', () => {
       header.click();
       expect(body.textContent).toBe('short');
       expect(body.querySelector('.co-ober-thinking-show-all')).toBeNull();
+    });
+
+    it('leaves a full-budget restored block ending in a newline untruncated, with no "Show all"', () => {
+      // Same ghost on the restore path: a saved thought of exactly 30 lines whose
+      // text ends in a newline offered "Show all" over content already shown whole.
+      const wrapper = renderStoredThinkingBlock(container, makeLines(30) + '\n');
+      const header = wrapper.querySelector('.co-ober-thinking-header') as HTMLElement;
+      const body = wrapper.querySelector('.co-ober-thinking-body') as HTMLElement;
+      header.click();
+      expect(body.querySelector('.co-ober-thinking-show-all')).toBeNull();
+      expect(body.textContent).toBe(makeLines(30) + '\n');
     });
   });
 

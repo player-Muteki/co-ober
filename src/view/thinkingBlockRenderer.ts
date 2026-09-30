@@ -52,6 +52,11 @@ function thinkingDuration(seconds: number): string {
  */
 function truncateLines(text: string, maxLines: number): { display: string; truncated: boolean } {
   const lines = text.split('\n');
+  // A closing newline splits into a final empty segment that is not a line — the
+  // ghost renderLinesExpanded/renderTruncatedText already drop, and here it made a
+  // block of exactly maxLines real lines ending in \n read as truncated and draw a
+  // "Show all" link over content the reader can already see whole.
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
   if (lines.length <= maxLines) return { display: text, truncated: false };
   return {
     display: lines.slice(0, maxLines).join('\n'),
