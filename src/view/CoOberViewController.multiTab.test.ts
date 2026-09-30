@@ -1043,6 +1043,53 @@ describe('CoOberViewController — one tab’s teardown stays inside that tab (0
       expect(client.cancel).not.toHaveBeenCalled();
       expect(rtOf(h, tabA).busy).toBe(true);
     });
+
+    it('withdraws the closed tab’s model, agent and command lists from the shared bar', async () => {
+      // Closing the last tab re-projects the composer, the send button and the
+      // context arc onto the fresh welcome screen, but the bar's model/agent/effort
+      // pickers and its `/` command list were left showing the conversation that
+      // had just been deleted — controls that now route through a released sessionId
+      // and can only refuse. The new runtime has no session, so those lists must go
+      // empty with it, exactly as activate / new / switch / renew re-project them.
+      const toolbar = {
+        setSending: vi.fn(),
+        updateAgents: vi.fn(),
+        updateModels: vi.fn(),
+        updateEffort: vi.fn(),
+        updateExtraConfigs: vi.fn(),
+        updatePermission: vi.fn(),
+        setImageAttachEnabled: vi.fn(),
+      };
+      Object.assign(h.deps.toolbar, toolbar);
+      const client = createMockClient({
+        getSessionSnapshotFor: vi.fn(() => ({
+          configOptions: [],
+          availableCommands: [{ name: 'review', description: '' }],
+          availableModels: [{ modelId: 'gpt-4', name: 'GPT-4' }],
+          availableModes: [{ id: 'plan', name: 'Plan' }],
+          currentModelId: 'gpt-4',
+          currentModeId: 'plan',
+        })),
+        getAgentCapabilities: vi.fn(() => null),
+      });
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      h.controller.state.sessionId = 'ses-a';
+      const tabA = h.controller.activeTabId();
+      h.controller.loadToolbarOptions();
+      // The live session paints its negotiated tier onto the shared bar.
+      expect(toolbar.updateModels).toHaveBeenCalledWith([{ value: 'gpt-4', label: 'GPT-4' }], 'gpt-4', 'GPT-4');
+      expect(toolbar.updateAgents).toHaveBeenCalledWith([{ value: 'plan', label: 'Plan' }], 'plan');
+
+      toolbar.updateModels.mockClear();
+      toolbar.updateAgents.mockClear();
+      await h.controller.closeTab(tabA);
+
+      // With the tab gone and no sibling to hand the bar to, the projection is
+      // cleared rather than left naming a session that was just released.
+      expect(toolbar.updateModels).toHaveBeenCalledWith([], undefined, undefined);
+      expect(toolbar.updateAgents).toHaveBeenCalledWith([], undefined);
+    });
   });
 
   describe('a contested stream slot', () => {

@@ -414,7 +414,13 @@ export class CoOberViewController {
         // Closing the last one has no tab to hand them to, so the dead tab's
         // projection stayed: a welcome screen whose bar still said *stop* for a
         // turn that had just been deleted, and a context meter still full for a
-        // context that no longer existed.
+        // context that no longer existed. The bar's model/agent/effort pickers
+        // and its `/` command list are the same shared surfaces and stayed too —
+        // still naming the closed session's negotiated values, so selecting one
+        // routes through a sessionId this tab no longer has and only refuses.
+        // Re-project them from the empty runtime, as activate / new / switch /
+        // renew every other transition already does.
+        this.loadToolbarOptions();
         this.deps.input.setStreaming(false);
         this.deps.toolbar.setSending(false);
         this.deps.updateContextMeter(null);
