@@ -1623,6 +1623,19 @@ describe('CoOberViewController', () => {
       expect(message).not.toContain('malformed');
     });
 
+    it('does not name every shared unreadable line a permission', () => {
+      // The same callback also carries elicitations (a malformed create, and a
+      // form Co-Ober cannot render). Calling those a "Permission request" told
+      // the reader about a prompt kind that was never involved, and "cancelled"
+      // conflicted with the decline the elicitation path actually returns. Say
+      // "an agent request" and describe the outcome the paths share: it was not
+      // carried out.
+      const message = t().permission.unreadable.toLowerCase();
+      expect(message).not.toContain('permission');
+      expect(message).not.toContain('cancel');
+      expect(message).not.toContain('decline');
+    });
+
     it('retires the matching elicitation banner when the agent reports completion', () => {
       const client = createMockClient();
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);

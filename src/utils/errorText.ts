@@ -33,12 +33,15 @@ function fromProtocolCode(code: number | undefined, detail: string): string {
   const cleaned = detail.trim();
   if (code === METHOD_NOT_FOUND) {
     const method = cleaned.replace(METHOD_NOT_FOUND_PREFIX, '').trim();
-    // A conforming agent sends the stock JSON-RPC message "Method not found" with
-    // no colon, so the prefix above leaves it whole; a bare restatement leaves
-    // nothing. Either way there is no method name to show — quoting that prose in
-    // the "{detail}" slot would claim the agent lacks a request literally called
-    // "Method not found". Report the same fact through the generic error line.
-    if (method === '' || /^method not found$/i.test(method)) {
+    // A real JSON-RPC method name never contains whitespace. So anything left
+    // here that reads as a sentence — an agent's stock "Method not found" (sent
+    // with no colon, which the prefix above leaves whole), the transport's
+    // "Unknown error" sentinel (what we synthesize when a -32601 arrives with
+    // neither a message nor data), or an agent's own reason — carries no method
+    // name to show. Quoting such a phrase in the "{detail}" slot would claim the
+    // agent lacks a request literally called that phrase. Report the same fact
+    // through the generic error line rather than invent a method.
+    if (method === '' || /\s/.test(method)) {
       return fill(t().error.agentError, { detail: cleaned });
     }
     return fill(t().error.methodNotFound, { detail: method });

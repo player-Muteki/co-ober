@@ -19,9 +19,9 @@ const zh: Locale = {
   },
 
   sessionDropdown: {
-    forkDisabled: '当前 OpenCode Agent 不支持分叉会话',
-    resumeDisabled: '当前 OpenCode Agent 不支持恢复会话',
-    closeDisabled: '当前 OpenCode Agent 不支持关闭会话',
+    forkDisabled: '无法分叉此会话 — 当前没有支持分叉的 Agent 已连接',
+    resumeDisabled: '无法恢复此会话 — 当前没有支持恢复的 Agent 已连接',
+    closeDisabled: '无法关闭此会话 — 当前没有支持关闭的 Agent 已连接',
     renameDisabled: '当前 OpenCode Agent 不支持重命名会话',
     pinDisabled: '该会话尚未保存到本地历史，无法置顶',
     nativeSection: 'OpenCode 会话',
@@ -114,7 +114,7 @@ const zh: Locale = {
   permission: {
     title: '权限：{title}',
     moreLocations: '另有 {count} 处',
-    unreadable: '权限请求无法显示，已取消。',
+    unreadable: '有一个 Agent 请求无法显示，因此未被执行。',
     originTab: '来自标签 {index} 的请求——点击切换',
     keyHint: '回车选择 · Esc 表示未作答',
     granted: 'Co-Ober 未经询问在本机执行了 {count} 次 Agent 请求——最近一次：{detail}',

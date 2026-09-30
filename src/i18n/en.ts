@@ -17,9 +17,9 @@ const en = {
   },
 
   sessionDropdown: {
-    forkDisabled: 'Fork is not supported by this OpenCode agent',
-    resumeDisabled: 'Resume is not supported by this OpenCode agent',
-    closeDisabled: 'Close is not supported by this OpenCode agent',
+    forkDisabled: 'This session cannot be forked — no fork-capable agent is connected',
+    resumeDisabled: 'This session cannot be resumed — no resume-capable agent is connected',
+    closeDisabled: 'This session cannot be closed — no close-capable agent is connected',
     renameDisabled: 'Rename is not supported by this OpenCode agent',
     pinDisabled: 'This conversation is not saved to history yet, so it cannot be pinned',
     nativeSection: 'OpenCode sessions',
@@ -112,7 +112,7 @@ const en = {
   permission: {
     title: 'Permission: {title}',
     moreLocations: '+{count} more',
-    unreadable: 'Permission request could not be shown, and was cancelled.',
+    unreadable: 'An agent request could not be shown, so it was not carried out.',
     originTab: 'Request from tab {index} — click to switch',
     keyHint: 'Enter to choose · Esc leaves it unanswered',
     granted: 'Co-Ober carried out {count} agent request(s) on this machine without a prompt — last: {detail}',

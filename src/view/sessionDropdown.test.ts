@@ -156,10 +156,29 @@ describe('SessionDropdown', () => {
       const item = container.querySelector('.co-ober-session-item') as HTMLElement;
       const fork = item.querySelector('.session-fork') as HTMLButtonElement;
       expect(fork.disabled).toBe(true);
-      expect(fork.getAttribute('title')).toBe('Fork is not supported by this OpenCode agent');
-      expect(fork.getAttribute('aria-label')).toBe('Fork is not supported by this OpenCode agent');
+      expect(fork.getAttribute('title')).toBe('This session cannot be forked — no fork-capable agent is connected');
+      expect(fork.getAttribute('aria-label')).toBe('This session cannot be forked — no fork-capable agent is connected');
       const del = item.querySelector('.session-delete') as HTMLButtonElement;
-      expect(del.getAttribute('aria-label')).toBe('Close is not supported by this OpenCode agent');
+      expect(del.getAttribute('aria-label')).toBe('This session cannot be closed — no close-capable agent is connected');
+    });
+
+    it('does not blame "this OpenCode agent" when none is connected', () => {
+      // The capability getter answers null with no client. The fork/resume/close
+      // gates are all `=== true`, so those buttons are greyed — but the old
+      // tooltip read "…not supported by this OpenCode agent", naming a subject
+      // that is not there to support anything. The reworded line states the fact
+      // the reader can act on and stays true whether an agent is connected and
+      // not advertising, or no agent is connected at all.
+      dropdown = new SessionDropdown(container, anchor, sessionStore as any, () => 'session-1', callbacks as any, () => null);
+      dropdown.open();
+      const item = container.querySelector('.co-ober-session-item') as HTMLElement;
+      const fork = item.querySelector('.session-fork') as HTMLButtonElement;
+      expect(fork.disabled).toBe(true);
+      expect(fork.getAttribute('title')).toBe('This session cannot be forked — no fork-capable agent is connected');
+      expect(fork.getAttribute('title')).not.toMatch(/this OpenCode agent/i);
+      const resume = item.querySelector('.session-resume') as HTMLButtonElement;
+      expect(resume.disabled).toBe(true);
+      expect(resume.getAttribute('title')).toBe('This session cannot be resumed — no resume-capable agent is connected');
     });
 
     it('names rename unsupported on the disabled pencil instead of offering it', () => {

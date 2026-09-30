@@ -63,6 +63,26 @@ describe('humanizeError (0.2.5 stage 3)', () => {
     expect(colonBare).not.toMatch(/does not support/i);
   });
 
+  it('does not call the "Unknown error" sentinel a request the agent lacks', () => {
+    // A -32601 that arrives with neither a message nor data becomes the
+    // transport's "Unknown error" sentinel, and an agent may instead carry its
+    // reason as a sentence. Neither is a method name — a real one never has
+    // whitespace — so putting them in the "{detail}" slot of the methodNotFound
+    // line would read "the agent does not support \"Unknown error\"", charging
+    // it with missing a request no one ever sent. Say the same fact generically.
+    const sentinel = humanizeError(new AcpProtocolError('Unknown error', 'session/resume', -32601));
+    expect(sentinel).toBe(t().error.agentError.replace('{detail}', 'Unknown error'));
+    expect(sentinel).not.toMatch(/does not support/i);
+
+    const reason = humanizeError(new AcpProtocolError('not wired up yet', 'session/resume', -32601));
+    expect(reason).toBe(t().error.agentError.replace('{detail}', 'not wired up yet'));
+    expect(reason).not.toMatch(/does not support/i);
+
+    // A genuine colon-free spaceless method name still reaches the specific line.
+    const named = humanizeError(new AcpProtocolError('session/resume', 'session/resume', -32601));
+    expect(named).toBe(t().error.methodNotFound.replace('{detail}', 'session/resume'));
+  });
+
   it('reads a code that arrived inside the message text', () => {
     const plain = new Error('-32603: registry unreachable');
     const line = humanizeError(plain);
