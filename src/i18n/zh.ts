@@ -129,7 +129,7 @@ const zh: Locale = {
     closeStreaming: '再次点击将停止生成并关闭该标签',
     new: '新建标签',
     limitReached: '最多同时打开 {max} 个标签，请先关闭一个',
-    waitingSlot: '标签 {index} 正在等待生成通道',
+    waitingSlot: '标签 {index} 有消息等待发送',
     streamingQueued: '生成中，后续已排队',
     unread: '标签 {index} 在隐藏时完成了回复',
     switchTo: '切换到标签 {index}',

@@ -127,7 +127,7 @@ const en = {
     closeStreaming: 'Click again to stop this tab and close it',
     new: 'Open a new tab',
     limitReached: 'Only {max} tabs can be open at once — close one first',
-    waitingSlot: 'tab {index} is waiting for a stream slot',
+    waitingSlot: 'tab {index} has messages waiting to send',
     streamingQueued: 'generating, more queued',
     unread: 'tab {index} finished while hidden',
     switchTo: 'Switch to tab {index}',

@@ -103,6 +103,20 @@ describe('TabBar', () => {
     expect(badge.classList.contains('is-streaming')).toBe(true);
   });
 
+  it('does not promise a stream slot to a tab that has no transport', () => {
+    // handleDisconnect keeps rt.promptQueue on purpose (the drain only re-runs on
+    // a reconnect) and repaints the strip, so a queued badge outlives the client
+    // that granted the shared stream budget. Its name therefore has to hold with
+    // no live transport at all — prompts waiting to send — not the "stream slot"
+    // it used to advertise, which nothing can grant until the agent comes back.
+    setLocale('en');
+    const { container } = createBar([tab({ tabId: 'tab-1', queued: true })]);
+    const badge = badges(container)[0];
+    expect(badge.getAttribute('title')).not.toMatch(/stream slot/i);
+    expect(badge.getAttribute('aria-label')).not.toMatch(/stream slot/i);
+    expect(badge.getAttribute('title')).toContain('waiting to send');
+  });
+
   it('shows a pulse and state class only while generating', () => {
     const { container } = createBar([tab({ tabId: 'tab-1', streaming: true }), tab({ tabId: 'tab-2', unread: true })]);
 
