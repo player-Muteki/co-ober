@@ -564,7 +564,7 @@ describe('InputToolbar attach capability gating', () => {
     const btn = container.querySelector('.co-ober-attach-btn') as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
     expect(btn.classList.contains('is-disabled')).toBe(true);
-    expect(btn.title).toBe('This agent does not support image prompts');
+    expect(btn.title).toBe('Images cannot be attached — no image-capable agent is connected');
     btn.click();
     expect(onAttachImage).not.toHaveBeenCalled();
 
@@ -585,7 +585,7 @@ describe('InputToolbar attach capability gating', () => {
     setLocale('zh');
     toolbar.refreshLocale();
     const btn = container.querySelector('.co-ober-attach-btn') as HTMLButtonElement;
-    expect(btn.title).toBe('当前 Agent 不支持图片提示词');
+    expect(btn.title).toBe('无法添加图片 — 当前没有支持图片的 Agent 已连接');
     expect(btn.disabled).toBe(true);
     setLocale('en');
   });

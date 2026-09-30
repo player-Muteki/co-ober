@@ -806,7 +806,15 @@ export class AcpClient implements OpencodeClient {
         if (idleTimer !== null) window.clearTimeout(idleTimer);
         idleTimer = window.setTimeout(
           () => {
-            reject(new AcpTimeoutError(logicalMethod, ACP_LOAD_SESSION_IDLE_TIMEOUT_MS));
+            // The timeout line humanizes to `did not answer "{method}"`, so it
+            // must name the method that went on the wire. `logicalMethod` is a
+            // client-internal label (loadSession/resumeSession); the request that
+            // raced against this deadline went out as session/load (or the cached
+            // candidate), and once requestWithFallback picks a candidate it caches
+            // it. Quote the cached pick, else the primary candidate — the same
+            // rule that site uses to choose what to send.
+            const wireMethod = this.methodCache.get(logicalMethod) ?? getAcpMethodCandidates(logicalMethod)[0];
+            reject(new AcpTimeoutError(wireMethod, ACP_LOAD_SESSION_IDLE_TIMEOUT_MS));
             // Rejecting the race does not end the request: with no timeout of
             // its own the load sits on the transport's pending map for the life
             // of the connection, so the user's retry of the same session answers

@@ -589,6 +589,27 @@ describe('0.1.40 stage 2 protocol pack', () => {
     expect((outcome as Error).message).toMatch(/timed out/);
   });
 
+  it('names the wire method a stalled load used, not the client-internal label', async () => {
+    // The timeout renders as `did not answer "{method}"`, so the name handed to
+    // AcpTimeoutError has to be what went on the wire. loadSession/resumeSession
+    // are client-internal labels; the request that raced this deadline was
+    // session/load. Quoting the logical label told the reader the agent ignored
+    // a method it was never asked — the load-site twin of the sendMessage timeout
+    // 0.2.28 fixed, which its comment claimed covered "every other site".
+    const { client } = await connectedPendingClient();
+    vi.useFakeTimers();
+    const loading = client.loadSession('ses_big', '/vault', [], () => {});
+    let outcome: unknown = 'pending';
+    loading.then(
+      () => (outcome = 'resolved'),
+      (e: unknown) => (outcome = e),
+    );
+
+    await vi.advanceTimersByTimeAsync(ACP_LOAD_SESSION_IDLE_TIMEOUT_MS + 1000);
+    expect(outcome).toBeInstanceOf(AcpTimeoutError);
+    expect((outcome as AcpTimeoutError).method).toBe('session/load');
+  });
+
   it('hangs up on the load request the idle deadline gave up on', async () => {
     const { client, transport } = await connectedPendingClient();
     vi.useFakeTimers();

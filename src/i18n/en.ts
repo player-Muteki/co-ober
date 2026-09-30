@@ -383,7 +383,7 @@ const en = {
     sendAria: 'Send message',
     stopAria: 'Stop generation',
     attachImage: 'Attach image',
-    attachImageUnsupported: 'This agent does not support image prompts',
+    attachImageUnsupported: 'Images cannot be attached — no image-capable agent is connected',
     applyFailed: 'Setting failed; reverted to the agent-side value',
     agentTitle: 'Agent mode',
     noModels: 'No models',

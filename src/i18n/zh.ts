@@ -385,7 +385,7 @@ const zh: Locale = {
     sendAria: '发送消息',
     stopAria: '停止生成',
     attachImage: '添加图片',
-    attachImageUnsupported: '当前 Agent 不支持图片提示词',
+    attachImageUnsupported: '无法添加图片 — 当前没有支持图片的 Agent 已连接',
     applyFailed: '设置失败，已回退为智能体侧当前值',
     agentTitle: 'Agent 模式',
     noModels: '无可用模型',
