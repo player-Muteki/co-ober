@@ -359,6 +359,29 @@ describe('CoOberSettingsTab locale refresh', () => {
     expect(plugin.settings.defaultNoteFolder).toBe('');
   });
 
+  it('does not report a runtime metadata reading it never asked for', async () => {
+    // With no agent connected nothing hands over the runtime lists, yet the row
+    // interpolated {modes}/{models}/{commands} from a minted {0,0,0} placeholder
+    // and printed "0 agents, 0 models, 0 commands" — a settled measurement of a
+    // question the panel never posed, sitting directly under the row that already
+    // says the connection failed. It now names that the query did not run.
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() }, {}, {}, false);
+    const tab = new CoOberSettingsTab(plugin);
+
+    tab.display();
+    const diagnosticsButton = [...tab.containerEl.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Run Diagnostics') as HTMLButtonElement | undefined;
+    diagnosticsButton!.click();
+    await flushPromises();
+    await flushPromises();
+
+    const text = tab.containerEl.textContent ?? '';
+    expect(text).toContain('Runtime metadata');
+    expect(text).toContain('Not queried');
+    expect(text).not.toContain('0 agents, 0 models, 0 commands');
+  });
+
   it('localizes diagnostics controls when switching language', async () => {
     setLocale('en');
     const refreshedView = { refreshLocale: vi.fn() };

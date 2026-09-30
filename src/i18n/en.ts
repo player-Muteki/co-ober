@@ -493,6 +493,7 @@ const en = {
       connectionFailed: 'Failed to connect to OpenCode',
       runtime: 'Runtime metadata',
       runtimeDetail: '{modes} agents, {models} models, {commands} commands',
+      runtimeNotQueried: 'Not queried — no agent is connected',
       mcp: 'MCP servers',
       mcpDetail: '{enabled} enabled, {configured} configured',
       syncFolder: 'Default sync folder',

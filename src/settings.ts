@@ -698,16 +698,26 @@ export class CoOberSettingsTab extends PluginSettingTab {
       detail: connected ? labels.connectionOk : labels.connectionFailed,
     });
 
-    const runtimeCounts = connected && client
+    const runtimeQueried = connected && !!client;
+    // The counts are minted as zeros only for the branch that never asks. When
+    // no agent is connected nothing supplies the runtime lists, so interpolating
+    // {modes}/{models}/{commands} out of that placeholder printed "0 agents, 0
+    // models, 0 commands" — a settled measurement of a question the panel never
+    // posed, sitting right under the row that already says the connection
+    // failed. Say the question was not asked instead; the genuinely-empty case
+    // (an agent connected and reporting no lists) still reads out real zeros.
+    const runtimeCounts = runtimeQueried && client
       ? await this.getRuntimeMetadataCounts(client)
       : { modes: 0, models: 0, commands: 0 };
     results.push({
       label: labels.runtime,
-      ok: runtimeCounts.modes + runtimeCounts.models + runtimeCounts.commands > 0,
-      detail: labels.runtimeDetail
-        .replace('{modes}', String(runtimeCounts.modes))
-        .replace('{models}', String(runtimeCounts.models))
-        .replace('{commands}', String(runtimeCounts.commands)),
+      ok: runtimeQueried && runtimeCounts.modes + runtimeCounts.models + runtimeCounts.commands > 0,
+      detail: runtimeQueried
+        ? labels.runtimeDetail
+          .replace('{modes}', String(runtimeCounts.modes))
+          .replace('{models}', String(runtimeCounts.models))
+          .replace('{commands}', String(runtimeCounts.commands))
+        : labels.runtimeNotQueried,
     });
 
     const configuredMcp = this.plugin.settings.mcpServers.length;
