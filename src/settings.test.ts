@@ -799,6 +799,46 @@ describe('CoOberSettingsTab live capability push', () => {
       locale().settings.invalidNumber.replace('{min}', '2').replace('{max}', '12'),
     );
   });
+
+  it('springs a rejected number back in the box, not only in the stored value', async () => {
+    // parseBoundedInt refuses the edit and the setting keeps its old number, but
+    // the field used to keep showing the rejected text — so the box displayed a
+    // limit the settings no longer stood behind. The rejected text has to leave
+    // the field, not just the save.
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+    const before = plugin.settings.maxNoteSize;
+    const input = findTextSettingInput(tab, 'Max Note Reference Size');
+    Notice.messages.length = 0;
+
+    await changeInput(input, '999999999');
+
+    expect(plugin.settings.maxNoteSize).toBe(before);
+    expect(input.value).toBe(String(before));
+  });
+
+  it('springs a rejected OpenCode path back to the path still in effect', async () => {
+    // validateOpencodePath warns and stores nothing, but the box kept the refused
+    // text, naming an executable the plugin will not launch. Show the value the
+    // settings actually hold once the edit is turned down.
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    plugin.settings.opencodePath = 'opencode';
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+    const input = findTextSettingInput(tab, 'OpenCode CLI Path');
+    expect(input.value).toBe('opencode');
+    vi.mocked(plugin.savePluginData).mockClear();
+    Notice.messages.length = 0;
+
+    await changeInput(input, '/definitely/not/here/opencode-0000');
+
+    expect(plugin.settings.opencodePath).toBe('opencode');
+    expect(input.value).toBe('opencode');
+    expect(plugin.savePluginData).not.toHaveBeenCalled();
+  });
 });
 
 describe('CoOberSettingsTab agent list (0.2.5 stage 3)', () => {

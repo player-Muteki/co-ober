@@ -2619,6 +2619,12 @@ export class CoOberViewController {
           // as it was. Draining past it would be the queue eating prompts the
           // user typed while a banner had focus.
           rt.promptQueue.unshift(...taken);
+          // The merge above already shrank the badge, and these prompts are back
+          // in the queue now — leave it naming the smaller count and it would
+          // under-report every follow-up the reader can see waiting but the chip
+          // does not count. Repaint for the restored size, same as the capacity
+          // re-queue path.
+          if (this.isActiveTab(rt)) this.updateQueueIndicator(rt);
           break;
         }
       } catch (e) {

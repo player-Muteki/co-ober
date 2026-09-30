@@ -111,6 +111,11 @@ export class CoOberSettingsTab extends PluginSettingTab {
           if (this.validateOpencodePath(trimmed)) {
             s.opencodePath = trimmed;
             await this.save();
+          } else {
+            // The path was refused and nothing was stored, so the box must not
+            // keep showing the rejected text as though it were the launch path.
+            // Spring it back to the value the settings actually hold.
+            t.setValue(s.opencodePath);
           }
         }));
 
@@ -260,7 +265,10 @@ export class CoOberSettingsTab extends PluginSettingTab {
         .setPlaceholder('8000')
         .onChange(async (v) => {
           const n = parseBoundedInt(v, 100, 1_000_000);
-          if (n === null) return;
+          if (n === null) {
+            t.setValue(String(s.maxNoteSize));
+            return;
+          }
           s.maxNoteSize = n;
           await this.save();
           new Notice(locale().settings.notes.saved);
@@ -470,7 +478,10 @@ export class CoOberSettingsTab extends PluginSettingTab {
         .setPlaceholder('200')
         .onChange(async (v) => {
           const n = parseBoundedInt(v, 1, 10_000);
-          if (n === null) return;
+          if (n === null) {
+            t.setValue(String(s.maxSessionMessages ?? 200));
+            return;
+          }
           s.maxSessionMessages = n;
           await this.save();
         }));
@@ -482,7 +493,10 @@ export class CoOberSettingsTab extends PluginSettingTab {
         .setPlaceholder('30')
         .onChange(async (v) => {
           const n = parseBoundedInt(v, 1, 3650);
-          if (n === null) return;
+          if (n === null) {
+            t.setValue(String(s.sessionRetentionDays ?? 30));
+            return;
+          }
           s.sessionRetentionDays = n;
           await this.save();
         }));
@@ -494,7 +508,10 @@ export class CoOberSettingsTab extends PluginSettingTab {
         .setPlaceholder(String(DEFAULT_OPEN_TABS))
         .onChange(async (v) => {
           const n = parseBoundedInt(v, MIN_OPEN_TABS, MAX_OPEN_TABS);
-          if (n === null) return;
+          if (n === null) {
+            t.setValue(String(s.maxOpenTabs ?? DEFAULT_OPEN_TABS));
+            return;
+          }
           s.maxOpenTabs = n;
           await this.save();
           // The strip's disabled "+" and its tooltip follow the new limit now,
@@ -565,7 +582,10 @@ export class CoOberSettingsTab extends PluginSettingTab {
         .setPlaceholder('30000')
         .onChange(async (v) => {
           const n = parseBoundedInt(v, 100, 600_000);
-          if (n === null) return;
+          if (n === null) {
+            t.setValue(String(s.terminalTimeoutMs ?? 30000));
+            return;
+          }
           s.terminalTimeoutMs = n;
           await this.save();
           const client = this.plugin.getClient();
@@ -579,7 +599,10 @@ export class CoOberSettingsTab extends PluginSettingTab {
         .setPlaceholder('100000')
         .onChange(async (v) => {
           const n = parseBoundedInt(v, 1_000, 10_000_000);
-          if (n === null) return;
+          if (n === null) {
+            t.setValue(String(s.terminalMaxOutputBytes ?? 100000));
+            return;
+          }
           s.terminalMaxOutputBytes = n;
           await this.save();
           const client = this.plugin.getClient();
@@ -595,7 +618,10 @@ export class CoOberSettingsTab extends PluginSettingTab {
         .setPlaceholder('300000')
         .onChange(async (v) => {
           const n = parseBoundedInt(v, 0, 3_600_000);
-          if (n === null) return;
+          if (n === null) {
+            t.setValue(String(s.idleTimeoutMs ?? 300000));
+            return;
+          }
           s.idleTimeoutMs = n;
           await this.save();
           const client = this.plugin.getClient();

@@ -4022,6 +4022,29 @@ describe('CoOberViewController — queue visualization and auto titles', () => {
     controller.queueIndicatorEl = null;
   });
 
+  it('keeps the queue badge honest when a permission-refused turn is merged and pushed back', async () => {
+    // drainQueueLoop merges consecutive plain prompts and repaints the badge for
+    // the shrunken queue before handing the run to send(). A pending permission
+    // refuses the turn, so the whole merged run goes straight back onto the
+    // queue — and a badge left naming the smaller count would hide prompts the
+    // strip still lists, so the restore path repaints for the full size.
+    const el = document.createElement('div');
+    controller.queueIndicatorEl = el;
+    const rt = activeRt(controller);
+    (rt as unknown as { busy: boolean }).busy = false;
+    rt.promptQueue.push({ text: 'one', refs: [] }, { text: 'two', refs: [] });
+
+    const realParked = Reflect.get(controller, 'promptParkedFor') as unknown;
+    Reflect.set(controller, 'promptParkedFor', () => true);
+    await (controller as unknown as { drainQueue: (rt: SessionRuntime) => Promise<void> }).drainQueue(rt);
+    Reflect.set(controller, 'promptParkedFor', realParked);
+
+    expect(rt.promptQueue).toHaveLength(2);
+    expect(el.querySelector('.co-ober-queue-text')?.textContent)
+      .toBe(t().queue.many.replace('{count}', '2'));
+    controller.queueIndicatorEl = null;
+  });
+
   it('derives compact titles from message text', () => {
     expect(deriveSessionTitle('hello   world')).toBe('hello world');
     expect(deriveSessionTitle('x'.repeat(60))).toBe(`${'x'.repeat(47)}…`);
