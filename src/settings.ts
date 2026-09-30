@@ -443,6 +443,15 @@ export class CoOberSettingsTab extends PluginSettingTab {
           s.language = v;
           setLocale(v);
           await this.save();
+          // The diagnostics rows are the finished label/detail strings that
+          // collectDiagnostics baked from the locale it ran in. Re-rendering
+          // restamps the PASS/FAIL prefix (read fresh below) but can only echo
+          // those cached strings verbatim, so a reader who switched to 中文 kept
+          // seeing English rows — "Path: found at …" — inside an otherwise
+          // translated panel. They are restorable only by probing again, which is
+          // the user's click, not ours; withdraw them to the honest "not run yet"
+          // state the panel shows before the first run rather than freeze them.
+          this.diagnosticsResults = [];
           this.refreshOpenViewsLocale();
           this.render();
         }));

@@ -380,6 +380,44 @@ describe('CoOberSettingsTab locale refresh', () => {
     expect(tab.containerEl.textContent).not.toContain('Run Diagnostics');
   });
 
+  it('withdraws collected diagnostics on a language switch rather than freezing them mid-sentence', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() }, {
+      availableModes: [{ id: 'build', name: 'Build' }],
+    });
+    const tab = new CoOberSettingsTab(plugin);
+
+    tab.display();
+    const runButton = () => [...tab.containerEl.querySelectorAll('button')]
+      .find((button) => /Run Diagnostics|运行诊断/.test(button.textContent ?? '')) as HTMLButtonElement | undefined;
+    runButton()!.click();
+    await flushPromises();
+    await flushPromises();
+
+    // Collected in English: the row's label and detail are finished strings baked
+    // from the locale collectDiagnostics ran in.
+    expect(tab.containerEl.textContent).toContain('ACP connection');
+    expect(tab.containerEl.textContent).toContain('Connected to OpenCode');
+
+    const languageSelect = [...tab.containerEl.querySelectorAll('select')]
+      .find((select) => [...select.options].some((option) => option.value === 'zh')) as HTMLSelectElement | undefined;
+    languageSelect!.value = 'zh';
+    languageSelect!.dispatchEvent(new Event('change'));
+    await flushPromises();
+
+    // Re-rendering restamps the PASS/FAIL prefix in Chinese but can only echo the
+    // cached English label/detail verbatim, so the old behavior left a Chinese
+    // panel holding a "通过 ACP connection / Connected to OpenCode" row — one
+    // reading frozen in a language the rest of the settings no longer spoke. The
+    // rows are withdrawn to the honest not-yet-run state instead; the user
+    // re-probes (in Chinese) by clicking again.
+    expect(tab.containerEl.textContent).not.toContain('ACP connection');
+    expect(tab.containerEl.textContent).not.toContain('Connected to OpenCode');
+    expect(tab.containerEl.textContent).toContain('运行诊断');
+    expect(runButton()).toBeDefined();
+    setLocale('en');
+  });
+
   it('does not connect or create metadata sessions when settings opens with an empty snapshot', async () => {
     setLocale('en');
     const plugin = createPlugin({ refreshLocale: vi.fn() }, {}, {
