@@ -54,8 +54,10 @@ export class FileCommandStorage implements CommandSource {
       try {
         const raw = await this.vault.read(file);
         const parsed = parseCommandFile(raw);
-        // A file with no frontmatter block is not a command, and the popover
-        // just lost an entry the user can see on disk. Say which.
+        // A file with no complete frontmatter block — either no opening `---`
+        // at all, or one that never closes — is not a command, and the popover
+        // just lost an entry the user can see on disk. Say which, without
+        // claiming a missing block for a file whose block is only unfinished.
         if (!parsed) {
           shapeless.push(file.path);
           continue;

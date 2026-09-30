@@ -414,7 +414,7 @@ describe('CoOberSettingsTab locale refresh', () => {
     expect(typeSelect).toBeDefined();
     const httpOption = [...typeSelect!.options].find((option) => option.value === 'http');
     expect(httpOption?.disabled).toBe(true);
-    expect(httpOption?.textContent).toBe('http (not supported by current agent)');
+    expect(httpOption?.textContent).toBe(`http (${locale().settings.mcpHttpDisabled})`);
   });
 });
 

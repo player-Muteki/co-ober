@@ -181,7 +181,7 @@ const zh: Locale = {
     processExited: 'Agent 进程已退出（{detail}），请求被中断。',
     methodNotFound: 'Agent 不支持“{detail}”——它的版本可能低于本插件的预期。',
     internalError: 'Agent 内部错误：{detail}',
-    agentError: 'Agent 拒绝了请求：{detail}',
+    agentError: 'Agent 返回了一个错误：{detail}',
     fileMissing: '无法读取文件：{detail}',
     accessDenied: '该操作被拒绝：{detail}',
     pathIsFolder: '这个路径是文件夹，不是文件：{detail}',
@@ -417,7 +417,7 @@ const zh: Locale = {
     dataRestoredFromBackup: '无法读取已保存的聊天数据——已改为加载上一次完整保存的副本',
     saveFailed: 'Co-Ober 保存聊天数据失败——最近的更改可能丢失',
     commandFilesUnreadable: 'Co-Ober 无法读取 {files}；修好这些文件之前，对应的斜杠命令不会出现',
-    commandFilesShapeless: '{files} 没有 frontmatter，因此没有被注册为斜杠命令',
+    commandFilesShapeless: '{files} 没有完整的 frontmatter 块，因此没有被注册为斜杠命令',
     commandFilesAmbiguous: '{files} 与另一个文件重名，因此只注册了第一个',
   },
 
@@ -590,8 +590,8 @@ const zh: Locale = {
       envAdd: '+ 添加变量',
       headersAdd: '+ 添加请求头',
     },
-    mcpHttpDisabled: '当前 Agent 不支持',
-    mcpSseDisabled: '当前 Agent 不支持',
+    mcpHttpDisabled: '没有已连接的 Agent 声明支持',
+    mcpSseDisabled: '没有已连接的 Agent 声明支持',
     sync: {
       heading: '同步规则',
       add: '+ 添加规则',

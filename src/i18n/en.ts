@@ -179,7 +179,7 @@ const en = {
     processExited: 'The agent process exited ({detail}) and the request was interrupted.',
     methodNotFound: 'The agent does not support "{detail}" — it may be older than this plugin expects.',
     internalError: 'The agent hit an internal error: {detail}',
-    agentError: 'The agent refused: {detail}',
+    agentError: 'The agent returned an error: {detail}',
     fileMissing: 'A file could not be read: {detail}',
     accessDenied: 'That operation was refused: {detail}',
     pathIsFolder: 'That path is a folder rather than a file: {detail}',
@@ -415,7 +415,7 @@ const en = {
     dataRestoredFromBackup: 'Saved chat data could not be read — loaded the last complete save instead',
     saveFailed: 'Co-Ober failed to save chat data — recent changes may be lost',
     commandFilesUnreadable: 'Co-Ober could not read {files}; those slash commands are missing until the file is fixed',
-    commandFilesShapeless: '{files} has no frontmatter, so it was not registered as a slash command',
+    commandFilesShapeless: '{files} has no complete frontmatter block, so it was not registered as a slash command',
     commandFilesAmbiguous: '{files} shares a command name with another file, so only the first one was registered',
   },
 
@@ -588,8 +588,8 @@ const en = {
       envAdd: '+ Add Variable',
       headersAdd: '+ Add Header',
     },
-    mcpHttpDisabled: 'not supported by current agent',
-    mcpSseDisabled: 'not supported by current agent',
+    mcpHttpDisabled: 'no connected agent advertises it',
+    mcpSseDisabled: 'no connected agent advertises it',
     sync: {
       heading: 'Sync Rules',
       add: '+ Add Rule',

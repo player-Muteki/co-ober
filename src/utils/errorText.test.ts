@@ -55,9 +55,18 @@ describe('humanizeError (0.2.5 stage 3)', () => {
     expect(line).not.toContain('-32603');
   });
 
-  it('labels an unmapped protocol code as the agent refusing, keeping the detail', () => {
+  it('routes an unmapped protocol code to a generic agent-error line, keeping the detail', () => {
     const line = humanizeError(new AcpProtocolError('auth required', 'initialize', -32001));
     expect(line).toBe(t().error.agentError.replace('{detail}', 'auth required'));
+  });
+
+  it('does not call an uncoded protocol error something the agent refused', () => {
+    // A code this classifier does not map falls through to the generic agent
+    // line. Calling it "refused" invented a denial the reader would go looking
+    // for a reason for — the file already reserves that word for a real denial
+    // (accessDenied), exactly as it stopped calling EISDIR a refusal.
+    const line = humanizeError(new AcpProtocolError('auth required', 'initialize', -32001));
+    expect(line).not.toMatch(/refus/i);
   });
 
   it('turns an errno into a file sentence without losing the path', () => {

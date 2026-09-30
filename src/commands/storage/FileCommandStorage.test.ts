@@ -53,7 +53,7 @@ describe('FileCommandStorage — a command that disappears from the / popover', 
     expect(Notice.messages[0]).toContain('slash commands are missing');
   });
 
-  it('names a file with no frontmatter instead of dropping it silently', async () => {
+  it('names a file with no complete frontmatter block instead of dropping it silently', async () => {
     const storage = new FileCommandStorage(
       vaultWith([{ path: '.opencode/commands/notes.md', contents: '# Just prose\n' }]),
     );
@@ -61,7 +61,23 @@ describe('FileCommandStorage — a command that disappears from the / popover', 
     await storage.load();
     expect(Notice.messages).toHaveLength(1);
     expect(Notice.messages[0]).toContain('.opencode/commands/notes.md');
-    expect(Notice.messages[0]).toContain('no frontmatter');
+    expect(Notice.messages[0]).toContain('no complete frontmatter');
+  });
+
+  it('does not tell a reader a half-written frontmatter block is absent', async () => {
+    // The same parser returns null for an opening `---` with no closing one as
+    // for a file with no frontmatter at all, but only one of them was ever
+    // "missing" the block — the malformed file visibly has one. Saying it has
+    // none sent the reader to write a header the file already half-carries.
+    const storage = new FileCommandStorage(
+      vaultWith([{ path: '.opencode/commands/half.md', contents: '---\ndescription: broken\n' }]),
+    );
+
+    await storage.load();
+    expect(Notice.messages).toHaveLength(1);
+    expect(Notice.messages[0]).toContain('.opencode/commands/half.md');
+    expect(Notice.messages[0]).toContain('no complete frontmatter');
+    expect(Notice.messages[0]).not.toMatch(/has no frontmatter/i);
   });
 
   it('keeps the readable commands while reporting the broken ones', async () => {
@@ -147,7 +163,7 @@ describe('FileCommandStorage — two command files sharing a name', () => {
     expect(defs.map((def) => def.id)).toEqual(['file:review']);
     expect(Notice.messages).toHaveLength(1);
     expect(Notice.messages[0]).toContain('.opencode/commands/team/daily/review.md');
-    expect(Notice.messages[0]).not.toContain('no frontmatter');
+    expect(Notice.messages[0]).not.toContain('no complete frontmatter');
     expect(Notice.messages[0]).toContain('shares a command name');
   });
 
