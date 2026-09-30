@@ -305,6 +305,28 @@ describe('SideChatPanel', () => {
     panel.close();
   });
 
+  it('re-speaks a transcript bubble it drew from the locale table after a switch', () => {
+    // The chrome relabelled live, but a fixed line pushed into the transcript —
+    // the "busy" refusal — was created from t() with no key left behind, so a
+    // language change re-spoke the title, buttons and placeholder around a bubble
+    // still frozen in the language it first drew in. It now rides the same
+    // [data-i18n-text] walk the chrome uses.
+    const { panel } = makePanel({ isMainBusy: () => true });
+    panel.open('a question asked while a turn runs');
+
+    const busyBubble = container.querySelector('.co-ober-side-chat-msg-error') as HTMLElement;
+    expect(busyBubble.textContent).toBe('Wait for the current response to finish before asking the side chat.');
+
+    setLocale('zh');
+    try {
+      expect(busyBubble.textContent).toBe('请等待当前回复结束后再向侧边对话提问。');
+    } finally {
+      setLocale('en');
+    }
+    expect(busyBubble.textContent).toBe('Wait for the current response to finish before asking the side chat.');
+    panel.close();
+  });
+
   it('drops its locale subscription once closed', () => {
     const { panel } = makePanel();
     panel.open();

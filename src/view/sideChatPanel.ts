@@ -1,4 +1,4 @@
-import { t, onLocaleChange } from '../i18n/index';
+import { t, onLocaleChange, lookupLocaleString } from '../i18n/index';
 import { isImeComposing } from '../utils/ime';
 import { humanizeError } from '../utils/errorText';
 import type { AcpResponse, NormalizedUpdate } from '../types';
@@ -109,6 +109,19 @@ export class SideChatPanel {
     if (this.closeBtnEl) this.closeBtnEl.textContent = t().sideChat.close;
     if (this.sendBtnEl) this.sendBtnEl.textContent = t().sideChat.send;
     if (this.inputEl) this.inputEl.placeholder = t().sideChat.placeholder;
+    // Chrome aside, the panel draws a few transcript lines straight from t() —
+    // the "busy", "thinking" and "no text response" bubbles. Without this they
+    // kept the language they were painted in while everything around them
+    // switched, the same freeze the main transcript's `[data-i18n-text]` walk
+    // already prevents. A bubble carries its key only while it shows one of
+    // those fixed lines; the moment it holds the user's own text, streamed agent
+    // words, or an error naming the agent's failure, the key is taken off, so
+    // reprinting from the locale template can never drop a literal token where a
+    // real value stood.
+    this.transcriptEl?.querySelectorAll<HTMLElement>('[data-i18n-text]').forEach((el) => {
+      const label = lookupLocaleString(el.dataset.i18nText ?? '');
+      if (label !== undefined) el.textContent = label;
+    });
   }
 
   private submitFromInput(): void {
@@ -121,16 +134,17 @@ export class SideChatPanel {
   async send(text: string): Promise<void> {
     if (!this.el) this.render();
     if (this.busy) {
-      this.appendBubble('error', t().sideChat.busy);
+      this.appendBubble('error', t().sideChat.busy).dataset.i18nText = 'sideChat.busy';
       return;
     }
     if (this.deps.isMainBusy()) {
-      this.appendBubble('error', t().sideChat.busy);
+      this.appendBubble('error', t().sideChat.busy).dataset.i18nText = 'sideChat.busy';
       return;
     }
     this.busy = true;
     this.appendBubble('user', text);
     const answerEl = this.appendBubble('agent', t().sideChat.thinking);
+    answerEl.dataset.i18nText = 'sideChat.thinking';
     answerEl.addClass('is-streaming');
     // One bubble per message the side session is writing. A streamed answer
     // that arrives as several messages restarts its accumulated text at each
@@ -153,6 +167,9 @@ export class SideChatPanel {
             bubblesByMessage.set(key, target);
           }
           target.setText(u.accumulatedText);
+          // It now holds the agent's words, not a fixed locale line, so it must
+          // stop carrying a key the relabel walk would reprint over them.
+          delete target.dataset.i18nText;
           target.removeClass('co-ober-side-chat-msg-thinking');
           this.scrollToBottom();
         }
@@ -167,6 +184,10 @@ export class SideChatPanel {
         ? answerEl
         : this.appendBubble('agent', '');
       failingEl.setText(t().sideChat.failed.replace('{error}', humanizeError(e)));
+      // This line names the failure the agent reported — a runtime value no
+      // locale table can resupply — so the key is taken off and the bubble stays
+      // exactly as drawn, rather than being reprinted from the template.
+      delete failingEl.dataset.i18nText;
       failingEl.removeClass('co-ober-side-chat-msg-agent');
       failingEl.addClass('co-ober-side-chat-msg-error');
       failed = true;
@@ -178,6 +199,9 @@ export class SideChatPanel {
         // to think: the ask had returned, the panel was free again, and the one
         // line that states the state stated it wrong.
         answerEl.setText(t().sideChat.noText);
+        // The placeholder word is gone, but this settled line is still a fixed
+        // locale string, so the key follows it and a later switch re-speaks it.
+        answerEl.dataset.i18nText = 'sideChat.noText';
       }
       this.busy = false;
     }
