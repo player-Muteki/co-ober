@@ -721,10 +721,17 @@ export class CoOberSettingsTab extends PluginSettingTab {
     });
 
     const configuredMcp = this.plugin.settings.mcpServers.length;
-    const enabledMcp = this.plugin.settings.mcpServers.filter((server) => server.enabled).length;
+    const enabledServers = this.plugin.settings.mcpServers.filter((server) => server.enabled);
+    const enabledMcp = enabledServers.length;
+    // A Pass has to mean the enabled servers can actually be launched, not merely
+    // that their counts were read. An enabled stdio entry with no command, or an
+    // http/sse entry with no url, names nothing to start, so claiming Pass over
+    // it asserted a health the panel never checked.
+    const mcpRunnable = enabledServers.every((server) =>
+      server.type === 'stdio' ? server.command.trim().length > 0 : server.url.trim().length > 0);
     results.push({
       label: labels.mcp,
-      ok: true,
+      ok: mcpRunnable,
       detail: labels.mcpDetail
         .replace('{enabled}', String(enabledMcp))
         .replace('{configured}', String(configuredMcp)),

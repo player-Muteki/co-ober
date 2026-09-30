@@ -267,6 +267,28 @@ describe('CoOberSettingsTab locale refresh', () => {
     expect(tab.containerEl.textContent).toContain('ACP client version');
   });
 
+  it('does not report MCP servers passing when an enabled one has nothing to launch', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() }, {
+      availableModes: [{ id: 'build', name: 'Build' }],
+    });
+    plugin.settings.mcpServers.push(
+      { type: 'stdio', id: 'broken', enabled: true, name: 'broken', command: '', args: [], env: [] },
+    );
+    const tab = new CoOberSettingsTab(plugin);
+
+    tab.display();
+    const diagnosticsButton = [...tab.containerEl.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Run Diagnostics') as HTMLButtonElement | undefined;
+    diagnosticsButton!.click();
+    await flushPromises();
+    await flushPromises();
+
+    expect(tab.containerEl.textContent).toContain('Fail: MCP servers');
+    expect(tab.containerEl.textContent).not.toContain('Pass: MCP servers');
+    expect(tab.containerEl.textContent).toContain('1 enabled, 1 configured');
+  });
+
   it('does not reconnect when an existing client is connected', async () => {
     setLocale('en');
     const plugin = createPlugin({ refreshLocale: vi.fn() }, {
