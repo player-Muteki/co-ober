@@ -327,7 +327,12 @@ export class ChatRenderer {
       const text = textarea.value.trim();
       editor.remove();
       if (!text) return;
-      body.textContent = text;
+      // The stored bubble is left exactly as the store holds it. A successful
+      // rewind wipes the transcript and repaints it from the store anyway, and
+      // re-sends the edited question as a fresh turn; but a busy, missing-session
+      // or renew-failed rewind returns without touching this DOM — writing the
+      // edit here first would leave the changed question displayed as though it
+      // had already been asked, when the message on record is still the original.
       handlers.onEditResend(ordinal, text);
     };
 

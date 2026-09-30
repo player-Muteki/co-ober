@@ -500,7 +500,7 @@ describe('ChatRenderer', () => {
       expect(onRegenerate).toHaveBeenCalledWith(1);
     });
 
-    it('edit flow swaps the bubble text and resends with the edited content', () => {
+    it('edit flow resends the edited content without rewriting the stored bubble', () => {
       const onEditResend = vi.fn();
       renderer.setRewindHandlers({ onRegenerate: vi.fn(), onEditResend });
       renderer.addUserMessage('original');
@@ -517,8 +517,30 @@ describe('ChatRenderer', () => {
       (editBtns[0] as HTMLElement).click();
 
       expect(onEditResend).toHaveBeenCalledWith(1, 'edited text');
-      expect(wrap.querySelector('.co-ober-msg-body')!.textContent).toBe('edited text');
+      // The bubble is left as the store holds it until the rewind actually
+      // succeeds and repaints from the store; a rewind that refuses (busy, no
+      // session, renew failed) returns without touching this DOM, so painting
+      // the edit here would leave a changed question shown as though it had been
+      // asked when the message on record is still the original.
+      expect(wrap.querySelector('.co-ober-msg-body')!.textContent).toBe('original');
       expect(wrap.querySelector('.co-ober-user-edit')).toBeNull();
+    });
+
+    it('leaves the stored question intact when the rewind does not repaint it', () => {
+      // Mirrors the refusal paths in rewindUserTurn: the handler is notified but
+      // nothing rebuilds the transcript, so an optimistic write to the bubble
+      // would be the only sign of an edit that was never actually sent.
+      const onEditResend = vi.fn();
+      renderer.setRewindHandlers({ onRegenerate: vi.fn(), onEditResend });
+      renderer.addUserMessage('what was really asked');
+
+      const wrap = container.querySelector('.co-ober-msg.user')!;
+      (wrap.querySelector('.co-ober-user-actions button:nth-child(2)') as HTMLElement).click();
+      (wrap.querySelector('.co-ober-user-edit textarea') as HTMLTextAreaElement).value = 'rewritten';
+      (wrap.querySelectorAll('.co-ober-user-edit-actions button')[0] as HTMLElement).click();
+
+      expect(onEditResend).toHaveBeenCalledWith(1, 'rewritten');
+      expect(wrap.querySelector('.co-ober-msg-body')!.textContent).toBe('what was really asked');
     });
 
     it('cancel discards the edit without notifying', () => {
