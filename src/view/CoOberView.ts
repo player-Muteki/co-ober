@@ -546,6 +546,7 @@ export class CoOberView extends ItemView {
         onRemoveImagePart: (_data, _size) => {},
       },
       () => this.plugin.getClient()?.getAgentCapabilities() ?? null,
+      () => !!this.plugin.getClient()?.isConnected(),
     );
     this.dragDropManager.setup();
 

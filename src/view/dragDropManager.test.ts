@@ -290,6 +290,29 @@ describe('DragDropManager', () => {
       expect((Notice as any).messages).toContain('This OpenCode agent does not support image prompts');
     });
 
+    it('refuses a dropped image while no agent is connected, without blaming a support verdict', async () => {
+      // handleDisconnect greys the toolbar's attach button; the drop zone kept
+      // staging the chip anyway, because a dead client reports no capabilities
+      // and an unknown capability reads as "yes". The empty caps of a disconnect
+      // are that unknown, so the drop path has to know the agent is gone.
+      manager = new DragDropManager(dropZone, overlayContainer, handlers as any, () => null, () => false);
+      manager.setup();
+
+      const file = new File(['image-data'], 'test.png', { type: 'image/png' });
+      const event = new DragEvent('drop', { bubbles: true });
+      Object.defineProperty(event, 'dataTransfer', { value: { files: [file] } });
+      Object.defineProperty(event, 'preventDefault', { value: vi.fn() });
+
+      dropZone.dispatchEvent(event);
+      await new Promise(r => setTimeout(r, 10));
+
+      expect(handlers.onAddImagePart).not.toHaveBeenCalled();
+      expect((Notice as any).messages).toContain('Connect an agent before attaching images');
+      // Naming a support verdict for an agent that is not running would trade the
+      // old lie for a new one.
+      expect((Notice as any).messages).not.toContain('does not support image prompts');
+    });
+
     it('notices and skips images exceeding the pending-image budget', async () => {
       manager.setup();
       mockSizedImageReader();
@@ -394,6 +417,19 @@ describe('DragDropManager', () => {
 
       expect(handlers.onAddImagePart).not.toHaveBeenCalled();
       expect((Notice as any).messages).toContain('This OpenCode agent does not support image prompts');
+    });
+
+    it('refuses a pasted image while no agent is connected', async () => {
+      // Paste shares the same handleFiles chokepoint as drop, so the withdrawn
+      // agent has to stop it there too — with the no-agent sentence, not a claim
+      // about an agent that is not running.
+      manager = new DragDropManager(dropZone, overlayContainer, handlers as any, () => null, () => false);
+      const file = new File(['image-data'], 'pasted.png', { type: 'image/png' });
+
+      await manager.handleFiles([file]);
+
+      expect(handlers.onAddImagePart).not.toHaveBeenCalled();
+      expect((Notice as any).messages).toContain('Connect an agent before attaching images');
     });
 
     it('does not track bytes for rejected images across multiple calls', async () => {

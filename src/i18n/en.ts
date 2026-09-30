@@ -78,6 +78,7 @@ const en = {
 
   dragDrop: {
     imageNotSupported: 'This OpenCode agent does not support image prompts',
+    imageNoAgent: 'Connect an agent before attaching images',
     audioNotSupported: 'Audio attachments are not supported',
     imageTooLarge: '"{name}" exceeds the 10 MB pending-image limit',
     imageBudgetFull: '"{name}" was not added — the images already staged fill the 10 MB limit',

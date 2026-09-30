@@ -264,7 +264,7 @@ describe('CoOberView runtime session sync', () => {
 
   it('removes the exact pending part when chips carry byte-identical images', async () => {
     setLocale('en');
-    const plugin = createPlugin();
+    const plugin = createPlugin({ client: createClient() });
     const view = createView(plugin);
     await view.onOpen();
 

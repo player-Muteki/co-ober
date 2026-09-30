@@ -80,6 +80,7 @@ const zh: Locale = {
 
   dragDrop: {
     imageNotSupported: '当前 OpenCode Agent 不支持图片提示词',
+    imageNoAgent: '请先连接 Agent，再添加图片',
     audioNotSupported: '不支持音频附件',
     imageTooLarge: '图片 "{name}" 超过待发送图片 10MB 上限',
     imageBudgetFull: '未添加 “{name}”——已经在手的图片已占满 10MB 上限',

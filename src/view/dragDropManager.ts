@@ -23,7 +23,8 @@ export class DragDropManager {
 		private dropZoneEl: HTMLElement,
 		private overlayContainerEl: HTMLElement,
 		private handlers: DragDropHandlers,
-		private getAgentCapabilities: () => AgentCapabilities | null = () => null
+		private getAgentCapabilities: () => AgentCapabilities | null = () => null,
+		private isConnected: () => boolean = () => true
 	) {
 		this.unsubscribeLocale = onLocaleChange(() => {
 			if (this.dragOverlayEl) {
@@ -120,6 +121,16 @@ export class DragDropManager {
 				// No audio prompt pipeline exists; tell the user instead of silently dropping.
 				new Notice(t().dragDrop.audioNotSupported);
 			} else if (file.type.startsWith('image/')) {
+				// The toolbar greys the attach button the moment the agent drops,
+				// and the drop zone must not stay more generous than the button it
+				// replaced: a connected agent that never promised images and no
+				// agent at all are different refusals, and each now gets its true
+				// sentence. Saying "this agent does not support" while there is no
+				// agent would be the same lie the MCP picker caption just stopped telling.
+				if (!this.isConnected()) {
+					new Notice(t().dragDrop.imageNoAgent);
+					continue;
+				}
 				if (!supportsPromptCapability(this.getAgentCapabilities(), 'image')) {
 					new Notice(t().dragDrop.imageNotSupported);
 					continue;
