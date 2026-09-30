@@ -527,7 +527,7 @@ describe('CoOberViewController', () => {
       // Answering a question meant for the reader is not a permission decision
       // this client may make silently on their behalf.
       expect(answer).toEqual({ action: 'decline' });
-      expect(addError).toHaveBeenCalledWith(t().elicitation.notInThisMode);
+      expect(addError).toHaveBeenCalledWith(t().elicitation.notInThisMode, undefined, undefined, 'elicitation.notInThisMode');
       expect(deps.permissionBanner.showElicitation).not.toHaveBeenCalled();
     });
 
@@ -1270,6 +1270,8 @@ describe('CoOberViewController', () => {
         `${t().error.unknown}: network error`,
         t().error.retry,
         expect.any(Function),
+        undefined,
+        'error.retry',
       );
       expect(controller.isBusy()).toBe(false);
     });
@@ -1388,6 +1390,8 @@ describe('CoOberViewController', () => {
         expect.stringContaining('code 1'),
         t().error.restart,
         expect.any(Function),
+        undefined,
+        'error.restart',
       );
       expect(controller.isBusy()).toBe(false);
     });
@@ -1409,6 +1413,8 @@ describe('CoOberViewController', () => {
           expect.any(String),
           zhLocale.error.retry,
           expect.any(Function),
+          undefined,
+          'error.retry',
         );
       } finally {
         setLocale('en');
@@ -1553,7 +1559,7 @@ describe('CoOberViewController', () => {
       const handlers = (client.setClientHandlers as ReturnType<typeof vi.fn>).mock.calls[0][0];
       handlers.onPermissionUnreadable('options: required');
 
-      expect(deps.renderer.addError).toHaveBeenCalledWith(t().permission.unreadable);
+      expect(deps.renderer.addError).toHaveBeenCalledWith(t().permission.unreadable, undefined, undefined, 'permission.unreadable');
     });
 
     it('keeps the unreadable-permission line cause-neutral, since four causes share it', () => {
@@ -1846,7 +1852,7 @@ describe('CoOberViewController', () => {
 
       await controller.switchSession('ses_gone', 'opencode');
 
-      expect(deps.renderer.addError).toHaveBeenCalledWith(t().session.nativeSessionMissing);
+      expect(deps.renderer.addError).toHaveBeenCalledWith(t().session.nativeSessionMissing, undefined, undefined, 'session.nativeSessionMissing');
       expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(t().session.loadedNative);
     });
 
@@ -1858,7 +1864,7 @@ describe('CoOberViewController', () => {
 
       await controller.switchSession('ses_x', 'opencode');
 
-      expect(deps.renderer.addError).toHaveBeenCalledWith(t().session.loadNativeFailed);
+      expect(deps.renderer.addError).toHaveBeenCalledWith(t().session.loadNativeFailed, undefined, undefined, 'session.loadNativeFailed');
       // The catch that reaches this message wraps the whole sync, so a transport
       // failure lands here too — a string naming "session/load not supported or
       // session unavailable" would tell the reader one specific cause the code
@@ -2840,6 +2846,8 @@ describe('CoOberViewController', () => {
         `${t().error.unknown}: send error`,
         t().error.retry,
         expect.any(Function),
+        undefined,
+        'error.retry',
       );
       expect(controller.isBusy()).toBe(false);
     });
@@ -2944,7 +2952,7 @@ describe('CoOberViewController', () => {
       controller.copyLastAssistantMessage();
       for (let i = 0; i < 5; i++) await Promise.resolve();
 
-      expect(deps.renderer.addError).toHaveBeenCalledWith(t().copy.failed);
+      expect(deps.renderer.addError).toHaveBeenCalledWith(t().copy.failed, undefined, undefined, 'copy.failed');
     });
   });
 
@@ -3731,14 +3739,14 @@ describe('CoOberViewController — side chat (/btw)', () => {
 
   it('reports not-connected when there is no client', async () => {
     await controller.startSideChat('hello');
-    expect(addError).toHaveBeenCalledWith(t().sideChat.notConnected);
+    expect(addError).toHaveBeenCalledWith(t().sideChat.notConnected, undefined, undefined, 'sideChat.notConnected');
   });
 
   it('refuses when the agent cannot fork sessions', async () => {
     const client = createMockClient();
     (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
     await controller.startSideChat('hello');
-    expect(addError).toHaveBeenCalledWith(t().sideChat.forkUnsupported);
+    expect(addError).toHaveBeenCalledWith(t().sideChat.forkUnsupported, undefined, undefined, 'sideChat.forkUnsupported');
     expect(client.forkSession).not.toHaveBeenCalled();
     expect(callbacks.onOpenSideChat).not.toHaveBeenCalled();
   });

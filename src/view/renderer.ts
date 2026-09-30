@@ -1007,17 +1007,31 @@ export class ChatRenderer {
     if (this.planEl && this.container.contains(this.planEl)) this.setSystemNote('planStale', 'plan.stale', 0);
   }
 
-  addError(text: string, actionLabel?: string, actionCallback?: () => void | Promise<void>): void {
+  addError(
+    text: string,
+    actionLabel?: string,
+    actionCallback?: () => void | Promise<void>,
+    textKey?: string,
+    actionKey?: string,
+  ): void {
     this.removeAssistantPlaceholder();
     const wrap = this.container.createDiv({ cls: 'co-ober-msg assistant' });
     const errorEl = wrap.createDiv({ cls: 'co-ober-error' });
-    errorEl.createSpan({ cls: 'co-ober-error-text', text });
+    const textEl = errorEl.createSpan({ cls: 'co-ober-error-text', text });
+    // A notice built straight from t() with no runtime token rides data-i18n-text
+    // so refreshLocale re-speaks it on a language switch like the rest of the
+    // transcript. A text interpolated from an error, or passed in by a caller, is
+    // left untagged on purpose: reprinting it from the locale template would drop
+    // a literal {error} where the detail was — a frozen-but-true line beats a
+    // restorable-but-false one.
+    if (textKey) textEl.dataset.i18nText = textKey;
 
     if (actionLabel && actionCallback) {
       const btn = errorEl.createEl('button', {
         cls: 'co-ober-error-action',
         text: actionLabel,
       });
+      if (actionKey) btn.dataset.i18nText = actionKey;
       btn.onclick = () => {
         btn.disabled = true;
         btn.textContent = '...';
@@ -1026,7 +1040,11 @@ export class ChatRenderer {
             await actionCallback();
           } finally {
             btn.disabled = false;
-            btn.textContent = actionLabel;
+            // Restore the label in the language now in force: refreshLocale may
+            // have relabelled this button while it sat disabled (or a switch may
+            // land between draw and click), and re-assigning the captured string
+            // would stamp the stale wording straight back over the fresh one.
+            btn.textContent = (actionKey ? lookupLocaleString(actionKey) : undefined) ?? actionLabel;
           }
         })();
       };

@@ -991,7 +991,7 @@ export class CoOberViewController {
           // thinking block open until that tab came forward.
           rt.renderer.finalizeCurrentThinking();
           rt.renderer.removeAssistantPlaceholder();
-          rt.renderer.addError(t().error.reconnected);
+          rt.renderer.addError(t().error.reconnected, undefined, undefined, 'error.reconnected');
           if (rt === this.activeRuntime) {
             this.deps.input.setStreaming(false);
             this.deps.toolbar.setSending(false);
@@ -1009,7 +1009,7 @@ export class CoOberViewController {
         this.handleDisconnect();
       },
       onPermissionUnreadable: (summary, sessionId) => {
-        this.rendererFor(sessionId).addError(t().permission.unreadable);
+        this.rendererFor(sessionId).addError(t().permission.unreadable, undefined, undefined, 'permission.unreadable');
       },
       onCapabilityGrant: (grant) => {
         this.noteCapabilityGrant(grant);
@@ -1038,7 +1038,7 @@ export class CoOberViewController {
         // the safe tier nothing is shown, so the honest answer is a decline
         // the reader is told about.
         if (client.permissionMode !== 'safe') {
-          this.rendererFor(req.sessionId).addError(t().elicitation.notInThisMode);
+          this.rendererFor(req.sessionId).addError(t().elicitation.notInThisMode, undefined, undefined, 'elicitation.notInThisMode');
           return { action: 'decline' };
         }
         return this.deps.permissionBanner.showElicitation(req, this.originFor(req.sessionId));
@@ -1602,6 +1602,9 @@ export class CoOberViewController {
       if (source === 'opencode') {
         rt.renderer.addError(
           e instanceof AcpSessionMissingError ? t().session.nativeSessionMissing : t().session.loadNativeFailed,
+          undefined,
+          undefined,
+          e instanceof AcpSessionMissingError ? 'session.nativeSessionMissing' : 'session.loadNativeFailed',
         );
       }
     }
@@ -1697,11 +1700,11 @@ export class CoOberViewController {
   async startSideChat(question: string, rt: SessionRuntime = this.activeRuntime): Promise<void> {
     const client = this.deps.runtime.getClient();
     if (!client) {
-      rt.renderer.addError(t().sideChat.notConnected);
+      rt.renderer.addError(t().sideChat.notConnected, undefined, undefined, 'sideChat.notConnected');
       return;
     }
     if (client.getAgentCapabilities?.()?.sessionCapabilities?.fork !== true) {
-      rt.renderer.addError(t().sideChat.forkUnsupported);
+      rt.renderer.addError(t().sideChat.forkUnsupported, undefined, undefined, 'sideChat.forkUnsupported');
       return;
     }
     if (rt.busy) {
@@ -2088,7 +2091,7 @@ export class CoOberViewController {
         // looking at; a background tab would otherwise lose its turn with
         // nothing but a console line. Say it where that turn lives.
         console.warn('[co-ober] turn error swallowed while disconnected:', e);
-        rt.renderer.addError(t().error.connectionLostMidTurn);
+        rt.renderer.addError(t().error.connectionLostMidTurn, undefined, undefined, 'error.connectionLostMidTurn');
         return;
       }
       if (e instanceof AcpStreamCapacityError && config.addUserMessage !== false) {
@@ -2121,14 +2124,14 @@ export class CoOberViewController {
           rt.renderer.addError(humanizeError(e), t().error.restart, async () => {
             await this.reconnect();
             await this.retryTurn(config, text, refs, imageParts, rt);
-          });
+          }, undefined, 'error.restart');
         } else if (retryAction) {
           // A timed-out RPC and a rejected one are the same reader-problem: a
           // question that got no answer and a bubble above it saying so. The
           // timeout used to be the only failure with a way back, and the bare
           // "timed out" sentence was what every other path already replaces
           // with the method and how long it waited.
-          rt.renderer.addError(humanizeError(e), t().error.retry, retryAction);
+          rt.renderer.addError(humanizeError(e), t().error.retry, retryAction, undefined, 'error.retry');
         } else {
           rt.renderer.addError(humanizeError(e));
         }
@@ -2851,7 +2854,7 @@ export class CoOberViewController {
       if (msg.role === 'assistant' && msg.type !== 'thinking') {
         // Nothing is claimed on success, so only the rejection needs saying:
         // the reader otherwise pastes from a clipboard that was never written.
-        navigator.clipboard?.writeText(msg.content).catch(() => this.renderer.addError(t().copy.failed));
+        navigator.clipboard?.writeText(msg.content).catch(() => this.renderer.addError(t().copy.failed, undefined, undefined, 'copy.failed'));
         break;
       }
     }

@@ -1860,7 +1860,7 @@ describe('CoOberViewController — what belongs to a tab stays in that tab (0.2.
 
       handlers.onPermissionUnreadable('options: required', 'ses-b');
 
-      expect(h.renderers.get(tabB)?.addError).toHaveBeenCalledWith(t().permission.unreadable);
+      expect(h.renderers.get(tabB)?.addError).toHaveBeenCalledWith(t().permission.unreadable, undefined, undefined, 'permission.unreadable');
       expect(h.renderers.get(tabA)?.addError).not.toHaveBeenCalled();
     });
 
@@ -2265,7 +2265,7 @@ describe('CoOberViewController — closed means closed (0.2.6 stage 3)', () => {
 
       await execCall(h).call(h.controller, 'lost turn', [], { addUserMessage: false, saveMessage: false }, rtB);
 
-      expect(h.renderers.get(tabB)?.addError).toHaveBeenCalledWith(t().error.connectionLostMidTurn);
+      expect(h.renderers.get(tabB)?.addError).toHaveBeenCalledWith(t().error.connectionLostMidTurn, undefined, undefined, 'error.connectionLostMidTurn');
     });
   });
 
@@ -2514,7 +2514,7 @@ describe('CoOberViewController — every answer belongs to the tab that asked (0
       const handlers = boundHandlers(client);
       await handlers.onReconnect();
 
-      expect(h.renderers.get(tabB)?.addError).toHaveBeenCalledWith(t().error.reconnected);
+      expect(h.renderers.get(tabB)?.addError).toHaveBeenCalledWith(t().error.reconnected, undefined, undefined, 'error.reconnected');
       expect(h.renderers.get(tabB)?.finalizeCurrentThinking).toHaveBeenCalled();
       expect(h.renderers.get(tabB)?.removeAssistantPlaceholder).toHaveBeenCalled();
       expect(h.renderers.get(tabA)?.addError).not.toHaveBeenCalled();

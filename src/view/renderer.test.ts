@@ -1353,6 +1353,67 @@ describe('ChatRenderer', () => {
     });
   });
 
+  describe('addError locale re-speak', () => {
+    it('re-speaks a token-free notice across a locale switch', () => {
+      // A notice built straight from t() carries the key that drew it, so the
+      // refreshLocale walker relabels it in place instead of leaving it frozen in
+      // the language the error first surfaced in.
+      renderer.addError(t().error.reconnected, undefined, undefined, 'error.reconnected');
+      const textEl = container.querySelector('.co-ober-error-text') as HTMLElement;
+      expect(textEl.dataset.i18nText).toBe('error.reconnected');
+      expect(textEl.textContent).toBe(t().error.reconnected);
+
+      setLocale('zh');
+      const zh = t().error.reconnected;
+      renderer.refreshLocale();
+      expect(textEl.textContent).toBe(zh);
+      setLocale('en');
+    });
+
+    it('leaves a token-bearing notice frozen — untagged, so a repaint cannot reprint its detail', () => {
+      // The same text a humanizeError caller hands over is a one-time diagnosis
+      // of a specific failure; without a key the walker skips it, and it keeps
+      // the words it was drawn with rather than a template's leftover token.
+      renderer.addError('Could not load: socket closed');
+      const textEl = container.querySelector('.co-ober-error-text') as HTMLElement;
+      expect(textEl.dataset.i18nText).toBeUndefined();
+
+      setLocale('zh');
+      renderer.refreshLocale();
+      expect(textEl.textContent).toBe('Could not load: socket closed');
+      setLocale('en');
+    });
+
+    it('re-speaks the action button and restores the live label once its action settles', async () => {
+      let resolveDone = () => {};
+      const done = new Promise<void>((r) => { resolveDone = r; });
+      renderer.addError('boom', t().error.retry, () => done, undefined, 'error.retry');
+      const btn = container.querySelector('.co-ober-error-action') as HTMLButtonElement;
+      expect(btn.dataset.i18nText).toBe('error.retry');
+      expect(btn.textContent).toBe(t().error.retry);
+
+      // Switch language while the settled button is on screen: the fixed UI verb
+      // re-speaks like the rest of the transcript.
+      setLocale('zh');
+      const zhRetry = t().error.retry;
+      renderer.refreshLocale();
+      expect(btn.textContent).toBe(zhRetry);
+
+      // Press it. It disables to '...' for the in-flight action, then must come
+      // back as the label in force NOW — re-assigning the English captured at
+      // draw time would stamp the stale wording straight over the fresh one.
+      btn.click();
+      expect(btn.disabled).toBe(true);
+      expect(btn.textContent).toBe('...');
+      resolveDone();
+      await done;
+      await new Promise((r) => setTimeout(r, 0));
+      expect(btn.disabled).toBe(false);
+      expect(btn.textContent).toBe(zhRetry);
+      setLocale('en');
+    });
+  });
+
   describe('refreshLocale', () => {
     it('relabels the loading placeholder and plan title in the live DOM', () => {
       renderer.addAssistantPlaceholder();
