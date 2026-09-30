@@ -1495,7 +1495,12 @@ describe('CoOberViewController', () => {
       (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
 
       await controller.send('hello', []);
-      expect(deps.renderer.addError).toHaveBeenCalledWith(t().stopReason.refusal);
+      expect(deps.renderer.addError).toHaveBeenCalledWith(
+        t().stopReason.refusal,
+        undefined,
+        undefined,
+        'stopReason.refusal',
+      );
 
       (client.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({ stopReason: 'max_tokens' });
       await controller.send('again', []);
@@ -1526,6 +1531,27 @@ describe('CoOberViewController', () => {
       (client.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({ stopReason: 'cancelled' });
       await controller.send('done', []);
       expect(deps.renderer.addSystemMessage).toHaveBeenCalledTimes(sysCalls);
+    });
+
+    it('hands the refusal badge the key that drew it, so a language switch re-speaks it', async () => {
+      // The refusal line is a token-free t() string that reaches addError on the
+      // error path, so refreshLocale can re-speak it on a locale switch — but
+      // only if the banner carries the key it was drawn from. Without a fourth
+      // argument the notice freezes in whatever language the turn first refused
+      // in, the exact mismatch the connection-loss banner was fixed for.
+      const addError = vi.fn();
+      (deps.renderer as unknown as { addError: ReturnType<typeof vi.fn> }).addError = addError;
+      const client = createMockClient({
+        sendMessage: vi.fn().mockResolvedValue({ stopReason: 'refusal' }),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      await controller.send('hello', []);
+
+      const refusalCall = addError.mock.calls.find(([first]) => first === t().stopReason.refusal);
+      expect(refusalCall).toBeDefined();
+      expect(refusalCall![3]).toBe('stopReason.refusal');
     });
 
     it('stamps the finished turn usage onto the newest unclaimed assistant message', async () => {

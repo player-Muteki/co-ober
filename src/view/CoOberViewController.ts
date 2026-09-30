@@ -2198,13 +2198,18 @@ export class CoOberViewController {
     const reason = response?.stopReason;
     // Lines are also persisted (like the compaction boundary) so the badge
     // survives a reload instead of evaporating with the live DOM.
-    const note = (text: string, asError: boolean): void => {
-      if (asError) rt.renderer.addError(text);
+    const note = (text: string, asError: boolean, textKey?: string): void => {
+      if (asError) rt.renderer.addError(text, undefined, undefined, textKey);
       else rt.renderer.addSystemMessage(text);
       rt.streamCtrl.persistSystemNote(text);
     };
     if (reason === 'refusal') {
-      note(t().stopReason.refusal, true);
+      // The refusal line is a fixed string with no runtime token, so a language
+      // switch can and should re-speak it — hand addError the key that drew it,
+      // the same contract the connection-loss banner rides. Only the error path
+      // has a key slot: the system-note lines below go through addSystemMessage,
+      // which re-spokes nothing, and the unknown badge carries {reason}.
+      note(t().stopReason.refusal, true, 'stopReason.refusal');
     } else if (reason === 'max_tokens') {
       note(t().stopReason.maxTokens, false);
     } else if (reason === 'max_turn_requests') {
