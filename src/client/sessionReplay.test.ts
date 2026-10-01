@@ -108,8 +108,20 @@ describe('SessionReplayCollector compaction boundary', () => {
     const messages = collector.finish();
     expect(messages.map((m) => `${m.role}:${m.content}`)).toEqual([
       'user:question',
-      'assistant:— Context compacted by the agent —',
+      'system:— Context compacted by the agent —',
       'assistant:after compaction',
     ]);
+  });
+
+  it('writes the compaction boundary as a system note, not an agent bubble', () => {
+    // The live path persists the boundary through persistSystemNote (role
+    // 'system'); a replay that filed it as 'assistant' reloaded a statement the
+    // agent never made, and exported it under "Assistant" in the transcript.
+    setLocale('en');
+    const collector = new SessionReplayCollector();
+    collector.handle({ kind: 'compaction' });
+
+    const messages = collector.finish();
+    expect(messages[0]?.role).toBe('system');
   });
 });

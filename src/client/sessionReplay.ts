@@ -10,14 +10,17 @@ export class SessionReplayCollector {
   private readonly order: string[] = [];
   private readonly buckets = new Map<
     string,
-    { role: 'user' | 'assistant'; type: 'text' | 'thinking'; text: string; messageId: string }
+    { role: 'user' | 'assistant' | 'system'; type: 'text' | 'thinking'; text: string; messageId: string }
   >();
 
   handle(update: NormalizedUpdate): void {
     if (update.kind === 'compaction') {
-      // Keep the compaction boundary visible in the replayed transcript.
+      // Keep the compaction boundary visible in the replayed transcript — as a
+      // system note, the role the live path writes it under. Persisting it as
+      // an assistant message reloaded the "— Context compacted by the agent —"
+      // line as a bubble the agent never said, and exported it under "Assistant".
       const key = `compaction|${this.order.length}`;
-      this.buckets.set(key, { role: 'assistant', type: 'text', text: t().stream.compacted, messageId: key });
+      this.buckets.set(key, { role: 'system', type: 'text', text: t().stream.compacted, messageId: key });
       this.order.push(key);
       return;
     }
