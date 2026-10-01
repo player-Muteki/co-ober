@@ -235,9 +235,13 @@ describe('StreamController', () => {
     expect(deps.renderer.addSystemMessage).toHaveBeenCalledTimes(1);
     expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith('[resource content — cannot be shown here]');
     expect(deps.sessionStore.append).toHaveBeenCalledTimes(1);
+    // Persisted as the system note it renders as: the placeholder is the client's
+    // own protocol complaint, not assistant output. saveMessage('assistant', …)
+    // reloaded and exported it under "Assistant", misattributing the line to the
+    // agent; paintTranscript/export branch on role, so it must be 'system'.
     expect(deps.sessionStore.append).toHaveBeenCalledWith(
       'session-1',
-      expect.objectContaining({ role: 'assistant', type: 'text', content: '[resource content — cannot be shown here]' }),
+      expect.objectContaining({ role: 'system', type: 'text', content: '[resource content — cannot be shown here]' }),
     );
     expect(deps.renderer.appendText).not.toHaveBeenCalled();
     expect(deps.renderer.appendThinking).not.toHaveBeenCalled();

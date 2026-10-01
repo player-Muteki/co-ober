@@ -569,7 +569,11 @@ export class StreamController {
     this.unsupportedChunks.add(key);
     const note = t().stream.unsupportedContent.replace('{type}', type);
     this.deps.renderer.addSystemMessage(note);
-    this.saveMessage('assistant', note, 'text');
+    // The placeholder is the client's own protocol complaint, drawn live through
+    // addSystemMessage; persist it as the system note it is, not an assistant
+    // message. paintTranscript and the transcript export branch on role, so the
+    // assistant role reloaded and labelled this line as something the agent said.
+    this.persistSystemNote(note);
   }
 
   /**
