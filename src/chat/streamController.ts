@@ -210,9 +210,18 @@ export class StreamController {
 
         if ((ch.status === 'completed' || ch.status === 'failed') && !this.syncedToolCalls.has(ch.toolCallId)) {
           this.syncedToolCalls.add(ch.toolCallId);
-          const firstContent = ch.contents?.[0];
+          // The tool's human-readable result may sit anywhere in `contents`; the
+          // renderer scans the whole list for text, and a tool that returns an
+          // image, diff or unsupported block before its text leaves the result
+          // in a later slot. Reading only slot 0 turned that real text into '' and
+          // let the sync note fall through to rawOutput or "(no output)" — the
+          // same wrong-source the transcript already refuses to render. Take the
+          // first text block the agent actually sent, exactly as the card shows.
+          const textContent = ch.contents?.find(
+            (item) => item.type === 'content' && item.content?.type === 'text',
+          );
           const contentText =
-            firstContent?.type === 'content' && firstContent.content?.type === 'text' ? firstContent.content.text : '';
+            textContent?.type === 'content' && textContent.content?.type === 'text' ? textContent.content.text : '';
           const ctx: SyncContext = {
             toolCallId: ch.toolCallId,
             toolName: ch.toolName ?? ch.toolKind,

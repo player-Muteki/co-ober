@@ -465,6 +465,41 @@ describe('StreamController', () => {
     expect(deps.onSyncFailure).not.toHaveBeenCalled();
   });
 
+  it('takes the tool text result from whichever slot carries it, not only the first', async () => {
+    // A tool that answers with an image before its text leaves the readable
+    // result in a later content slot. Reading only slot 0 saw the image, passed
+    // content:'' to sync, and the note fell through to rawOutput or "(no output)"
+    // — a wrong source the transcript card itself never shows. The sync context
+    // must carry the first text block the agent actually sent.
+    controller.handleChunk({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'call-text',
+      title: 'Look',
+      toolKind: 'fetch',
+      status: 'pending',
+      rawInput: { url: 'x' },
+      contents: [],
+    });
+
+    controller.handleChunk({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'call-text',
+      title: 'Look',
+      toolKind: 'fetch',
+      status: 'completed',
+      rawInput: { url: 'x' },
+      contents: [
+        { type: 'content', content: { type: 'image', mimeType: 'image/png', data: 'AAAA' } },
+        { type: 'content', content: { type: 'text', text: 'The page says hello' } },
+      ],
+    });
+
+    expect(deps.syncEngine.process).toHaveBeenCalledWith(
+      expect.objectContaining({ content: 'The page says hello' }),
+    );
+    await Promise.resolve();
+  });
+
   it('renders a tool call the agent only reports finished', () => {
     const session: { messages: Array<Record<string, unknown>>; updatedAt: number } = { messages: [], updatedAt: 0 };
     deps.sessionStore.get.mockReturnValue(session);
