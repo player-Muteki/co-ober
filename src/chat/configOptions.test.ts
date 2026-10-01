@@ -36,6 +36,18 @@ describe('projectGenericConfigOptions', () => {
     expect(projected.map((o) => o.id)).toEqual(['persona']);
   });
 
+  it('projects an absent or boolean current value as no choice, not a selected id', () => {
+    // `String(opt.currentValue)` used to turn a toggle's `true` into the value id
+    // "true", and left an omitted current value as "" — both then painted by the
+    // chip as a selection the option list never offered. Routing through
+    // selectValueOf (the same rule the model/effort controls use) projects both
+    // to "" so the surface can honestly say nothing is chosen.
+    const toggled = projectGenericConfigOptions([option({ type: 'boolean', currentValue: true })])[0];
+    expect(toggled.value).toBe('');
+    const omitted = projectGenericConfigOptions([option({ currentValue: '' })])[0];
+    expect(omitted.value).toBe('');
+  });
+
   it('offers no control where there is nothing to choose', () => {
     expect(projectGenericConfigOptions([option({ id: 'window', options: [{ value: 'a', name: 'A' }] })])).toEqual([]);
     expect(projectGenericConfigOptions([option({ id: 'window', options: [] })])).toEqual([]);

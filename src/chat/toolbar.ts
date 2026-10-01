@@ -429,6 +429,12 @@ export class InputToolbar {
   }
 
   private configValueLabel(opt: ExtraConfigOption): string {
+    // Nothing reported as current is not a chosen blank value — an empty string
+    // rendered beside the name would read as a selection. Say "unset", the word
+    // the model and effort selectors already use for the same absence. A
+    // non-empty value the list omits is still named, since the agent really is
+    // running with it.
+    if (opt.value === '') return t().toolbar.unset;
     return opt.values.find((v) => v.value === opt.value)?.label ?? opt.value;
   }
 

@@ -39,7 +39,12 @@ export function projectGenericConfigOptions(options: SessionConfigOption[]): Ext
     .map((opt) => ({
       id: opt.id,
       label: opt.name,
-      value: String(opt.currentValue),
+      // Only a string current value names a selectable id; a boolean or an
+      // absent value has nothing chosen, so it projects to "" (unset) rather
+      // than `String(true)` — the dedicated controls already read it this way
+      // through selectValueOf, and a chip that pasted "true" would claim a
+      // choice the option list never offered.
+      value: selectValueOf(opt) ?? '',
       values: opt.options.map((o) => ({ value: o.value, label: o.name })),
     }));
 }

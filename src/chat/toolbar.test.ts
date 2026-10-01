@@ -768,6 +768,21 @@ describe('InputToolbar generic config chips', () => {
     expect(chip.getAttribute('aria-label')).toBe('Reasoning: Low (click to change)');
   });
 
+  it('says nothing is selected rather than a chosen blank when the agent reports no value', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const toolbar = new InputToolbar(container, {});
+    // A projected option carries "" when the agent offered choices but reported
+    // no current one. Showing "Window: " would read as a selected empty value;
+    // the honest word — the same the model/effort selectors use — is "unset".
+    toolbar.updateExtraConfigs([
+      { id: 'window', label: 'Window', value: '', values: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] },
+    ]);
+    const chip = container.querySelector('.co-ober-config-chip') as HTMLElement;
+    expect(chip.querySelector('.co-ober-config-chip-label')?.textContent).toBe(`Window: ${t().toolbar.unset}`);
+    expect(chip.getAttribute('aria-label')).toBe(t().toolbar.configTitle.replace('{name}', 'Window').replace('{value}', t().toolbar.unset));
+  });
+
   it('reports the choice it is making for the user, and wraps around', () => {
     setLocale('en');
     const container = document.createElement('div') as HTMLDivElement;
