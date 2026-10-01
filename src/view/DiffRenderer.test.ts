@@ -142,6 +142,12 @@ describe('DiffRenderer', () => {
     it('counts an emptying (empty new text) as removals only', () => {
       expect(computeDiffStats('a\nb', '')).toEqual({ added: 0, removed: 2 });
     });
+
+    it('counts a created file that ends in a newline by its real lines', () => {
+      // Every created file ends in a newline. The old split kept the empty
+      // terminator as a third segment, so a two-line file was billed +3.
+      expect(computeDiffStats('', 'a\nb\n')).toEqual({ added: 2, removed: 0 });
+    });
   });
 
   describe('renderDiffStats', () => {
@@ -196,9 +202,30 @@ describe('DiffRenderer', () => {
     });
 
     it('replaces a genuinely empty changed line with a space placeholder', () => {
+      // A blank line in the middle of the body is real content, so it still
+      // needs the visible placeholder. That is different from a trailing
+      // newline, which terminates the last line rather than adding a blank one.
+      expect(parseDiffLines('a', 'a\n\nb')).toEqual([
+        { type: 'equal', text: 'a' },
+        { type: 'insert', text: ' ' },
+        { type: 'insert', text: 'b' },
+      ]);
+    });
+
+    it('does not draw a phantom added row for a trailing newline', () => {
+      // 'x' → 'x\n' adds a terminator, not a new line. The old split left the
+      // empty final segment, so the diff billed a line the file never gained.
       expect(parseDiffLines('x', 'x\n')).toEqual([
         { type: 'equal', text: 'x' },
-        { type: 'insert', text: ' ' },
+      ]);
+    });
+
+    it('renders a created newline-terminated file with no blank insert row', () => {
+      // File creation is the common case and created files end in a newline;
+      // drawing a third blank insert row overstated what the tool added.
+      expect(parseDiffLines('', 'a\nb\n')).toEqual([
+        { type: 'insert', text: 'a' },
+        { type: 'insert', text: 'b' },
       ]);
     });
   });

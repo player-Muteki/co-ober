@@ -137,11 +137,19 @@ export function extractDiffData(
 /**
  * Split text into the lines a diff should see. An empty file carries no lines
  * at all, yet `''.split('\n')` yields `['']` — a single blank — so a creation
- * read as one line deleted and an emptying as one line added. A newline still
- * separates real lines, so only the wholly empty string collapses to nothing.
+ * read as one line deleted and an emptying as one line added. A closing newline
+ * is a terminator, not a further line: `'a\nb\n'.split('\n')` leaves an empty
+ * final segment that is no line either, and counting it drew a phantom "+1" and
+ * a blank added row onto every created file (which ends in a newline) and onto
+ * edits that only add or drop that newline. The repo already pops this ghost
+ * wherever it renders stored lines (renderLinesExpanded, truncateLines); this
+ * is the same drop, so the diff and the line viewers agree on what a line is.
  */
 function splitForDiff(text: string): string[] {
-  return text === '' ? [] : text.split('\n');
+  if (text === '') return [];
+  const lines = text.split('\n');
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+  return lines;
 }
 
 /**
