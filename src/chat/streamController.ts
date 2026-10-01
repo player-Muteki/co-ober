@@ -335,9 +335,13 @@ export class StreamController {
       }
       case 'compaction': {
         // Boundary block: rendered now and persisted so a restored
-        // transcript still shows where the context was compacted.
+        // transcript still shows where the context was compacted. Persist as a
+        // system note, not an assistant message — the live renderer draws this
+        // through addSystemMessage, and paintTranscript/export branch on role,
+        // so writing the assistant role would reload the boundary as an
+        // assistant bubble and label it "Assistant" in the transcript export.
         renderer.addSystemMessage(t().stream.compacted);
-        this.saveMessage('assistant', t().stream.compacted, 'text');
+        this.persistSystemNote(t().stream.compacted);
         break;
       }
     }

@@ -259,9 +259,14 @@ describe('StreamController', () => {
     controller.handleChunk({ kind: 'compaction' });
 
     expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith('— Context compacted by the agent —');
+    // Persisted as a system note, not an assistant message: paintTranscript and
+    // the transcript export both branch on role, so the assistant role would
+    // reload the boundary as an assistant bubble — the opposite of how the live
+    // renderer draws it.
+    expect(deps.sessionStore.getOrCreate).toHaveBeenCalledWith('session-1');
     expect(deps.sessionStore.append).toHaveBeenCalledWith(
       'session-1',
-      expect.objectContaining({ role: 'assistant', type: 'text', content: '— Context compacted by the agent —' }),
+      expect.objectContaining({ role: 'system', type: 'text', content: '— Context compacted by the agent —' }),
     );
   });
 
