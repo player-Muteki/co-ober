@@ -116,17 +116,20 @@ export class SessionDropdown {
 				it.setAttribute('role', 'option');
 				it.setAttribute('aria-selected', String(s.sessionId === currentId));
 				it.createSpan({ text: s.title || s.sessionId, cls: 'session-label' });
-				// Pinning writes to the local store, which only answers for a
-				// conversation it actually holds. When the agent cannot list
-				// sessions, the current one is shown as a placeholder row that may
-				// have no store entry; an enabled pin on such a row promised a
-				// persisting action setPinned would silently refuse.
+				// Pinning and renaming both write to the local store, which only
+				// answers for a conversation it actually holds. When the agent cannot
+				// list sessions, the current one is shown as a placeholder row that may
+				// have no store entry; an enabled control on such a row promised a
+				// persisting action — setPinned, or sessionStore.rename — that would
+				// silently refuse. Neither is an agent capability (rename has no entry
+				// in sessionCapabilities at all), so the gate is store presence, not a
+				// borrowed "agent does not support it" excuse.
 				const pinnable = storeRows.some((row) => row.sessionId === s.sessionId);
 				this.createActionButton(it, 'session-pin', s.pinned ? '★' : '☆', pinnable, !pinnable ? t().sessionDropdown.pinDisabled : s.pinned ? t().sessionDropdown.unpin : t().sessionDropdown.pin, async () => {
 					await this.callbacks.onTogglePin?.(s.sessionId, !(s.pinned === true));
 					this.rerender();
 				});
-				this.createActionButton(it, 'session-rename', '✎', capabilities?.list !== false, capabilities?.list !== false ? t().sessionDropdown.rename : t().sessionDropdown.renameDisabled, async () => {
+				this.createActionButton(it, 'session-rename', '✎', pinnable, pinnable ? t().sessionDropdown.rename : t().sessionDropdown.renameDisabled, async () => {
 					this.startInlineRename(it, s);
 				});
 				this.createActionButton(it, 'session-fork', '⎇', capabilities?.fork === true, capabilities?.fork === true ? t().sessionDropdown.fork : t().sessionDropdown.forkDisabled, async () => {

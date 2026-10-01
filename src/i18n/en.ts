@@ -20,7 +20,7 @@ const en = {
     forkDisabled: 'This session cannot be forked — no fork-capable agent is connected',
     resumeDisabled: 'This session cannot be resumed — no resume-capable agent is connected',
     closeDisabled: 'This session cannot be closed — no close-capable agent is connected',
-    renameDisabled: 'Rename is not supported by this OpenCode agent',
+    renameDisabled: 'This conversation is not saved to history yet, so it cannot be renamed',
     pinDisabled: 'This conversation is not saved to history yet, so it cannot be pinned',
     nativeSection: 'OpenCode sessions',
     loadingNative: 'Loading OpenCode sessions…',

@@ -181,18 +181,33 @@ describe('SessionDropdown', () => {
       expect(resume.getAttribute('title')).toBe('This session cannot be resumed — no resume-capable agent is connected');
     });
 
-    it('names rename unsupported on the disabled pencil instead of offering it', () => {
-      // An agent that cannot list sessions has nothing for the pencil to reach, so
-      // the button is disabled — yet its tooltip still read "Rename session",
-      // promising an action the greyed control could not carry, exactly the claim
-      // the fork and resume buttons already avoid.
-      dropdown = new SessionDropdown(container, anchor, sessionStore as any, () => 'session-1', callbacks as any, () => ({ sessionCapabilities: { list: false } }));
+    it('refuses to rename a placeholder row no saved conversation backs', () => {
+      // Rename is a purely local store write — sessionStore.rename answers false
+      // for an id it does not hold, and there is no rename entry in
+      // sessionCapabilities at all. With listing off the current session may be a
+      // placeholder row that has no store entry, so an enabled pencil here
+      // promised a persisting rename that would silently do nothing. The button
+      // states the store-presence reason rather than borrowing the "agent does
+      // not support rename" excuse — the same invented cause the pin now avoids.
+      dropdown = new SessionDropdown(container, anchor, sessionStore as any, () => 'ghost-session', callbacks as any, () => ({ sessionCapabilities: { list: false } }));
       dropdown.open();
       const item = container.querySelector('.co-ober-session-item') as HTMLElement;
       const rename = item.querySelector('.session-rename') as HTMLButtonElement;
       expect(rename.disabled).toBe(true);
-      expect(rename.getAttribute('title')).toBe('Rename is not supported by this OpenCode agent');
-      expect(rename.getAttribute('aria-label')).toBe('Rename is not supported by this OpenCode agent');
+      expect(rename.getAttribute('title')).toBe('This conversation is not saved to history yet, so it cannot be renamed');
+      expect(rename.getAttribute('aria-label')).toBe('This conversation is not saved to history yet, so it cannot be renamed');
+    });
+
+    it('still offers rename for a real saved conversation while listing is off', () => {
+      // The gate is store membership, not the list capability: this current
+      // session is a stored row, so its pencil stays live even though the agent
+      // cannot enumerate the rest — the same shape the pin button already has.
+      dropdown = new SessionDropdown(container, anchor, sessionStore as any, () => 'session-2', callbacks as any, () => ({ sessionCapabilities: { list: false } }));
+      dropdown.open();
+      const item = container.querySelector('.co-ober-session-item') as HTMLElement;
+      const rename = item.querySelector('.session-rename') as HTMLButtonElement;
+      expect(rename.disabled).toBe(false);
+      expect(rename.getAttribute('title')).toBe('Rename session');
     });
 
     it('refuses to pin a placeholder row no saved conversation backs', () => {
