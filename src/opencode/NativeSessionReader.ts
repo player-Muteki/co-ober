@@ -696,7 +696,15 @@ export async function searchNativeSessions(cwd: string, query: string, deps: Nat
 	const databasePath = resolveOpencodeDatabasePath(env, deps.fs);
 	if (!databasePath) return [];
 	const format = await resolveNativeReadFormat(databasePath, deps);
-	if (!format) return [];
+	if (!format) {
+		// No usable schema means the search could not run, which is a different
+		// answer than "the database has no sessions like this." Returning [] here
+		// let the panel say "no matches" to a question it never asked — the same
+		// swallow this function's own docstring ("a read that could not run
+		// rejects") and the query path below already refuse to make. No v1 query
+		// is attempted, so nothing runs against a database this reader distrusts.
+		throw new Error('native session search unavailable: unrecognized OpenCode database schema');
+	}
 
 	// "The database has no sessions like this" and "the search could not run"
 	// are different answers, and the caller has a line for the second one.

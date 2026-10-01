@@ -708,12 +708,17 @@ describe('native schema probe (v2 defense)', () => {
 		} as const;
 	}
 
-	it('degrades every native read on an incompatible schema without running v1 queries', async () => {
+	it('degrades native reads on an incompatible schema without running v1 queries', async () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 		const { seen, deps } = recordingSqlite({ session_table: 1, session_columns: 2 });
 		const base = { env: { HOME: '/home/u' }, fs: fakeFs };
 		expect(await listNativeSessions('/vault', { ...base, sqlite: deps as never })).toEqual([]);
-		expect(await searchNativeSessions('/vault', 'term', { ...base, sqlite: deps as never })).toEqual([]);
+		// Search is the one read whose caller can hear the difference: a failed
+		// search rejects (and the panel shows "search failed"), rather than the
+		// list and usage reads that degrade to empty/undefined because nothing can
+		// tell a failed lookup from an empty one. An unusable schema means the
+		// search could not run, so it must reject instead of claiming "no matches".
+		await expect(searchNativeSessions('/vault', 'term', { ...base, sqlite: deps as never })).rejects.toThrow(/could not run|unrecognized|unavailable/);
 		expect(await readNativeSessionUsage('ses_a', { ...base, sqlite: deps as never })).toBeUndefined();
 		expect(await readNativeSessionTodos('ses_a', { ...base, sqlite: deps as never })).toBeNull();
 		expect(seen.every((sql) => sql.includes('sqlite_master'))).toBe(true);
