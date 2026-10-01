@@ -116,14 +116,16 @@ export class SessionDropdown {
 				it.setAttribute('role', 'option');
 				it.setAttribute('aria-selected', String(s.sessionId === currentId));
 				it.createSpan({ text: s.title || s.sessionId, cls: 'session-label' });
-				// Pinning and renaming both write to the local store, which only
-				// answers for a conversation it actually holds. When the agent cannot
-				// list sessions, the current one is shown as a placeholder row that may
-				// have no store entry; an enabled control on such a row promised a
-				// persisting action — setPinned, or sessionStore.rename — that would
-				// silently refuse. Neither is an agent capability (rename has no entry
-				// in sessionCapabilities at all), so the gate is store presence, not a
-				// borrowed "agent does not support it" excuse.
+				// Pinning, renaming and deleting all write to the local store, which
+				// only answers for a conversation it actually holds. When the agent
+				// cannot list sessions, the current one is shown as a placeholder row
+				// that may have no store entry; an enabled control on such a row
+				// promised a persisting action — setPinned, sessionStore.rename, or
+				// sessionStore.remove — that would silently do nothing. None of the
+				// three is an agent capability (deleteSession never touches the client
+				// or sessionCapabilities.close — it drops the store row and its tab),
+				// so the gate is store presence, not a borrowed "no close-capable
+				// agent" excuse.
 				const pinnable = storeRows.some((row) => row.sessionId === s.sessionId);
 				this.createActionButton(it, 'session-pin', s.pinned ? '★' : '☆', pinnable, !pinnable ? t().sessionDropdown.pinDisabled : s.pinned ? t().sessionDropdown.unpin : t().sessionDropdown.pin, async () => {
 					await this.callbacks.onTogglePin?.(s.sessionId, !(s.pinned === true));
@@ -138,7 +140,7 @@ export class SessionDropdown {
 				this.createActionButton(it, 'session-resume', '↻', capabilities?.resume === true, capabilities?.resume === true ? t().sessionDropdown.resume : t().sessionDropdown.resumeDisabled, async () => {
 					await this.callbacks.onResume?.(s.sessionId);
 				});
-				this.createDeleteButton(it, s.sessionId, capabilities?.close === true);
+				this.createDeleteButton(it, s.sessionId, pinnable, t().sessionDropdown.deleteDisabled);
 				it.onclick = () => {
 					void this.callbacks.onSwitch(s.sessionId, 'local').catch((e) => this.reportActionError(e));
 				};
@@ -386,14 +388,14 @@ export class SessionDropdown {
 	}
 
 	/** Delete needs a second confirming click; a timeout reverts to the armed-off state. */
-	private createDeleteButton(container: HTMLElement, sessionId: string, enabled: boolean): void {
+	private createDeleteButton(container: HTMLElement, sessionId: string, enabled: boolean, disabledLabel: string): void {
 		const button = container.createEl('button', { text: '×', cls: 'session-delete' });
 		button.setAttribute('aria-label', t().sessionDropdown.delete);
 		if (!enabled) {
 			button.disabled = true;
 			button.addClass('is-disabled');
-			button.setAttribute('title', t().sessionDropdown.closeDisabled);
-			button.setAttribute('aria-label', t().sessionDropdown.closeDisabled);
+			button.setAttribute('title', disabledLabel);
+			button.setAttribute('aria-label', disabledLabel);
 			return;
 		}
 		let confirmTimer: number | null = null;

@@ -97,12 +97,16 @@ describe('SessionDropdown', () => {
       expect(items.length).toBe(0);
     });
 
-    it('disables fork, resume, and close controls when capabilities are missing', () => {
+    it('disables fork and resume when their capabilities are missing, but keeps delete on store presence', () => {
+      // Fork and resume are agent operations and grey out without the capability.
+      // Delete is a pure local store write (deleteSession never reads the client
+      // or sessionCapabilities.close), so a saved row keeps its delete even when
+      // the agent reports no capabilities at all.
       dropdown = new SessionDropdown(container, anchor, sessionStore as any, () => 'session-1', callbacks as any, () => ({ sessionCapabilities: {} }));
       dropdown.open();
       expect((container.querySelector('.session-fork') as HTMLButtonElement).disabled).toBe(true);
       expect((container.querySelector('.session-resume') as HTMLButtonElement).disabled).toBe(true);
-      expect((container.querySelector('.session-delete') as HTMLButtonElement).disabled).toBe(true);
+      expect((container.querySelector('.session-delete') as HTMLButtonElement).disabled).toBe(false);
     });
 
     it('enables only fork when only fork capability is true', () => {
@@ -110,10 +114,10 @@ describe('SessionDropdown', () => {
       dropdown.open();
       expect((container.querySelector('.session-fork') as HTMLButtonElement).disabled).toBe(false);
       expect((container.querySelector('.session-resume') as HTMLButtonElement).disabled).toBe(true);
-      expect((container.querySelector('.session-delete') as HTMLButtonElement).disabled).toBe(true);
+      expect((container.querySelector('.session-delete') as HTMLButtonElement).disabled).toBe(false);
     });
 
-    it('enables resume and close when those capabilities are true', () => {
+    it('enables resume when that capability is true', () => {
       dropdown = new SessionDropdown(container, anchor, sessionStore as any, () => 'session-1', callbacks as any, () => ({ sessionCapabilities: { resume: true, close: true } }));
       dropdown.open();
       expect((container.querySelector('.session-fork') as HTMLButtonElement).disabled).toBe(true);
@@ -158,8 +162,6 @@ describe('SessionDropdown', () => {
       expect(fork.disabled).toBe(true);
       expect(fork.getAttribute('title')).toBe('This session cannot be forked — no fork-capable agent is connected');
       expect(fork.getAttribute('aria-label')).toBe('This session cannot be forked — no fork-capable agent is connected');
-      const del = item.querySelector('.session-delete') as HTMLButtonElement;
-      expect(del.getAttribute('aria-label')).toBe('This session cannot be closed — no close-capable agent is connected');
     });
 
     it('does not blame "this OpenCode agent" when none is connected', () => {
@@ -234,6 +236,36 @@ describe('SessionDropdown', () => {
       const pin = item.querySelector('.session-pin') as HTMLButtonElement;
       expect(pin.disabled).toBe(false);
       expect(pin.getAttribute('title')).toBe('Pin session');
+    });
+
+    it('refuses to delete a placeholder row no saved conversation backs', () => {
+      // Deleting is a purely local store write — sessionStore.remove is a no-op
+      // for an id it does not hold — and deleteSession never touches the client
+      // or sessionCapabilities.close. So the disabled reason on a synthesized
+      // placeholder row is store-presence, matching the rename/pin idiom: the
+      // old "no close-capable agent is connected" tooltip invented an agent
+      // capability the operation does not use, and hid a purely local action
+      // that would succeed even without an agent.
+      dropdown = new SessionDropdown(container, anchor, sessionStore as any, () => 'ghost-session', callbacks as any, () => ({ sessionCapabilities: { list: false, close: true } }));
+      dropdown.open();
+      const item = container.querySelector('.co-ober-session-item') as HTMLElement;
+      const del = item.querySelector('.session-delete') as HTMLButtonElement;
+      expect(del.disabled).toBe(true);
+      expect(del.getAttribute('title')).toBe('This conversation is not saved to history yet, so it cannot be deleted');
+      expect(del.getAttribute('aria-label')).toBe('This conversation is not saved to history yet, so it cannot be deleted');
+    });
+
+    it('still offers delete for a real saved conversation while listing is off', () => {
+      // The gate is store membership, not the close capability: this current
+      // session is a stored row, so its delete stays live even though the agent
+      // cannot enumerate the rest — and the same is true when close is not
+      // advertised at all, because deleteSession does not consult it.
+      dropdown = new SessionDropdown(container, anchor, sessionStore as any, () => 'session-2', callbacks as any, () => ({ sessionCapabilities: { list: false } }));
+      dropdown.open();
+      const item = container.querySelector('.co-ober-session-item') as HTMLElement;
+      const del = item.querySelector('.session-delete') as HTMLButtonElement;
+      expect(del.disabled).toBe(false);
+      expect(del.getAttribute('aria-label')).toBe('Delete session');
     });
 
     it('moves the delete aria-label through confirm and back on timeout', () => {
