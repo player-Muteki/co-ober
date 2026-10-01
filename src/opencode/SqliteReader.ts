@@ -92,7 +92,7 @@ export async function querySqliteJson(
 function requireSqliteModule(): SqliteModule | null {
 	try {
 		// Optional dependency: older Electron runtimes lack node:sqlite.
-		// eslint-disable-next-line @typescript-eslint/no-require-imports
+		// eslint-disable-next-line @typescript-eslint/no-require-imports -- optional native module that older Electron runtimes lack; dynamic require keeps load failures catchable
 		const mod = require('node:sqlite') as SqliteModule | undefined;
 		return mod && typeof mod.DatabaseSync === 'function' ? mod : null;
 	} catch {

@@ -1015,7 +1015,7 @@ export class CoOberView extends ItemView {
       this.imageFileInputEl.type = 'file';
       this.imageFileInputEl.accept = 'image/*';
       this.imageFileInputEl.multiple = true;
-      this.imageFileInputEl.style.display = 'none';
+      this.imageFileInputEl.setCssProps({ display: 'none' });
       doc.body.appendChild(this.imageFileInputEl);
     }
     const input = this.imageFileInputEl;

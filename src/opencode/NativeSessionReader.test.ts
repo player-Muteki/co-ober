@@ -619,7 +619,7 @@ describe('native turn stats', () => {
 describe('v2 SQL against a real SQLite engine', () => {
 	let db: { prepare(sql: string): { all(...params: unknown[]): Record<string, unknown>[]; run(...params: unknown[]): void } } | null = null;
 	try {
-		// eslint-disable-next-line @typescript-eslint/no-require-imports
+		// eslint-disable-next-line @typescript-eslint/no-require-imports -- node:sqlite is only present on newer Node runtimes and this test must degrade cleanly when it is missing
 		const sqlite = require('node:sqlite') as {
 			DatabaseSync: new (path: string) => {
 				prepare(sql: string): { all(...params: unknown[]): Record<string, unknown>[]; run(...params: unknown[]): void };
