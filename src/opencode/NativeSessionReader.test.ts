@@ -144,9 +144,26 @@ describe('listNativeSessions', () => {
 		expect(sessions).toEqual([]);
 	});
 
-	it('degrades to empty list when all SQLite backends fail', async () => {
-		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+	it('still reports a true empty when a readable database holds no sessions', async () => {
+		// The honest half of the fix: rejecting must not turn a genuinely empty
+		// history into "unavailable". A database that opens and answers the v1 probe
+		// but returns zero rows is a settled zero, so the list resolves to [] and
+		// the dropdown's "No sessions found" line stays truthful.
 		const sessions = await listNativeSessions('/vault', {
+			env: { HOME: '/home/u' },
+			fs: fakeFs,
+			sqlite: sqliteBacked([]) as never,
+		});
+		expect(sessions).toEqual([]);
+	});
+
+	it('rejects rather than reporting an empty list when every SQLite backend fails', async () => {
+		// A database that exists but cannot be opened is not "no sessions". The
+		// dropdown's failure row ("Native sessions unavailable") and the empty-state
+		// suppression both hinge on the read rejecting; swallowing the failure into
+		// [] sent "No sessions found" over a lookup that never ran.
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		await expect(listNativeSessions('/vault', {
 			env: { HOME: '/home/u' },
 			fs: fakeFs,
 			sqlite: {
@@ -157,8 +174,7 @@ describe('listNativeSessions', () => {
 				execPath: '',
 				env: {},
 			} as never,
-		});
-		expect(sessions).toEqual([]);
+		})).rejects.toThrow();
 		expect(warn).toHaveBeenCalled();
 		warn.mockRestore();
 	});
@@ -708,16 +724,17 @@ describe('native schema probe (v2 defense)', () => {
 		} as const;
 	}
 
-	it('degrades native reads on an incompatible schema without running v1 queries', async () => {
+	it('degrades usage/todos but rejects list/search on an incompatible schema without running v1 queries', async () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 		const { seen, deps } = recordingSqlite({ session_table: 1, session_columns: 2 });
 		const base = { env: { HOME: '/home/u' }, fs: fakeFs };
-		expect(await listNativeSessions('/vault', { ...base, sqlite: deps as never })).toEqual([]);
-		// Search is the one read whose caller can hear the difference: a failed
-		// search rejects (and the panel shows "search failed"), rather than the
-		// list and usage reads that degrade to empty/undefined because nothing can
-		// tell a failed lookup from an empty one. An unusable schema means the
-		// search could not run, so it must reject instead of claiming "no matches".
+		// The two reads a caller can tell "failed" from "empty" — the list feeds a
+		// dropdown with a dedicated "Native sessions unavailable" row and the search
+		// a "search failed" row — now reject instead of answering a settled zero for
+		// a database whose schema could not be read. Usage and todos keep degrading:
+		// their callers keep the prior value / mark the plan stale and have no such
+		// failure surface to reach.
+		await expect(listNativeSessions('/vault', { ...base, sqlite: deps as never })).rejects.toThrow(/unrecognized|unavailable/);
 		await expect(searchNativeSessions('/vault', 'term', { ...base, sqlite: deps as never })).rejects.toThrow(/could not run|unrecognized|unavailable/);
 		expect(await readNativeSessionUsage('ses_a', { ...base, sqlite: deps as never })).toBeUndefined();
 		expect(await readNativeSessionTodos('ses_a', { ...base, sqlite: deps as never })).toBeNull();
@@ -727,14 +744,17 @@ describe('native schema probe (v2 defense)', () => {
 		warn.mockRestore();
 	});
 
-	it('classifies an unreadable probe as unknown and still degrades gracefully', async () => {
+	it('classifies an unreadable probe as unknown and lets the list query surface the failure', async () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-		const sessions = await listNativeSessions('/vault', {
+		// An unreadable probe is 'unknown' (not 'incompatible'), so the read still
+		// attempts the query — and that query throws. The list now propagates the
+		// failure instead of degrading to [], so the dropdown shows "unavailable"
+		// rather than a false "No sessions found".
+		await expect(listNativeSessions('/vault', {
 			env: { HOME: '/home/u' },
 			fs: fakeFs,
 			sqlite: { requireSqliteModule: () => null, spawn: () => { throw new Error('nope'); }, execPath: '', env: {} } as never,
-		});
-		expect(sessions).toEqual([]);
+		})).rejects.toThrow();
 		expect(warn).toHaveBeenCalled();
 		expect(await probeNativeSchema(dbPath, { sqlite: { requireSqliteModule: () => null, spawn: () => { throw new Error('nope'); }, execPath: '', env: {} } as never })).toBe('unknown');
 		warn.mockRestore();

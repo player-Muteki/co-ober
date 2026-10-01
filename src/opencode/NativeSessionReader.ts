@@ -619,24 +619,27 @@ export async function readNativeToolErrors(sessionId: string, deps: NativeSessio
 
 /**
  * List OpenCode-native sessions for the given working directory via read-only
- * SQLite access. Degrades to an empty list when no database or SQLite runtime
- * is available; never throws.
+ * SQLite access. Returns an empty list when there is no OpenCode database to
+ * read; rejects when a database exists but cannot be opened or its schema is
+ * unrecognized, so the caller reports "unavailable" rather than "no sessions"
+ * for a lookup that never ran.
  */
 export async function listNativeSessions(cwd: string, deps: NativeSessionReaderDeps = {}): Promise<SessionMeta[]> {
 	const env = deps.env ?? process.env;
 	const databasePath = resolveOpencodeDatabasePath(env, deps.fs);
 	if (!databasePath) return [];
 	const format = await resolveNativeReadFormat(databasePath, deps);
-	if (!format) return [];
-
-	let rows: SqliteRow[];
-	try {
-		const sql = format === 'v2' ? buildNativeSessionsSqlV2(cwd) : buildNativeSessionsSql(cwd);
-		rows = await querySqliteJson(databasePath, sql, deps.sqlite);
-	} catch (error) {
-		console.warn('[co-ober] native session listing unavailable:', error);
-		return [];
+	if (!format) {
+		throw new Error('native session listing unavailable: unrecognized OpenCode database schema');
 	}
+	// A read that could not run is not an empty history. The dropdown already
+	// carries a failure path — its `.catch` names the read unavailable and the
+	// empty state suppresses on it — but that path was unreachable because this
+	// function swallowed every failure into []. Returning [] let the panel answer
+	// "No sessions found" to a database it never opened: the same lie the content
+	// search was fixed for, on the list read whose caller can tell the difference.
+	const sql = format === 'v2' ? buildNativeSessionsSqlV2(cwd) : buildNativeSessionsSql(cwd);
+	const rows = await querySqliteJson(databasePath, sql, deps.sqlite);
 
 	const sessions: SessionMeta[] = [];
 	for (const row of rows) {
