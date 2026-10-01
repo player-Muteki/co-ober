@@ -48,6 +48,29 @@ describe('PermissionBanner', () => {
     });
   });
 
+  it('never titles a permission prompt "undefined" for a minimal agent request', () => {
+    setLocale('en');
+    const container = document.createElement('div');
+    const banner = new PermissionBanner(container);
+
+    // The permission schema degrades an absent title to '' and leaves an absent
+    // optional kind as undefined (zToolKind.catch('other') never runs on a
+    // missing optional). The title used to fall back to that raw kind, so the
+    // consent prompt — the whole point of which is to name what it approves —
+    // read literally "Permission: undefined", while the badge two lines up
+    // honestly said "OTHER".
+    banner.show({
+      id: 'minimal',
+      message: 'Proceed?',
+      toolCall: { toolCallId: '1', status: 'pending', rawInput: {}, title: '', locations: [] },
+      options: [{ optionId: 'yes', name: 'Yes', kind: 'allow_once' }],
+    } as any);
+
+    const title = container.querySelector('.perm-title');
+    expect(title?.textContent).not.toContain('undefined');
+    expect(title?.textContent).toBe(t().permission.title.replace('{title}', 'other'));
+  });
+
   it('re-speaks the origin chip in the new language when a visible permission re-renders', () => {
     setLocale('en');
     const container = document.createElement('div');

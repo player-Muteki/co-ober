@@ -168,7 +168,13 @@ export class PermissionBanner {
     banner.createDiv({ cls: 'perm-kind', text: (lookupLocaleString(`toolKind.${kind}`) ?? kind).toUpperCase() });
 
     // Title
-    const title = req.toolCall.title || req.toolCall.kind;
+    // A minimal ACP request may carry neither a title nor a kind: the schema
+    // degrades an absent title to '' and leaves an absent optional kind as
+    // undefined, so `title || kind` resolved to undefined and the consent prompt
+    // asked the user to approve a tool literally named "Permission: undefined".
+    // The badge above already names the kind honestly; fall back to that same
+    // resolved kind, never to the raw undefined.
+    const title = req.toolCall.title || kind;
     banner.createDiv({ cls: 'perm-title', text: t().permission.title.replace('{title}', title) });
 
     // Locations
