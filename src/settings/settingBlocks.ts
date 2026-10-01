@@ -138,7 +138,8 @@ export function addCommonModelToggle(containerEl: HTMLElement, model: ModelOptio
 export function addMcpServerBlock(containerEl: HTMLElement, server: McpServerConfig, settings: CoOberSettings, save: () => Promise<void>, render: () => void, mcpCapabilities: AgentCapabilities['mcpCapabilities']): void {
     const labels = locale().settings.mcp;
     const block = containerEl.createDiv({ cls: 'co-ober-mcp-server' });
-    block.createEl('strong', { text: labels.label.replace('{name}', server.name || labels.unnamed) });
+    const heading = block.createEl('strong', { text: labels.label.replace('{name}', server.name || labels.unnamed) });
+    const paintHeading = () => heading.setText(labels.label.replace('{name}', server.name || labels.unnamed));
 
     new Setting(block)
       .setName(labels.enabled)
@@ -149,7 +150,7 @@ export function addMcpServerBlock(containerEl: HTMLElement, server: McpServerCon
       .setName(labels.name)
       .setDesc(labels.nameDesc)
       .addText((text) => text.setValue(server.name)
-        .onChange(async (value) => { server.name = value.trim(); await save(); }));
+        .onChange(async (value) => { server.name = value.trim(); await save(); paintHeading(); }));
 
     const currentType = server.type ?? 'stdio';
 
@@ -320,7 +321,8 @@ export function addMcpServerBlock(containerEl: HTMLElement, server: McpServerCon
 export function addSyncRuleBlock(containerEl: HTMLElement, rule: SyncRule, settings: CoOberSettings, save: () => Promise<void>, render: () => void): void {
     const labels = locale().settings.sync;
     const block = containerEl.createDiv({ cls: 'co-ober-sync-rule' });
-    block.createEl('strong', { text: labels.label.replace('{tool}', rule.toolName) });
+    const heading = block.createEl('strong', { text: labels.label.replace('{tool}', rule.toolName) });
+    const paintHeading = () => heading.setText(labels.label.replace('{tool}', rule.toolName));
 
     new Setting(block)
       .setName(labels.tool)
@@ -335,7 +337,7 @@ export function addSyncRuleBlock(containerEl: HTMLElement, rule: SyncRule, setti
         all: '*',
       })
         .setValue(rule.toolName)
-        .onChange(async (v) => { rule.toolName = v; await save(); }));
+        .onChange(async (v) => { rule.toolName = v; await save(); paintHeading(); }));
 
     new Setting(block)
       .setName(labels.folder)

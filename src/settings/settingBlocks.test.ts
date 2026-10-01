@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi } from 'vitest';
 import { installObsidianDomHelpers } from '../test/domHelpers';
-import { addCustomAgentBlock, addCustomSkillBlock, addMcpServerBlock, nextRuleId } from './settingBlocks';
+import { addCustomAgentBlock, addCustomSkillBlock, addMcpServerBlock, addSyncRuleBlock, nextRuleId } from './settingBlocks';
 import { t } from '../i18n';
-import type { CoOberSettings, CustomAgentDefinition, CustomSkillDefinition, McpServerConfig } from '../types';
+import type { CoOberSettings, CustomAgentDefinition, CustomSkillDefinition, McpServerConfig, SyncRule } from '../types';
 
 installObsidianDomHelpers();
 
@@ -156,5 +156,49 @@ describe('custom skill header tracks the name and id edits (0.2.35 stage 3)', ()
     });
     await edit(textFields(container)[0], 'skill-2');
     expect(header(container).textContent).toBe(t().settings.customSkills.label.replace('{name}', 'skill-2'));
+  });
+});
+
+describe('MCP server header tracks the name edit (0.2.39 stage 2)', () => {
+  function mcpServer(name: string): McpServerConfig {
+    return { type: 'stdio', id: 's1', enabled: true, name, command: 'npx', args: [], env: [] } as McpServerConfig;
+  }
+
+  it('renames the header when the name field changes', async () => {
+    const server = mcpServer('demo');
+    const settings = { mcpServers: [server] } as unknown as CoOberSettings;
+    const container = document.createElement('div');
+    addMcpServerBlock(container, server, settings, vi.fn(async () => {}), vi.fn(), { http: false, sse: false });
+    expect(header(container).textContent).toBe(t().settings.mcp.label.replace('{name}', 'demo'));
+    // The row only repaints on a type change or delete; a name keystroke saved the
+    // new value into the config but left the bold header naming the old server.
+    await edit(textFields(container)[0], 'search');
+    expect(header(container).textContent).toBe(t().settings.mcp.label.replace('{name}', 'search'));
+  });
+
+  it('names an unnamed server in the header the moment it is given one', async () => {
+    const server = mcpServer('');
+    const settings = { mcpServers: [server] } as unknown as CoOberSettings;
+    const container = document.createElement('div');
+    addMcpServerBlock(container, server, settings, vi.fn(async () => {}), vi.fn(), { http: false, sse: false });
+    expect(header(container).textContent).toBe(t().settings.mcp.label.replace('{name}', t().settings.mcp.unnamed));
+    await edit(textFields(container)[0], 'weather');
+    expect(header(container).textContent).toBe(t().settings.mcp.label.replace('{name}', 'weather'));
+  });
+});
+
+describe('sync rule header tracks the tool change (0.2.39 stage 2)', () => {
+  it('renames the header when the rule tool changes', async () => {
+    const rule = { id: 'r1', toolName: 'read', folder: '', filenameTemplate: '' } as unknown as SyncRule;
+    const settings = { syncRules: [rule] } as unknown as CoOberSettings;
+    const container = document.createElement('div');
+    addSyncRuleBlock(container, rule, settings, vi.fn(async () => {}), vi.fn());
+    expect(header(container).textContent).toBe(t().settings.sync.label.replace('{tool}', 'read'));
+    const select = container.querySelector('select');
+    if (!select) throw new Error('tool dropdown did not render');
+    select.value = 'write';
+    select.dispatchEvent(new Event('change'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(header(container).textContent).toBe(t().settings.sync.label.replace('{tool}', 'write'));
   });
 });
