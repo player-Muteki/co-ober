@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi } from 'vitest';
 import { installObsidianDomHelpers } from '../test/domHelpers';
-import { addMcpServerBlock, nextRuleId } from './settingBlocks';
-import type { CoOberSettings, McpServerConfig } from '../types';
+import { addCustomAgentBlock, addCustomSkillBlock, addMcpServerBlock, nextRuleId } from './settingBlocks';
+import { t } from '../i18n';
+import type { CoOberSettings, CustomAgentDefinition, CustomSkillDefinition, McpServerConfig } from '../types';
 
 installObsidianDomHelpers();
 
@@ -74,5 +75,86 @@ describe('nextRuleId avoids an id already in use (0.2.7 stage 3)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// The block header names the agent/skill, but the id and name edits write the
+// new value straight into the definition and the save without ever repainting
+// the <strong> — so a reader who renamed a row kept looking at the old title
+// under the fields they had just changed. These tests drive the real text
+// inputs and assert the header follows them.
+function textFields(container: HTMLElement): HTMLInputElement[] {
+  return Array.from(container.querySelectorAll('input')).filter((el) => el.type !== 'checkbox');
+}
+
+function header(container: HTMLElement): HTMLElement {
+  const el = container.querySelector('strong');
+  if (!el) throw new Error('block header did not render');
+  return el as HTMLElement;
+}
+
+async function edit(input: HTMLInputElement, value: string): Promise<void> {
+  input.value = value;
+  input.dispatchEvent(new Event('change'));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+describe('custom agent header tracks the name and id edits (0.2.35 stage 3)', () => {
+  function makeAgent(): CustomAgentDefinition {
+    return { id: 'agent-1', enabled: false, name: '', description: '', instructions: '', skillIds: [] };
+  }
+
+  it('renames the header when the name field changes', async () => {
+    const agent = makeAgent();
+    const container = document.createElement('div');
+    addCustomAgentBlock(container, agent, { customAgents: [agent] } as unknown as CoOberSettings, vi.fn(async () => {}), vi.fn(), () => true);
+    expect(header(container).textContent).toBe(t().settings.customAgents.label.replace('{name}', 'agent-1'));
+    await edit(textFields(container)[1], 'Reviewer');
+    expect(header(container).textContent).toBe(t().settings.customAgents.label.replace('{name}', 'Reviewer'));
+  });
+
+  it('renames the header after a successful id edit', async () => {
+    const agent = makeAgent();
+    const container = document.createElement('div');
+    addCustomAgentBlock(container, agent, { customAgents: [agent] } as unknown as CoOberSettings, vi.fn(async () => {}), vi.fn(), (cur, next) => {
+      agent.id = next;
+      return cur === 'agent-1';
+    });
+    await edit(textFields(container)[0], 'agent-2');
+    expect(header(container).textContent).toBe(t().settings.customAgents.label.replace('{name}', 'agent-2'));
+  });
+
+  it('keeps the header on a rejected id edit', async () => {
+    const agent = makeAgent();
+    const container = document.createElement('div');
+    addCustomAgentBlock(container, agent, { customAgents: [agent] } as unknown as CoOberSettings, vi.fn(async () => {}), vi.fn(), () => false);
+    await edit(textFields(container)[0], 'taken');
+    expect(header(container).textContent).toBe(t().settings.customAgents.label.replace('{name}', 'agent-1'));
+  });
+});
+
+describe('custom skill header tracks the name and id edits (0.2.35 stage 3)', () => {
+  function makeSkill(): CustomSkillDefinition {
+    return { id: 'skill-1', enabled: false, name: '', description: '', instructions: '' };
+  }
+
+  it('renames the header when the name field changes', async () => {
+    const skill = makeSkill();
+    const container = document.createElement('div');
+    addCustomSkillBlock(container, skill, { customSkills: [skill] } as unknown as CoOberSettings, vi.fn(async () => {}), vi.fn(), () => true);
+    expect(header(container).textContent).toBe(t().settings.customSkills.label.replace('{name}', 'skill-1'));
+    await edit(textFields(container)[1], 'Outline');
+    expect(header(container).textContent).toBe(t().settings.customSkills.label.replace('{name}', 'Outline'));
+  });
+
+  it('renames the header after a successful id edit', async () => {
+    const skill = makeSkill();
+    const container = document.createElement('div');
+    addCustomSkillBlock(container, skill, { customSkills: [skill] } as unknown as CoOberSettings, vi.fn(async () => {}), vi.fn(), (cur, next) => {
+      skill.id = next;
+      return cur === 'skill-1';
+    });
+    await edit(textFields(container)[0], 'skill-2');
+    expect(header(container).textContent).toBe(t().settings.customSkills.label.replace('{name}', 'skill-2'));
   });
 });

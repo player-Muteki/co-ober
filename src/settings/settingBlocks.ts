@@ -7,7 +7,8 @@ import { t as locale } from '../i18n/index';
 export function addCustomAgentBlock(containerEl: HTMLElement, agent: CustomAgentDefinition, settings: CoOberSettings, save: () => Promise<void>, render: () => void, renameCustomAgent: (currentId: string, nextId: string) => boolean): void {
     const labels = locale().settings.customAgents;
     const block = containerEl.createDiv({ cls: 'co-ober-custom-agent' });
-    block.createEl('strong', { text: labels.label.replace('{name}', agent.name || agent.id) });
+    const heading = block.createEl('strong', { text: labels.label.replace('{name}', agent.name || agent.id) });
+    const paintHeading = () => heading.setText(labels.label.replace('{name}', agent.name || agent.id));
 
     new Setting(block)
       .setName(labels.enabled)
@@ -25,12 +26,13 @@ export function addCustomAgentBlock(containerEl: HTMLElement, agent: CustomAgent
             return;
           }
           await save();
+          paintHeading();
         }));
 
     new Setting(block)
       .setName(labels.name)
       .addText((text) => text.setValue(agent.name)
-        .onChange(async (value) => { agent.name = value.trim(); await save(); }));
+        .onChange(async (value) => { agent.name = value.trim(); await save(); paintHeading(); }));
 
     new Setting(block)
       .setName(labels.description)
@@ -67,7 +69,8 @@ export function addCustomAgentBlock(containerEl: HTMLElement, agent: CustomAgent
 export function addCustomSkillBlock(containerEl: HTMLElement, skill: CustomSkillDefinition, settings: CoOberSettings, save: () => Promise<void>, render: () => void, renameCustomSkill: (currentId: string, nextId: string) => boolean): void {
     const labels = locale().settings.customSkills;
     const block = containerEl.createDiv({ cls: 'co-ober-custom-skill' });
-    block.createEl('strong', { text: labels.label.replace('{name}', skill.name || skill.id) });
+    const heading = block.createEl('strong', { text: labels.label.replace('{name}', skill.name || skill.id) });
+    const paintHeading = () => heading.setText(labels.label.replace('{name}', skill.name || skill.id));
 
     new Setting(block)
       .setName(labels.enabled)
@@ -85,12 +88,13 @@ export function addCustomSkillBlock(containerEl: HTMLElement, skill: CustomSkill
             return;
           }
           await save();
+          paintHeading();
         }));
 
     new Setting(block)
       .setName(labels.name)
       .addText((text) => text.setValue(skill.name)
-        .onChange(async (value) => { skill.name = value.trim(); await save(); }));
+        .onChange(async (value) => { skill.name = value.trim(); await save(); paintHeading(); }));
 
     new Setting(block)
       .setName(labels.description)
