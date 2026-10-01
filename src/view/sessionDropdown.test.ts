@@ -689,6 +689,21 @@ describe('SessionDropdown', () => {
       dd.destroy();
     });
 
+    it('does not answer a failed native load with "No sessions found"', async () => {
+      // The error row already declared the lookup could not run; printing
+      // "No sessions found" underneath it answered a question the same panel
+      // had just said it could not ask.
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      sessionStore.list.mockReturnValue([]);
+      const dd = makeDropdown(() => Promise.reject(new Error('no sqlite')));
+      dd.open();
+      await new Promise((r) => setTimeout(r, 10));
+      expect(container.querySelector('.co-ober-session-native-error')).not.toBeNull();
+      expect(container.querySelector('.co-ober-session-empty')).toBeNull();
+      errSpy.mockRestore();
+      dd.destroy();
+    });
+
     it('re-shows the error row on the next open, since the failure persists', async () => {
       const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       const dd = makeDropdown(() => Promise.reject(new Error('no sqlite')));
@@ -810,6 +825,9 @@ describe('SessionDropdown', () => {
       // used to answer a broken database with silence.
       expect(container.querySelector('.co-ober-session-content-section')).toBeNull();
       expect(container.querySelector('.co-ober-session-native-error')?.textContent).toContain('Content search failed');
+      // And the whole-panel empty line must not stand next to that failure and
+      // claim the lookup finished empty.
+      expect(container.querySelector('.co-ober-session-empty')).toBeNull();
       warn.mockRestore();
       dd.destroy();
     });

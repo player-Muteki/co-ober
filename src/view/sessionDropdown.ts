@@ -157,11 +157,25 @@ export class SessionDropdown {
 			// print "No sessions found" over a result set that had not arrived yet.
 			// nativeLoadedOnce flips only when that fetch settles, so it is the
 			// honest signal for "still pending".
+			//
+			// A settled-but-failed lookup is the same lie from the other side: the
+			// native and content sections print their own "unavailable" / "search
+			// failed" line above and return zero rows, and "No sessions found" then
+			// answered the question those lines just declared unanswerable. Both
+			// fields exist on the class already, so the same guard suppresses.
 			const wasLoadingNative = this.nativeLoading;
 			const nativePending = !!this.loadNativeSessions && !this.nativeLoadedOnce;
 			const nativeRows = this.renderNativeSection(itemsContainer, currentId, filter);
 			const contentRows = this.renderContentSection(itemsContainer, currentId, filter);
-			if (filtered.length === 0 && nativeRows === 0 && contentRows === 0 && !wasLoadingNative && !nativePending) {
+			if (
+				filtered.length === 0 &&
+				nativeRows === 0 &&
+				contentRows === 0 &&
+				!wasLoadingNative &&
+				!nativePending &&
+				!this.nativeLoadError &&
+				!this.contentSearchFailed
+			) {
 				itemsContainer.createDiv({
 					cls: 'co-ober-session-empty',
 					text: t().session.empty,
