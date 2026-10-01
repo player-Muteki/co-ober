@@ -89,6 +89,12 @@ export function addCustomSkillBlock(containerEl: HTMLElement, skill: CustomSkill
           }
           await save();
           paintHeading();
+          // The rename rewrites every agent's `skillIds`, but those rows were
+          // painted from the old id and repaint only on their own edits. Without
+          // a full repaint they keep showing the just-retired id — a reference
+          // nothing resolves to — while the settings already hold the new one.
+          // The delete handler repaints for the same reason; this is its twin.
+          render();
         }));
 
     new Setting(block)

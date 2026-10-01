@@ -159,6 +159,60 @@ describe('custom skill header tracks the name and id edits (0.2.35 stage 3)', ()
   });
 });
 
+// Renaming a skill rewrites every agent's `skillIds`, but the sibling agent rows
+// only repaint on their own edits — so the box that displayed the old id kept
+// showing a reference the settings no longer held. These tests co-render an
+// agent and a skill in one container and drive the skill's id field.
+describe('renaming a skill repaints the agents that reference it (0.2.40 stage 1)', () => {
+  function makeSkill(id: string): CustomSkillDefinition {
+    return { id, enabled: false, name: '', description: '', instructions: '' };
+  }
+  function makeAgent(skillIds: string[]): CustomAgentDefinition {
+    return { id: 'agent-1', enabled: false, name: '', description: '', instructions: '', skillIds };
+  }
+
+  function mount(skill: CustomSkillDefinition, agent: CustomAgentDefinition, rename: (cur: string, next: string) => boolean): { container: HTMLElement; render: () => void } {
+    const settings = { customSkills: [skill], customAgents: [agent] } as unknown as CoOberSettings;
+    const container = document.createElement('div');
+    const save = vi.fn(async () => {});
+    const render = (): void => {
+      while (container.firstChild) container.removeChild(container.firstChild);
+      addCustomAgentBlock(container, agent, settings, save, render, rename);
+      addCustomSkillBlock(container, skill, settings, save, render, rename);
+    };
+    render();
+    return { container, render };
+  }
+
+  it('follows the rename into a sibling agent Skill IDs box', async () => {
+    const skill = makeSkill('skill-1');
+    const agent = makeAgent(['skill-1']);
+    const rename = (cur: string, next: string): boolean => {
+      if (cur !== 'skill-1' || next !== 'skill-2') return false;
+      skill.id = next;
+      agent.skillIds = agent.skillIds.map((id) => (id === cur ? next : id));
+      return true;
+    };
+    const { container } = mount(skill, agent, rename);
+    // Agent block inputs: id(0) name(1) description(2) skillIds(3); skill id(4).
+    expect(textFields(container)[3].value).toBe('skill-1');
+
+    await edit(textFields(container)[4], 'skill-2');
+
+    const after = textFields(container);
+    expect(after[3].value).toBe('skill-2');
+    expect(after[4].value).toBe('skill-2');
+  });
+
+  it('leaves the sibling box untouched when the rename is rejected', async () => {
+    const skill = makeSkill('skill-1');
+    const agent = makeAgent(['skill-1']);
+    const { container } = mount(skill, agent, () => false);
+    await edit(textFields(container)[4], 'taken');
+    expect(textFields(container)[3].value).toBe('skill-1');
+  });
+});
+
 describe('MCP server header tracks the name edit (0.2.39 stage 2)', () => {
   function mcpServer(name: string): McpServerConfig {
     return { type: 'stdio', id: 's1', enabled: true, name, command: 'npx', args: [], env: [] } as McpServerConfig;
