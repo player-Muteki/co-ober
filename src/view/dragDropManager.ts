@@ -36,8 +36,20 @@ export class DragDropManager {
 
 	setup(): void {
 		this.dragOverHandler = (e: DragEvent) => {
+			// The overlay reads "Drop to attach" and the copy cursor promises the
+			// drop will be taken, but the drop handler only ever reads
+			// dataTransfer.files — a text or link drag flashed the promise and then
+			// silently did nothing, with no refusal line like the file branches
+			// give. Gate the whole affordance on a drag that actually carries
+			// files, so the zone stops offering what it cannot take.
+			const dt = e.dataTransfer;
+			if (!dt || !Array.from(dt.types).includes('Files')) {
+				if (dt) dt.dropEffect = 'none';
+				this.hideDragOverlay();
+				return;
+			}
 			e.preventDefault();
-			e.dataTransfer!.dropEffect = 'copy';
+			dt.dropEffect = 'copy';
 			this.showDragOverlay();
 		};
 		this.dropZoneEl.addEventListener('dragover', this.dragOverHandler);

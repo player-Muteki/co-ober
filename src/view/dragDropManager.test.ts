@@ -78,11 +78,17 @@ describe('DragDropManager', () => {
   });
 
   describe('drag overlay', () => {
+    // Only a drag that carries files is attachable, so the overlay (which reads
+    // "Drop to attach") and the copy cursor now appear for file drags alone.
+    function fileDrag() {
+      const event = new DragEvent('dragover', { bubbles: true });
+      Object.defineProperty(event, 'dataTransfer', { value: { dropEffect: '', types: ['Files'] } });
+      return event;
+    }
+
     it('shows overlay on dragover', () => {
       manager.setup();
-      const event = new DragEvent('dragover', { bubbles: true });
-      Object.defineProperty(event, 'dataTransfer', { value: { dropEffect: '' } });
-      dropZone.dispatchEvent(event);
+      dropZone.dispatchEvent(fileDrag());
 
       const overlay = overlayContainer.querySelector('.co-ober-drag-overlay');
       expect(overlay).not.toBeNull();
@@ -90,10 +96,8 @@ describe('DragDropManager', () => {
 
     it('does not create multiple overlays', () => {
       manager.setup();
-      const event = new DragEvent('dragover', { bubbles: true });
-      Object.defineProperty(event, 'dataTransfer', { value: { dropEffect: '' } });
-      dropZone.dispatchEvent(event);
-      dropZone.dispatchEvent(event);
+      dropZone.dispatchEvent(fileDrag());
+      dropZone.dispatchEvent(fileDrag());
 
       const overlays = overlayContainer.querySelectorAll('.co-ober-drag-overlay');
       expect(overlays.length).toBe(1);
@@ -101,9 +105,7 @@ describe('DragDropManager', () => {
 
     it('hides overlay on dragleave when leaving dropZone', () => {
       manager.setup();
-      const dragoverEvent = new DragEvent('dragover', { bubbles: true });
-      Object.defineProperty(dragoverEvent, 'dataTransfer', { value: { dropEffect: '' } });
-      dropZone.dispatchEvent(dragoverEvent);
+      dropZone.dispatchEvent(fileDrag());
 
       const leaveEvent = new DragEvent('dragleave', { bubbles: true });
       Object.defineProperty(leaveEvent, 'relatedTarget', { value: document.body });
@@ -118,9 +120,7 @@ describe('DragDropManager', () => {
       const child = document.createElement('div');
       dropZone.appendChild(child);
 
-      const dragoverEvent = new DragEvent('dragover', { bubbles: true });
-      Object.defineProperty(dragoverEvent, 'dataTransfer', { value: { dropEffect: '' } });
-      dropZone.dispatchEvent(dragoverEvent);
+      dropZone.dispatchEvent(fileDrag());
 
       const leaveEvent = new DragEvent('dragleave', { bubbles: true });
       Object.defineProperty(leaveEvent, 'relatedTarget', { value: child });
@@ -128,6 +128,18 @@ describe('DragDropManager', () => {
 
       const overlay = overlayContainer.querySelector('.co-ober-drag-overlay');
       expect(overlay).not.toBeNull();
+    });
+
+    it('does not promise "Drop to attach" for a text drag', () => {
+      // The drop handler reads only dataTransfer.files, so a text drag that got
+      // the overlay was shown a promise the drop would then silently drop.
+      manager.setup();
+      const event = new DragEvent('dragover', { bubbles: true });
+      Object.defineProperty(event, 'dataTransfer', { value: { dropEffect: '', types: ['text/plain'] } });
+      dropZone.dispatchEvent(event);
+
+      expect(overlayContainer.querySelector('.co-ober-drag-overlay')).toBeNull();
+      expect(event.dataTransfer?.dropEffect).toBe('none');
     });
   });
 
@@ -472,7 +484,7 @@ describe('DragDropManager', () => {
     function showOverlay() {
       manager.setup();
       const event = new DragEvent('dragover', { bubbles: true });
-      Object.defineProperty(event, 'dataTransfer', { value: { dropEffect: '' } });
+      Object.defineProperty(event, 'dataTransfer', { value: { dropEffect: '', types: ['Files'] } });
       dropZone.dispatchEvent(event);
       return overlayContainer.querySelector('.co-ober-drag-overlay div') as HTMLDivElement;
     }
