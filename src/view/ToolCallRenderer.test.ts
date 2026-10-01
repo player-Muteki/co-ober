@@ -443,6 +443,29 @@ describe('ToolCallRenderer', () => {
       expect(truncEl.dataset.count).toBe('5');
     });
 
+    it('tags the default tool-body truncation line so it re-speaks with the locale (0.2.40 stage 3)', () => {
+      // A kind with no dedicated renderer falls to the plain-text body, whose
+      // "... N more lines" was baked into the block's textContent — so it stayed
+      // in the language the card first drew in while every sibling label switched.
+      const state = createToolCallElement(container, 'tc', 'custom_tool', 'Custom');
+      updateToolCallElement(state, 'completed', 'custom_tool', undefined, [textItem(makeLines(25))]);
+      const truncEl = state.body.querySelector('.co-ober-tool-truncated') as HTMLElement;
+      expect(truncEl).not.toBeNull();
+      expect(truncEl.textContent).toBe('... 5 more lines');
+      expect(truncEl.dataset.i18nCount).toBe('tool.moreLines');
+      expect(truncEl.dataset.count).toBe('5');
+    });
+
+    it('tags the bash stderr truncation line as well (0.2.40 stage 3)', () => {
+      const state = createToolCallElement(container, 'tc', 'bash', 'Run');
+      updateToolCallElement(state, 'completed', 'bash', { error: makeLines(15) }, [textItem('ok')]);
+      const truncEl = state.body.querySelector('.co-ober-tool-truncated') as HTMLElement;
+      expect(truncEl).not.toBeNull();
+      expect(truncEl.textContent).toBe('... 5 more lines');
+      expect(truncEl.dataset.i18nCount).toBe('tool.moreLines');
+      expect(truncEl.dataset.count).toBe('5');
+    });
+
     it('renders the source URL for fetch results', () => {
       const state = createToolCallElement(container, 'tc', 'fetch', 'Fetch');
       updateToolCallElement(state, 'completed', 'fetch', { url: 'https://example.com/page' }, [textItem('body')]);

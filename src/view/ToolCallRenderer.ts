@@ -475,11 +475,11 @@ function renderToolBodyContent(
       // hiding the other loses half of what the tool returned. The JSON dump
       // stays a last resort, so it does not crowd out a drawn result.
       if (text) {
-        body.createDiv({ text: renderTruncatedText(text, 20) });
+        renderTruncatedInto(body, text, 20);
       } else if (rawOutput && !emptyStateShown) {
         const json = JSON.stringify(rawOutput, null, 2);
         if (json !== '{}' && json !== 'undefined') {
-          body.createDiv({ text: renderTruncatedText(json, 20) });
+          renderTruncatedInto(body, json, 20);
         }
       }
       break;
@@ -532,10 +532,7 @@ function renderBashExpanded(container: HTMLElement, text: string, rawOutput?: Re
     }
     const error = rawOutput.error as string | undefined;
     if (error) {
-      container.createDiv({
-        cls: 'co-ober-tool-stderr',
-        text: renderTruncatedText(error, 10),
-      });
+      renderTruncatedInto(container, error, 10, 'co-ober-tool-stderr');
     }
   }
 
@@ -659,7 +656,7 @@ function renderApplyPatchExpanded(
     } else if (rawOutput) {
       const json = JSON.stringify(rawOutput, null, 2);
       if (json !== '{}' && json !== 'undefined') {
-        container.createDiv({ text: renderTruncatedText(json, 20) });
+        renderTruncatedInto(container, json, 20);
       }
     } else {
       const emptyEl = container.createDiv({ cls: 'co-ober-tool-empty', text: t().tool.noResult });
@@ -773,19 +770,44 @@ export function renderLinesExpanded(container: HTMLElement, result: string, maxL
 }
 
 /**
+ * Split text into the lines that stay visible and the count hidden past
+ * `maxLines`, dropping the phantom blank a trailing newline leaves so a wrapped
+ * output does not claim a line nobody had to scroll for. The same ghost
+ * renderLinesExpanded filters out is filtered out here too.
+ */
+function truncateParts(text: string, maxLines: number): { body: string; extra: number | null } {
+  const lines = text.split(/\r?\n/);
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+  if (lines.length <= maxLines) return { body: text, extra: null };
+  return { body: lines.slice(0, maxLines).join('\n'), extra: lines.length - maxLines };
+}
+
+/**
  * Truncate text to a maximum number of lines, appending "X more lines".
  */
 export function renderTruncatedText(text: string, maxLines: number): string {
-  const lines = text.split(/\r?\n/);
-  // A trailing newline terminates the final line rather than opening a blank
-  // one, so drop the single empty segment it leaves. Left in, a wrapped output
-  // claimed a line nobody had to scroll for — and one that filled exactly
-  // `maxLines` before its closing newline was cut short with "... 1 more
-  // lines" over text the reader could already see whole. The same ghost
-  // renderLinesExpanded filters out.
-  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
-  if (lines.length <= maxLines) return text;
-  return lines.slice(0, maxLines).join('\n') + `\n${t().tool.moreLines.replace('{count}', String(lines.length - maxLines))}`;
+  const { body, extra } = truncateParts(text, maxLines);
+  if (extra === null) return body;
+  return `${body}\n${t().tool.moreLines.replace('{count}', String(extra))}`;
+}
+
+/**
+ * Truncate text into a container, rendering the "X more lines" tail as its own
+ * element tagged with `data-i18n-count` — the contract renderLinesExpanded and
+ * renderSearchExpanded already honor — so the renderer's refreshLocale re-speaks
+ * it when the locale changes. The string form above bakes that tail into the
+ * block's textContent, which froze the count line in whichever language first
+ * drew the card while every other label switched with it.
+ */
+function renderTruncatedInto(container: HTMLElement, text: string, maxLines: number, cls?: string): void {
+  const { body, extra } = truncateParts(text, maxLines);
+  const el = container.createDiv({ cls, text: body });
+  if (extra !== null) {
+    const n = String(extra);
+    const truncEl = el.createDiv({ cls: 'co-ober-tool-truncated', text: t().tool.moreLines.replace('{count}', n) });
+    truncEl.dataset.i18nCount = 'tool.moreLines';
+    truncEl.dataset.count = n;
+  }
 }
 
 // ---- Internal Helpers ----
