@@ -2475,6 +2475,12 @@ export class CoOberViewController {
     if (rt.busy) {
       rt.promptQueue.push(waiting);
       if (this.isActiveTab(rt)) this.updateQueueIndicator(rt);
+      // The tab strip's queued badge is a snapshot of promptQueue taken only when
+      // the strip is told to rebuild — the local indicator repaint above never
+      // touches it. A push that skipped notifyTabsChanged lit nothing: the badge
+      // said "idle" while a turn sat waiting to send, and it stayed that way for
+      // a background tab the reader never opened.
+      this.notifyTabsChanged();
       return true;
     }
     if (!this.streamSlotsFree(this.deps.runtime.getClient())) {
@@ -2482,6 +2488,7 @@ export class CoOberViewController {
       // queue instead of failing; the next release starts it.
       rt.promptQueue.push(waiting);
       if (this.isActiveTab(rt)) this.updateQueueIndicator(rt);
+      this.notifyTabsChanged();
       return true;
     }
     const parsed = parseSlashCommand(text);
@@ -2751,6 +2758,11 @@ export class CoOberViewController {
         remove.onclick = () => {
           rt.promptQueue.splice(index, 1);
           this.updateQueueIndicator(rt);
+          // Removal repaints the local line, but the tab strip only re-samples
+          // the queue when told to rebuild. Without this the queued badge — and
+          // its "has messages waiting to send" title — kept asserting a waiting
+          // turn after the reader crossed out the last one.
+          this.notifyTabsChanged();
         };
       });
       indicatorEl.addClass('co-ober-visible');

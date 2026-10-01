@@ -927,6 +927,8 @@ describe('CoOberViewController', () => {
       // Manually set busy
       Reflect.set(controller, 'busy', true);
 
+      const onTabsChanged = vi.fn();
+      callbacks.onTabsChanged = onTabsChanged;
       await controller.send('queued-msg', []);
 
       const queue = activeRt(controller).promptQueue as Array<{ text: string }>;
@@ -936,6 +938,10 @@ describe('CoOberViewController', () => {
       // No session operations when queued
       expect(client.createSession).not.toHaveBeenCalled();
       expect(client.sendMessage).not.toHaveBeenCalled();
+      // Queuing a turn has to re-sync the tab strip: the queued badge is sampled
+      // only when the strip rebuilds, so a push that left it silent showed an
+      // "idle" badge over a tab with a message waiting to send.
+      expect(onTabsChanged).toHaveBeenCalled();
     });
 
     it('sends message and processes response', async () => {
@@ -4034,10 +4040,15 @@ describe('CoOberViewController — queue visualization and auto titles', () => {
     expect(items[0].querySelector('.co-ober-queue-item-text')?.textContent).toBe('alpha');
     expect(items[0].querySelector('.co-ober-queue-remove')?.getAttribute('aria-label')).toBe(t().queue.remove);
 
+    const onTabsChanged = vi.fn();
+    callbacks.onTabsChanged = onTabsChanged;
     (items[0].querySelector('.co-ober-queue-remove') as HTMLElement).click();
     expect(controller.queuedCount()).toBe(1);
     items = el.querySelectorAll('.co-ober-queue-item');
     expect(items[0].querySelector('.co-ober-queue-item-text')?.textContent).toBe('beta');
+    // The strip re-samples the queue only when told to rebuild, so removing the
+    // last waiting turn without a notify left its queued badge lit on an idle tab.
+    expect(onTabsChanged).toHaveBeenCalled();
 
     (controller as unknown as { busy: boolean }).busy = false;
     controller.queueIndicatorEl = null;
