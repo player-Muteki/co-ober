@@ -39,9 +39,13 @@ function fromProtocolCode(code: number | undefined, detail: string): string {
     // "Unknown error" sentinel (what we synthesize when a -32601 arrives with
     // neither a message nor data), or an agent's own reason — carries no method
     // name to show. Quoting such a phrase in the "{detail}" slot would claim the
-    // agent lacks a request literally called that phrase. Report the same fact
-    // through the generic error line rather than invent a method.
-    if (method === '' || /\s/.test(method)) {
+    // agent lacks a request literally called that phrase. A bare code token is
+    // the same trap in a different shape: an error text of just "-32601:" (the
+    // code echoed with an empty message) has no whitespace and is non-empty, so
+    // it slips past the sentence test, yet "-32601:" names no method — it names
+    // the error itself. Report either through the generic error line rather than
+    // invent a method.
+    if (method === '' || /\s/.test(method) || /^-3\d{4}:?$/.test(method)) {
       return fill(t().error.agentError, { detail: cleaned });
     }
     return fill(t().error.methodNotFound, { detail: method });

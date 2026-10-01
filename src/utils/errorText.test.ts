@@ -83,6 +83,22 @@ describe('humanizeError (0.2.5 stage 3)', () => {
     expect(named).toBe(t().error.methodNotFound.replace('{detail}', 'session/resume'));
   });
 
+  it('does not turn a bare code token into a method the agent lacks', () => {
+    // An error that reaches us as the plain text of just the code ("-32601:",
+    // the JSON-RPC code echoed with nothing after it) has no whitespace and is
+    // non-empty, so it slipped past the stock-prose test above and was quoted as
+    // a method name: "the agent does not support \"-32601:\"" — charging it with
+    // ignoring a request literally named after its own error code. That token
+    // names no method, so it falls through to the generic error line, keeping the
+    // code visible behind a label that does not invent a request.
+    const bare = humanizeError(new Error('-32601:'));
+    expect(bare).toBe(t().error.agentError.replace('{detail}', '-32601:'));
+    expect(bare).not.toMatch(/does not support/i);
+
+    const bareNoColon = humanizeError(new AcpProtocolError('-32601', 'session/prompt', -32601));
+    expect(bareNoColon).not.toMatch(/does not support/i);
+  });
+
   it('reads a code that arrived inside the message text', () => {
     const plain = new Error('-32603: registry unreachable');
     const line = humanizeError(plain);
