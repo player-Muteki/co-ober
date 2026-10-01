@@ -2969,7 +2969,18 @@ export class CoOberViewController {
    */
   loadToolbarOptions(rt: SessionRuntime = this.activeRuntime): void {
     const c = this.deps.runtime.getClient();
-    if (!c) return;
+    if (!c) {
+      // With no client there is no agent to answer an image, and the drop/paste
+      // gate already turns such a file away (dragDropManager). The attach button
+      // is only withdrawn by handleDisconnect, which never runs for a pane that
+      // has not connected yet, so a never-connected tab kept a live "Attach
+      // image" paperclip whose pick the send path would then refuse — the very
+      // asymmetry the drop zone was tightened to close. Withdraw it here too:
+      // the greyed title already reads "no image-capable agent is connected",
+      // true whether the agent never promised images or there is no agent at all.
+      this.deps.toolbar.setImageAttachEnabled(false);
+      return;
+    }
 
     const sid = rt.state.sessionId;
     // A tab with no conversation has no negotiated models, modes or commands.

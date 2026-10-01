@@ -376,6 +376,22 @@ describe('CoOberViewController', () => {
       expect(callbacks.onTabsChanged).toHaveBeenCalled();
     });
 
+    it('withdraws the attach control when there is no client to load options from', () => {
+      // A never-connected pane never runs handleDisconnect, so the paperclip is
+      // left in its default enabled state while the drop/paste gate already turns
+      // an image away for want of a connection. loadToolbarOptions is the one call
+      // every open/tab-switch makes, so it is where the button must agree with the
+      // gate it sits above — otherwise a live "Attach image" button promises an
+      // attach the send path refuses.
+      const setImageAttachEnabled = vi.fn();
+      Object.assign(deps.toolbar, { setImageAttachEnabled });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(null);
+
+      controller.loadToolbarOptions();
+
+      expect(setImageAttachEnabled).toHaveBeenCalledWith(false);
+    });
+
     it('says where a tab that could not be painted stands, and lets the next look retry it', async () => {
       const rt = activeRt(controller);
       rt.state.sessionId = 'test';
@@ -2405,10 +2421,16 @@ describe('CoOberViewController', () => {
   });
 
   describe('loadToolbarOptions', () => {
-    it('does nothing without client', () => {
+    it('does not load options without a client', () => {
+      // The stubs behind updateAgents and setImageAttachEnabled share one noop, so
+      // give the option sink its own spy: withdrawing attach (pinned above) must
+      // not be mistaken for loading options, which nothing here can do without a
+      // client to read a session snapshot from.
+      const updateAgents = vi.fn();
+      Object.assign(deps.toolbar, { updateAgents });
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(null);
       controller.loadToolbarOptions();
-      expect(deps.toolbar.updateAgents).not.toHaveBeenCalled();
+      expect(updateAgents).not.toHaveBeenCalled();
     });
 
     it('updates toolbar with snapshot data', () => {
