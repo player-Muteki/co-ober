@@ -10,6 +10,20 @@ import type { CoOberSettings } from './types';
 
 installObsidianDomHelpers();
 
+// A narrow override of the path resolver so one test can force a bare command to
+// resolve to a DIFFERENT absolute target (what the spawn actually execs) and check
+// the diagnostics row names that target rather than echoing the query. Every other
+// export and every other input passes through to the real resolver untouched.
+let fakeResolve: ((cmd: string) => string | null) | null = null;
+vi.mock('./utils/commandResolution', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./utils/commandResolution')>();
+  return {
+    ...actual,
+    resolveCommandPath: (...args: Parameters<typeof actual.resolveCommandPath>) =>
+      (fakeResolve ? fakeResolve(args[0]) : actual.resolveCommandPath(...args)),
+  };
+});
+
 describe('CoOberSettingsTab locale refresh', () => {
   it('redraws settings labels and refreshes open chat views when language changes', async () => {
     setLocale('en');
@@ -379,6 +393,37 @@ describe('CoOberSettingsTab locale refresh', () => {
     expect(tab.containerEl.textContent).toContain('Fail: Runtime metadata');
     expect(tab.containerEl.textContent).toContain('Fail: Default sync folder');
     expect(plugin.settings.defaultNoteFolder).toBe('');
+  });
+
+  it('names the resolved target, not the query, on the diagnostics path row', async () => {
+    // The row is titled "Resolved" and runs the same resolver the spawn uses, yet
+    // it interpolated the raw input into its detail: a bare command found in a
+    // hidden install dir printed 'Resolved "opencode"' and withheld the absolute
+    // path the process will actually exec — the very PATH gap the resolver exists
+    // to close, so the line echoed the question while hiding the answer. The
+    // detail now names the resolution it claims to report.
+    setLocale('en');
+    fakeResolve = (cmd) => (cmd === 'opencode' ? '/opt/opencode/bin/opencode' : null);
+    try {
+      const plugin = createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      });
+      plugin.settings.opencodePath = 'opencode';
+      const tab = new CoOberSettingsTab(plugin);
+
+      tab.display();
+      const diagnosticsButton = [...tab.containerEl.querySelectorAll('button')]
+        .find((button) => button.textContent === 'Run Diagnostics') as HTMLButtonElement | undefined;
+      diagnosticsButton!.click();
+      await flushPromises();
+      await flushPromises();
+
+      expect(tab.containerEl.textContent).toContain('Pass: OpenCode CLI path');
+      expect(tab.containerEl.textContent).toContain('Resolved "/opt/opencode/bin/opencode"');
+      expect(tab.containerEl.textContent).not.toContain('Resolved "opencode"');
+    } finally {
+      fakeResolve = null;
+    }
   });
 
   it('does not report a runtime metadata reading it never asked for', async () => {

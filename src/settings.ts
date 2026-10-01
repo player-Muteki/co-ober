@@ -925,9 +925,12 @@ export class CoOberSettingsTab extends PluginSettingTab {
     const labels = locale().settings.diagnostics;
     if (!path) return { ok: false, detail: labels.pathEmpty };
     // Same resolver the spawn path uses, so diagnostics can never disagree
-    // with what actually launches (desktop PATH misses ~/.opencode/bin).
+    // with what actually launches (desktop PATH misses ~/.opencode/bin). The
+    // row is titled "Resolved", so it names the target the resolver landed on —
+    // not the query: a reader chasing a PATH gap needs the absolute path the
+    // spawn will use, and echoing the bare command back would hide it.
     const resolved = resolveCommandPath(path);
-    if (resolved) return { ok: true, detail: labels.pathFound.replace('{path}', path) };
+    if (resolved) return { ok: true, detail: labels.pathFound.replace('{path}', resolved) };
     return { ok: false, detail: locale().settings.opencodePath.notFound.replace('{path}', path) };
   }
 }
