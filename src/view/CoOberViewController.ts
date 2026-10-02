@@ -2895,6 +2895,13 @@ export class CoOberViewController {
     if (!clean) return;
     if (this.deps.sessionStore.rename(sessionId, clean)) {
       await this.deps.sessionStore.save();
+      // The tab strip's badge tooltip reads `tabDescriptors()` — a fresh
+      // sample of the store's title — and the strip only rebuilds when the
+      // controller raises the tabs-changed signal. Without it the renamed
+      // conversation keeps its retired title on the badge until an unrelated
+      // event (a queue push, a connect, a switch) repaints it, exactly the
+      // queue-`remove` gap the same signal closed last release.
+      this.notifyTabsChanged();
     }
   }
 

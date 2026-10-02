@@ -3172,6 +3172,26 @@ describe('CoOberViewController', () => {
       await controller.renameSession('missing', 'Title');
       expect(deps.sessionStore.save).not.toHaveBeenCalled();
     });
+
+    it('re-samples the tab strip after a successful rename', async () => {
+      // The strip's badge tooltip reads `tabDescriptors()` (a snapshot of
+      // `sessionStore.get(sid).title`) and only rebuilds when the controller
+      // raises onTabsChanged. Without this the tab kept showing the retired
+      // title over a store that already held the new one — the same shape the
+      // queue-remove handler cured last release.
+      await controller.renameSession('s-1', 'Fresh');
+      expect(callbacks.onTabsChanged).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves the tab strip untouched on a rename that did not stick', async () => {
+      // A blank title or an unknown session must not repaint — the reader
+      // who typed whitespace and got nothing back should still see the strip
+      // hold the previous title without a stale signal saying otherwise.
+      await controller.renameSession('s-1', '   ');
+      (deps.sessionStore.rename as ReturnType<typeof vi.fn>).mockReturnValue(false);
+      await controller.renameSession('s-missing', 'Whatever');
+      expect(callbacks.onTabsChanged).not.toHaveBeenCalled();
+    });
   });
 
   describe('adoptReplay files the transcript at its own time, not the import time', () => {
