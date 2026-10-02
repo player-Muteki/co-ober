@@ -881,6 +881,7 @@ describe('CoOberViewController', () => {
         { id: 'areas/alpha.md', type: 'note', name: 'alpha', path: 'areas/alpha.md' },
       ]);
       (deps.resolver.resolveNote as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ok: true,
         name: 'alpha',
         content: 'Alpha note body.',
       });
@@ -2841,6 +2842,7 @@ describe('CoOberViewController', () => {
 
     it('resolves context refs', async () => {
       (deps.resolver.resolveNote as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ok: true,
         name: 'note',
         content: 'note content',
       });
@@ -2899,6 +2901,7 @@ describe('CoOberViewController', () => {
       (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
       const refs: ContextRef[] = [{ id: 'n1', type: 'note', name: 'note.md', path: 'note.md' }];
       (deps.resolver.resolveNote as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ok: true,
         name: 'note.md',
         content: 'note content',
       });
@@ -3428,7 +3431,7 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
     it('reuses cached notes and drops the entry on invalidateNoteCache', async () => {
       controller.state.sessionId = 'local-1';
       const resolve = deps.resolver.resolveNote as ReturnType<typeof vi.fn>;
-      resolve.mockResolvedValue({ name: 'a', content: 'body' });
+      resolve.mockResolvedValue({ ok: true, name: 'a', content: 'body' });
       const ref = noteRef('a.md');
 
       await controller.buildParts('q', [ref]);
@@ -3443,7 +3446,7 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
     it('survives /clear: the cache is keyed by path, not by transcript', async () => {
       controller.state.sessionId = 'local-1';
       const resolve = deps.resolver.resolveNote as ReturnType<typeof vi.fn>;
-      resolve.mockResolvedValue({ name: 'a', content: 'body' });
+      resolve.mockResolvedValue({ ok: true, name: 'a', content: 'body' });
       const ref = noteRef('a.md');
       await controller.buildParts('q', [ref]);
       expect(resolve).toHaveBeenCalledTimes(1);
@@ -3460,7 +3463,7 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
     it('evicts the least recently used entry beyond the cache cap', async () => {
       controller.state.sessionId = 'local-1';
       const resolve = deps.resolver.resolveNote as ReturnType<typeof vi.fn>;
-      resolve.mockImplementation((p: string) => Promise.resolve({ name: p, content: p }));
+      resolve.mockImplementation((p: string) => Promise.resolve({ ok: true, name: p, content: p }));
 
       for (let i = 0; i < 100; i++) await controller.buildParts('q', [noteRef(`p${i}.md`)]);
       // Touch p0 so p1 becomes the least recently used entry.
@@ -3544,6 +3547,11 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
       const client = createMockClient({ getAgentCapabilities: vi.fn(() => null) });
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
       controller.state.sessionId = 'local-1';
+      (deps.resolver.resolveNote as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ok: true,
+        name: 'a',
+        content: 'body',
+      });
 
       await controller.buildParts('question', [noteRef('a.md')]);
 

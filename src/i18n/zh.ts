@@ -52,6 +52,7 @@ const zh: Locale = {
     placeholder: '输入消息… (Enter 发送, Shift+Enter 换行)',
     removeChip: '从上下文移除',
     refsUnread: '未发送：{paths} 无法读取。',
+    refsMissing: '未发送：{paths} 已不存在。',
   },
 
   session: {

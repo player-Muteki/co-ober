@@ -2069,7 +2069,10 @@ describe('CoOberViewController — nothing typed is thrown away (0.2.5 stage 1)'
     it('is named in the tab that asked, not swallowed', async () => {
       const [tabA, tabB] = twoTabs();
       clientFor();
-      (h.deps.resolver.resolveNote as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+      (h.deps.resolver.resolveNote as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ok: false,
+        reason: 'unreadable',
+      });
 
       await (Reflect.get(h.controller, 'buildParts') as (
         text: string,
@@ -2085,10 +2088,37 @@ describe('CoOberViewController — nothing typed is thrown away (0.2.5 stage 1)'
       expect(h.renderers.get(tabB)?.addSystemMessage).not.toHaveBeenCalled();
     });
 
+    it('names a reference whose file is gone as gone, not as unreadable', async () => {
+      // The old single-bucket path said "could not be read" for a renamed or
+      // deleted note. That sent the reader chasing an I/O error that never
+      // happened, when the truth is one edit away: remove the chip.
+      const [tabA] = twoTabs();
+      clientFor();
+      (h.deps.resolver.resolveNote as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ok: false,
+        reason: 'missing',
+      });
+
+      await (Reflect.get(h.controller, 'buildParts') as (
+        text: string,
+        refs: ContextRef[],
+        history: string | undefined,
+        rt: unknown,
+      ) => Promise<unknown>).call(h.controller, 'question', [
+        { id: 'r1', type: 'note', name: 'gone', path: 'notes/gone.md' },
+      ], undefined, rtOf(h, tabA));
+
+      const missingMessage = t().input.refsMissing.replace('{paths}', '`notes/gone.md`');
+      const unreadMessage = t().input.refsUnread.replace('{paths}', '`notes/gone.md`');
+      expect(h.renderers.get(tabA)?.addSystemMessage).toHaveBeenCalledWith(missingMessage);
+      expect(h.renderers.get(tabA)?.addSystemMessage).not.toHaveBeenCalledWith(unreadMessage);
+    });
+
     it('says nothing when every reference was read', async () => {
       const [tabA] = twoTabs();
       clientFor();
       (h.deps.resolver.resolveNote as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ok: true,
         name: 'there',
         content: 'body',
       });

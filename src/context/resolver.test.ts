@@ -42,18 +42,22 @@ describe('ContextResolver', () => {
 
     const result = await resolver.resolveNote('notes/hello.md');
 
-    expect(result).not.toBeNull();
-    expect(result!.name).toBe('hello');
-    expect(result!.content).toBe('world');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.name).toBe('hello');
+    expect(result.content).toBe('world');
   });
 
-  it('should return null for non-existent note', async () => {
+  it('reports a non-existent note as missing, not unreadable', async () => {
     const vault = createMockVault(new Map());
     const resolver = new ContextResolver(vault);
 
     const result = await resolver.resolveNote('missing.md');
 
-    expect(result).toBeNull();
+    // A renamed or deleted note is a different problem than a locked one:
+    // "could not be read" sends the reader hunting for an I/O error that
+    // never happened, when the chip needs to go.
+    expect(result).toEqual({ ok: false, reason: 'missing' });
   });
 
   it('should truncate content exceeding maxBytes', async () => {
@@ -64,8 +68,9 @@ describe('ContextResolver', () => {
 
     const result = await resolver.resolveNote('long.md');
 
-    expect(result!.content.length).toBe(8015); // 8000 + '... [truncated]'
-    expect(result!.content.endsWith('... [truncated]')).toBe(true);
+    if (!result.ok) throw new Error('expected ok');
+    expect(result.content.length).toBe(8015); // 8000 + '... [truncated]'
+    expect(result.content.endsWith('... [truncated]')).toBe(true);
   });
 
   it('cuts at the ceiling the setting holds now, not the one held at open', async () => {
@@ -81,8 +86,9 @@ describe('ContextResolver', () => {
 
     // The pane was already open when the number moved in Settings; a frozen
     // ceiling would keep cutting at 4000 while the screen says 2000.
-    expect(before!.content).toHaveLength(4015);
-    expect(after!.content).toHaveLength(2015);
+    if (!before.ok || !after.ok) throw new Error('expected ok');
+    expect(before.content).toHaveLength(4015);
+    expect(after.content).toHaveLength(2015);
   });
 
   it('should resolve multiple notes', async () => {
@@ -117,7 +123,7 @@ describe('ContextResolver', () => {
     expect(results.map((r) => r.name)).toContain('Pineapple');
   });
 
-  it('should handle read errors gracefully', async () => {
+  it('reports a read rejection as unreadable, not missing', async () => {
     const vault = {
       getAbstractFileByPath: vi.fn(() => new (MockTFile as unknown as new (data: { basename: string; path: string }) => TFile)({ basename: 'bad', path: 'bad.md' })),
       read: vi.fn().mockRejectedValue(new Error('read error')),
@@ -126,6 +132,8 @@ describe('ContextResolver', () => {
 
     const result = await resolver.resolveNote('bad.md');
 
-    expect(result).toBeNull();
+    // The file is on disk; only the read threw. Telling this reader the note
+    // "no longer exists" would be the mirror-image lie of the missing case.
+    expect(result).toEqual({ ok: false, reason: 'unreadable' });
   });
 });

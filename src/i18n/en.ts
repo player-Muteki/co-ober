@@ -50,6 +50,7 @@ const en = {
     placeholder: 'Type a message… (Enter to send, Shift+Enter for newline)',
     removeChip: 'Remove from context',
     refsUnread: 'Not sent: {paths} could not be read.',
+    refsMissing: 'Not sent: {paths} no longer exists.',
   },
 
   session: {

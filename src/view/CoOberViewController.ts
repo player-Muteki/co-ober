@@ -2826,6 +2826,7 @@ export class CoOberViewController {
     );
 
     const resolved: Array<{ name: string; content: string }> = [];
+    const missing: string[] = [];
     const unread: string[] = [];
     if (embedAllowed) {
       for (const ref of allRefs) {
@@ -2838,16 +2839,28 @@ export class CoOberViewController {
           continue;
         }
         const result = await this.deps.resolver.resolveNote(ref.path);
-        if (result) {
-          resolved.push(result);
-          this.setCacheEntry(ref.path, result);
-        } else {
+        if (result.ok) {
+          const entry = { name: result.name, content: result.content };
+          resolved.push(entry);
+          this.setCacheEntry(ref.path, entry);
+        } else if (result.reason === 'unreadable') {
           unread.push(ref.path);
+        } else {
+          missing.push(ref.path);
         }
       }
+      // The chip stayed on screen, so silence here would leave the reader
+      // believing the note went to the agent. It did not. And the fix differs
+      // by failure: a deleted or renamed note wants the chip removed, an
+      // unreadable one wants the vault checked — merging the two under "could
+      // not be read" sends the reader hunting for an I/O error that never
+      // happened.
+      if (missing.length > 0) {
+        rt.renderer.addSystemMessage(
+          t().input.refsMissing.replace('{paths}', missing.map((p) => `\`${p}\``).join(', ')),
+        );
+      }
       if (unread.length > 0) {
-        // The chip stayed on screen, so silence here would leave the reader
-        // believing the note went to the agent. It did not.
         rt.renderer.addSystemMessage(
           t().input.refsUnread.replace('{paths}', unread.map((p) => `\`${p}\``).join(', ')),
         );

@@ -1,6 +1,14 @@
 import { Vault, TFile } from 'obsidian';
 import { CONTEXT_NOTE_MAX_BYTES, TRUNCATION_MARKER } from '../constants';
 
+// A note reference that failed has two distinct reasons, and a reader who is
+// told "could not be read" about a file that was renamed or deleted is chasing
+// an I/O error that does not exist. The resolver names which failure happened;
+// deciding what to say is left to the caller that knows the surrounding UI.
+export type NoteResolveResult =
+  | { ok: true; name: string; content: string }
+  | { ok: false; reason: 'missing' | 'unreadable' };
+
 /** Resolve note references into structured content blocks */
 export class ContextResolver {
   // The ceiling is read per resolve, not frozen at construction: a pane open
@@ -10,20 +18,20 @@ export class ContextResolver {
   constructor(private vault: Vault, private maxBytes: () => number = () => CONTEXT_NOTE_MAX_BYTES) {}
 
   /** Read and return note content up to maxBytes */
-  async resolveNote(path: string): Promise<{ name: string; content: string } | null> {
+  async resolveNote(path: string): Promise<NoteResolveResult> {
     const abstract = this.vault.getAbstractFileByPath(path);
-    if (!(abstract instanceof TFile)) return null;
+    if (!(abstract instanceof TFile)) return { ok: false, reason: 'missing' };
     try {
       const content = await this.vault.read(abstract);
       const name = abstract.basename;
       const ceiling = this.maxBytes();
       const encoded = new TextEncoder().encode(content);
       if (encoded.byteLength > ceiling) {
-        return { name, content: truncateUtf8(content, ceiling) + TRUNCATION_MARKER };
+        return { ok: true, name, content: truncateUtf8(content, ceiling) + TRUNCATION_MARKER };
       }
-      return { name, content };
+      return { ok: true, name, content };
     } catch {
-      return null;
+      return { ok: false, reason: 'unreadable' };
     }
   }
 
@@ -32,7 +40,7 @@ export class ContextResolver {
     const results: Array<{ name: string; content: string }> = [];
     for (const path of paths) {
       const result = await this.resolveNote(path);
-      if (result) results.push(result);
+      if (result.ok) results.push({ name: result.name, content: result.content });
     }
     return results;
   }
