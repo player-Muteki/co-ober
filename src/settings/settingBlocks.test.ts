@@ -131,6 +131,46 @@ describe('custom agent header tracks the name and id edits (0.2.35 stage 3)', ()
     await edit(textFields(container)[0], 'taken');
     expect(header(container).textContent).toBe(t().settings.customAgents.label.replace('{name}', 'agent-1'));
   });
+
+  it('repaints the panel after a successful id rename (0.2.42 stage B)', async () => {
+    // `renameCustomAgent` rewrites `settings.activeCustomAgentId` in place, but
+    // the "Active custom agent" dropdown is built from the previous id list and
+    // only rebuilds on a full render. Without the repaint the reader's live
+    // selection silently drops to None while the settings already hold the new
+    // id — the skill twin gained exactly this last release; the agent was the
+    // holdout.
+    const agent = makeAgent();
+    const container = document.createElement('div');
+    const render = vi.fn();
+    addCustomAgentBlock(
+      container,
+      agent,
+      { customAgents: [agent] } as unknown as CoOberSettings,
+      vi.fn(async () => {}),
+      render,
+      (cur, next) => {
+        agent.id = next;
+        return cur === 'agent-1';
+      },
+    );
+    render.mockClear();
+    await edit(textFields(container)[0], 'agent-2');
+    expect(render).toHaveBeenCalled();
+  });
+
+  it('leaves the panel untouched on a refused id rename (0.2.42 stage B)', async () => {
+    // A rename that the store refuses (empty/duplicate/missing) must not raise
+    // the repaint signal — the settings never moved, so a render would only
+    // certify a change that did not happen.
+    const agent = makeAgent();
+    const container = document.createElement('div');
+    const render = vi.fn();
+    addCustomAgentBlock(container, agent, { customAgents: [agent] } as unknown as CoOberSettings, vi.fn(async () => {}), render, () => false);
+    render.mockClear();
+    await edit(textFields(container)[0], 'taken');
+    expect(render).not.toHaveBeenCalled();
+    expect(agent.id).toBe('agent-1');
+  });
 });
 
 describe('custom skill header tracks the name and id edits (0.2.35 stage 3)', () => {

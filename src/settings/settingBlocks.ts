@@ -27,6 +27,15 @@ export function addCustomAgentBlock(containerEl: HTMLElement, agent: CustomAgent
           }
           await save();
           paintHeading();
+          // `renameCustomAgent` also rewrites `settings.activeCustomAgentId`
+          // when the retired id was the active one, but the "Active custom
+          // agent" dropdown above was painted from the previous id list and
+          // only rebuilds through the same `render()` the delete handler uses.
+          // Without it the reader's live selection silently dropped to None
+          // while the settings already held the new id — the skill twin
+          // gained exactly this repaint last release; the agent was the
+          // holdout.
+          render();
         }));
 
     new Setting(block)
