@@ -591,7 +591,7 @@ describe('InputToolbar attach capability gating', () => {
     const btn = container.querySelector('.co-ober-attach-btn') as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
     expect(btn.classList.contains('is-disabled')).toBe(true);
-    expect(btn.title).toBe('Images cannot be attached — no image-capable agent is connected');
+    expect(btn.title).toBe('Attach image disabled — this agent does not accept image prompts');
     btn.click();
     expect(onAttachImage).not.toHaveBeenCalled();
 
@@ -612,7 +612,36 @@ describe('InputToolbar attach capability gating', () => {
     setLocale('zh');
     toolbar.refreshLocale();
     const btn = container.querySelector('.co-ober-attach-btn') as HTMLButtonElement;
-    expect(btn.title).toBe('无法添加图片 — 当前没有支持图片的 Agent 已连接');
+    expect(btn.title).toBe('无法添加图片 — 当前 Agent 不接受图片提示词');
+    expect(btn.disabled).toBe(true);
+    setLocale('en');
+  });
+
+  it('names the no-agent reason when nothing is connected (0.2.42 stage E)', () => {
+    // Before this split, the paperclip said "no image-capable agent is connected"
+    // over a plain disconnect too — certifying a negotiation the code never
+    // observed, because the reader had to be told to connect an agent, not to
+    // pick an image-capable one.
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const toolbar = new InputToolbar(container, {});
+
+    toolbar.setImageAttachEnabled(false, 'no-agent');
+    const btn = container.querySelector('.co-ober-attach-btn') as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(btn.title).toBe('Attach image disabled — no agent is connected');
+  });
+
+  it('re-speaks the no-agent tooltip across a locale change (0.2.42 stage E)', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    const toolbar = new InputToolbar(container, {});
+    toolbar.setImageAttachEnabled(false, 'no-agent');
+
+    setLocale('zh');
+    toolbar.refreshLocale();
+    const btn = container.querySelector('.co-ober-attach-btn') as HTMLButtonElement;
+    expect(btn.title).toBe('无法添加图片 — 尚未连接任何 Agent');
     expect(btn.disabled).toBe(true);
     setLocale('en');
   });

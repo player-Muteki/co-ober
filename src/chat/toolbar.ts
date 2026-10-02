@@ -53,6 +53,12 @@ export class InputToolbar {
 
   // Image attach button
   private attachBtnEl: HTMLButtonElement;
+  // Two distinct reasons the paperclip can be dark: the agent is connected but
+  // has not promised images, or nothing is connected at all. The drop/paste gate
+  // already splits the two (dragDropManager.imageNoAgent vs imageNotSupported);
+  // a tooltip that said "no image-capable agent is connected" over a plain
+  // disconnect was certifying a negotiation the code never observed.
+  private attachDisabledReason: 'unsupported' | 'no-agent' | null = null;
 
   private readonly unsubscribeLocale: () => void;
   // Close fns registered by wireDropdown, keyed by the selector container.
@@ -565,10 +571,20 @@ export class InputToolbar {
     });
   }
 
-  setImageAttachEnabled(enabled: boolean): void {
+  setImageAttachEnabled(
+    enabled: boolean,
+    reason: 'unsupported' | 'no-agent' = 'unsupported',
+  ): void {
     this.attachBtnEl.disabled = !enabled;
     this.attachBtnEl.classList.toggle('is-disabled', !enabled);
-    this.attachBtnEl.title = enabled ? t().toolbar.attachImage : t().toolbar.attachImageUnsupported;
+    this.attachDisabledReason = enabled ? null : reason;
+    this.attachBtnEl.title = this.attachTitle();
+  }
+
+  private attachTitle(): string {
+    if (this.attachDisabledReason === 'no-agent') return t().toolbar.attachImageNoAgent;
+    if (this.attachDisabledReason === 'unsupported') return t().toolbar.attachImageUnsupported;
+    return t().toolbar.attachImage;
   }
 
   // ── Sending state ──
@@ -595,9 +611,7 @@ export class InputToolbar {
     this.modeCycleLabelEl.setText(selected?.label ?? (this.modeOptions.length > 0 ? t().toolbar.unset : '—'));
     this.applyModeOperability();
     this.updatePermissionDisplay();
-    this.attachBtnEl.title = this.attachBtnEl.disabled
-      ? t().toolbar.attachImageUnsupported
-      : t().toolbar.attachImage;
+    this.attachBtnEl.title = this.attachTitle();
     // Relabel the options the agent actually offered (custom tiers like
     // minimal/xhigh would otherwise vanish under a hardcoded 4-tier list);
     // agent-supplied names for unknown values pass through unchanged. An empty

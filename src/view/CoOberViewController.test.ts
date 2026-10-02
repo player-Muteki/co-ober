@@ -369,8 +369,10 @@ describe('CoOberViewController', () => {
       controller.handleDisconnect();
 
       // The button mirrored the dead agent's capability, so a staged image went
-      // into a prompt with nowhere to go.
-      expect(setImageAttachEnabled).toHaveBeenCalledWith(false);
+      // into a prompt with nowhere to go. Reason is no-agent: the client is
+      // gone, so the sentence the tooltip tells must be about that, not about
+      // a negotiation nobody has to fail.
+      expect(setImageAttachEnabled).toHaveBeenCalledWith(false, 'no-agent');
       // Every tab's turn was cut short, so the strip has to be told or each one
       // keeps its generating dot for a conversation that stopped working.
       expect(callbacks.onTabsChanged).toHaveBeenCalled();
@@ -382,14 +384,15 @@ describe('CoOberViewController', () => {
       // an image away for want of a connection. loadToolbarOptions is the one call
       // every open/tab-switch makes, so it is where the button must agree with the
       // gate it sits above — otherwise a live "Attach image" button promises an
-      // attach the send path refuses.
+      // attach the send path refuses. The reason is no-agent, not unsupported:
+      // no capability was ever offered here.
       const setImageAttachEnabled = vi.fn();
       Object.assign(deps.toolbar, { setImageAttachEnabled });
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(null);
 
       controller.loadToolbarOptions();
 
-      expect(setImageAttachEnabled).toHaveBeenCalledWith(false);
+      expect(setImageAttachEnabled).toHaveBeenCalledWith(false, 'no-agent');
     });
 
     it('says where a tab that could not be painted stands, and lets the next look retry it', async () => {
@@ -2602,13 +2605,16 @@ describe('CoOberViewController', () => {
         }),
       );
       controller.loadToolbarOptions();
-      expect(setEnabled).toHaveBeenCalledWith(false);
+      // A connected agent that has not promised images is a different refusal
+      // than no agent at all; the tooltip has to say which one the reader is
+      // looking at, or they go hunting for a connection that already exists.
+      expect(setEnabled).toHaveBeenCalledWith(false, 'unsupported');
 
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(
         createMockClient({ getSessionSnapshot: vi.fn(() => snapshot) }),
       );
       controller.loadToolbarOptions();
-      expect(setEnabled).toHaveBeenCalledWith(true);
+      expect(setEnabled).toHaveBeenCalledWith(true, 'unsupported');
     });
 
     it('hands the bar the real name of a current model the common list hides', () => {

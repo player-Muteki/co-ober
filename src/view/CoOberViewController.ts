@@ -1255,8 +1255,9 @@ export class CoOberViewController {
     commandRegistry.updateAcpCommands([]);
     // An image that cannot be sent must not stay attachable: the button offered
     // the dead agent's capability, so the reader staged a picture into a prompt
-    // that has nowhere to go.
-    this.deps.toolbar.setImageAttachEnabled(false);
+    // that has nowhere to go. Reason is no-agent: the client is gone, so no
+    // capability was ever negotiated to withdraw.
+    this.deps.toolbar.setImageAttachEnabled(false, 'no-agent');
     this.deps.welcomeView.updateStatus('disconnected');
     this.noteProtocolMismatch();
     this.callbacks.onShowReconnectBtn();
@@ -3007,10 +3008,10 @@ export class CoOberViewController {
       // is only withdrawn by handleDisconnect, which never runs for a pane that
       // has not connected yet, so a never-connected tab kept a live "Attach
       // image" paperclip whose pick the send path would then refuse — the very
-      // asymmetry the drop zone was tightened to close. Withdraw it here too:
-      // the greyed title already reads "no image-capable agent is connected",
-      // true whether the agent never promised images or there is no agent at all.
-      this.deps.toolbar.setImageAttachEnabled(false);
+      // asymmetry the drop zone was tightened to close. Withdraw it here too,
+      // and name the reason the drop zone names: no agent is connected, so no
+      // capability was ever negotiated to withdraw.
+      this.deps.toolbar.setImageAttachEnabled(false, 'no-agent');
       return;
     }
 
@@ -3068,8 +3069,11 @@ export class CoOberViewController {
     this.deps.toolbar.updatePermission(this.deps.runtime.settings.permissionMode);
     // Mirror the send-path rule (images are stripped unless supported) so the
     // attach button is only offered when an image could actually be sent.
+    // The client is present here (the no-client branch returned above), so a
+    // false capability is the "agent connected, images declined" case — the
+    // reader needs that sentence, not the no-agent one.
     const caps = c.getAgentCapabilities?.();
-    this.deps.toolbar.setImageAttachEnabled(supportsPromptCapability(caps, 'image'));
+    this.deps.toolbar.setImageAttachEnabled(supportsPromptCapability(caps, 'image'), 'unsupported');
     // The slash menu is a shared surface too: activating a tab, reconnecting or
     // switching sessions all re-project its own command list onto it.
     commandRegistry.updateAcpCommands(rt.state.availableCommands);
