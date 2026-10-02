@@ -10,13 +10,13 @@ export class Mutex {
       });
     }
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const timer = window.setTimeout(() => {
         const idx = this.queue.indexOf(doAcquire);
         if (idx !== -1) this.queue.splice(idx, 1);
         reject(new Error('Mutex acquire timed out'));
       }, timeoutMs);
       const doAcquire = () => {
-        clearTimeout(timer);
+        window.clearTimeout(timer);
         resolve(() => this.release());
       };
       this.queue.push(doAcquire);

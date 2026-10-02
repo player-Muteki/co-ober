@@ -136,7 +136,7 @@ function runChild(
 		let stdout = '';
 		let stderr = '';
 		let settled = false;
-		const timer = setTimeout(() => {
+		const timer = window.setTimeout(() => {
 			if (settled) return;
 			settled = true;
 			child.kill('SIGKILL');
@@ -155,13 +155,13 @@ function runChild(
 		child.on('error', (error) => {
 			if (settled) return;
 			settled = true;
-			clearTimeout(timer);
+			window.clearTimeout(timer);
 			reject(error);
 		});
 		child.on('close', (code) => {
 			if (settled) return;
 			settled = true;
-			clearTimeout(timer);
+			window.clearTimeout(timer);
 			if (code === 0) resolve(stdout);
 			else reject(new Error(`exit code ${code}${stderr ? `: ${stderr.trim()}` : ''}`));
 		});

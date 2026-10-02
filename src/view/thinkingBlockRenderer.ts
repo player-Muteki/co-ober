@@ -27,8 +27,8 @@ export interface ThinkingState {
   body: HTMLElement;
   timerEl: HTMLElement;
   startTime: number;
-  timerInterval: ReturnType<typeof setInterval> | null;
-  dotInterval: ReturnType<typeof setInterval> | null;
+  timerInterval: number | null;
+  dotInterval: number | null;
   collapsibleState: CollapsibleState;
   /** Full (untruncated) thinking text */
   fullText: string;
@@ -108,7 +108,7 @@ export function renderLiveThinkingBlock(
   };
 
   // Live timer: update every second
-  state.timerInterval = setInterval(() => {
+  state.timerInterval = window.setInterval(() => {
     const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
     state.timerEl.dataset.seconds = String(elapsed);
     state.timerEl.textContent = thinkingElapsed(elapsed);
@@ -116,7 +116,7 @@ export function renderLiveThinkingBlock(
 
   // Dot animation: cycle every 500ms
   let dotIndex = 0;
-  state.dotInterval = setInterval(() => {
+  state.dotInterval = window.setInterval(() => {
     dotIndex = (dotIndex + 1) % DOT_CHARS.length;
     dotEl.textContent = DOT_CHARS[dotIndex];
   }, ANIMATION_INTERVAL_MS);
@@ -130,8 +130,8 @@ export function renderLiveThinkingBlock(
   });
 
   state.cleanup = () => {
-    if (state.timerInterval !== null) clearInterval(state.timerInterval);
-    if (state.dotInterval !== null) clearInterval(state.dotInterval);
+    if (state.timerInterval !== null) window.clearInterval(state.timerInterval);
+    if (state.dotInterval !== null) window.clearInterval(state.dotInterval);
   };
 
   return state;
@@ -204,11 +204,11 @@ export function appendThinkingContent(
 export function finalizeThinkingBlock(state: ThinkingState): number {
   // Stop timers
   if (state.timerInterval !== null) {
-    clearInterval(state.timerInterval);
+    window.clearInterval(state.timerInterval);
     state.timerInterval = null;
   }
   if (state.dotInterval !== null) {
-    clearInterval(state.dotInterval);
+    window.clearInterval(state.dotInterval);
     state.dotInterval = null;
   }
 

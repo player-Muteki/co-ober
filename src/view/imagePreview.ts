@@ -12,7 +12,7 @@ function close(): void {
   // here instead left a keydown handler behind on the one that opened it.
   activeDoc?.removeEventListener('keydown', onKeydown);
   activeDoc = null;
-  const doc = globalThis.document;
+  const doc = window.document;
   // Hand focus back to the chat element that opened the preview, but only if
   // it is still attached to the page (the transcript may have re-rendered).
   if (previouslyFocused && doc && doc.contains(previouslyFocused) && typeof previouslyFocused.focus === 'function') {
@@ -35,7 +35,7 @@ function onKeydown(event: KeyboardEvent): void {
 /** Open a full-width lightbox overlay for a chat image (data: or vault URL src). */
 export function openImagePreview(src: string, alt?: string): void {
   close();
-  const doc = globalThis.document;
+  const doc = window.document;
   if (!doc) return;
   const active = doc.activeElement;
   previouslyFocused = active instanceof HTMLElement ? active : null;
