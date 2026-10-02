@@ -216,7 +216,7 @@ export class ChatRenderer {
   addSystemMessage(text: string): void {
     const wrap = this.container.createDiv({ cls: 'co-ober-msg system' });
     const body = wrap.createDiv({ cls: 'co-ober-msg-body' });
-    MarkdownRenderer.renderMarkdown(text, body, '', this.app as unknown as Component);
+    void MarkdownRenderer.renderMarkdown(text, body, '', this.app as unknown as Component);
     this.scrollToBottom();
   }
 
@@ -464,7 +464,7 @@ export class ChatRenderer {
       this.currentAssistantEl = wrap.createDiv({ cls: 'co-ober-msg-body' });
       if (usage || turnStats) this.attachUsageFooter(wrap, usage, turnStats);
     }
-    this.scheduleTextRender();
+    void this.scheduleTextRender();
     this.scrollToBottom();
   }
 

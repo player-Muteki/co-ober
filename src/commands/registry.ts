@@ -113,7 +113,7 @@ export class CommandRegistry {
 
     if (source.watch) {
       const unwatch = source.watch(() => {
-        this.reloadSource(source);
+        void this.reloadSource(source);
       });
       this.unwatches.push(unwatch);
       this.sourceUnwatches.set(source, unwatch);
@@ -121,12 +121,16 @@ export class CommandRegistry {
 
     // If load() returned a promise, resolve and re-ingest
     if (result instanceof Promise) {
-      result.then((defs) => {
-        // Remove old defs from this source first, then re-add
-        this.removeSourceDefs(source.type);
-        this.ingestSourceDefs(source.type, defs);
-        this.rebuildOrder();
-      });
+      void result
+        .then((defs) => {
+          // Remove old defs from this source first, then re-add
+          this.removeSourceDefs(source.type);
+          this.ingestSourceDefs(source.type, defs);
+          this.rebuildOrder();
+        })
+        .catch((error) => {
+          console.error(`[co-ober] failed to load command source ${source.type}:`, error);
+        });
     } else {
       this.rebuildOrder();
     }

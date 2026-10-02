@@ -103,3 +103,41 @@ describe('CommandRegistry.updateAcpCommands', () => {
     expect(registry.find('fresh')).toBeDefined();
   });
 });
+
+describe('CommandRegistry.registerSource with an async load', () => {
+  it('ingests definitions once the source promise resolves', async () => {
+    const registry = new CommandRegistry();
+    let resolveLoad: (defs: SlashCommandDef[]) => void = () => {};
+    const source: CommandSource = {
+      type: 'file',
+      load: () => new Promise((res) => { resolveLoad = res; }),
+    };
+
+    registry.registerSource(source);
+    expect(registry.find('late')).toBeUndefined();
+
+    resolveLoad([def('late')]);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(registry.find('late')).toBeDefined();
+  });
+
+  it('reports an async load that rejects instead of swallowing it silently', async () => {
+    const registry = new CommandRegistry();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const source: CommandSource = {
+      type: 'mcp',
+      load: () => Promise.reject(new Error('agent went away')),
+    };
+
+    registry.registerSource(source);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(errorSpy).toHaveBeenCalled();
+    const message = String(errorSpy.mock.calls[0]?.[1]);
+    expect(message).toContain('agent went away');
+    errorSpy.mockRestore();
+  });
+});

@@ -70,7 +70,7 @@ export async function querySqliteJson(
 	for (const nodePath of nodeCandidates) {
 		try {
 			const stdout = await runChild(spawnFn, nodePath, ['-e', CHILD_SCRIPT, databasePath, sql], env, platform, maxBuffer);
-			const rows = JSON.parse(stdout);
+			const rows: unknown = JSON.parse(stdout);
 			if (!Array.isArray(rows)) throw new Error('invalid JSON output');
 			return rows as SqliteRow[];
 		} catch (error) {
