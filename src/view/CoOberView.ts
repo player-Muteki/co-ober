@@ -212,36 +212,31 @@ export class CoOberView extends ItemView {
     // tokens went where, how close to the limit) only arrived on a mouse
     // hover. A focusable meter gives the same reading to a keyboard.
     this.meterEl.tabIndex = 0;
-    const svg = this.doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 40 24');
-    svg.setAttribute('class', 'co-ober-arc-svg');
     const R = 18;
     const C = 20;
     const ARC_LEN = Math.PI * R;
-    const track = this.doc.createElementNS('http://www.w3.org/2000/svg', 'path');
-    track.setAttribute('d', `M ${C - R} ${C} A ${R} ${R} 0 0 1 ${C + R} ${C}`);
-    track.setAttribute('class', 'co-ober-arc-track');
-    svg.appendChild(track);
-    const defs = this.doc.createElementNS('http://www.w3.org/2000/svg', 'defs');
-    const clipPath = this.doc.createElementNS('http://www.w3.org/2000/svg', 'clipPath');
+    const svg = this.meterEl.createSvg('svg', {
+      cls: 'co-ober-arc-svg',
+      attr: { viewBox: '0 0 40 24' },
+    });
+    svg.createSvg('path', {
+      cls: 'co-ober-arc-track',
+      attr: { d: `M ${C - R} ${C} A ${R} ${R} 0 0 1 ${C + R} ${C}` },
+    });
+    const defs = svg.createSvg('defs');
     const arcClipId = `arc-clip-${CoOberView.clipIdCounter++}`;
-    clipPath.setAttribute('id', arcClipId);
-    const clipRect = this.doc.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    clipRect.setAttribute('y', '20');
-    clipRect.setAttribute('width', '40');
-    clipRect.setAttribute('height', '24');
-    clipPath.appendChild(clipRect);
-    defs.appendChild(clipPath);
-    svg.appendChild(defs);
-    this.meterArcFill = this.doc.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    this.meterArcFill.setAttribute('cx', String(C));
-    this.meterArcFill.setAttribute('cy', String(C));
-    this.meterArcFill.setAttribute('r', String(R));
-    this.meterArcFill.setAttribute('class', 'co-ober-arc-fill');
-    this.meterArcFill.setAttribute('stroke-dasharray', `0 ${ARC_LEN}`);
-    this.meterArcFill.setAttribute('clip-path', `url(#${arcClipId})`);
-    svg.appendChild(this.meterArcFill);
-    this.meterEl.appendChild(svg);
+    const clipPath = defs.createSvg('clipPath', { attr: { id: arcClipId } });
+    clipPath.createSvg('rect', { attr: { y: '20', width: '40', height: '24' } });
+    this.meterArcFill = svg.createSvg('circle', {
+      cls: 'co-ober-arc-fill',
+      attr: {
+        cx: String(C),
+        cy: String(C),
+        r: String(R),
+        'stroke-dasharray': `0 ${ARC_LEN}`,
+        'clip-path': `url(#${arcClipId})`,
+      },
+    });
     this.meterPctEl = this.meterEl.createSpan({ cls: 'co-ober-arc-pct' });
     this.meterPctEl.setText('—');
     this.meterEl.addClass('empty');
@@ -1011,12 +1006,10 @@ export class CoOberView extends ItemView {
   private openImagePicker(): void {
     const doc = this.doc;
     if (!this.imageFileInputEl) {
-      this.imageFileInputEl = doc.createElement('input');
-      this.imageFileInputEl.type = 'file';
-      this.imageFileInputEl.accept = 'image/*';
-      this.imageFileInputEl.multiple = true;
+      this.imageFileInputEl = doc.body.createEl('input', {
+        attr: { type: 'file', accept: 'image/*', multiple: 'true' },
+      });
       this.imageFileInputEl.setCssProps({ display: 'none' });
-      doc.body.appendChild(this.imageFileInputEl);
     }
     const input = this.imageFileInputEl;
     input.onchange = () => {

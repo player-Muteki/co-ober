@@ -1,7 +1,10 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, afterEach } from 'vitest';
+import { installObsidianDomHelpers } from '../test/domHelpers';
 import { openImagePreview, closeImagePreview, isImagePreviewOpen } from './imagePreview';
 import { setLocale, t } from '../i18n/index';
+
+installObsidianDomHelpers();
 
 describe('imagePreview', () => {
   afterEach(() => {

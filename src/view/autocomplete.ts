@@ -50,11 +50,10 @@ export class Autocomplete {
   open(items: ACItem[], mode: '@' | '/'): void {
     this.close();
     // Create the dropdown container element
-    this.dropdownEl = this.doc.createElement('div');
-    this.dropdownEl.addClass('co-ober-ac-dropdown');
-    this.dropdownEl.setAttribute('role', 'listbox');
-    this.dropdownEl.setAttribute('aria-label', t().autocomplete.listboxAria);
-    this.container.appendChild(this.dropdownEl);
+    this.dropdownEl = this.container.createDiv({
+      cls: 'co-ober-ac-dropdown',
+      attr: { role: 'listbox', 'aria-label': t().autocomplete.listboxAria },
+    });
     this.mode = mode;
     this.allItems = items;
     this.filterText = '';

@@ -39,17 +39,19 @@ export function openImagePreview(src: string, alt?: string): void {
   if (!doc) return;
   const active = doc.activeElement;
   previouslyFocused = active instanceof HTMLElement ? active : null;
-  const overlay = doc.createElement('div');
-  overlay.className = 'co-ober-img-overlay';
-  overlay.tabIndex = -1;
-  overlay.setAttribute('role', 'dialog');
-  overlay.setAttribute('aria-modal', 'true');
-  overlay.setAttribute('aria-label', alt || t().lightbox.title);
-  const img = doc.createElement('img');
-  img.src = src;
-  img.alt = alt ?? '';
-  img.className = 'co-ober-img-preview';
-  overlay.appendChild(img);
+  const overlay = createDiv({
+    cls: 'co-ober-img-overlay',
+    attr: {
+      tabindex: '-1',
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-label': alt || t().lightbox.title,
+    },
+  });
+  overlay.createEl('img', {
+    cls: 'co-ober-img-preview',
+    attr: { src, alt: alt ?? '' },
+  });
   overlay.addEventListener('click', () => close());
   doc.body.appendChild(overlay);
   activeOverlay = overlay;

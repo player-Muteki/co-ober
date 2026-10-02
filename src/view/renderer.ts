@@ -398,27 +398,29 @@ export class ChatRenderer {
     const hasStep = hidden.some((w) => !Array.from(w.children).some((c) => c.classList.contains('co-ober-msg-body')));
     if (!hasStep) return;
 
-    const group = this.doc.createElement('div');
-    group.className = 'co-ober-turn-collapsed';
-    const header = this.doc.createElement('div');
-    header.className = 'co-ober-turn-collapsed-header';
-    header.setAttribute('role', 'button');
-    header.setAttribute('tabindex', '0');
-    header.setAttribute('aria-expanded', 'false');
-    header.title = t().turnCollapse.toggle;
-    header.dataset.i18nTitle = 'turnCollapse.toggle';
-    const chevron = this.doc.createElement('span');
-    chevron.className = 'co-ober-turn-chevron';
+    const group = createDiv({ cls: 'co-ober-turn-collapsed' });
+    const header = group.createDiv({
+      cls: 'co-ober-turn-collapsed-header',
+      title: t().turnCollapse.toggle,
+      attr: {
+        role: 'button',
+        tabindex: '0',
+        'aria-expanded': 'false',
+        'data-i18n-title': 'turnCollapse.toggle',
+      },
+    });
+    const chevron = header.createSpan({ cls: 'co-ober-turn-chevron' });
     setIcon(chevron, 'chevron-right');
-    header.appendChild(chevron);
-    const summary = this.doc.createElement('span');
-    summary.className = 'co-ober-turn-summary';
-    summary.textContent = t().turnCollapse.summary.replace('{count}', String(hidden.length));
-    summary.dataset.i18nCount = 'turnCollapse.summary';
-    summary.dataset.count = String(hidden.length);
-    header.appendChild(summary);
-    const body = this.doc.createElement('div');
-    body.className = 'co-ober-turn-collapsed-body';
+    const summaryCount = String(hidden.length);
+    header.createSpan({
+      cls: 'co-ober-turn-summary',
+      text: t().turnCollapse.summary.replace('{count}', summaryCount),
+      attr: {
+        'data-i18n-count': 'turnCollapse.summary',
+        'data-count': summaryCount,
+      },
+    });
+    const body = group.createDiv({ cls: 'co-ober-turn-collapsed-body' });
 
     const toggle = () => {
       const open = group.classList.toggle('is-open');
@@ -432,8 +434,6 @@ export class ChatRenderer {
       }
     });
 
-    group.appendChild(header);
-    group.appendChild(body);
     last.parentNode?.insertBefore(group, last);
     for (const w of hidden) body.appendChild(w);
   }
@@ -623,13 +623,10 @@ export class ChatRenderer {
         const existing = this.currentAssistantEl.querySelector('.md-render-subsystem');
         if (existing) existing.remove();
 
-        const placeholder = this.doc.createElement('div');
-        placeholder.addClass('md-render-subsystem');
         // Obsidian themes only style list markers (ordered "1." counters,
         // bullet li::before) under .markdown-rendered; without it, rendered
         // ordered lists lose their numbers.
-        placeholder.addClass('markdown-rendered');
-        this.currentAssistantEl.appendChild(placeholder);
+        const placeholder = this.currentAssistantEl.createDiv({ cls: 'md-render-subsystem markdown-rendered' });
 
         await MarkdownRenderer.render(
           this.app,
@@ -688,13 +685,13 @@ export class ChatRenderer {
       const classes = `${(codeEl as HTMLElement).className ?? ''} ${pre.className ?? ''}`;
       if (/(^|[\s-])mermaid($|[\s-])/.test(classes)) return;
 
-      const btn = this.doc.createElement('button');
-      btn.className = 'co-ober-copy-btn';
-      btn.textContent = t().copy.button;
-      btn.dataset.i18nText = 'copy.button';
-      this.bindCopyButton(btn, () => codeEl.textContent || '');
       pre.classList.add('co-ober-code-block');
-      pre.appendChild(btn);
+      const btn = pre.createEl('button', {
+        cls: 'co-ober-copy-btn',
+        text: t().copy.button,
+        attr: { 'data-i18n-text': 'copy.button' },
+      });
+      this.bindCopyButton(btn, () => codeEl.textContent || '');
     });
   }
 
@@ -1341,9 +1338,7 @@ export class ChatRenderer {
    */
   renderInline(el: HTMLElement, markdown: string): void {
     if (!markdown) return;
-    const placeholder = this.doc.createElement('div');
-    placeholder.addClass('markdown-rendered');
-    el.appendChild(placeholder);
+    const placeholder = el.createDiv({ cls: 'markdown-rendered' });
     MarkdownRenderer.render(
       this.app,
       markdown,
@@ -1386,12 +1381,12 @@ export class ChatRenderer {
    * Add a text copy button to a text block (shown on hover).
    */
   addTextCopyButton(textEl: HTMLElement, markdown: string): void {
-    const btn = this.doc.createElement('button');
-    btn.className = 'co-ober-text-copy-btn';
-    btn.textContent = t().copy.button;
-    btn.dataset.i18nText = 'copy.button';
+    const btn = textEl.createEl('button', {
+      cls: 'co-ober-text-copy-btn',
+      text: t().copy.button,
+      attr: { 'data-i18n-text': 'copy.button' },
+    });
     this.bindCopyButton(btn, () => markdown);
-    textEl.appendChild(btn);
   }
 
   /**
