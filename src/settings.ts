@@ -69,6 +69,11 @@ export class CoOberSettingsTab extends PluginSettingTab {
   private runtimeSkills: AvailableCommand[] = [];
   private runtimeOptionsLoaded = false;
   private runtimeOptionsLoading = false;
+  // The three flags answer different questions: loading is "still fetching",
+  // loaded is "the fetch returned", unavailable is "the fetch could not
+  // answer". A `false` loaded only means "nothing here" if the fetch also
+  // did not fail — otherwise the guard below would call a failure an empty.
+  private runtimeOptionsUnavailable = false;
   private diagnosticsRunning = false;
   private diagnosticsResults: DiagnosticResult[] = [];
 
@@ -313,6 +318,11 @@ export class CoOberSettingsTab extends PluginSettingTab {
 
     if (this.runtimeOptionsLoading && !this.runtimeOptionsLoaded) {
       new Setting(containerEl).setName(labels.customSkills.loading);
+    } else if (!this.runtimeOptionsLoaded && this.runtimeOptionsUnavailable) {
+      // An unreadable runtime list is not an empty one; the same failure the
+      // reader's session dropdown already names, on the settings row that
+      // claims "these are all the skills: none" when nothing was actually read.
+      new Setting(containerEl).setName(labels.customSkills.loadedUnavailable);
     } else if (availableSkills.length === 0) {
       new Setting(containerEl).setName(labels.customSkills.loadedEmpty);
     }
@@ -360,6 +370,8 @@ export class CoOberSettingsTab extends PluginSettingTab {
 
     if (this.runtimeOptionsLoading && !this.runtimeOptionsLoaded) {
       new Setting(containerEl).setName(labels.commonModels.loading);
+    } else if (!this.runtimeOptionsLoaded && this.runtimeOptionsUnavailable) {
+      new Setting(containerEl).setName(labels.commonModels.unavailable);
     } else if (availableModels.length === 0) {
       new Setting(containerEl).setName(labels.commonModels.empty);
     }
@@ -829,12 +841,32 @@ export class CoOberSettingsTab extends PluginSettingTab {
   private async loadRuntimeOptions(): Promise<void> {
     if (this.runtimeOptionsLoading || this.runtimeOptionsLoaded) return;
     this.runtimeOptionsLoading = true;
+    this.runtimeOptionsUnavailable = false;
+    // The final render is deferred until after the finally clears the loading
+    // flag; a render that fires while `loading` is still true would paint the
+    // loading line over the failure signal the catch just set, and the reader
+    // would keep looking at a spinner for a fetch that already died.
+    let scheduleRender = false;
     try {
       const client = this.plugin.getClient();
-      if (!client?.isConnected()) return;
+      if (!client?.isConnected()) {
+        // A client that was never reachable cannot answer whether skills or
+        // models exist. Reporting "no runtime skills" here would be the same
+        // claim about content the reader's dropdown never asked for; a fetch
+        // that could not run is an unavailable, not an empty.
+        this.runtimeOptionsUnavailable = true;
+        scheduleRender = true;
+        return;
+      }
 
       const snapshot = client.getSessionSnapshot();
 
+      // An agent that hangs up mid-`getAvailable*` used to leave the loading
+      // flag down and `loaded` false with no other signal, so the next render
+      // fell past "loading" and into "empty" — the same lie the native list
+      // and native search were fixed for last release, in the settings read
+      // whose caller can in fact tell failure from empty. The failure now
+      // lands in a distinct flag and stays out of the `[]` path.
       const [agents, models, skills] = await Promise.all([
         client.getAvailableAgents(),
         client.getAvailableModels(),
@@ -844,9 +876,14 @@ export class CoOberSettingsTab extends PluginSettingTab {
       this.runtimeModels = models.length > 0 ? models : snapshot.availableModels;
       this.runtimeSkills = skills.length > 0 ? skills : snapshot.availableCommands;
       this.runtimeOptionsLoaded = true;
-      this.render();
+      scheduleRender = true;
+    } catch (error) {
+      this.runtimeOptionsUnavailable = true;
+      console.error('[co-ober] runtime options fetch failed:', error);
+      scheduleRender = true;
     } finally {
       this.runtimeOptionsLoading = false;
+      if (scheduleRender) this.render();
     }
   }
 

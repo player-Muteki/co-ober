@@ -530,6 +530,7 @@ const en = {
       loadedHeading: 'Loaded Skills',
       loading: 'Loading runtime skills…',
       loadedEmpty: 'No runtime skills loaded',
+      loadedUnavailable: 'Runtime skills unavailable (see console)',
       add: '+ Add Custom Skill',
       label: 'Skill: {name}',
       defaultName: 'New Skill',
@@ -548,6 +549,7 @@ const en = {
       desc: 'Only selected models appear in the chat toolbar. Select none to show all models.',
       loading: 'Loading runtime models…',
       empty: 'No models loaded',
+      unavailable: 'Runtime models unavailable (see console)',
     },
     permissionMode: {
       name: 'Permission Mode',

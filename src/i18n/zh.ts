@@ -532,6 +532,7 @@ const zh: Locale = {
       loadedHeading: '已载入技能',
       loading: '正在载入运行时技能…',
       loadedEmpty: '未载入运行时技能',
+      loadedUnavailable: '运行时技能不可用（详见控制台）',
       add: '+ 添加自定义技能',
       label: '技能：{name}',
       defaultName: '新技能',
@@ -550,6 +551,7 @@ const zh: Locale = {
       desc: '只有选中的模型会出现在聊天工具栏。不选择则显示全部模型。',
       loading: '正在载入运行时模型…',
       empty: '未载入模型',
+      unavailable: '运行时模型不可用（详见控制台）',
     },
     permissionMode: {
       name: '权限模式',

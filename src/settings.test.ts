@@ -606,6 +606,48 @@ describe('CoOberSettingsTab reconnect', () => {
 
     expect(Notice.messages).toContain('Failed to reconnect');
   });
+
+  it('names a runtime fetch that could not be made, not an empty list', async () => {
+    // A `getAvailableAgents/Models/Commands` that rejects used to leave the
+    // loading flag false and `loaded` false with no other signal, so the next
+    // render fell past "loading" and into "empty" — the same lie the native
+    // list and native search were fixed for last release. A failed fetch is
+    // now its own state, and reads as "unavailable", not "no models loaded".
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const client = plugin.getClient()!;
+    vi.mocked(client.getAvailableAgents).mockRejectedValue(new Error('stream died'));
+    vi.mocked(client.getAvailableModels).mockRejectedValue(new Error('stream died'));
+    vi.mocked(client.getAvailableCommands).mockRejectedValue(new Error('stream died'));
+    const tab = new CoOberSettingsTab(plugin);
+
+    tab.display();
+    reconnectButton(tab).click();
+    await flushPromises();
+    await flushPromises();
+
+    expect(tab.containerEl.textContent).toContain('Runtime skills unavailable');
+    expect(tab.containerEl.textContent).toContain('Runtime models unavailable');
+    expect(tab.containerEl.textContent).not.toContain('No runtime skills loaded');
+    expect(tab.containerEl.textContent).not.toContain('No models loaded');
+  });
+
+  it('reads an empty fetch as empty, not as unavailable', async () => {
+    // The two flags must stay distinct: a fetch that answered `[]` truly is an
+    // empty reading; only a rejection or a never-connected client may raise
+    // the unavailable line, or the fix would trade one lie for another.
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() }, {}, {});
+    const tab = new CoOberSettingsTab(plugin);
+
+    tab.display();
+    reconnectButton(tab).click();
+    await flushPromises();
+    await flushPromises();
+
+    expect(tab.containerEl.textContent).toContain('No runtime skills loaded');
+    expect(tab.containerEl.textContent).not.toContain('Runtime skills unavailable');
+  });
 });
 
 function createPlugin(
