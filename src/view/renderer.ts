@@ -215,8 +215,8 @@ export class ChatRenderer {
 
   addSystemMessage(text: string): void {
     const wrap = this.container.createDiv({ cls: 'co-ober-msg system' });
-    const body = wrap.createDiv({ cls: 'co-ober-msg-body' });
-    void MarkdownRenderer.renderMarkdown(text, body, '', this.app as unknown as Component);
+    const body = wrap.createDiv({ cls: 'co-ober-msg-body markdown-rendered' });
+    void MarkdownRenderer.render(this.app, text, body, '', this.container as unknown as Component);
     this.scrollToBottom();
   }
 

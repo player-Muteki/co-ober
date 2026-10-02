@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { isImeComposing } from './ime';
 
-function keyEvent(init: { isComposing?: boolean; keyCode?: number }): KeyboardEvent {
-  const e = { isComposing: init.isComposing ?? false } as unknown as KeyboardEvent;
-  if (init.keyCode !== undefined) {
-    Object.defineProperty(e, 'keyCode', { value: init.keyCode });
-  }
-  return e;
+function keyEvent(init: { isComposing?: boolean; key?: string }): KeyboardEvent {
+  return {
+    isComposing: init.isComposing ?? false,
+    key: init.key ?? 'a',
+  } as unknown as KeyboardEvent;
 }
 
 describe('isImeComposing', () => {
@@ -18,11 +17,11 @@ describe('isImeComposing', () => {
     expect(isImeComposing(keyEvent({ isComposing: true }))).toBe(true);
   });
 
-  it('detects legacy engines that only report keyCode 229', () => {
-    expect(isImeComposing(keyEvent({ keyCode: 229 }))).toBe(true);
+  it('detects engines that only report key === "Process"', () => {
+    expect(isImeComposing(keyEvent({ key: 'Process' }))).toBe(true);
   });
 
-  it('ignores other legacy keyCodes', () => {
-    expect(isImeComposing(keyEvent({ keyCode: 13 }))).toBe(false);
+  it('ignores other named keys', () => {
+    expect(isImeComposing(keyEvent({ key: 'Enter' }))).toBe(false);
   });
 });

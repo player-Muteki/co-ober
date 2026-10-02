@@ -27,41 +27,37 @@ const zPermissionOption = z.object({
   kind: z.string(),
   name: z.string(),
 });
-const zPermissionParams = z
-  .object({
-    sessionId: z.string().catch(''),
-    toolCall: z
-      .object({
-        toolCallId: z.string().optional(),
-        title: z.string().catch(''),
-        status: z.string().optional(),
-        // rawInput is untyped in ACP; forcing a record here failed the whole
-        // request, which answered the prompt with "cancelled" for a question
-        // the user never got to read.
-        rawInput: zRawJson,
-        // An agent-minted kind we do not know must not cost the user the
-        // whole prompt — degrade it to 'other'.
-        kind: zToolKind.catch('other').optional(),
-        locations: z.array(z.object({ path: z.string() })).optional(),
-      })
-      .passthrough(),
-    // Permission-option kinds are an open set in practice (agents mint their
-    // own); a strict enum here would fail the whole request and auto-cancel a
-    // prompt the user never got to see. Accept any string and let the caller
-    // match on the four known kinds for auto-decisions. A missing or
-    // non-array options list degrades to empty; individual malformed options
-    // are dropped rather than poisoning the array.
-    options: z
-      .array(z.unknown())
-      .catch([])
-      .transform((list) =>
-        list.flatMap((o) => {
-          const r = zPermissionOption.safeParse(o);
-          return r.success ? [r.data] : [];
-        }),
-      ),
-  })
-  .passthrough();
+const zPermissionParams = z.looseObject({
+  sessionId: z.string().catch(''),
+  toolCall: z.looseObject({
+    toolCallId: z.string().optional(),
+    title: z.string().catch(''),
+    status: z.string().optional(),
+    // rawInput is untyped in ACP; forcing a record here failed the whole
+    // request, which answered the prompt with "cancelled" for a question
+    // the user never got to read.
+    rawInput: zRawJson,
+    // An agent-minted kind we do not know must not cost the user the
+    // whole prompt — degrade it to 'other'.
+    kind: zToolKind.catch('other').optional(),
+    locations: z.array(z.object({ path: z.string() })).optional(),
+  }),
+  // Permission-option kinds are an open set in practice (agents mint their
+  // own); a strict enum here would fail the whole request and auto-cancel a
+  // prompt the user never got to see. Accept any string and let the caller
+  // match on the four known kinds for auto-decisions. A missing or
+  // non-array options list degrades to empty; individual malformed options
+  // are dropped rather than poisoning the array.
+  options: z
+    .array(z.unknown())
+    .catch([])
+    .transform((list) =>
+      list.flatMap((o) => {
+        const r = zPermissionOption.safeParse(o);
+        return r.success ? [r.data] : [];
+      }),
+    ),
+});
 
 // `line` (1-based) and `limit` are part of ReadTextFileRequest: an agent
 // asking for line 500 must not be handed the bytes at the top of the file and
@@ -74,17 +70,15 @@ const zFsPathParam = z.object({
   limit: zWindowBound,
 });
 
-const zElicitationParams = z
-  .object({
-    sessionId: z.string().optional(),
-    mode: z.string().optional(),
-    elicitationId: z.string().optional(),
-    message: z.unknown().optional(),
-    url: z.unknown().optional(),
-    requestedSchema: z.unknown().optional(),
-    schema: z.unknown().optional(),
-  })
-  .passthrough();
+const zElicitationParams = z.looseObject({
+  sessionId: z.string().optional(),
+  mode: z.string().optional(),
+  elicitationId: z.string().optional(),
+  message: z.unknown().optional(),
+  url: z.unknown().optional(),
+  requestedSchema: z.unknown().optional(),
+  schema: z.unknown().optional(),
+});
 
 // ACP restricts elicitation properties to primitives. Everything here is
 // lenient on purpose: one property we fail to read must cost that property's

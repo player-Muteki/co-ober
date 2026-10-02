@@ -83,7 +83,10 @@ export class FileCommandStorage implements CommandSource {
         takenNames.set(name.toLowerCase(), file.path);
 
         const description = parsed.frontmatter.description ?? '';
-        const argumentHint = parsed.frontmatter.argumentHint ?? parsed.frontmatter['argument-hint'];
+        // FrontmatterParser.normalizeField mirrors every top-level hyphenated
+        // key onto its camelCase twin, so a file that says `argument-hint:`
+        // reaches this reader as `argumentHint` too — no second lookup needed.
+        const argumentHint = parsed.frontmatter.argumentHint;
 
         defs.push({
           id: `file:${name}`,

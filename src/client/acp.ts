@@ -856,7 +856,7 @@ export class AcpClient implements OpencodeClient {
       });
       const parsed = z
         .object({
-          sessions: z.array(z.object({ sessionId: z.string() }).passthrough()).optional(),
+          sessions: z.array(z.looseObject({ sessionId: z.string() })).optional(),
           nextCursor: z.string().nullish().transform((c) => c ?? undefined),
         })
         .safeParse(r);

@@ -2,6 +2,15 @@ export const MarkdownRenderer = {
   renderMarkdown: async (_markdown: string, el: HTMLElement): Promise<void> => {
     el.textContent = _markdown;
   },
+  render: async (
+    _app: unknown,
+    _markdown: string,
+    el: HTMLElement,
+    _sourcePath: string,
+    _component: unknown,
+  ): Promise<void> => {
+    el.textContent = _markdown;
+  },
 };
 
 export class TAbstractFile {

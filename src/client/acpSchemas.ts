@@ -9,7 +9,7 @@ export const zToolKind = z.enum(['read', 'edit', 'delete', 'move', 'search', 'ex
 export const zToolKindLenient = zToolKind.catch('other');
 // Agents send explicit nulls where `.optional()` only forgives omission;
 // a null on a peripheral field must degrade to absent, not cost the frame.
-const zOpt = <T extends z.ZodTypeAny>(schema: T) => schema.nullish().transform((v) => v ?? undefined);
+const zOpt = <T extends z.ZodType>(schema: T) => schema.nullish().transform((v) => v ?? undefined);
 // rawInput/rawOutput carry no type at all in ACP — any JSON is a legal payload.
 // Requiring an object cost the whole frame (and on a permission request it also
 // cancelled the prompt the user never saw), so anything that is not an object
