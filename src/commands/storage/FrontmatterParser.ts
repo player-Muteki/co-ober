@@ -157,7 +157,7 @@ function parseFrontmatter(raw: string): CommandFrontmatter {
           nestedObj[nestedKey] = [String(parseScalar(nestedValue))];
           i++;
         }
-        result[key] = { ...(result[key] as object ?? {}), ...nestedObj };
+        result[key] = { ...(result[key] ?? {}), ...nestedObj };
         continue;
       }
       break; // Not a block continuation
@@ -196,6 +196,6 @@ function normalizeField(obj: Record<string, unknown>, key: string): void {
   // Map hyphenated keys to camelCase equivalents
   const camelKey = key.replace(/-([a-z])/g, (_, c) => (c as string).toUpperCase());
   if (camelKey !== key && obj[key] !== undefined) {
-    (obj as Record<string, unknown>)[camelKey] = obj[key];
+    obj[camelKey] = obj[key];
   }
 }

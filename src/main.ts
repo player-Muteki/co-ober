@@ -53,7 +53,7 @@ export default class CoOberPlugin extends Plugin {
         new Notice(
           backupPath && tooNew
             ? t().notice.dataLoadTooNew
-                .replace('{version}', String((e as PluginDataTooNewError).foundVersion))
+                .replace('{version}', String(e.foundVersion))
                 .replace('{file}', backupPath)
             : backupPath
               ? t().notice.dataLoadFailed.replace('{file}', backupPath)

@@ -361,7 +361,7 @@ export async function readNativeSessionUsage(sessionId: string, deps: NativeSess
 
 export interface NativeSessionTodo {
 	content: string;
-	status: 'pending' | 'in_progress' | 'completed' | string;
+	status: 'pending' | 'in_progress' | 'completed' | (string & {});
 	priority?: string;
 }
 

@@ -96,8 +96,11 @@ function sanitizeDraft(value: unknown): StoredDraft | undefined {
       if (!isRecord(ref)) return [];
       const { id, type, name, path } = ref;
       if (typeof id !== 'string' || typeof name !== 'string' || typeof path !== 'string') return [];
+      // Positive disjunction so `type` narrows to the literal union and the
+      // object literal structurally matches Pick<ContextRef, ...>.
       if (type !== 'note' && type !== 'file') return [];
-      return [{ id, type, name, path } as Pick<ContextRef, 'id' | 'type' | 'name' | 'path'>];
+      const refType: ContextRef['type'] = type;
+      return [{ id, type: refType, name, path }];
     });
     if (refs.length > 0) draft.refs = refs;
   }
@@ -223,7 +226,7 @@ function withLegacyMcpType(value: unknown): unknown {
  * stored there is left alone.
  */
 export function sanitizeLoadedSettings(raw: unknown, defaults: CoOberSettings): CoOberSettings {
-  const merged = { ...defaults, ...(isRecord(raw) ? raw : {}) } as CoOberSettings;
+  const merged = { ...defaults, ...(isRecord(raw) ? raw : {}) };
   const fields = merged as unknown as Record<string, unknown>;
   const fallbacks = defaults as unknown as Record<string, unknown>;
   for (const key of SETTINGS_ARRAY_FIELDS) {
@@ -242,7 +245,7 @@ export function sanitizeLoadedSettings(raw: unknown, defaults: CoOberSettings): 
     if (value !== undefined && !allowed.includes(value as string)) fields[key] = fallbacks[key];
   }
   if (Array.isArray(fields.mcpServers)) {
-    fields.mcpServers = fields.mcpServers.map(withLegacyMcpType) as CoOberSettings['mcpServers'];
+    fields.mcpServers = fields.mcpServers.map(withLegacyMcpType);
   }
   return merged;
 }

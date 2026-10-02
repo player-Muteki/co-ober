@@ -113,7 +113,7 @@ export function getToolSummary(kind: string, input?: Record<string, unknown>, lo
   if (locs[0]?.path) return locs[0].path.split(/[\\/]/).pop() ?? '';
   const firstValue = Object.values(rawInput).find((v) => typeof v === 'string');
   if (firstValue) {
-    return truncateText(firstValue as string, 60);
+    return truncateText(firstValue, 60);
   }
   return '';
 }

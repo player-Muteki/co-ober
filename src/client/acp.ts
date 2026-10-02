@@ -357,7 +357,7 @@ export function extractSessionSnapshot(result: Record<string, unknown>): AcpSess
   }
 
   if (result.sessionInfo) {
-    snapshot.sessionInfo = result.sessionInfo as { sessionId?: string; title?: string; cwd?: string };
+    snapshot.sessionInfo = result.sessionInfo;
   }
 
   if (Array.isArray(result.configOptions)) {
@@ -365,7 +365,7 @@ export function extractSessionSnapshot(result: Record<string, unknown>): AcpSess
     // its model choices, or ships a boolean toggle with no options, used to
     // throw here — from inside the code that runs right after the session was
     // created — and the caller never heard about the session at all.
-    const configMeta = extractConfigMeta(parseConfigOptions(result.configOptions) as SessionConfigOption[]);
+    const configMeta = extractConfigMeta(parseConfigOptions(result.configOptions));
     snapshot.configOptions = configMeta.configOptions;
     snapshot.currentModelId = configMeta.currentModelId;
     snapshot.availableModels = configMeta.availableModels;
@@ -437,7 +437,7 @@ export function normalizeAgentCapabilities(raw: unknown): AgentCapabilities | nu
       out[key] = value;
     }
   }
-  return out as AgentCapabilities;
+  return out;
 }
 
 export type AuthMethod = NonNullable<AgentCapabilities['authMethods']>[number];
@@ -1038,7 +1038,7 @@ export class AcpClient implements OpencodeClient {
         if (!parsed.success) {
           throw new Error(t().acp.invalidResponse);
         }
-        return parsed.data as AcpResponse;
+        return parsed.data;
       })
       .finally(() => {
         if (this.activeStreams.get(id) === stream) this.activeStreams.delete(id);
