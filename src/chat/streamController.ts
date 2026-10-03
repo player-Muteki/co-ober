@@ -42,6 +42,15 @@ export interface StreamControllerDeps {
   /** A transcript write failed; the tab says so instead of looking saved. */
   onPersistFailure?: () => void;
   /**
+   * The agent renamed a session via `session_info_update`. The store field
+   * has already been written; this callback lets the controller raise the
+   * tabs-changed fanout so the tab strip re-samples the descriptor it
+   * snapshotted under the previous name. Same signal `renameSession` and
+   * `maybeAutoTitle` already raise on the two user-driven mutators
+   * (0.2.42 B, 0.2.47 B); the wire-driven one is the third.
+   */
+  onTitleChanged?: (sessionId: string) => void;
+  /**
    * Read the plugin's `lastSaveOk` outcome after a save resolves.
    * `sessionStore.save` never rejects (0.2.47 stage A's sticky-alarm swallow),
    * so the `.catch` in `persist()` cannot see a real disk failure — this
@@ -327,6 +336,10 @@ export class StreamController {
           if (session) {
             session.title = ch.title;
             this.scheduleSave();
+            // The tab strip reads its snapshot only through the signal;
+            // without this call the store says one name and the tab says
+            // another until the next user-driven rename repaints it.
+            this.deps.onTitleChanged?.(sid);
           }
         }
         break;

@@ -51,6 +51,7 @@ describe('StreamController', () => {
       onCommandsUpdate: vi.fn(),
       onSyncFailure: vi.fn(),
       onPersistFailure: vi.fn(),
+      onTitleChanged: vi.fn(),
     };
     controller = new StreamController(deps);
     vi.useFakeTimers();
@@ -786,6 +787,41 @@ describe('StreamController', () => {
     controller.handleChunk({ kind: 'session_info', title: 'New Title' });
     // should safely do nothing
     expect(session.title).toBe('Old Title');
+  });
+
+  describe('an agent-side rename repaints the tab strip (0.2.49 stage A)', () => {
+    it('raises onTitleChanged on the successful store-write branch', () => {
+      const session = { title: 'Old Title' };
+      deps.sessionStore.get.mockReturnValue(session);
+      controller.handleChunk({ kind: 'session_info', sessionId: 'sid-1', title: 'Renamed by agent' });
+
+      // `sessionDropdown` reads the store live, `tabDescriptors` reads the
+      // snapshot. Without this signal the two adjacent widgets disagree on
+      // the same session name until some other code path re-raises it — the
+      // exact 0.2.42 stage B / 0.2.47 stage B shape, on the wire-driven
+      // mutator the two user-driven fixes left standing.
+      expect(deps.onTitleChanged).toHaveBeenCalledWith('sid-1');
+    });
+
+    it('does not raise onTitleChanged when the sid is missing', () => {
+      deps.getSessionId.mockReturnValue(null);
+      controller.handleChunk({ kind: 'session_info', title: 'Renamed' });
+      expect(deps.onTitleChanged).not.toHaveBeenCalled();
+    });
+
+    it('does not raise onTitleChanged when the store has no such session', () => {
+      deps.sessionStore.get.mockReturnValue(undefined);
+      controller.handleChunk({ kind: 'session_info', sessionId: 'sid-1', title: 'Renamed' });
+      expect(deps.onTitleChanged).not.toHaveBeenCalled();
+    });
+
+    it('does not raise onTitleChanged when the chunk carries no title', () => {
+      const session = { title: 'Old Title' };
+      deps.sessionStore.get.mockReturnValue(session);
+      controller.handleChunk({ kind: 'session_info', sessionId: 'sid-1' });
+      expect(deps.onTitleChanged).not.toHaveBeenCalled();
+      expect(session.title).toBe('Old Title');
+    });
   });
 
   it('handles message_chunk with role user', () => {

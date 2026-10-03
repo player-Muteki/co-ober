@@ -256,6 +256,7 @@ export class CoOberViewController {
       },
       onSyncFailure: (message) => rt.renderer.addError(message),
       onPersistFailure: () => this.reportPersistence(true),
+      onTitleChanged: () => this.notifyTabsChanged(),
       lastSaveOk: () => this.deps.runtime.lastSaveOk,
     });
     this.runtimes.set(tabId, rt);

@@ -4495,6 +4495,46 @@ describe('CoOberViewController — queue visualization and auto titles', () => {
     });
   });
 
+  describe('an agent-side rename repaints the tab strip (0.2.49 stage A)', () => {
+    // The two user-driven mutators of `session.title` (`renameSession` and
+    // `maybeAutoTitle`) already raise notifyTabsChanged; the third — the
+    // agent's own `session_info_update` chunk, which streamController.ts
+    // writes straight into the same store field from the wire — did not,
+    // because StreamController had no path back to the controller. Same
+    // 0.2.42 B / 0.2.45 C / 0.2.47 B shape (a mutation into a shared field
+    // repaints its own reader but not the sibling that reads it), left on
+    // the branch the reader never types.
+    it('raises onTabsChanged when the agent renames the current session', () => {
+      const onTabsChanged = vi.fn();
+      callbacks.onTabsChanged = onTabsChanged;
+      controller = new CoOberViewController(deps, callbacks);
+      const streamCtrl = Reflect.get(controller, 'streamCtrl') as {
+        handleChunk: (u: unknown) => void;
+      };
+
+      streamCtrl.handleChunk({ kind: 'session_info', sessionId: 'agent-sid', title: 'Renamed by the agent' });
+
+      expect(onTabsChanged).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not raise onTabsChanged when the store has no such session', () => {
+      const onTabsChanged = vi.fn();
+      callbacks.onTabsChanged = onTabsChanged;
+      deps.sessionStore = {
+        ...deps.sessionStore,
+        get: vi.fn(() => undefined) as unknown as ControllerDeps['sessionStore']['get'],
+      };
+      controller = new CoOberViewController(deps, callbacks);
+      const streamCtrl = Reflect.get(controller, 'streamCtrl') as {
+        handleChunk: (u: unknown) => void;
+      };
+
+      streamCtrl.handleChunk({ kind: 'session_info', sessionId: 'agent-sid', title: 'Renamed' });
+
+      expect(onTabsChanged).not.toHaveBeenCalled();
+    });
+  });
+
   describe('a builtin command the send path already painted (0.2.9 stage 3)', () => {
     it('shows the /help prompt once, not twice', async () => {
       const addUserMessage = vi.fn();
