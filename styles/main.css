@@ -2088,18 +2088,14 @@ pre:focus-within .co-ober-copy-btn {
   color: var(--text-faint);
 }
 
-/* Sub-agent block stub */
-.co-ober-subagent-block {
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-s);
-  padding: 6px 10px;
-  font-size: var(--font-smaller);
-  color: var(--text-muted);
-  background: var(--background-secondary);
+/* Sub-agent card — a tool call the agent named `task`/`subagent`. It shares the
+   tool-call anatomy, so it only needs the accent that sets a delegated run apart
+   from an uncategorized `other` call wearing the same shape. */
+.co-ober-tool-call-subagent {
+  border-left: 3px solid var(--interactive-accent);
 }
-.co-ober-subagent-block .subagent-name {
-  font-weight: 600;
-  color: var(--text-normal);
+.co-ober-tool-call-subagent .co-ober-tool-call-header {
+  font-weight: 500;
 }
 
 /* Interrupt indicator */

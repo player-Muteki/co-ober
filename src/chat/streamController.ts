@@ -25,6 +25,7 @@ import type { SyncEngine } from '../sync/engine';
 import type { SyncContext } from '../sync/templates';
 import type { SessionStore } from './session';
 import { t } from '../i18n/index';
+import { isSubagentToolName } from '../view/ToolCallRenderer';
 import { STREAM_SAVE_DEBOUNCE_MS, MAX_TRACKED_ASSISTANT_MESSAGES } from '../constants';
 
 export interface StreamControllerDeps {
@@ -79,6 +80,7 @@ export class StreamController {
   private pendingToolBuffer: Array<{
     toolCallId: string;
     title: string;
+    toolName?: string;
     toolKind: ToolKind;
     status: 'pending' | 'in_progress' | 'completed' | 'failed';
     rawInput?: Record<string, unknown>;
@@ -152,6 +154,11 @@ export class StreamController {
         break;
       }
       case 'tool_call_snapshot': {
+        // The ACP `kind` collapses a spawned sub-agent to `other`, the same value
+        // any uncategorized tool gets. The one thing that tells them apart is the
+        // raw name the agent sent (`task`/`subagent`), so the card is handed a
+        // render kind derived from that observed name — never a name we invent.
+        const renderKind = isSubagentToolName(ch.toolName) ? 'subagent' : ch.toolKind;
         if (ch.status === 'pending' || ch.status === 'in_progress') {
           // Buffer pending/in_progress tool calls to prevent
           // interleaving mid-response during streaming.
@@ -171,7 +178,7 @@ export class StreamController {
             const open = surfaced.toolStatus !== 'completed' && surfaced.toolStatus !== 'failed';
             if (open) {
               surfaced.toolStatus = ch.status;
-              if (ch.toolKind) surfaced.toolKind = ch.toolKind;
+              surfaced.toolKind = renderKind;
               renderer.updateToolCall(
                 ch.toolCallId,
                 ch.status,
@@ -179,7 +186,7 @@ export class StreamController {
                 ch.contents,
                 ch.rawInput,
                 ch.locations,
-                ch.toolKind,
+                renderKind,
               );
             }
           } else {
@@ -195,12 +202,12 @@ export class StreamController {
           // no element for the update to write into, and the step vanished
           // from the live transcript and from the blocks a reload renders.
           if (!this.toolBlocks.has(ch.toolCallId)) {
-            renderer.addToolCall(ch.toolCallId, ch.title || ch.toolCallId, ch.toolKind, ch.rawInput, ch.locations);
+            renderer.addToolCall(ch.toolCallId, ch.title || ch.toolCallId, renderKind, ch.rawInput, ch.locations);
             const block: ContentBlock = {
               type: 'tool_use',
               toolCallId: ch.toolCallId,
               toolTitle: ch.title,
-              toolKind: ch.toolKind,
+              toolKind: renderKind,
               toolStatus: ch.status === 'failed' ? 'failed' : 'completed',
             };
             this.currentContentBlocks.push(block);
@@ -213,14 +220,14 @@ export class StreamController {
             ch.contents,
             ch.rawInput,
             ch.locations,
-            ch.toolKind,
+            renderKind,
           );
           // Safety net: ensure tool is collapsed on final states
           renderer.collapseToolCall(ch.toolCallId);
           const block = this.toolBlocks.get(ch.toolCallId);
           if (block) {
             block.toolStatus = ch.status === 'failed' ? 'failed' : 'completed';
-            if (ch.toolKind) block.toolKind = ch.toolKind;
+            block.toolKind = renderKind;
           }
         }
 
@@ -477,14 +484,15 @@ export class StreamController {
       // that is running shows a spinner the moment it appears rather than after
       // its next frame — which, for a short call, is never.
       const status = tc.status === 'in_progress' ? 'in_progress' : 'pending';
-      renderer.addToolCall(tc.toolCallId, tc.title, tc.toolKind, tc.rawInput, tc.locations, status);
+      const renderKind = isSubagentToolName(tc.toolName) ? 'subagent' : tc.toolKind;
+      renderer.addToolCall(tc.toolCallId, tc.title, renderKind, tc.rawInput, tc.locations, status);
       // Track tool call in content blocks for ordering, with enough
       // metadata (title/kind/status) to re-render it after a restore.
       const block: ContentBlock = {
         type: 'tool_use',
         toolCallId: tc.toolCallId,
         toolTitle: tc.title,
-        toolKind: tc.toolKind,
+        toolKind: renderKind,
         toolStatus: status,
       };
       this.currentContentBlocks.push(block);

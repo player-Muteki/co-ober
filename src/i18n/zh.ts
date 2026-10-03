@@ -315,6 +315,7 @@ const zh: Locale = {
     apply_patch: '应用补丁',
     web_search: '网页搜索',
     file_search: '文件搜索',
+    subagent: '子智能体',
     other: '其他',
   },
 
@@ -327,10 +328,6 @@ const zh: Locale = {
   plan: {
     title: '📋 计划',
     stale: '无法从智能体读取计划，这里显示的列表可能已经过时。',
-  },
-
-  subagent: {
-    label: '子智能体',
   },
 
   slash: {

@@ -1339,3 +1339,152 @@ describe('StreamController', () => {
     expect(blocks.every((b) => b.type !== 'tool_use')).toBe(true);
   });
 });
+
+describe('StreamController sub-agent render kind (0.2.50 stage A)', () => {
+  let deps: any;
+  let controller: StreamController;
+
+  beforeEach(() => {
+    deps = {
+      state: {
+        resetStreamingState: vi.fn(),
+        usage: null,
+        currentModeId: null,
+        availableModes: null,
+        currentModelId: null,
+        availableModels: null,
+        configOptions: null,
+        availableCommands: null,
+      },
+      renderer: {
+        removeAssistantPlaceholder: vi.fn(),
+        appendText: vi.fn(),
+        appendThinking: vi.fn(),
+        appendAssistantImage: vi.fn(),
+        finalizeCurrentThinking: vi.fn().mockReturnValue(0),
+        addToolCall: vi.fn(),
+        updateToolCall: vi.fn(),
+        collapseToolCall: vi.fn(),
+        setPlanEntries: vi.fn(),
+        addSystemMessage: vi.fn(),
+        flushThinkingRender: vi.fn().mockResolvedValue(undefined),
+        flushTextRender: vi.fn().mockResolvedValue(undefined),
+      },
+      syncEngine: { process: vi.fn().mockResolvedValue([]) },
+      sessionStore: {
+        getOrCreate: vi.fn(),
+        get: vi.fn(),
+        append: vi.fn(),
+        setActive: vi.fn(),
+        save: vi.fn().mockResolvedValue(undefined),
+      },
+      getSessionId: vi.fn().mockReturnValue('session-1'),
+      onConfigUpdate: vi.fn(),
+      onModeUpdate: vi.fn(),
+      onModelsUpdate: vi.fn(),
+      onCommandsUpdate: vi.fn(),
+      onSyncFailure: vi.fn(),
+      onPersistFailure: vi.fn(),
+      onTitleChanged: vi.fn(),
+    };
+    controller = new StreamController(deps);
+    vi.useFakeTimers();
+  });
+
+  it('routes a task-named call to the Sub-agent kind, live and in the persisted block', () => {
+    const session: { messages: Array<{ contentBlocks?: Array<Record<string, unknown>> }>; updatedAt: number } = {
+      messages: [],
+      updatedAt: 0,
+    };
+    deps.sessionStore.get.mockReturnValue(session);
+
+    // OpenCode reports a spawned sub-agent as a tool call whose ACP kind is
+    // `other` — identical to any uncategorized tool. Only the raw name says
+    // `task`. The card must be drawn as a sub-agent off that observed name, and
+    // the persisted block must carry the sub-agent kind so a reload agrees.
+    controller.handleChunk({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'task-1',
+      title: 'explore the repo',
+      toolName: 'task',
+      toolKind: 'other',
+      status: 'completed',
+      rawInput: { subagent_type: 'explore', description: 'find the auth code' },
+      rawOutput: { ok: true },
+      contents: [],
+    });
+    expect(deps.renderer.addToolCall).toHaveBeenCalledWith(
+      'task-1',
+      'explore the repo',
+      'subagent',
+      { subagent_type: 'explore', description: 'find the auth code' },
+      undefined,
+    );
+
+    // A following text chunk flushes the turn's blocks onto the message.
+    controller.handleChunk({
+      kind: 'message_chunk',
+      role: 'agent',
+      messageId: 'msg-1',
+      chunkText: 'done',
+      accumulatedText: 'done',
+    });
+    const blocks = (session.messages[session.messages.length - 1].contentBlocks ?? []) as Array<Record<string, unknown>>;
+    const taskBlock = blocks.find((b) => b.toolCallId === 'task-1');
+    expect(taskBlock?.toolKind).toBe('subagent');
+  });
+
+  it('buffers a pending sub-agent under the Sub-agent kind when it flushes', () => {
+    const session: { messages: Array<Record<string, unknown>>; updatedAt: number } = { messages: [], updatedAt: 0 };
+    deps.sessionStore.get.mockReturnValue(session);
+
+    controller.handleChunk({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'sub-1',
+      title: 'run tests',
+      toolName: 'subagent',
+      toolKind: 'other',
+      status: 'pending',
+      rawInput: { subagent_type: 'runner' },
+      contents: [],
+    });
+    expect(deps.renderer.addToolCall).not.toHaveBeenCalled();
+
+    // A non-tool frame flushes the buffer, drawing the card.
+    controller.handleChunk({
+      kind: 'message_chunk',
+      role: 'agent',
+      messageId: 'msg-1',
+      chunkText: 'working',
+      accumulatedText: 'working',
+    });
+    expect(deps.renderer.addToolCall).toHaveBeenCalledWith(
+      'sub-1',
+      'run tests',
+      'subagent',
+      { subagent_type: 'runner' },
+      undefined,
+      'pending',
+    );
+  });
+
+  it('leaves an ordinary call at its reported kind', () => {
+    const session: { messages: Array<Record<string, unknown>>; updatedAt: number } = { messages: [], updatedAt: 0 };
+    deps.sessionStore.get.mockReturnValue(session);
+
+    // Anti-remerge: the sub-agent branch must not swallow real kinds. A `read`
+    // is a `read`, whatever name it carries.
+    controller.handleChunk({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'read-1',
+      title: 'read a.ts',
+      toolName: 'read',
+      toolKind: 'read',
+      status: 'completed',
+      rawInput: { file_path: '/a.ts' },
+      rawOutput: { ok: true },
+      contents: [],
+    });
+    expect(deps.renderer.addToolCall).toHaveBeenCalledWith('read-1', 'read a.ts', 'read', { file_path: '/a.ts' }, undefined);
+  });
+});

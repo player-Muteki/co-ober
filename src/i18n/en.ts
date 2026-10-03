@@ -313,6 +313,7 @@ const en = {
     apply_patch: 'Apply Patch',
     web_search: 'Web Search',
     file_search: 'File Search',
+    subagent: 'Sub-agent',
     other: 'Other',
   },
 
@@ -325,10 +326,6 @@ const en = {
   plan: {
     title: '📋 Plan',
     stale: 'The plan could not be read from the agent, so the list shown here may be out of date.',
-  },
-
-  subagent: {
-    label: 'sub-agent',
   },
 
   slash: {

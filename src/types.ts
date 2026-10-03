@@ -346,7 +346,7 @@ export interface TerminalInstance {
 
 // === Structured Content Types (Phase 1) ===
 
-export type ContentBlockType = 'text' | 'thinking' | 'tool_use' | 'context_compacted' | 'subagent' | 'image';
+export type ContentBlockType = 'text' | 'thinking' | 'tool_use' | 'context_compacted' | 'image';
 
 /** A single block within an assistant message, rendered in order. */
 export interface ContentBlock {
@@ -368,8 +368,6 @@ export interface ContentBlock {
   toolError?: string;
   /** Duration in seconds (populated after completion for thinking blocks) */
   duration?: number;
-  /** Sub-agent metadata for subagent blocks */
-  subagentInfo?: SubagentInfo;
 }
 
 /** Structured info about a tool call for rendering purposes. */
@@ -378,13 +376,6 @@ export interface ToolCallInfo {
   input?: Record<string, unknown>;
   status: 'pending' | 'in_progress' | 'completed' | 'failed';
   result?: string;
-}
-
-/** Sub-agent tracking info. */
-export interface SubagentInfo {
-  name: string;
-  status: 'running' | 'completed' | 'failed';
-  summary?: string;
 }
 
 /** Image attachment metadata. */

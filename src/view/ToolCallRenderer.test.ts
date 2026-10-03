@@ -7,6 +7,7 @@ import {
   settleUnrecordedToolCall,
   getToolDisplayName,
   getToolSummary,
+  isSubagentToolName,
   renderLinesExpanded,
   renderTruncatedText,
   type ToolCallState,
@@ -693,6 +694,64 @@ describe('ToolCallRenderer', () => {
 
       expect(state.body.textContent).toContain('found 3 matches');
       expect(state.body.querySelector('.co-ober-tool-unsupported')).not.toBeNull();
+    });
+  });
+
+  describe('sub-agent render kind (0.2.50 stage A)', () => {
+    it('recognizes only the names the agent actually sends', () => {
+      expect(isSubagentToolName('task')).toBe(true);
+      expect(isSubagentToolName('subagent')).toBe(true);
+      expect(isSubagentToolName('  TASK ')).toBe(true);
+      expect(isSubagentToolName('SubAgent')).toBe(true);
+      expect(isSubagentToolName('read')).toBe(false);
+      expect(isSubagentToolName('write')).toBe(false);
+      expect(isSubagentToolName(undefined)).toBe(false);
+      expect(isSubagentToolName('')).toBe(false);
+    });
+
+    it('labels a sub-agent card "Sub-agent" with its own icon', () => {
+      const state = createToolCallElement(
+        container,
+        'tc-1',
+        'subagent',
+        'do it',
+        { subagent_type: 'explore', description: 'find auth' },
+      );
+      expect(state.wrapper.classList.contains('co-ober-tool-call-subagent')).toBe(true);
+      expect(state.kindEl.textContent).toBe('Sub-agent');
+      expect(state.kindEl.getAttribute('data-i18n-kind')).toBe('subagent');
+      expect(state.summaryEl.textContent).toBe('explore · find auth');
+      expect(setIconMock).toHaveBeenLastCalledWith(expect.anything(), 'users');
+    });
+
+    it('names the sub-agent in the active locale', () => {
+      setLocale('zh');
+      try {
+        expect(getToolDisplayName('subagent')).toBe('子智能体');
+        const state = createToolCallElement(container, 'tc-zh', 'subagent', 'x', { description: 'run' });
+        expect(state.kindEl.textContent).toBe('子智能体');
+      } finally {
+        setLocale('en');
+      }
+    });
+
+    it('summarizes a sub-agent from the agent type and its task', () => {
+      expect(getToolSummary('subagent', { subagent_type: 'general', prompt: 'write the report' })).toBe(
+        'general · write the report',
+      );
+      // Only a prompt: no type reported, so the prompt alone carries the line.
+      expect(getToolSummary('subagent', { prompt: 'investigate the flake' })).toBe('investigate the flake');
+      // Nothing the card can name in the usual fields: fall back to a string arg.
+      expect(getToolSummary('subagent', { command: 'npm test' })).toBe('npm test');
+    });
+
+    it('does not relabel an ordinary tool as a sub-agent', () => {
+      // Anti-remerge: the `subagent` kind is the only trigger. A real `read`
+      // keeps its name and icon whatever the surrounding code does.
+      const state = createToolCallElement(container, 'tc-2', 'read', 'open a.ts', { file_path: '/a.ts' });
+      expect(state.wrapper.classList.contains('co-ober-tool-call-subagent')).toBe(false);
+      expect(state.kindEl.textContent).toBe('Read');
+      expect(setIconMock).toHaveBeenLastCalledWith(expect.anything(), 'file-text');
     });
   });
 });

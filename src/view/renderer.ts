@@ -1292,7 +1292,9 @@ export class ChatRenderer {
             break;
           }
           // Restored history: re-render a static element from the block's
-          // persisted title/kind/status snapshot.
+          // persisted title/kind/status snapshot. A spawned sub-agent is stored
+          // under kind `subagent`, so it comes back wearing that name rather
+          // than the `other` its raw ACP kind collapsed to.
           const holder = parentEl.createDiv();
           const state = createToolCallElement(
             holder,
@@ -1325,10 +1327,6 @@ export class ChatRenderer {
       case 'context_compacted':
         this.renderCompactBoundary(parentEl);
         break;
-
-      case 'subagent':
-        this.renderSubagentBlock(parentEl, block);
-        break;
     }
   }
 
@@ -1356,25 +1354,6 @@ export class ChatRenderer {
   renderCompactBoundary(parentEl: HTMLElement): void {
     const boundary = parentEl.createDiv({ cls: 'co-ober-compact-boundary' });
     boundary.createSpan({ cls: 'compact-icon', text: '⋯' });
-  }
-
-  /**
-   * Render a sub-agent block (stub).
-   */
-  renderSubagentBlock(parentEl: HTMLElement, block: ContentBlock): void {
-    const info = block.subagentInfo;
-    if (!info) {
-      const stub = parentEl.createDiv({ cls: 'co-ober-subagent-block', text: t().subagent.label });
-      stub.dataset.i18nText = 'subagent.label';
-      return;
-    }
-    const el = parentEl.createDiv({ cls: 'co-ober-subagent-block' });
-    el.createSpan({ cls: 'subagent-name', text: info.name });
-    if (info.summary) {
-      el.createSpan({ text: ` — ${info.summary}` });
-    }
-    const statusMap: Record<string, string> = { running: '⟳', completed: '✓', failed: '✗' };
-    el.createSpan({ text: ` ${statusMap[info.status] ?? '?'}` });
   }
 
   /**

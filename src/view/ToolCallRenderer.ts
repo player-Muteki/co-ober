@@ -31,6 +31,7 @@ const TOOL_ICONS: Record<string, string> = {
   move: 'folder-move',
   switch_mode: 'repeat',
   apply_patch: 'wand',
+  subagent: 'users',
   other: 'settings',
 };
 
@@ -66,6 +67,11 @@ export function getToolDisplayName(kind: string): string {
 export function getToolSummary(kind: string, input?: Record<string, unknown>, locations?: { path: string }[]): string {
   const locs = locations ?? [];
   const rawInput = input ?? {};
+
+  // sub-agent: which agent, and what it was delegated to do
+  if (kind === 'subagent') {
+    return getSubagentSummary(rawInput, locs);
+  }
 
   // bash: show command
   if (kind === 'bash' || kind === 'execute') {
@@ -118,6 +124,34 @@ export function getToolSummary(kind: string, input?: Record<string, unknown>, lo
   return '';
 }
 
+/**
+ * The ACP `kind` OpenCode reports for a spawned sub-agent is `other` — the same
+ * value an unclassified tool gets. The one thing that separates it is the raw
+ * tool name the wire carries, so a card is only a sub-agent when the agent
+ * actually named it `task` or `subagent`. Nothing here guesses from the title.
+ */
+const SUBAGENT_TOOL_NAMES = new Set(['task', 'subagent']);
+
+/** True when a tool call's raw name is the sub-agent spawn OpenCode sends. */
+export function isSubagentToolName(name: string | undefined): boolean {
+  if (!name) return false;
+  return SUBAGENT_TOOL_NAMES.has(name.trim().toLowerCase());
+}
+
+/** One-line summary for a sub-agent: which agent, and what it was asked to do. */
+function getSubagentSummary(rawInput: Record<string, unknown>, locs: { path: string }[]): string {
+  const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+  const who = str(rawInput.subagent_type) || str(rawInput.subagentType) || str(rawInput.agent);
+  const what = str(rawInput.description) || str(rawInput.task_description) || str(rawInput.prompt) || str(rawInput.command);
+  const head = [who, what].filter(Boolean).join(' · ');
+  if (head) return truncateText(head, 70);
+  // Nothing the card can name: fall back to a target path or any string arg, so
+  // the summary is never silently empty when the agent did send something.
+  if (locs[0]?.path) return locs[0].path.split(/[\\/]/).pop() ?? '';
+  const firstValue = Object.values(rawInput).find((v) => typeof v === 'string');
+  return firstValue ? truncateText(firstValue, 70) : '';
+}
+
 // ---- Tool Rendering ----
 
 /**
@@ -139,7 +173,9 @@ export function createToolCallElement(
   const wrapper = parentEl.createDiv({ cls: 'co-ober-tool-call' });
   wrapper.dataset.toolId = toolCallId;
 
-  if (kind === 'bash' || kind === 'execute') {
+  if (kind === 'subagent') {
+    wrapper.addClass('co-ober-tool-call-subagent');
+  } else if (kind === 'bash' || kind === 'execute') {
     wrapper.addClass('co-ober-tool-call-bash');
   }
 
