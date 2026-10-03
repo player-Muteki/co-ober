@@ -1,4 +1,5 @@
 import { PluginSettingTab, Setting, Notice } from 'obsidian';
+import type { DropdownComponent } from 'obsidian';
 import CoOberPlugin from './main';
 import { VIEW_TYPE } from './types';
 import type { AgentCapabilities, AvailableCommand, CustomAgentDefinition, CustomSkillDefinition, McpServerConfig, ModeOption, ModelOption, PermissionLevel, SyncRule, FsCapabilityMode, TerminalCapabilityMode } from './types';
@@ -76,6 +77,14 @@ export class CoOberSettingsTab extends PluginSettingTab {
   private runtimeOptionsUnavailable = false;
   private diagnosticsRunning = false;
   private diagnosticsResults: DiagnosticResult[] = [];
+  // Permission-tier dropdown held on the tab so a chat-view bar click can
+  // push its new tier into the same field here. The dropdown's own `.setValue`
+  // runs once at build time; a bar chip that writes `settings.permissionMode`
+  // through `onPermissionChange` never re-enters this `render()`, so without
+  // an external refresh the panel keeps showing the tier it opened on while
+  // requests flow under the new one. `undefined` until the tab is first
+  // opened; `refreshPermissionDropdown` is a safe no-op in that window.
+  private permissionModeDropdown?: DropdownComponent;
 
   constructor(private plugin: CoOberPlugin) {
     super(plugin.app, plugin);
@@ -184,26 +193,29 @@ export class CoOberSettingsTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName(labels.permissionMode.name)
       .setDesc(labels.permissionMode.desc)
-      .addDropdown((d) => d.addOptions({
-        yolo: labels.permissionMode.yolo,
-        plan: labels.permissionMode.plan,
-        safe: labels.permissionMode.safe,
-        readonly: labels.permissionMode.readonly,
-      })
-        .setValue(s.permissionMode)
-        .onChange(async (v) => {
-          s.permissionMode = v as PermissionLevel;
-          await this.save();
-          const client = this.plugin.getClient();
-          if (client) {
-            client.permissionMode = v as PermissionLevel;
-            applyPermissionTier(client, s.permissionMode, s);
-          }
-          // The chat bar carries its own permission selector and reads the
-          // setting only when a tab is activated, so without this push it keeps
-          // naming the tier that was in force before this dropdown moved.
-          this.refreshOpenViewsPermission();
-        }));
+      .addDropdown((d) => {
+        this.permissionModeDropdown = d;
+        d.addOptions({
+          yolo: labels.permissionMode.yolo,
+          plan: labels.permissionMode.plan,
+          safe: labels.permissionMode.safe,
+          readonly: labels.permissionMode.readonly,
+        })
+          .setValue(s.permissionMode)
+          .onChange(async (v) => {
+            s.permissionMode = v as PermissionLevel;
+            await this.save();
+            const client = this.plugin.getClient();
+            if (client) {
+              client.permissionMode = v as PermissionLevel;
+              applyPermissionTier(client, s.permissionMode, s);
+            }
+            // The chat bar carries its own permission selector and reads the
+            // setting only when a tab is activated, so without this push it keeps
+            // naming the tier that was in force before this dropdown moved.
+            this.refreshOpenViewsPermission();
+          });
+      });
 
     new Setting(containerEl)
       .setName(labels.customAgents.active)
@@ -971,6 +983,21 @@ export class CoOberSettingsTab extends PluginSettingTab {
       const view = leaf.view as PermissionAwareView;
       view.refreshPermissionMode?.();
     }
+  }
+
+  /**
+   * Called by a chat-view bar chip when it moves the shared
+   * `settings.permissionMode` — the mirror of `refreshOpenViewsPermission`,
+   * which handles the other direction (this dropdown writing, chat panes
+   * reading). Without it the panel the reader had open just before clicking
+   * the chip keeps claiming the tier it opened on, and the tier the plugin is
+   * actually running under is different from the one the Settings tab shows.
+   * `permissionModeDropdown` is only bound after the tab has been opened at
+   * least once, so a plugin that never rendered Settings takes this call as a
+   * no-op rather than constructing a panel the reader did not ask for.
+   */
+  refreshPermissionDropdown(): void {
+    this.permissionModeDropdown?.setValue(this.plugin.settings.permissionMode);
   }
 
   /**

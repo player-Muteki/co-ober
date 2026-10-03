@@ -1109,3 +1109,43 @@ describe('CoOberSettingsTab active custom agent (0.2.13 stage 2)', () => {
     expect(select!.value).toBe('');
   });
 });
+
+describe('CoOberSettingsTab permission dropdown refresh (0.2.45 stage C)', () => {
+  it('pushes a tier written elsewhere into the rendered dropdown', () => {
+    // The dropdown is `.setValue`d once inside `display()` and only re-enters
+    // on a fresh render. A chat-view bar click writes `settings.permissionMode`
+    // without re-displaying the tab, so without `refreshPermissionDropdown`
+    // the panel keeps certifying the tier it opened on while requests flow
+    // under the new one. The bar's `onPermissionChange` reaches through the
+    // plugin-held tab reference to push the value; this test is that push's
+    // settings-side boundary — the dropdown component actually moves.
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    plugin.settings.permissionMode = 'safe';
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+
+    const permSelect = [...tab.containerEl.querySelectorAll('select')]
+      .find((el) => [...el.options].some((option) => option.value === 'readonly')) as HTMLSelectElement | undefined;
+    expect(permSelect).toBeDefined();
+    expect(permSelect!.value).toBe('safe');
+
+    // A bar click has already written settings; the dropdown does not know it.
+    plugin.settings.permissionMode = 'readonly';
+    tab.refreshPermissionDropdown();
+
+    expect(permSelect!.value).toBe('readonly');
+  });
+
+  it('is a no-op before display(), so a plugin with unopened settings survives the push', () => {
+    // The tab instance exists from onload onward, but the dropdown field is
+    // bound only when `render()` runs. A chat view constructed before the
+    // reader ever opened Settings must be able to fan its tier out without
+    // building a panel the reader did not ask for — and without throwing.
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const tab = new CoOberSettingsTab(plugin);
+    // No tab.display() — the dropdown reference has never been assigned.
+    expect(() => tab.refreshPermissionDropdown()).not.toThrow();
+  });
+});

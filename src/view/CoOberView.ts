@@ -353,6 +353,14 @@ export class CoOberView extends ItemView {
           const sibling = leaf.view as CoOberView;
           sibling.refreshPermissionMode?.();
         }
+        // And the reverse fanout: a Settings tab that is already open built its
+        // Permission Mode `<select>` in `display()` and set the value once from
+        // `settings.permissionMode`. A bar click that writes the field through
+        // this handler never re-enters `display()`, so the panel keeps certifying
+        // the tier it opened on. `refreshPermissionDropdown` pushes the new tier
+        // into that same dropdown; optional chaining covers the plugin-constructed
+        // path where the tab has not been built yet.
+        this.plugin.settingsTab?.refreshPermissionDropdown();
       },
       onSend: () => this.input.triggerSend(),
       onStop: () => this.input.triggerStop(),

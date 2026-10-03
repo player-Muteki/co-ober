@@ -700,6 +700,61 @@ describe('CoOberView tab panels', () => {
     expect(seen).toEqual(['readonly']);
   });
 
+  it('pushes the new tier from a bar click into the open Settings dropdown (0.2.45 stage C)', async () => {
+    // `refreshOpenViewsPermission` on the settings side fans a dropdown change
+    // out to every chat pane. The bar chip's `onPermissionChange` matched that
+    // fanout for chat panes last release, but the panel itself was still silent:
+    // `Permission Mode` was `.setValue`d once inside `display()` and never re-
+    // entered on a bar write, so a Settings tab the reader had already opened
+    // kept claiming the tier it opened on while the requests flowed under the
+    // new one. The completion is a plugin-held tab reference the bar can push
+    // through — this test pins the push, without which the dropdown stays stale.
+    const plugin = createPlugin({ settings: { permissionMode: 'safe' } });
+    const settingsTab = { refreshPermissionDropdown: vi.fn() };
+    (plugin as unknown as { settingsTab: unknown }).settingsTab = settingsTab;
+    const view = await openView(plugin);
+
+    (view.contentEl.querySelector('.co-ober-perm-toggle') as HTMLElement).click();
+
+    expect(settingsTab.refreshPermissionDropdown).toHaveBeenCalledTimes(1);
+  });
+
+  it('bar → Settings dropdown refresh sees the tier the click just wrote (0.2.45 stage C)', async () => {
+    // The dropdown's own refresh reads `plugin.settings.permissionMode` at call
+    // time — same shared field the fanout loop uses. If the handler were ordered
+    // with the refresh before the write, the dropdown would repaint to the pre-
+    // click tier and the fanout would only have replaced one stale reading with
+    // another. This test pins the ordering from the settings side.
+    const plugin = createPlugin({ settings: { permissionMode: 'safe' } });
+    const seen: string[] = [];
+    (plugin as unknown as { settingsTab: unknown }).settingsTab = {
+      refreshPermissionDropdown: vi.fn(() => {
+        seen.push(plugin.settings.permissionMode);
+      }),
+    };
+    const view = await openView(plugin);
+
+    // safe → readonly is the first click on the four-step cycle.
+    (view.contentEl.querySelector('.co-ober-perm-toggle') as HTMLElement).click();
+
+    expect(seen).toEqual(['readonly']);
+  });
+
+  it('bar click without an open Settings tab is a no-op, not a throw (0.2.45 stage C)', async () => {
+    // `plugin.settingsTab` is null until onload has constructed the tab, and a
+    // view created before that moment (or in a test harness that never wired
+    // the reference) must not fail the click. The optional chain on
+    // `this.plugin.settingsTab?.refreshPermissionDropdown()` earns its keep
+    // here — the chat pane's own chip cycle must survive with no settings
+    // panel to inform.
+    const plugin = createPlugin({ settings: { permissionMode: 'safe' } });
+    const view = await openView(plugin);
+
+    expect(() => {
+      (view.contentEl.querySelector('.co-ober-perm-toggle') as HTMLElement).click();
+    }).not.toThrow();
+  });
+
   it('brings the jump-to-latest button back for a tab scrolled up in', async () => {
     const view = await openView(createPlugin({ client: createClient() }));
     const { tabA, tabB } = await openSecondTab(view);

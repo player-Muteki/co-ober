@@ -28,6 +28,12 @@ export default class CoOberPlugin extends Plugin {
   settings: CoOberSettings = DEFAULT_SETTINGS;
   client: AgentRuntime | null = null;
   readonly sessionStore = new SessionRepository(() => this.savePluginData());
+  // The Settings tab instance is kept so a chat-view bar click on the
+  // permission tier can repaint the dropdown the same panel already opened —
+  // the sibling-repaint fanout that `refreshOpenViewsPermission` runs in the
+  // other direction. `null` until onload, and views call it through optional
+  // chaining so a mid-construction click stays a no-op rather than a throw.
+  settingsTab: CoOberSettingsTab | null = null;
   /**
    * The open chat view subscribes to each write's outcome. One data.json save
    * carries every conversation, so a failure is each tab's news — the throttled
@@ -68,7 +74,9 @@ export default class CoOberPlugin extends Plugin {
     this.registerView(VIEW_TYPE, (leaf) => new CoOberView(leaf, this));
     this.deduplicateCoOberLeaves();
     this.addRibbonIcon('terminal-square', t().app.ribbon, () => this.activateView());
-    this.addSettingTab(new CoOberSettingsTab(this));
+    const settingsTab = new CoOberSettingsTab(this);
+    this.settingsTab = settingsTab;
+    this.addSettingTab(settingsTab);
     this.addCommand({
       id: 'open',
       name: t().app.cmdOpen,
