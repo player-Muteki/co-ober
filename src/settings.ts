@@ -9,6 +9,7 @@ import { CLIENT_VERSION } from './client/acp';
 import { applyPermissionTier } from './client/permissionTier';
 import { validateCustomAgent } from './agents/custom';
 import { resolveCommandPath } from './utils/commandResolution';
+import { sanitizeVaultPath } from './sync/templates';
 import { MIN_OPEN_TABS, MAX_OPEN_TABS, DEFAULT_OPEN_TABS } from './constants';
 
 import { addCustomAgentBlock, addCustomSkillBlock, addCommonModelToggle, addMcpServerBlock, addSyncRuleBlock, nextRuleId, renameCustomAgent, renameCustomSkill } from './settings/settingBlocks';
@@ -784,10 +785,19 @@ export class CoOberSettingsTab extends PluginSettingTab {
     });
 
     const syncFolder = this.plugin.settings.defaultNoteFolder.trim();
+    // Same validator the sync engine uses, so a PASS here can never disagree
+    // with what actually writes: `length > 0` accepted `notes/..`, `/abs`,
+    // `notes<>` — every one of which `buildSyncNote` throws on. The row now
+    // certifies "this shape reaches the vault" rather than "someone typed
+    // something", which is the only claim the reader can act on. The probe
+    // filename is a legal one, so the check isolates folder shape.
+    const syncFolderOk = sanitizeVaultPath(syncFolder, 'probe.md') !== null;
     results.push({
       label: labels.syncFolder,
-      ok: syncFolder.length > 0,
-      detail: syncFolder.length > 0 ? syncFolder : labels.syncFolderMissing,
+      ok: syncFolderOk,
+      detail: syncFolderOk
+        ? syncFolder
+        : (syncFolder.length === 0 ? labels.syncFolderMissing : labels.syncFolderInvalid),
     });
 
     results.push({ label: labels.clientVersion, ok: true, detail: CLIENT_VERSION });

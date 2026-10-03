@@ -506,6 +506,7 @@ const en = {
       mcpDetail: '{enabled} enabled, {configured} configured',
       syncFolder: 'Default sync folder',
       syncFolderMissing: 'Default sync folder is empty',
+      syncFolderInvalid: 'Sync folder rejected by the writer (absolute path, "..", or illegal characters)',
       clientVersion: 'ACP client version',
       unexpectedError: 'Diagnostics failed unexpectedly',
     },

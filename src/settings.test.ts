@@ -426,6 +426,92 @@ describe('CoOberSettingsTab locale refresh', () => {
     }
   });
 
+  it('fails the sync folder row for a shape the writer itself rejects (0.2.46 stage C)', async () => {
+    // The row used to PASS on `length > 0`. A folder like `notes/..` or
+    // `/abs` or `notes<>` produced a green light while every sync threw.
+    // Now the row runs the same validator the sync path uses — buildSyncNote
+    // in src/sync/templates.ts — so panel and engine can never disagree.
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() }, {
+      availableModes: [{ id: 'build', name: 'Build' }],
+    });
+    plugin.settings.defaultNoteFolder = 'notes/..';
+    const tab = new CoOberSettingsTab(plugin);
+
+    tab.display();
+    const diagnosticsButton = [...tab.containerEl.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Run Diagnostics') as HTMLButtonElement | undefined;
+    diagnosticsButton!.click();
+    await flushPromises();
+    await flushPromises();
+
+    expect(tab.containerEl.textContent).toContain('Fail: Default sync folder');
+    expect(tab.containerEl.textContent).toContain('rejected by the writer');
+    // The empty-string detail is for the not-typed case; a typed-but-invalid
+    // folder must not wear it, or the reader is pointed at a textbox they
+    // already filled.
+    expect(tab.containerEl.textContent).not.toContain('Default sync folder is empty');
+  });
+
+  it('keeps the empty and invalid sync folder details distinct (0.2.46 stage C anti-remerge)', async () => {
+    // The two failure classes carry different remedies: one says "type
+    // something", the other says "what you typed cannot be a path". Merging
+    // them re-taught the pre-fix collapse, so both sentences are asserted
+    // here on their own row while the other is absent.
+    setLocale('en');
+
+    const empty = createPlugin({ refreshLocale: vi.fn() });
+    empty.settings.defaultNoteFolder = '';
+    const emptyTab = new CoOberSettingsTab(empty);
+    emptyTab.display();
+    (
+      [...emptyTab.containerEl.querySelectorAll('button')]
+        .find((b) => b.textContent === 'Run Diagnostics') as HTMLButtonElement
+    ).click();
+    await flushPromises();
+    await flushPromises();
+    expect(emptyTab.containerEl.textContent).toContain('Default sync folder is empty');
+    expect(emptyTab.containerEl.textContent).not.toContain('rejected by the writer');
+
+    const invalid = createPlugin({ refreshLocale: vi.fn() });
+    invalid.settings.defaultNoteFolder = '/abs/path';
+    const invalidTab = new CoOberSettingsTab(invalid);
+    invalidTab.display();
+    (
+      [...invalidTab.containerEl.querySelectorAll('button')]
+        .find((b) => b.textContent === 'Run Diagnostics') as HTMLButtonElement
+    ).click();
+    await flushPromises();
+    await flushPromises();
+    expect(invalidTab.containerEl.textContent).toContain('rejected by the writer');
+    expect(invalidTab.containerEl.textContent).not.toContain('Default sync folder is empty');
+  });
+
+  it('still passes a legal non-empty sync folder shape (0.2.46 stage C must not trade one lie for another)', async () => {
+    // A settled "the sync engine will accept this" green light is a real
+    // observation. The fix must not turn every non-empty folder into a fail
+    // just because some non-empty folders are invalid — the shape check runs
+    // the engine's own validator, so a shape the validator accepts is the
+    // shape the writer will actually use.
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() }, {
+      availableModes: [{ id: 'build', name: 'Build' }],
+    });
+    plugin.settings.defaultNoteFolder = 'co-ober/sync';
+    const tab = new CoOberSettingsTab(plugin);
+
+    tab.display();
+    (
+      [...tab.containerEl.querySelectorAll('button')]
+        .find((b) => b.textContent === 'Run Diagnostics') as HTMLButtonElement
+    ).click();
+    await flushPromises();
+    await flushPromises();
+
+    expect(tab.containerEl.textContent).toContain('Pass: Default sync folder');
+    expect(tab.containerEl.textContent).toContain('co-ober/sync');
+  });
+
   it('does not report a runtime metadata reading it never asked for', async () => {
     // With no agent connected nothing hands over the runtime lists, yet the row
     // interpolated {modes}/{models}/{commands} from a minted {0,0,0} placeholder

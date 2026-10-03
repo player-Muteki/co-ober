@@ -508,6 +508,7 @@ const zh: Locale = {
       mcpDetail: '已启用 {enabled} 个，已配置 {configured} 个',
       syncFolder: '默认同步文件夹',
       syncFolderMissing: '默认同步文件夹为空',
+      syncFolderInvalid: '同步文件夹被写入器拒绝（绝对路径、".." 或非法字符）',
       clientVersion: 'ACP 客户端版本',
       unexpectedError: '诊断意外失败',
     },
