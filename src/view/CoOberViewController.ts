@@ -2980,6 +2980,14 @@ export class CoOberViewController {
     if (!title || title === session.title) return;
     if (this.deps.sessionStore.rename(sid, title)) {
       await this.deps.sessionStore.save();
+      // The auto-title rename writes into the same field `renameSession`
+      // writes, and the tab strip's badge reads through `tabDescriptors()`.
+      // `renameSession` raises this signal for exactly that reason (see its
+      // own comment); auto-title used to save-and-return without it, so after
+      // the first exchange the strip kept the minted "Chat {time}" while the
+      // sessionDropdown — which reads `list()` live — already showed the
+      // derived name. Two adjacent widgets, two names for one session.
+      this.notifyTabsChanged();
     }
   }
 

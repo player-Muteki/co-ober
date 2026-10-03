@@ -4367,6 +4367,72 @@ describe('CoOberViewController — queue visualization and auto titles', () => {
     expect(rename).not.toHaveBeenCalled();
   });
 
+  describe('auto-title repaints the tab strip (0.2.47 stage B)', () => {
+    // Drive `maybeAutoTitle` directly rather than through `controller.send`,
+    // which itself fires onTabsChanged twice (send-start at :2033,
+    // releaseBusy at :2042) and saves the transcript for reasons unrelated to
+    // the auto-title branch. Those baselines would blur the assertion.
+    function wireStore(renameImpl: () => boolean) {
+      const seq: string[] = [];
+      const rename = vi.fn(() => { seq.push('rename'); return renameImpl(); });
+      const save = vi.fn(() => { seq.push('save'); return Promise.resolve(); });
+      deps.sessionStore = {
+        ...deps.sessionStore,
+        get: vi.fn(() => ({
+          sessionId: 'auto-1',
+          title: 'Chat 21:00:00',
+          messages: [
+            { role: 'user', content: 'Explain the vault setup?', type: 'text', timestamp: 0 },
+            { role: 'assistant', content: 'Sure.', type: 'text', timestamp: 1 },
+          ],
+        })) as unknown as ControllerDeps['sessionStore']['get'],
+        rename: rename as unknown as ControllerDeps['sessionStore']['rename'],
+        save: save as unknown as ControllerDeps['sessionStore']['save'],
+      };
+      callbacks.onTabsChanged = vi.fn(() => { seq.push('tabs'); });
+      controller = new CoOberViewController(deps, callbacks);
+      controller.state.sessionId = 'auto-1';
+      return { seq, rename, save };
+    }
+
+    function runAutoTitle(): Promise<void> {
+      return (controller as unknown as {
+        maybeAutoTitle: (rt?: SessionRuntime) => Promise<void>;
+      }).maybeAutoTitle();
+    }
+
+    it('raises the tabs-changed signal after the auto-title save', async () => {
+      // `renameSession` already fires onTabsChanged after its save (see the
+      // sibling test above), because the strip's badge tooltip reads
+      // `tabDescriptors()` and only rebuilds on that signal. The auto-title
+      // path writes into the same store field from a different branch, and
+      // used to save-and-return in silence — so after the first exchange the
+      // strip kept minting "Chat {time}" while sessionDropdown (which reads
+      // `list()` live) already carried the derived name. Two adjacent
+      // widgets, two names for one session.
+      const { seq, rename, save } = wireStore(() => true);
+
+      await runAutoTitle();
+
+      expect(rename).toHaveBeenCalledWith('auto-1', 'Explain the vault setup?');
+      expect(seq).toEqual(['rename', 'save', 'tabs']);
+    });
+
+    it('leaves the strip silent when the auto-title rename does not stick', async () => {
+      // The rename branch guards with `if (rename(...))`. A decline (unknown
+      // session, no-op title match, defensive store reject) must save nothing
+      // and signal nothing — otherwise the strip repaints on a title the
+      // store never accepted.
+      const { seq, rename, save } = wireStore(() => false);
+
+      await runAutoTitle();
+
+      expect(rename).toHaveBeenCalledWith('auto-1', 'Explain the vault setup?');
+      expect(save).not.toHaveBeenCalled();
+      expect(seq).toEqual(['rename']);
+    });
+  });
+
   describe('a builtin command the send path already painted (0.2.9 stage 3)', () => {
     it('shows the /help prompt once, not twice', async () => {
       const addUserMessage = vi.fn();
