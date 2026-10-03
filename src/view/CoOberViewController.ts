@@ -2327,7 +2327,11 @@ export class CoOberViewController {
   /**
    * Re-read the OpenCode-native todo table so the plan panel survives session
    * restore. A read that failed is reported on the panel it left stale; only a
-   * database that answers "no todos" is taken as the truth.
+   * database that answers "no todos" is taken as the truth — and the empty
+   * answer is painted, not just believed. Retiring the stale caveat without
+   * clearing the rows left the previous checklist standing as current, which
+   * is the same lie the live wire path (streamController's unconditional
+   * `setPlanEntries(ch.entries)`) had already learned not to tell.
    */
   private async refreshNativePlan(sessionId: string, rt: SessionRuntime = this.activeRuntime): Promise<void> {
     const todos = await readNativeSessionTodos(sessionId);
@@ -2337,7 +2341,6 @@ export class CoOberViewController {
       return;
     }
     rt.renderer.setPlanStale(false);
-    if (todos.length === 0) return;
     rt.renderer.setPlanEntries(todos);
   }
 

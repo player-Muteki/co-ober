@@ -851,7 +851,7 @@ describe('CoOberViewController', () => {
       expect(setPlanEntries).toHaveBeenCalledWith(todos);
     });
 
-    it('leaves the plan panel untouched when native todos are empty', async () => {
+    it('paints the empty plan panel when native todos are empty', async () => {
       controller.state.sessionId = 'test';
       const setPlanEntries = vi.fn();
       Object.assign(deps.renderer, { setPlanEntries });
@@ -862,7 +862,12 @@ describe('CoOberViewController', () => {
 
       await controller.restoreSession();
 
-      expect(setPlanEntries).not.toHaveBeenCalled();
+      // "No todos" from the database is the agent's authoritative answer, so
+      // a restore that finds one still paints the panel — the same way a
+      // live `setPlanEntries([])` from a streamController frame paints it.
+      // Skipping the paint left a stale panel — or no panel — in place under
+      // a state the DB had just certified as empty.
+      expect(setPlanEntries).toHaveBeenCalledWith([]);
     });
 
     it('folds restored turns behind collapse headers', async () => {
@@ -1031,7 +1036,7 @@ describe('CoOberViewController', () => {
       expect(setPlanEntries).not.toHaveBeenCalled();
     });
 
-    it('retires the stale mark when a later reading comes back', async () => {
+    it('retires the stale mark and paints the empty answer when a later reading comes back', async () => {
       const client = createMockClient();
       (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
       (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
@@ -1044,8 +1049,39 @@ describe('CoOberViewController', () => {
 
       await vi.waitFor(() => expect(setPlanStale).toHaveBeenCalledWith(false));
       // An empty answer is a real one: the agent has no steps left, which is
-      // not the same fact as "the list is out of date".
-      expect(setPlanEntries).not.toHaveBeenCalled();
+      // not the same fact as "the list is out of date". Retiring the caveat
+      // without clearing the previously-painted rows would keep yesterday's
+      // checklist standing as today's plan; the live wire path already
+      // paints `setPlanEntries([])` for a settled-empty frame (see
+      // streamController.test.ts's live-[] pin), so the DB resync now
+      // reaches the same panel state on the same truth.
+      expect(setPlanEntries).toHaveBeenCalledWith([]);
+    });
+
+    it('clears previously-painted rows when a later DB reading answers "no todos"', async () => {
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      const setPlanStale = vi.fn();
+      const setPlanEntries = vi.fn();
+      Object.assign(deps.renderer, { setPlanStale, setPlanEntries });
+      const todosMock = readNativeSessionTodos as ReturnType<typeof vi.fn>;
+      todosMock.mockResolvedValueOnce([{ content: 'step A', status: 'pending' }]);
+
+      await controller.send('turn one', []);
+      await vi.waitFor(() =>
+        expect(setPlanEntries).toHaveBeenCalledWith([{ content: 'step A', status: 'pending' }]),
+      );
+      setPlanEntries.mockClear();
+
+      todosMock.mockResolvedValueOnce([]);
+      await controller.send('turn two', []);
+
+      // The second turn's DB reading is authoritative and empty. Painting
+      // nothing (the pre-fix branch) would leave the "step A" row on the
+      // screen — retired as stale, because setPlanStale(false) has run — and
+      // the reader would see yesterday's plan presented as today's.
+      await vi.waitFor(() => expect(setPlanEntries).toHaveBeenLastCalledWith([]));
     });
 
     it('says so when the plan resync itself blows up', async () => {
