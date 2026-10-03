@@ -1193,19 +1193,25 @@ describe('CoOberSettingsTab live capability push', () => {
   });
 });
 
-describe('CoOberSettingsTab agent list (0.2.5 stage 3)', () => {
-  it('offers the offline modes the client can actually start, and no others', () => {
+describe('CoOberSettingsTab agent list (0.2.5 stage 3 / 0.2.49 stage C)', () => {
+  it('lists only what the survey returned, plus the stored default and the none sentinel', () => {
     setLocale('en');
     const plugin = createPlugin({ refreshLocale: vi.fn() });
     const tab = new CoOberSettingsTab(plugin);
     tab.display();
 
-    // "docs" was listed here although no code path ever sent it, so a reader who
-    // picked it got a default session and no explanation.
+    // "docs" was listed at 0.2.5 stage 3 although no code path ever sent
+    // it, so a reader who picked it got a default session and no
+    // explanation — the curated roster was the earlier refusal. 0.2.49
+    // stage C refused the roster itself: on an un-surveyed panel, the
+    // dropdown certified 'build' and 'plan' as agents the client "can
+    // actually start" without ever asking the runtime. The only entries
+    // now are the none sentinel, the persisted default from
+    // DEFAULT_SETTINGS ('build'), and whatever the survey returns.
     const agentSelect = [...tab.containerEl.querySelectorAll('select')]
       .find((select) => [...select.options].some((option) => option.value === 'build')) as HTMLSelectElement | undefined;
     expect(agentSelect).toBeDefined();
-    expect([...agentSelect!.options].map((option) => option.value)).toEqual(['build', 'plan']);
+    expect([...agentSelect!.options].map((option) => option.value)).toEqual(['', 'build']);
   });
 });
 
@@ -1271,5 +1277,67 @@ describe('CoOberSettingsTab permission dropdown refresh (0.2.45 stage C)', () =>
     const tab = new CoOberSettingsTab(plugin);
     // No tab.display() — the dropdown reference has never been assigned.
     expect(() => tab.refreshPermissionDropdown()).not.toThrow();
+  });
+});
+
+describe('CoOberSettingsTab default-agent options name only a surveyed roster (0.2.49 stage C)', () => {
+  // `buildAgentOptions` used to fill `['build','plan']` whenever the runtime
+  // list came back empty. On a Settings panel opened before any connection
+  // — no client, no survey, no evidence — the dropdown certified two
+  // agents as selectable that nothing had ever reported. Same class
+  // 0.2.42 stage C refused on `Loaded Skills`/`Common Models` ("a survey
+  // that was never taken may not sign off on contents") and 0.2.45 stage
+  // B refused on the toolbar's model chip. The stored-default fallthrough
+  // stays so a persisted choice remains visible under an absent survey;
+  // only the fabricated roster is gone.
+  function buildOptions(
+    tab: CoOberSettingsTab,
+    agents: Array<{ id: string; name: string }>,
+  ): Record<string, string> {
+    return (tab as unknown as {
+      buildAgentOptions: (a: Array<{ id: string; name: string }>) => Record<string, string>;
+    }).buildAgentOptions(agents);
+  }
+
+  it('does not offer build/plan on an unsurveyed empty roster', () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    plugin.settings.defaultAgent = '';
+    const tab = new CoOberSettingsTab(plugin);
+
+    const options = buildOptions(tab, []);
+
+    expect(options.build).toBeUndefined();
+    expect(options.plan).toBeUndefined();
+    // The only entry is the "none" sentinel — a reader with no surveyed
+    // roster sees nothing selectable, not a fabricated pair.
+    expect(Object.keys(options)).toEqual(['']);
+  });
+
+  it('keeps a stored default visible when the runtime never listed it', () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    plugin.settings.defaultAgent = 'legacy-agent';
+    const tab = new CoOberSettingsTab(plugin);
+
+    const options = buildOptions(tab, []);
+
+    // The persisted value still reaches the dropdown so the reader can see
+    // what the settings file holds; but it comes with its own id, not a
+    // fabricated alternative, and the roster above it stays honest.
+    expect(options['legacy-agent']).toBe('legacy-agent');
+    expect(options.build).toBeUndefined();
+    expect(options.plan).toBeUndefined();
+  });
+
+  it('lists exactly what the survey returned alongside the none sentinel', () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    plugin.settings.defaultAgent = '';
+    const tab = new CoOberSettingsTab(plugin);
+
+    const options = buildOptions(tab, [{ id: 'docs', name: 'Docs' }, { id: 'code', name: 'Code' }]);
+
+    expect(options).toEqual({ '': '—', docs: 'Docs', code: 'Code' });
   });
 });

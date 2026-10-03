@@ -952,12 +952,17 @@ export class CoOberSettingsTab extends PluginSettingTab {
   }
 
   private buildAgentOptions(agents: ModeOption[]): Record<string, string> {
-    const options: Record<string, string> = {};
+    // The survey is the only source of selectable agents. Hardcoding
+    // `build`/`plan` here (0.2.49 stage C refusal) turned "the runtime
+    // never answered" into "here are the two you can pick" — the same
+    // shape 0.2.42 stage C refused on `Loaded Skills`/`Common Models`
+    // ("a survey that was never taken may not sign off on contents")
+    // and 0.2.45 stage B refused on the toolbar's model chip ("No
+    // model yet"). A stored default still surfaces via the fallthrough
+    // below, so a persisted choice stays visible even under an absent
+    // survey; only the fabricated roster is gone.
+    const options: Record<string, string> = { '': '—' };
     for (const agent of agents) options[agent.id] = agent.name;
-    if (Object.keys(options).length === 0) {
-      options.build = 'build';
-      options.plan = 'plan';
-    }
     if (this.plugin.settings.defaultAgent && !options[this.plugin.settings.defaultAgent]) {
       options[this.plugin.settings.defaultAgent] = this.plugin.settings.defaultAgent;
     }
