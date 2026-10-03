@@ -843,9 +843,19 @@ export class CoOberViewController {
         if (!rt) return;
         const modelId = args.trim();
         if (!modelId) {
-          rt.renderer.addSystemMessage(
-            `${t().slash.availableModels}\n${rt.state.availableModels.map((m) => `- \`${m.modelId}\`: ${m.name}`).join('\n')}`,
-          );
+          // `availableModels` is written only by the agent's config chunks
+          // (streamController.ts:312), so an empty array means "this session
+          // has not reported any models to Co-Ober yet", not "this agent has
+          // no models". Announcing "Available models:" over nothing certified
+          // a survey the code never received — the same shape the 0.2.42
+          // stage C runtime-options fix refused on the settings panel.
+          if (rt.state.availableModels.length === 0) {
+            rt.renderer.addSystemMessage(t().slash.noModelsReported);
+          } else {
+            rt.renderer.addSystemMessage(
+              `${t().slash.availableModels}\n${rt.state.availableModels.map((m) => `- \`${m.modelId}\`: ${m.name}`).join('\n')}`,
+            );
+          }
           return;
         }
         const c = client();
@@ -884,9 +894,16 @@ export class CoOberViewController {
         if (!rt) return;
         const modeId = args.trim();
         if (!modeId) {
-          rt.renderer.addSystemMessage(
-            `${t().slash.availableModes}\n${rt.state.availableModes.map((m) => `- \`${m.id}\`: ${m.name}`).join('\n')}`,
-          );
+          // Same reason as `/model`: `availableModes` arrives only via the
+          // agent's config chunk (streamController.ts:306), so emptiness is
+          // "not yet reported", not "the agent has none".
+          if (rt.state.availableModes.length === 0) {
+            rt.renderer.addSystemMessage(t().slash.noModesReported);
+          } else {
+            rt.renderer.addSystemMessage(
+              `${t().slash.availableModes}\n${rt.state.availableModes.map((m) => `- \`${m.id}\`: ${m.name}`).join('\n')}`,
+            );
+          }
           return;
         }
         const c = client();

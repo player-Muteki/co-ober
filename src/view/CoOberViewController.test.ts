@@ -3439,6 +3439,32 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
         expect.stringContaining('gpt-5'),
       );
     });
+
+    it('names an unreported model list as unreported rather than announcing an empty survey', async () => {
+      controller.state.sessionId = 'mdl-3';
+      controller.state.availableModels = [];
+
+      await commandRegistry.find('model')!.run('');
+
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().slash.noModelsReported);
+      expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(
+        expect.stringContaining(t().slash.availableModels),
+      );
+    });
+
+    it('still prints the reported list when the agent has sent one', async () => {
+      controller.state.sessionId = 'mdl-4';
+      controller.state.availableModels = [{ modelId: 'gpt-4', name: 'GPT-4' }];
+
+      await commandRegistry.find('model')!.run('');
+
+      const message = (deps.renderer.addSystemMessage as ReturnType<typeof vi.fn>).mock.calls
+        .map((call) => String(call[0]))
+        .find((text) => text.includes(t().slash.availableModels));
+      expect(message).toBeDefined();
+      expect(message).toContain('gpt-4');
+      expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(t().slash.noModelsReported);
+    });
   });
 
   describe('/mode', () => {
@@ -3473,6 +3499,32 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
       expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(
         expect.stringContaining('bogus'),
       );
+    });
+
+    it('names an unreported mode list as unreported rather than announcing an empty survey', async () => {
+      controller.state.sessionId = 'mod-3';
+      controller.state.availableModes = [];
+
+      await commandRegistry.find('mode')!.run('');
+
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().slash.noModesReported);
+      expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(
+        expect.stringContaining(t().slash.availableModes),
+      );
+    });
+
+    it('still prints the reported list when the agent has sent one', async () => {
+      controller.state.sessionId = 'mod-4';
+      controller.state.availableModes = [{ id: 'plan', name: 'Plan' }];
+
+      await commandRegistry.find('mode')!.run('');
+
+      const message = (deps.renderer.addSystemMessage as ReturnType<typeof vi.fn>).mock.calls
+        .map((call) => String(call[0]))
+        .find((text) => text.includes(t().slash.availableModes));
+      expect(message).toBeDefined();
+      expect(message).toContain('plan');
+      expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(t().slash.noModesReported);
     });
   });
 
