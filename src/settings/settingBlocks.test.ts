@@ -7,7 +7,7 @@ import type { CoOberSettings, CustomAgentDefinition, CustomSkillDefinition, McpS
 
 installObsidianDomHelpers();
 
-function render(caps: Parameters<typeof addMcpServerBlock>[5]): { http: HTMLOptionElement; sse: HTMLOptionElement } {
+function render(caps: Parameters<typeof addMcpServerBlock>[5], agentConnected = true): { http: HTMLOptionElement; sse: HTMLOptionElement } {
   const server = {
     type: 'stdio',
     id: 's1',
@@ -19,7 +19,7 @@ function render(caps: Parameters<typeof addMcpServerBlock>[5]): { http: HTMLOpti
   } as McpServerConfig;
   const settings = { mcpServers: [server] } as unknown as CoOberSettings;
   const container = document.createElement('div');
-  addMcpServerBlock(container, server, settings, vi.fn(async () => {}), vi.fn(), caps);
+  addMcpServerBlock(container, server, settings, vi.fn(async () => {}), vi.fn(), caps, agentConnected);
   const http = container.querySelector<HTMLOptionElement>('option[value="http"]');
   const sse = container.querySelector<HTMLOptionElement>('option[value="sse"]');
   if (!http || !sse) throw new Error('transport options did not render');
@@ -51,6 +51,40 @@ describe('MCP transport gating reads an affirmed capability, not its absence (0.
     const { http, sse } = render(undefined);
     expect(http.disabled).toBe(true);
     expect(sse.disabled).toBe(true);
+  });
+});
+
+describe('MCP disabled transport caption names the situation, not the merged class (0.2.46 stage A)', () => {
+  it('names the connected-but-unadvertised reading on a live agent without the flag', () => {
+    const { http, sse } = render({ http: false, sse: false }, true);
+    expect(http.textContent).toBe(`http (${t().settings.mcpHttpDisabled})`);
+    expect(sse.textContent).toBe(`sse (${t().settings.mcpSseDisabled})`);
+    // The no-agent string must not appear here — the second sentence of the
+    // split ("this agent does not advertise it") is the true reading of this
+    // situation; asserting the negative stops a future edit from putting the
+    // two captions back in the same slot.
+    expect(http.textContent).not.toContain(t().settings.mcpTransportNoAgent);
+  });
+
+  it('names no-agent at all when nothing is connected, without implicating an agent', () => {
+    // `getAgentCapabilities` returns null both when the client is disconnected
+    // and when an agent has connected but its initialize never advertised a
+    // transport. Collapsing the two under "no connected agent advertises it"
+    // pointed the reader at an agent to switch on, when the true action is to
+    // connect one at all. Same class the 0.2.42 stage E attach tooltip split
+    // with an `isConnected()` gate right above the capability check.
+    const { http, sse } = render(undefined, false);
+    expect(http.textContent).toBe(`http (${t().settings.mcpTransportNoAgent})`);
+    expect(sse.textContent).toBe(`sse (${t().settings.mcpTransportNoAgent})`);
+    expect(http.textContent).not.toContain(t().settings.mcpHttpDisabled);
+  });
+
+  it('speaks two different strings, so the split cannot be silently re-merged', () => {
+    // The inequality is the whole point of the split; a locale edit that puts
+    // the same value back into both keys would keep every other assertion
+    // here passing but make the two situations unreadable again.
+    expect(t().settings.mcpTransportNoAgent).not.toBe(t().settings.mcpHttpDisabled);
+    expect(t().settings.mcpTransportNoAgent).not.toBe(t().settings.mcpSseDisabled);
   });
 });
 
@@ -262,7 +296,7 @@ describe('MCP server header tracks the name edit (0.2.39 stage 2)', () => {
     const server = mcpServer('demo');
     const settings = { mcpServers: [server] } as unknown as CoOberSettings;
     const container = document.createElement('div');
-    addMcpServerBlock(container, server, settings, vi.fn(async () => {}), vi.fn(), { http: false, sse: false });
+    addMcpServerBlock(container, server, settings, vi.fn(async () => {}), vi.fn(), { http: false, sse: false }, true);
     expect(header(container).textContent).toBe(t().settings.mcp.label.replace('{name}', 'demo'));
     // The row only repaints on a type change or delete; a name keystroke saved the
     // new value into the config but left the bold header naming the old server.
@@ -274,7 +308,7 @@ describe('MCP server header tracks the name edit (0.2.39 stage 2)', () => {
     const server = mcpServer('');
     const settings = { mcpServers: [server] } as unknown as CoOberSettings;
     const container = document.createElement('div');
-    addMcpServerBlock(container, server, settings, vi.fn(async () => {}), vi.fn(), { http: false, sse: false });
+    addMcpServerBlock(container, server, settings, vi.fn(async () => {}), vi.fn(), { http: false, sse: false }, true);
     expect(header(container).textContent).toBe(t().settings.mcp.label.replace('{name}', t().settings.mcp.unnamed));
     await edit(textFields(container)[0], 'weather');
     expect(header(container).textContent).toBe(t().settings.mcp.label.replace('{name}', 'weather'));

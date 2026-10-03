@@ -836,7 +836,9 @@ export class CoOberSettingsTab extends PluginSettingTab {
   }
 
   private addMcpServerBlock(containerEl: HTMLElement, server: McpServerConfig): void {
-    addMcpServerBlock(containerEl, server, this.plugin.settings, () => this.save(), () => this.render(), this.getAgentCapabilities()?.mcpCapabilities);
+    const client = this.plugin.getClient();
+    const agentConnected = Boolean(client?.isConnected());
+    addMcpServerBlock(containerEl, server, this.plugin.settings, () => this.save(), () => this.render(), this.getAgentCapabilities()?.mcpCapabilities, agentConnected);
   }
 
   private renameCustomAgent(currentId: string, nextId: string): boolean {

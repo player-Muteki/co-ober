@@ -150,7 +150,7 @@ export function addCommonModelToggle(containerEl: HTMLElement, model: ModelOptio
         }));
   }
 
-export function addMcpServerBlock(containerEl: HTMLElement, server: McpServerConfig, settings: CoOberSettings, save: () => Promise<void>, render: () => void, mcpCapabilities: AgentCapabilities['mcpCapabilities']): void {
+export function addMcpServerBlock(containerEl: HTMLElement, server: McpServerConfig, settings: CoOberSettings, save: () => Promise<void>, render: () => void, mcpCapabilities: AgentCapabilities['mcpCapabilities'], agentConnected: boolean): void {
     const labels = locale().settings.mcp;
     const block = containerEl.createDiv({ cls: 'co-ober-mcp-server' });
     const heading = block.createEl('strong', { text: labels.label.replace('{name}', server.name || labels.unnamed) });
@@ -172,12 +172,27 @@ export function addMcpServerBlock(containerEl: HTMLElement, server: McpServerCon
     // mcpCapabilities passed as parameter. An agent that did not affirm a
     // transport does not support it: defaulting http/sse to enabled offered the
     // user a server type the agent would then reject.
+    //
+    // The disabled caption is spoken by the situation, not by the merged class
+    // of "the option is greyed". `agentConnected === false` and "an agent is
+    // connected but its `initialize` never advertised this transport" are two
+    // different refusals: the second names a live agent to blame, the first
+    // names no agent at all. Prescribing "the connected agent does not support
+    // this" while nothing is connected is the same lie the drag-and-drop
+    // attach gate split in 0.2.42 stage E (`dragDropManager.ts:142-148`) and
+    // its own comment called out ("saying 'this agent does not support' while
+    // there is no agent would be the same lie the MCP picker caption just
+    // stopped telling"). The picker itself is that caption; this is where it
+    // finally learns to name what it observed.
+    const disabledSuffix = agentConnected
+      ? (transport: 'http' | 'sse') => ` (${transport === 'http' ? locale().settings.mcpHttpDisabled : locale().settings.mcpSseDisabled})`
+      : () => ` (${locale().settings.mcpTransportNoAgent})`;
     const httpEnabled = mcpCapabilities?.http === true;
     const sseEnabled = mcpCapabilities?.sse === true;
     const typeOptions = {
       stdio: 'stdio',
-      http: httpEnabled ? 'http' : `http (${locale().settings.mcpHttpDisabled})`,
-      sse: sseEnabled ? 'sse' : `sse (${locale().settings.mcpSseDisabled})`,
+      http: httpEnabled ? 'http' : `http${disabledSuffix('http')}`,
+      sse: sseEnabled ? 'sse' : `sse${disabledSuffix('sse')}`,
     };
 
     new Setting(block)

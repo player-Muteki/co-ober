@@ -602,8 +602,9 @@ const zh: Locale = {
       envAdd: '+ 添加变量',
       headersAdd: '+ 添加请求头',
     },
-    mcpHttpDisabled: '没有已连接的 Agent 声明支持',
-    mcpSseDisabled: '没有已连接的 Agent 声明支持',
+    mcpHttpDisabled: '当前 Agent 未声明支持',
+    mcpSseDisabled: '当前 Agent 未声明支持',
+    mcpTransportNoAgent: '尚未连接任何 Agent',
     sync: {
       heading: '同步规则',
       add: '+ 添加规则',

@@ -600,8 +600,9 @@ const en = {
       envAdd: '+ Add Variable',
       headersAdd: '+ Add Header',
     },
-    mcpHttpDisabled: 'no connected agent advertises it',
-    mcpSseDisabled: 'no connected agent advertises it',
+    mcpHttpDisabled: 'this agent does not advertise it',
+    mcpSseDisabled: 'this agent does not advertise it',
+    mcpTransportNoAgent: 'no agent is connected',
     sync: {
       heading: 'Sync Rules',
       add: '+ Add Rule',
