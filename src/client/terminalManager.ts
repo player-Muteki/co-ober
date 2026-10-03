@@ -87,6 +87,11 @@ export class TerminalManager {
 	private terminals = new Map<string, TerminalInstance>();
 	private processes = new Map<string, ChildProcess>();
 	private exitWaiters = new Map<string, ExitWaiter>();
+	// Ids this manager actually created and has since dropped, so `output`
+	// can tell "you released it" from "you never had it". Without the record
+	// both cases print the same line and the transcript points a reader at a
+	// release that never happened.
+	private releasedIds = new Set<string>();
 	private nextId = 1;
 	private timeoutMs: number = DEFAULT_TIMEOUT_MS;
 	private maxOutputBytes: number = DEFAULT_MAX_OUTPUT_BYTES;
@@ -149,7 +154,19 @@ export class TerminalManager {
 	output(terminalId: string): TerminalOutputResult {
 		const instance = this.terminals.get(terminalId);
 		if (!instance) {
-			return { output: '', truncated: false, error: `Terminal not found: ${terminalId}` };
+			// Say which kind of absence this is. The id may be one this manager
+			// created and someone released (`released`), or one it never heard
+			// of (`unknown` — a typo, a stale id from a previous session, a
+			// hallucination). Collapsing both into "no longer available" tells
+			// the reader a release they can undo or investigate, when the true
+			// situation may be that no such terminal ever existed.
+			const reason = this.releasedIds.has(terminalId) ? 'released' : 'unknown';
+			return {
+				output: '',
+				truncated: false,
+				error: `Terminal ${reason}: ${terminalId}`,
+				errorReason: reason,
+			};
 		}
 
 		return {
@@ -220,6 +237,10 @@ export class TerminalManager {
 
 		this.terminals.delete(terminalId);
 		this.processes.delete(terminalId);
+		// Only ids we actually had land in the released set — an id the map
+		// never held must keep reading as `unknown`, otherwise a caller who
+		// guesses a wrong id gets told someone released it.
+		this.releasedIds.add(terminalId);
 		// Forget the waits too, the way dispose does. A caller parked on this
 		// terminal will not see its exit through us any more, so leaving the waiter
 		// in the map handed it a timer and a deadline for a terminal this manager
@@ -316,6 +337,10 @@ export class TerminalManager {
 
 		for (const [terminalId] of this.terminals) {
 			this.kill(terminalId);
+			// The manager is going away, so any later read of one of these ids
+			// should say "released" the way release() would have, not "unknown"
+			// the way a never-created id does.
+			this.releasedIds.add(terminalId);
 		}
 		this.terminals.clear();
 		this.processes.clear();

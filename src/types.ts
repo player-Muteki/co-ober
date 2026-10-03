@@ -307,6 +307,15 @@ export interface TerminalOutputResult {
 	truncated?: boolean;
 	exitStatus?: { exitCode: number | null; signal: string | null };
 	error?: string;
+	/**
+	 * Which kind of absence `error` names. `released` — this manager created
+	 * the terminal and someone has since released it. `unknown` — this
+	 * manager never had an id by that name. The transcript's card has to
+	 * split on this: "no longer available" for a terminal that never existed
+	 * points the reader at a release that did not happen, the same shape the
+	 * 0.2.42 stage D absent-vs-unread note fix refused.
+	 */
+	errorReason?: 'unknown' | 'released';
 }
 
 export interface TerminalInstance {

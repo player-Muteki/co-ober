@@ -199,7 +199,12 @@ describe('AcpRequestHandler fs/terminal in-band errors', () => {
 
   it('surfaces an unknown terminal as a rejected request, not blank output', async () => {
     const handler = makeHandler({});
-    await expect(callPrivate(handler, 'handleTerminalOutput', { terminalId: 'term-404' })).rejects.toThrow(/Terminal not found/);
+    // The wire error now names which kind of absence this is: `unknown` for
+    // an id the manager never held, distinct from the `released` wording a
+    // terminal somebody did create now gets.
+    await expect(
+      callPrivate(handler, 'handleTerminalOutput', { terminalId: 'term-404' }),
+    ).rejects.toThrow(/Terminal unknown: term-404/);
     handler.dispose();
   });
 });

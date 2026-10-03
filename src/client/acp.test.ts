@@ -462,6 +462,25 @@ describe('terminalContentFrom', () => {
     expect(terminalContentFrom(null)).toEqual(gone);
     expect(terminalContentFrom({ output: '', error: 'terminal not found' })).toEqual(gone);
   });
+
+  it('says no record for an id the manager never held', () => {
+    const item = terminalContentFrom({
+      output: '',
+      error: 'Terminal unknown: term-miss',
+      errorReason: 'unknown',
+    }) as Extract<ToolCallContent, { type: 'content' }>;
+    expect((item.content as { text: string }).text).toBe(t().tool.terminalUnknown);
+    expect(t().tool.terminalUnknown).not.toBe(t().tool.terminalGone);
+  });
+
+  it('keeps the released wording for a terminal the manager actually had', () => {
+    const item = terminalContentFrom({
+      output: '',
+      error: 'Terminal released: term-1',
+      errorReason: 'released',
+    }) as Extract<ToolCallContent, { type: 'content' }>;
+    expect((item.content as { text: string }).text).toBe(t().tool.terminalGone);
+  });
 });
 
 describe('AcpClient terminal reads and drift reports', () => {

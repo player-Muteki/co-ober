@@ -288,6 +288,7 @@ const zh: Locale = {
       update: '更新',
     },
     terminalGone: '该终端已不可用。',
+    terminalUnknown: 'Co-Ober 没有该终端的任何记录。',
     outputTrimmed: '…… 较早的输出已被裁剪 ……',
     terminated: '被 {signal} 终止',
     unsupportedContent: 'Co-Ober 无法展示该工具的 {type} 内容。',

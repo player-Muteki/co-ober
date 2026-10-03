@@ -113,9 +113,17 @@ export type DropReporter = (kind: string) => void;
  */
 export function terminalContentFrom(res: TerminalOutputResult | null): ToolCallContent {
   if (!res || res.error) {
-    // The agent released it (or the manager is gone): say so, do not paint an
-    // empty card that reads like a command that printed nothing.
-    return { type: 'content', content: { type: 'text', text: t().tool.terminalGone } };
+    // Say which kind of absence the manager reported. A `released` reason
+    // keeps the old wording — someone did release a terminal that had been
+    // here. An `unknown` reason says so, because "no longer available" over
+    // an id this client never created points the reader at a release that
+    // did not happen, the exact shape the 0.2.42 stage D absent-vs-unread
+    // note fix refused for references to renamed-away files. A null manager
+    // (disconnect or disposal) keeps the released reading, matching the
+    // pre-split behavior where the same string covered both.
+    const text =
+      res?.errorReason === 'unknown' ? t().tool.terminalUnknown : t().tool.terminalGone;
+    return { type: 'content', content: { type: 'text', text } };
   }
   const lines: string[] = [];
   if (res.truncated) lines.push(t().tool.outputTrimmed);

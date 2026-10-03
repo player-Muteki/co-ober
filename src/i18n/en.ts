@@ -286,6 +286,7 @@ const en = {
       update: 'UPDATE',
     },
     terminalGone: 'This terminal is no longer available.',
+    terminalUnknown: 'Co-Ober has no record of this terminal.',
     outputTrimmed: '… earlier output was trimmed …',
     terminated: 'Terminated by {signal}',
     unsupportedContent: 'Co-Ober cannot show {type} content from this tool.',

@@ -88,11 +88,22 @@ describe('TerminalManager', () => {
 			expect(result.error).toBeUndefined();
 		});
 
-		it('returns error for non-existent terminal', () => {
+		it('names a never-created id as unknown, not as a release it never saw', () => {
 			const result = manager.output('non-existent');
 
 			expect(result.output).toBe('');
-			expect(result.error).toContain('Terminal not found');
+			expect(result.error).toContain('unknown');
+			expect(result.errorReason).toBe('unknown');
+		});
+
+		it('names an id the manager did create and release as released, not as unknown', () => {
+			const instance = manager.create({ command: 'echo' }, '/vault');
+			expect(manager.release(instance.terminalId)).toBe(true);
+
+			const result = manager.output(instance.terminalId);
+
+			expect(result.errorReason).toBe('released');
+			expect(result.error).toContain('released');
 		});
 	});
 
