@@ -4410,7 +4410,7 @@ describe('CoOberViewController — queue visualization and auto titles', () => {
       // strip kept minting "Chat {time}" while sessionDropdown (which reads
       // `list()` live) already carried the derived name. Two adjacent
       // widgets, two names for one session.
-      const { seq, rename, save } = wireStore(() => true);
+      const { seq, rename } = wireStore(() => true);
 
       await runAutoTitle();
 
