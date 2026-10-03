@@ -48,6 +48,7 @@ import { AcpProcessExitError, AcpAbortError, AcpSessionMissingError, AcpStreamCa
 import {
   readNativeMessageStats,
   readNativeSessionTodos,
+  readNativeSessionTranscript,
   readNativeSessionUsage,
   readNativeToolErrors,
   readNativeTurnStats,
@@ -1668,9 +1669,27 @@ export class CoOberViewController {
         // refused on the plan panel (a settled empty must paint empty) and
         // 0.2.42 stage C refused on runtime options (a fetch that never
         // answered must say "cannot certify", not "nothing was found").
-        rt.renderer.addSystemMessage(
-          replayed.length === 0 ? t().session.resumedNativeWithoutReplay : t().session.loadedNative,
-        );
+        if (replayed.length > 0) {
+          rt.renderer.addSystemMessage(t().session.loadedNative);
+        } else {
+          // The agent streamed back nothing. Before telling the reader the pane
+          // is empty, ask OpenCode's own database: a session started in the
+          // terminal lives there whether or not the agent will replay it over
+          // ACP. A read that yields a transcript is restored from disk — the
+          // conversation is genuinely on the panel, so the honest reading says
+          // where it came from, not that the agent replayed it. A read that
+          // yields nothing (no database, an unreadable schema, a conversation
+          // with no text parts) keeps the "no earlier turns were replayed"
+          // notice: an unavailable read is never dressed up as a restored
+          // conversation, exactly as it was never dressed up as an empty one.
+          const transcript = await readNativeSessionTranscript(sessionId);
+          if (transcript.length > 0) {
+            await this.adoptReplay(sessionId, transcript);
+            rt.renderer.addSystemMessage(t().session.restoredNativeHistory);
+          } else {
+            rt.renderer.addSystemMessage(t().session.resumedNativeWithoutReplay);
+          }
+        }
       }
     } catch (e) {
       console.error('[co-ober] session switch sync:', e);

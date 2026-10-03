@@ -23,6 +23,10 @@ import {
 	buildTurnStatsSqlV2,
 	computeNativeTurnStats,
 	readNativeTurnStats,
+	buildNativeTranscriptSql,
+	buildNativeTranscriptSqlV2,
+	mapNativeTranscriptRows,
+	readNativeSessionTranscript,
 	probeNativeSchema,
 	resetNativeSchemaProbe,
 } from './NativeSessionReader';
@@ -821,5 +825,189 @@ describe('native schema probe (v2 defense)', () => {
 		};
 		expect(await probeNativeSchema(dbPath, { sqlite: deps as never })).toBe('forked');
 		warn.mockRestore();
+	});
+});
+
+// 0.2.50 stage B: reconstruct a native session's conversation from OpenCode's
+// own SQLite, in the exact replay-message shape, so the restore path can fill
+// the pane when the agent streamed back nothing.
+describe('native whole-conversation transcript (0.2.50 stage B)', () => {
+	// Rows arrive already folded onto the shared transcript shape: one row per
+	// ordered text/reasoning part, columns aliased identically for v1 and v2.
+	const v1Rows = [
+		{ message_id: 'u1', role: 'user', started_at: 1_700_000_000_000, part_type: 'text', text: 'first question', ignored: 0 },
+		{ message_id: 'a1', role: 'assistant', started_at: 1_700_000_000_500, part_type: 'thinking', text: 'let me think', ignored: 0 },
+		{ message_id: 'a1', role: 'assistant', started_at: 1_700_000_000_500, part_type: 'text', text: 'answer', ignored: 0 },
+	];
+
+	function transcriptSqlite(contentRows: unknown[], probeRow: unknown = V1_PROBE_ROW, forkRow: unknown = FORK_CLEAN_ROW) {
+		return {
+			requireSqliteModule: () => ({
+				DatabaseSync: class {
+					constructor() {}
+					close() {}
+					prepare(sql: string) {
+						return {
+							all: () =>
+								sql.includes('sqlite_master')
+									? [probeRow]
+									: sql.includes('data_migration')
+										? [forkRow]
+										: contentRows,
+						};
+					}
+				},
+			}),
+		};
+	}
+
+	describe('SQL builders', () => {
+		it('v1 folds message and part into ordered text/reasoning rows', () => {
+			const sql = buildNativeTranscriptSql('ses_a');
+			expect(sql).toContain('from message m join part p on p.message_id = m.id');
+			expect(sql).toContain("m.session_id = 'ses_a'");
+			expect(sql).toContain("json_extract(m.data, '$.role') as role");
+			expect(sql).toContain("case when json_extract(p.data, '$.type') = 'reasoning' then 'thinking' else 'text' end as part_type");
+			expect(sql).toContain("json_extract(p.data, '$.ignored')");
+			expect(sql).toContain('order by m.time_created asc');
+		});
+
+		it('v1 escapes a quote in the session id', () => {
+			expect(buildNativeTranscriptSql("se's")).toContain("m.session_id = 'se''s'");
+		});
+
+		it('v2 unions user prompts and assistant content parts ordered by seq', () => {
+			const sql = buildNativeTranscriptSqlV2('ses_b');
+			expect(sql).toContain('from session_message sm');
+			expect(sql).toContain("sm.type = 'user'");
+			expect(sql).toContain('union all');
+			expect(sql).toContain("json_each(sm.data, '$.content')");
+			expect(sql).toContain("sm.type = 'assistant'");
+			expect(sql).toContain('order by seq asc, part_index asc');
+		});
+	});
+
+	describe('mapNativeTranscriptRows', () => {
+		it('splits thinking and text into separate messages in first-seen order', () => {
+			const out = mapNativeTranscriptRows(v1Rows);
+			expect(out.map((m) => [m.role, m.type, m.content])).toEqual([
+				['user', 'text', 'first question'],
+				['assistant', 'thinking', 'let me think'],
+				['assistant', 'text', 'answer'],
+			]);
+			expect(out[2].nativeMessageId).toBe('a1');
+		});
+
+		it('joins multiple parts of one message with a blank line', () => {
+			const out = mapNativeTranscriptRows([
+				{ message_id: 'a1', role: 'assistant', started_at: 5, part_type: 'text', text: 'para one', ignored: 0 },
+				{ message_id: 'a1', role: 'assistant', started_at: 5, part_type: 'text', text: 'para two', ignored: 0 },
+			]);
+			expect(out).toHaveLength(1);
+			expect(out[0].content).toBe('para one\n\npara two');
+		});
+
+		it('drops an ignored part and a blank-text bucket', () => {
+			const out = mapNativeTranscriptRows([
+				{ message_id: 'a1', role: 'assistant', started_at: 5, part_type: 'text', text: 'ignored preamble', ignored: 1 },
+				{ message_id: 'a1', role: 'assistant', started_at: 5, part_type: 'thinking', text: '   ', ignored: 0 },
+				{ message_id: 'a1', role: 'assistant', started_at: 5, part_type: 'text', text: 'kept', ignored: 0 },
+			]);
+			expect(out.map((m) => [m.type, m.content])).toEqual([['text', 'kept']]);
+		});
+
+		it('reads an unusable timestamp as the undatable sentinel (0)', () => {
+			const out = mapNativeTranscriptRows([
+				{ message_id: 'a1', role: 'assistant', started_at: 9e15, part_type: 'text', text: 'x', ignored: 0 },
+				{ message_id: 'a2', role: 'user', started_at: 0, part_type: 'text', text: 'y', ignored: 0 },
+			]);
+			expect(out[0].timestamp).toBe(0);
+			expect(out[1].timestamp).toBe(0);
+		});
+
+		it('skips rows that name no message, a non-turn role, or a non-text part', () => {
+			const out = mapNativeTranscriptRows([
+				{ message_id: '', role: 'assistant', started_at: 5, part_type: 'text', text: 'gone', ignored: 0 },
+				{ message_id: 'a1', role: 'system', started_at: 5, part_type: 'text', text: 'not a turn', ignored: 0 },
+				{ message_id: 'a2', role: 'assistant', started_at: 5, part_type: 'tool', text: 'not text', ignored: 0 },
+			]);
+			expect(out).toHaveLength(0);
+		});
+	});
+
+	describe('readNativeSessionTranscript', () => {
+		it('reconstructs a v1 transcript from OpenCode\'s own database', async () => {
+			const base = { env: { HOME: '/home/u' }, fs: fakeFs };
+			const out = await readNativeSessionTranscript('ses_a', { ...base, sqlite: transcriptSqlite(v1Rows) as never });
+			expect(out).toHaveLength(3);
+			expect(out[0].content).toBe('first question');
+			expect(out[2].nativeMessageId).toBe('a1');
+		});
+
+		it('reconstructs a forked v2 transcript through the v2 tables', async () => {
+			const base = { env: { HOME: '/home/u' }, fs: fakeFs };
+			const out = await readNativeSessionTranscript('ses_b', {
+				...base,
+				sqlite: transcriptSqlite(
+					[
+						{ message_id: 'u1', role: 'user', started_at: 100, part_type: 'text', text: 'hi', ignored: 0 },
+						{ message_id: 'a1', role: 'assistant', started_at: 200, part_type: 'thinking', text: 'm', ignored: 0 },
+					],
+					{ session_table: 1, session_columns: 6, v2_tables: 3 },
+					{ migrated: 12, v2_rows: 0 },
+				) as never,
+			});
+			expect(out.map((m) => m.type)).toEqual(['text', 'thinking']);
+		});
+
+		it('returns an empty list when there is no OpenCode database to read', async () => {
+			const out = await readNativeSessionTranscript('ses_a', {
+				env: {},
+				fs: { existsSync: () => false, readdirSync: (): string[] => [] },
+				sqlite: transcriptSqlite(v1Rows) as never,
+			});
+			expect(out).toEqual([]);
+		});
+
+		it('returns an empty list, not a throw, on a degraded schema', async () => {
+			const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			const base = { env: { HOME: '/home/u' }, fs: fakeFs };
+			// An incompatible schema resolves to no read format, so no query runs
+			// and the caller keeps its honest "no earlier turns were replayed".
+			const out = await readNativeSessionTranscript('ses_a', {
+				...base,
+				sqlite: transcriptSqlite(v1Rows, { session_table: 1, session_columns: 2 }) as never,
+			});
+			expect(out).toEqual([]);
+			warn.mockRestore();
+		});
+
+		it('treats a failed read as no transcript rather than crashing the restore', async () => {
+			const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			const base = { env: { HOME: '/home/u' }, fs: fakeFs };
+			const out = await readNativeSessionTranscript('ses_a', {
+				...base,
+				sqlite: {
+					requireSqliteModule: () => ({
+						DatabaseSync: class {
+							constructor() {}
+							close() {}
+							prepare(sql: string) {
+								if (sql.includes('sqlite_master')) return { all: () => [V1_PROBE_ROW] };
+								return { all: () => { throw new Error('table is corrupt'); } };
+							}
+						},
+					}),
+					spawn: () => { throw new Error('nope'); },
+					execPath: '',
+					env: {},
+				} as never,
+			});
+			// The pane must never fall open on an exception: an unreadable
+			// database is not a fabricated empty conversation, it is the same
+			// honest no-replay notice the caller already shows.
+			expect(out).toEqual([]);
+			warn.mockRestore();
+		});
 	});
 });

@@ -20,6 +20,7 @@ import { AcpSessionMissingError, AcpProcessExitError, AcpTimeoutError } from '..
 import {
   readNativeMessageStats,
   readNativeSessionTodos,
+  readNativeSessionTranscript,
   readNativeSessionUsage,
   readNativeToolErrors,
   readNativeTurnStats,
@@ -32,6 +33,7 @@ vi.mock('../opencode/NativeSessionReader', async (importOriginal) => {
     ...actual,
     readNativeSessionUsage: vi.fn().mockResolvedValue(undefined),
     readNativeSessionTodos: vi.fn().mockResolvedValue([]),
+    readNativeSessionTranscript: vi.fn().mockResolvedValue([]),
     readNativeMessageStats: vi.fn().mockResolvedValue([]),
     readNativeToolErrors: vi.fn().mockResolvedValue({}),
     readNativeTurnStats: vi.fn().mockResolvedValue([]),
@@ -237,6 +239,7 @@ describe('CoOberViewController', () => {
     callbacks = createMockCallbacks();
     (readNativeSessionUsage as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
     (readNativeSessionTodos as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (readNativeSessionTranscript as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (readNativeMessageStats as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (readNativeToolErrors as ReturnType<typeof vi.fn>).mockResolvedValue({});
     (readNativeTurnStats as ReturnType<typeof vi.fn>).mockResolvedValue([]);
@@ -2099,6 +2102,86 @@ describe('CoOberViewController', () => {
         expect(t().session.loadedNative).not.toBe(t().session.resumedNativeWithoutReplay);
       });
     });
+
+    // 0.2.50 stage B: when the agent replays nothing, OpenCode's own database
+    // is asked before the pane is declared empty. A native session started in
+    // the terminal lives on disk whether or not the agent will stream it back,
+    // so a transcript read from the DB is restored through the same adoption
+    // path a replay uses — and only the honest "no earlier turns were replayed"
+    // notice survives when the database has no conversation to give either.
+    describe('restoring a native session from OpenCode\'s database when the agent replayed nothing (0.2.50 stage B)', () => {
+      it('adopts the database transcript and says it came from disk', async () => {
+        const client = createMockClient();
+        (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+        const session = { sessionId: 'ses_db', messages: [] as SerializedMessage[], updatedAt: 0 };
+        (deps.sessionStore.getOrCreate as ReturnType<typeof vi.fn>).mockReturnValue(session);
+        (readNativeSessionTranscript as ReturnType<typeof vi.fn>).mockResolvedValue([
+          { role: 'user', type: 'text', content: 'hello there', timestamp: 1_700_000_000_000, nativeMessageId: 'u1' },
+          { role: 'assistant', type: 'text', content: 'hi', timestamp: 1_700_000_000_500, nativeMessageId: 'a1' },
+        ]);
+        controller = new CoOberViewController(deps, callbacks);
+
+        await controller.switchSession('ses_db', 'opencode');
+
+        expect(readNativeSessionTranscript).toHaveBeenCalledWith('ses_db');
+        expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().session.restoredNativeHistory);
+        // Disk-restore claims neither the agent-replay reading nor the empty one.
+        expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(t().session.resumedNativeWithoutReplay);
+        expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(t().session.loadedNative);
+        // The transcript rides the same adoption path a replay uses, so the
+        // panel shows it and each message keeps the id OpenCode itself wrote.
+        expect(session.messages.map((m) => m.content)).toEqual(['hello there', 'hi']);
+        expect(session.messages[0].nativeMessageId).toBe('u1');
+      });
+
+      it('keeps the no-replay notice when the database has no transcript either', async () => {
+        const client = createMockClient();
+        (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+        (readNativeSessionTranscript as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+        controller = new CoOberViewController(deps, callbacks);
+
+        await controller.switchSession('ses_db_empty', 'opencode');
+
+        // The read was still asked — it came back with nothing to show, which
+        // is a different fact than never asking, but the notice stays honest
+        // either way: no earlier turns reached the panel.
+        expect(readNativeSessionTranscript).toHaveBeenCalledWith('ses_db_empty');
+        expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().session.resumedNativeWithoutReplay);
+        expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(t().session.restoredNativeHistory);
+      });
+
+      it('does not read the database when the agent replayed turns', async () => {
+        const client = createMockClient({
+          loadSession: vi.fn(
+            async (_id: string, _cwd: string, _mcp: unknown, onReplay?: (u: NormalizedUpdate) => void) => {
+              onReplay?.({
+                kind: 'message_chunk',
+                role: 'user',
+                messageId: 'u1',
+                chunkText: 'question',
+                accumulatedText: 'question',
+              });
+            },
+          ),
+        });
+        (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+        controller = new CoOberViewController(deps, callbacks);
+        (readNativeSessionTranscript as ReturnType<typeof vi.fn>).mockClear();
+
+        await controller.switchSession('ses_replayed', 'opencode');
+
+        // A real replay already filled the pane; reaching for the database
+        // would read a second copy of a conversation the agent just streamed.
+        expect(readNativeSessionTranscript).not.toHaveBeenCalled();
+        expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().session.loadedNative);
+      });
+
+      it('speaks three distinct strings so replay, disk-restore and no-history never collapse', () => {
+        expect(t().session.loadedNative).not.toBe(t().session.restoredNativeHistory);
+        expect(t().session.restoredNativeHistory).not.toBe(t().session.resumedNativeWithoutReplay);
+        expect(t().session.loadedNative).not.toBe(t().session.resumedNativeWithoutReplay);
+      });
+    });
   });
 
   describe('session loss reporting', () => {
@@ -3392,6 +3475,7 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
     callbacks = createMockCallbacks();
     (readNativeSessionUsage as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
     (readNativeSessionTodos as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (readNativeSessionTranscript as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (readNativeMessageStats as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (readNativeToolErrors as ReturnType<typeof vi.fn>).mockResolvedValue({});
     (readNativeTurnStats as ReturnType<typeof vi.fn>).mockResolvedValue([]);

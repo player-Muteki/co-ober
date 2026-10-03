@@ -1,4 +1,4 @@
-import type { SessionMeta } from '../types';
+import type { SessionMeta, SerializedMessage } from '../types';
 import { MAX_TIMESTAMP_MS } from '../constants';
 import { resolveOpencodeDatabasePath, type PathFs } from './OpencodePaths';
 import { querySqliteJson, type SqliteReaderDeps, type SqliteRow } from './SqliteReader';
@@ -615,6 +615,151 @@ export async function readNativeToolErrors(sessionId: string, deps: NativeSessio
 		errors[row.call_id] = row.error;
 	}
 	return errors;
+}
+
+// ── whole-conversation read-back ──
+// A native OpenCode session started in the terminal lives in the database
+// whether or not the agent will replay it over ACP. When a `session/load`
+// streams back nothing, the pane used to go empty; the conversation is still
+// on disk, so it is read from there. The rows are folded into the exact
+// `SerializedMessage` shape `SessionReplayCollector.finish()` emits — one text
+// bucket and one thinking bucket per message, in first-seen order — so the DB
+// read is a drop-in for the replay path and `refreshNativeUsage`'s position /
+// `nativeMessageId` matching attaches cost and tool errors to it unchanged. It
+// deliberately reads text and thinking only: the replay path renders no tool
+// blocks or images either, so matching fidelity keeps the fallback from claiming
+// a richer transcript than the agent itself would have streamed.
+
+/** Message `time_created` as an epoch, or 0 — the repo's undatable sentinel. */
+function toTimestampMs(ms: unknown): number {
+	return typeof ms === 'number' && Number.isFinite(ms) && ms > 0 && ms <= MAX_TIMESTAMP_MS ? ms : 0;
+}
+
+/**
+ * v1 read-back: ordered text/reasoning parts joined to their message. Role and
+ * part type are read from the JSON payload; the part `type` is folded onto the
+ * transcript's 'text' / 'thinking' vocabulary here so one row shape feeds both
+ * layouts.
+ */
+export function buildNativeTranscriptSql(sessionId: string): string {
+	const id = escapeSqlLiteral(sessionId);
+	return [
+		'select m.id as message_id,',
+		"json_extract(m.data, '$.role') as role,",
+		"coalesce(cast(json_extract(m.data, '$.time.created') as integer), m.time_created) as started_at,",
+		"case when json_extract(p.data, '$.type') = 'reasoning' then 'thinking' else 'text' end as part_type,",
+		"json_extract(p.data, '$.text') as text,",
+		"coalesce(json_extract(p.data, '$.ignored'), 0) as ignored",
+		'from message m join part p on p.message_id = m.id',
+		`where m.session_id = '${id}' and json_valid(m.data) and json_valid(p.data)`,
+		"and json_extract(m.data, '$.role') in ('user', 'assistant')",
+		"and json_extract(p.data, '$.type') in ('text', 'reasoning')",
+		'order by m.time_created asc, m.id asc, p.id asc',
+	].join(' ');
+}
+
+/**
+ * v2 (forked database) read-back. `session_message` rows are ordered by `seq`;
+ * a user row's prompt is `$.text`, an assistant row inlines its parts in
+ * `$.content`. Both are unioned into the shared row shape and ordered by the
+ * message's `seq`, then the part's index within `content`.
+ */
+export function buildNativeTranscriptSqlV2(sessionId: string): string {
+	const id = escapeSqlLiteral(sessionId);
+	return [
+		'select message_id, role, started_at, part_type, text, ignored from (',
+		"select sm.id as message_id, 'user' as role,",
+		"coalesce(cast(json_extract(sm.data, '$.time.created') as integer), sm.time_created) as started_at,",
+		"'text' as part_type,",
+		"json_extract(sm.data, '$.text') as text,",
+		'0 as ignored, sm.seq as seq, 0 as part_index',
+		'from session_message sm',
+		`where sm.session_id = '${id}' and sm.type = 'user' and json_valid(sm.data)`,
+		'union all',
+		"select sm.id as message_id, 'assistant' as role,",
+		"coalesce(cast(json_extract(sm.data, '$.time.created') as integer), sm.time_created) as started_at,",
+		"case when json_extract(j.value, '$.type') = 'reasoning' then 'thinking' else 'text' end as part_type,",
+		"json_extract(j.value, '$.text') as text,",
+		"coalesce(json_extract(j.value, '$.ignored'), 0) as ignored,",
+		'sm.seq as seq, j.key as part_index',
+		"from session_message sm, json_each(sm.data, '$.content') j",
+		`where sm.session_id = '${id}' and sm.type = 'assistant' and json_valid(sm.data)`,
+		"and json_extract(j.value, '$.type') in ('text', 'reasoning')",
+		')',
+		'order by seq asc, part_index asc',
+	].join(' ');
+}
+
+/**
+ * Fold ordered transcript rows into replay-shaped messages. Consecutive parts
+ * of the same type in one message merge (joined by a blank line), thinking and
+ * text become separate messages, and a bucket whose text is blank is dropped —
+ * the same rule the collector applies to an id-less or empty replay frame.
+ * Exported pure for the ordering and honesty boundaries.
+ */
+export function mapNativeTranscriptRows(rows: SqliteRow[]): SerializedMessage[] {
+	const order: string[] = [];
+	const buckets = new Map<string, { role: 'user' | 'assistant'; type: 'text' | 'thinking'; text: string; startedAt: number; messageId: string }>();
+	for (const row of rows) {
+		const messageId = typeof row.message_id === 'string' ? row.message_id : '';
+		if (!messageId) continue;
+		const role = row.role === 'user' || row.role === 'assistant' ? row.role : undefined;
+		if (!role) continue;
+		const type = row.part_type === 'thinking' ? 'thinking' : row.part_type === 'text' ? 'text' : undefined;
+		if (!type) continue;
+		if (row.ignored === 1 || row.ignored === true) continue;
+		const text = typeof row.text === 'string' ? row.text : '';
+		const key = `${messageId}|${type}`;
+		let bucket = buckets.get(key);
+		if (!bucket) {
+			bucket = { role, type, text: '', startedAt: toTimestampMs(row.started_at), messageId };
+			buckets.set(key, bucket);
+			order.push(key);
+		}
+		if (text) bucket.text += bucket.text ? `\n\n${text}` : text;
+	}
+	const messages: SerializedMessage[] = [];
+	for (const key of order) {
+		const bucket = buckets.get(key) as NonNullable<ReturnType<typeof buckets.get>>;
+		if (!bucket.text.trim()) continue;
+		messages.push({
+			role: bucket.role,
+			type: bucket.type,
+			content: bucket.text,
+			timestamp: bucket.startedAt,
+			// Unlike a replayed frame that named no id (or the collector's
+			// '#anon-N'/'compaction|N' stand-ins), the row carries the id
+			// OpenCode itself wrote — so `nativeMessageId` means the agent's
+			// own here, and usage matching gets an id the DB will echo back.
+			nativeMessageId: bucket.messageId,
+		});
+	}
+	return messages;
+}
+
+/**
+ * Reconstruct a native session's transcript from OpenCode's own database, in
+ * replay-message shape. Returns an empty list when there is no database, no
+ * readable schema, or no conversation text; never throws, so the caller can
+ * treat a failure exactly like a genuine empty history and keep its honest
+ * "no earlier turns were replayed" notice rather than claiming a transcript
+ * from a database it could not open.
+ */
+export async function readNativeSessionTranscript(sessionId: string, deps: NativeSessionReaderDeps = {}): Promise<SerializedMessage[]> {
+	if (!sessionId) return [];
+	const env = deps.env ?? process.env;
+	const databasePath = resolveOpencodeDatabasePath(env, deps.fs);
+	if (!databasePath) return [];
+	const format = await resolveNativeReadFormat(databasePath, deps);
+	if (!format) return [];
+	try {
+		const sql = format === 'v2' ? buildNativeTranscriptSqlV2(sessionId) : buildNativeTranscriptSql(sessionId);
+		const rows = await querySqliteJson(databasePath, sql, deps.sqlite);
+		return mapNativeTranscriptRows(rows);
+	} catch (error) {
+		console.warn('[co-ober] native session transcript unavailable:', error);
+		return [];
+	}
 }
 
 /**

@@ -61,6 +61,7 @@ const zh: Locale = {
     defaultTitle: '会话 {time}',
     loadedNative: '已载入 OpenCode 会话。更早的对话保存在 OpenCode 历史中，新回复将在此继续。',
     resumedNativeWithoutReplay: '已重新挂载该 OpenCode 会话；未回放更早的对话。新回复将在此继续。',
+    restoredNativeHistory: '已从 OpenCode 保存在磁盘上的历史记录中读取该会话；新回复将在此继续。',
     loadNativeFailed: '无法载入该 OpenCode 会话。',
     nativeSessionMissing: '该 OpenCode 会话已不存在（可能已在 OpenCode 中删除）。',
     runtimeSessionLost: 'Agent 端已不再持有该会话（可能已重启）。本地历史仍会保留；下一条消息将开启新的 Agent 会话。',
