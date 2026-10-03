@@ -449,6 +449,38 @@ describe('CoOberSettingsTab locale refresh', () => {
     expect(text).not.toContain('0 agents, 0 models, 0 commands');
   });
 
+  it('names a runtime metadata query that could not answer, not a zero count', async () => {
+    // The 0.2.20 fix introduced `runtimeNotQueried` for the branch where no
+    // client existed. The connected-then-rejected branch still folded each
+    // `getAvailable*` rejection into `[]` via `.catch(() => [])` inside
+    // `Promise.all`, so the diagnostics row interpolated {modes}/{models}/
+    // {commands} out of those swallowed empties and printed "0 agents, 0
+    // models, 0 commands" — the exact reading a working agent gives when it
+    // truly has nothing. A stream that died mid-read is not a survey that
+    // returned; it is a question that could not be answered, and the row
+    // names it as one now.
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const client = plugin.getClient()!;
+    vi.mocked(client.getAvailableAgents).mockRejectedValue(new Error('stream died'));
+    vi.mocked(client.getAvailableModels).mockRejectedValue(new Error('stream died'));
+    vi.mocked(client.getAvailableCommands).mockRejectedValue(new Error('stream died'));
+    const tab = new CoOberSettingsTab(plugin);
+
+    tab.display();
+    const diagnosticsButton = [...tab.containerEl.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Run Diagnostics') as HTMLButtonElement | undefined;
+    diagnosticsButton!.click();
+    await flushPromises();
+    await flushPromises();
+
+    const text = tab.containerEl.textContent ?? '';
+    expect(text).toContain('Runtime metadata');
+    expect(text).toContain('Query failed — the runtime lists could not be read');
+    expect(text).not.toContain('0 agents, 0 models, 0 commands');
+    expect(text).not.toContain('Not queried');
+  });
+
   it('localizes diagnostics controls when switching language', async () => {
     setLocale('en');
     const refreshedView = { refreshLocale: vi.fn() };

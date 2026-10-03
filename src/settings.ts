@@ -726,18 +726,32 @@ export class CoOberSettingsTab extends PluginSettingTab {
     // posed, sitting right under the row that already says the connection
     // failed. Say the question was not asked instead; the genuinely-empty case
     // (an agent connected and reporting no lists) still reads out real zeros.
-    const runtimeCounts = runtimeQueried && client
+    //
+    // A connected agent's own query may still fail at the transport, and before
+    // this release that failure was folded into the same zeros as a settled
+    // empty answer: `.catch(() => [])` turned a rejection into an empty array,
+    // so a stream that died mid-read certified "0 agents, 0 models, 0 commands"
+    // — the exact reading a working connected agent would print only when it
+    // really had nothing to say. The failure now has its own bucket, and the
+    // row names it as one question that could not be answered instead of three
+    // zeros that were.
+    const runtimeOutcome = runtimeQueried && client
       ? await this.getRuntimeMetadataCounts(client)
-      : { modes: 0, models: 0, commands: 0 };
-    results.push({
-      label: labels.runtime,
-      ok: runtimeQueried && runtimeCounts.modes + runtimeCounts.models + runtimeCounts.commands > 0,
-      detail: runtimeQueried
+      : null;
+    const runtimeCounts = runtimeOutcome?.ok ? runtimeOutcome.counts : { modes: 0, models: 0, commands: 0 };
+    const runtimeLine = runtimeOutcome === null
+      ? labels.runtimeNotQueried
+      : runtimeOutcome.ok
         ? labels.runtimeDetail
           .replace('{modes}', String(runtimeCounts.modes))
           .replace('{models}', String(runtimeCounts.models))
           .replace('{commands}', String(runtimeCounts.commands))
-        : labels.runtimeNotQueried,
+        : labels.runtimeUnavailable;
+    results.push({
+      label: labels.runtime,
+      ok: runtimeOutcome !== null && runtimeOutcome.ok
+        && runtimeCounts.modes + runtimeCounts.models + runtimeCounts.commands > 0,
+      detail: runtimeLine,
     });
 
     const configuredMcp = this.plugin.settings.mcpServers.length;
@@ -768,21 +782,33 @@ export class CoOberSettingsTab extends PluginSettingTab {
     return results;
   }
 
-  private async getRuntimeMetadataCounts(client: OpencodeClient): Promise<{ modes: number; models: number; commands: number }> {
+  private async getRuntimeMetadataCounts(
+    client: OpencodeClient,
+  ): Promise<{ ok: true, counts: { modes: number, models: number, commands: number } } | { ok: false }> {
     const snapshot = client.getSessionSnapshot();
     const snapshotCounts = {
       modes: snapshot.availableModes.length,
       models: snapshot.availableModels.length,
       commands: snapshot.availableCommands.length,
     };
-    if (snapshotCounts.modes + snapshotCounts.models + snapshotCounts.commands > 0) return snapshotCounts;
+    if (snapshotCounts.modes + snapshotCounts.models + snapshotCounts.commands > 0) {
+      return { ok: true, counts: snapshotCounts };
+    }
 
-    const [agents, models, commands] = await Promise.all([
-      client.getAvailableAgents().catch(() => [] as ModeOption[]),
-      client.getAvailableModels().catch(() => [] as ModelOption[]),
-      client.getAvailableCommands().catch(() => [] as AvailableCommand[]),
+    // A rejection is a rejection, not an empty. The old `.catch(() => [])`
+    // swallowed both into the same zero-length array, so a stream that died
+    // and an agent that truly has nothing were indistinguishable on the
+    // diagnostics row. Track the failure at the seam and let the caller
+    // paint a distinct reading.
+    let failed = false;
+    const settled = await Promise.all([
+      client.getAvailableAgents().catch(() => { failed = true; return [] as ModeOption[]; }),
+      client.getAvailableModels().catch(() => { failed = true; return [] as ModelOption[]; }),
+      client.getAvailableCommands().catch(() => { failed = true; return [] as AvailableCommand[]; }),
     ]);
-    return { modes: agents.length, models: models.length, commands: commands.length };
+    if (failed) return { ok: false };
+    const [agents, models, commands] = settled;
+    return { ok: true, counts: { modes: agents.length, models: models.length, commands: commands.length } };
   }
 
   private addCustomAgentBlock(containerEl: HTMLElement, agent: CustomAgentDefinition): void {

@@ -498,6 +498,7 @@ const zh: Locale = {
       runtime: '运行时元数据',
       runtimeDetail: '{modes} 个 Agent，{models} 个模型，{commands} 个命令',
       runtimeNotQueried: '未查询 — 没有已连接的 Agent',
+      runtimeUnavailable: '查询失败 — 运行时列表未能读取',
       mcp: 'MCP 服务器',
       mcpDetail: '已启用 {enabled} 个，已配置 {configured} 个',
       syncFolder: '默认同步文件夹',

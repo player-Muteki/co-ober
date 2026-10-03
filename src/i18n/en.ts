@@ -496,6 +496,7 @@ const en = {
       runtime: 'Runtime metadata',
       runtimeDetail: '{modes} agents, {models} models, {commands} commands',
       runtimeNotQueried: 'Not queried — no agent is connected',
+      runtimeUnavailable: 'Query failed — the runtime lists could not be read',
       mcp: 'MCP servers',
       mcpDetail: '{enabled} enabled, {configured} configured',
       syncFolder: 'Default sync folder',
