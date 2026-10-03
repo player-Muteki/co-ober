@@ -1144,6 +1144,65 @@ describe('StreamController', () => {
     errorSpy.mockRestore();
   });
 
+  describe('a save that resolves without landing still lights the not-saved badge (0.2.48 stage B)', () => {
+    // `sessionStore.save` is a thin wrapper on `plugin.savePluginData()`, and
+    // 0.2.47 stage A documented that contract as never-rejects — every disk
+    // failure is folded into a throttled sticky alarm and the promise
+    // resolves the same way whether the write landed or threw. The `.catch`
+    // above is therefore decoration for the real path; on a locked
+    // `data.json`, a read-only vault, a full disk, the reply stays on screen
+    // and the transcript keeps painting as saved. `lastSaveOk` already
+    // publishes the truth — this call site has to read it.
+    it('fires onPersistFailure when lastSaveOk is false after a resolving save', async () => {
+      (deps as { lastSaveOk?: () => boolean | null }).lastSaveOk = () => false;
+
+      controller.saveMessage('user', 'Hi', 'text');
+      await vi.runAllTimersAsync();
+
+      expect(deps.sessionStore.save).toHaveBeenCalledOnce();
+      expect(deps.onPersistFailure).toHaveBeenCalledOnce();
+    });
+
+    it('does not fire onPersistFailure when lastSaveOk is true', async () => {
+      // The fix must not trade one lie for another by painting the failure
+      // badge on a landed write — a working disk still gets silence.
+      (deps as { lastSaveOk?: () => boolean | null }).lastSaveOk = () => true;
+
+      controller.saveMessage('user', 'Hi', 'text');
+      await vi.runAllTimersAsync();
+
+      expect(deps.onPersistFailure).not.toHaveBeenCalled();
+    });
+
+    it('does not fire onPersistFailure when lastSaveOk is null (no save has been observed)', async () => {
+      // The three-state field reserves null for "no save has finished yet" —
+      // a first paint on a plugin that has not persisted anything is not a
+      // failure the badge can honestly name.
+      (deps as { lastSaveOk?: () => boolean | null }).lastSaveOk = () => null;
+
+      controller.saveMessage('user', 'Hi', 'text');
+      await vi.runAllTimersAsync();
+
+      expect(deps.onPersistFailure).not.toHaveBeenCalled();
+    });
+
+    it('leaves the rejecting-save path firing exactly once, not twice', async () => {
+      // The `.catch` fires onPersistFailure for a genuinely rejecting store
+      // (a test double or a hand-rolled fake); the new `.then` guard reads
+      // lastSaveOk only when save() resolved, so a rejecting save must not
+      // also trip the false-flag branch and light the badge twice.
+      (deps as { lastSaveOk?: () => boolean | null }).lastSaveOk = () => false;
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      deps.sessionStore.save.mockRejectedValueOnce(new Error('disk full'));
+
+      controller.saveMessage('user', 'Hi', 'text');
+      await vi.runAllTimersAsync();
+
+      expect(deps.onPersistFailure).toHaveBeenCalledOnce();
+      errorSpy.mockRestore();
+    });
+  });
+
   it('stamps streamed plan updates on state (post-turn refresh gate)', () => {
     vi.setSystemTime(new Date('2026-01-01T00:00:05Z'));
 

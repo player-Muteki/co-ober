@@ -41,6 +41,13 @@ export interface StreamControllerDeps {
   onSyncFailure?: (message: string) => void;
   /** A transcript write failed; the tab says so instead of looking saved. */
   onPersistFailure?: () => void;
+  /**
+   * Read the plugin's `lastSaveOk` outcome after a save resolves.
+   * `sessionStore.save` never rejects (0.2.47 stage A's sticky-alarm swallow),
+   * so the `.catch` in `persist()` cannot see a real disk failure — this
+   * accessor lets the resolved save report whether it actually landed.
+   */
+  lastSaveOk?: () => boolean | null;
 }
 
 export class StreamController {
@@ -637,11 +644,29 @@ export class StreamController {
   }
 
   private persist(): Promise<void> {
-    const save = this.deps.sessionStore.save().catch((error: unknown) => {
-      console.error('[co-ober] save session:', error);
-      // The reply is on screen either way; say that it did not reach the disk.
-      this.deps.onPersistFailure?.();
-    });
+    // `sessionStore.save()` is a thin wrapper on `plugin.savePluginData()`,
+    // which 0.2.47 stage A documented as never-rejects — every disk failure
+    // is folded into a throttled sticky alarm and the promise resolves
+    // identically whether the write landed or threw. Without reading the
+    // outcome the `.catch` below is decoration: on a locked `data.json`, a
+    // read-only vault, a full disk, the reply stays on screen and the tab
+    // keeps painting as saved, exactly the failure the "notSaved" badge
+    // exists to say out loud. Same class 0.2.47 stage A refused on the
+    // settings Notice (a resolved save is not a completed save) and 0.2.44
+    // stage A refused on the model switch (accepted is not landed); the
+    // `lastSaveOk` field already publishes the fact — this call site just
+    // has to read it.
+    const save = this.deps.sessionStore.save()
+      .then(() => {
+        if (this.deps.lastSaveOk?.() === false) {
+          this.deps.onPersistFailure?.();
+        }
+      })
+      .catch((error: unknown) => {
+        console.error('[co-ober] save session:', error);
+        // The reply is on screen either way; say that it did not reach the disk.
+        this.deps.onPersistFailure?.();
+      });
     this.activeSave = save;
     void save.finally(() => {
       if (this.activeSave === save) this.activeSave = null;

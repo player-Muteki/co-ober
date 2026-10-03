@@ -114,6 +114,14 @@ export interface ControllerRuntime {
   getVaultCwd(): string;
   /** Write a markdown note into the vault, creating parent folders as needed. */
   createNote(path: string, content: string): Promise<void>;
+  /**
+   * The plugin's own persistence outcome flag, mirrored here so a stream
+   * controller can consult it without holding the plugin. Same three-state
+   * fact 0.2.47 stage A published on `savePluginData`: null = no save has
+   * finished; true = the write landed; false = the write was swallowed into
+   * the sticky alarm.
+   */
+  readonly lastSaveOk: boolean | null;
 }
 
 /** A tab's message surface, created by the view when the controller opens a tab. */
@@ -248,6 +256,7 @@ export class CoOberViewController {
       },
       onSyncFailure: (message) => rt.renderer.addError(message),
       onPersistFailure: () => this.reportPersistence(true),
+      lastSaveOk: () => this.deps.runtime.lastSaveOk,
     });
     this.runtimes.set(tabId, rt);
     return rt;
