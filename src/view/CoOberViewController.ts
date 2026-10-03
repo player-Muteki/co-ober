@@ -2297,6 +2297,16 @@ export class CoOberViewController {
       // Outside the known enum: better a verbatim badge than a silent turn
       // that looks like it completed normally.
       note(t().stopReason.unknown.replace('{reason}', reason), false);
+    } else if (response && !reason) {
+      // 0.2.49 stage B: the RPC resolved with no stopReason in the frame —
+      // the transport's `.catch('end_turn')` used to launder this into a
+      // clean completion claim the agent never made, and the whole branch
+      // chain above skips. Now the schema hands us `undefined`, and
+      // absence is what the reader should see: turn ended, reason not
+      // reported. Same refusal 0.2.44 A mounted on the model-switch
+      // transcript ("asked", not "landed") and 0.2.48 C on `setModel`'s
+      // optimistic meta write (accepted, not applied).
+      note(t().stopReason.notReported, false);
     }
     // 'cancelled' / 'interrupted' are user-initiated; no banner needed.
   }

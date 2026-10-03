@@ -1456,23 +1456,46 @@ describe('sendMessage flow', () => {
     );
   });
 
-  it('reads a prompt answer that carried no result at all as a finished turn', async () => {
+  it('reads a prompt answer that carried no result at all as no reason reported (0.2.49 stage B)', async () => {
     const client = new AcpClient('opencode');
     Reflect.set(client, 'transport', { request: vi.fn().mockResolvedValue(undefined) });
 
     // A frame with the request id and no `result` is what the transport hands
     // back for that answer. z.object rejects `undefined`, so before this was
     // read as an empty object the turn came home as an invalid-response error.
+    // The empty object then had no `stopReason`, and the schema used to mint
+    // 'end_turn' from that absence — the transport certifying a completion
+    // the agent never said. Now absence stays absence; the view speaks
+    // "not reported" instead of painting a clean finish.
     const res = await client.sendMessage('s1', [], vi.fn());
-    expect(res.stopReason).toBe('end_turn');
+    expect(res.stopReason).toBeUndefined();
   });
 
-  it('reads a prompt answer whose result was JSON null as a finished turn', async () => {
+  it('reads a prompt answer whose result was JSON null as no reason reported (0.2.49 stage B)', async () => {
     const client = new AcpClient('opencode');
     Reflect.set(client, 'transport', { request: vi.fn().mockResolvedValue(null) });
 
     const res = await client.sendMessage('s1', [], vi.fn());
-    expect(res.stopReason).toBe('end_turn');
+    expect(res.stopReason).toBeUndefined();
+  });
+
+  it('passes a well-formed stop reason through unchanged (0.2.49 stage B)', async () => {
+    const client = new AcpClient('opencode');
+    Reflect.set(client, 'transport', { request: vi.fn().mockResolvedValue({ stopReason: 'max_tokens' }) });
+
+    const res = await client.sendMessage('s1', [], vi.fn());
+    expect(res.stopReason).toBe('max_tokens');
+  });
+
+  it('leaves a non-string stopReason absent rather than laundering it to end_turn (0.2.49 stage B)', async () => {
+    const client = new AcpClient('opencode');
+    Reflect.set(client, 'transport', { request: vi.fn().mockResolvedValue({ stopReason: null }) });
+
+    const res = await client.sendMessage('s1', [], vi.fn());
+    // A null in the wire position is unreadable — the schema used to
+    // `.catch('end_turn')` and stamp the same value the honest reading
+    // refuses to assert. Undefined is the truthful answer.
+    expect(res.stopReason).toBeUndefined();
   });
 
   it('routes each update only to its own session stream (side-chat isolation)', async () => {

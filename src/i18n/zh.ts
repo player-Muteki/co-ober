@@ -162,6 +162,7 @@ const zh: Locale = {
     maxTurnRequests: '智能体达到了单条消息的回合上限并停止。发送“继续”可让它接着执行。',
     toolCalls: '智能体在等待工具调用结果时结束了本回合，回复可能不完整。',
     unknown: '智能体以未识别的原因结束本回合（{reason}），回复可能不完整。',
+    notReported: '智能体结束本回合时未上报结束原因，回复可能不完整。',
   },
 
   stream: {

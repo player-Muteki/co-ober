@@ -231,7 +231,9 @@ export interface AcpResponse {
   // Agents mint new stop reasons ahead of the ACP enum; the client parses any
   // string and handles the known ones (end_turn, max_tokens, max_turn_requests,
   // tool_calls, interrupted, refusal, cancelled), badging unknown ones verbatim.
-  stopReason: string;
+  // Absent means the agent did not report one — the view speaks "not
+  // reported" rather than fabricating 'end_turn' (0.2.49 stage B).
+  stopReason?: string;
   usage?: {
     totalTokens: number;
     inputTokens: number;

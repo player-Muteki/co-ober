@@ -160,6 +160,7 @@ const en = {
     maxTurnRequests: 'The agent stopped after reaching its per-message turn limit. Send "continue" to keep going.',
     toolCalls: 'The agent ended the turn waiting on tool call results — the answer may be incomplete.',
     unknown: 'The agent stopped for an unrecognized reason ({reason}) — the answer may be incomplete.',
+    notReported: 'The agent finished the turn without reporting a stop reason — the answer may be incomplete.',
   },
 
   stream: {

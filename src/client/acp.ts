@@ -1028,9 +1028,14 @@ export class AcpClient implements OpencodeClient {
     const zAcpResponse = z.object({
       // stopReason must stay permissive: agents add new reasons ahead of the
       // schema, and rejecting the whole response would discard its usage too.
-      // Missing or null must also degrade — a completed turn must not be
-      // reported as an invalidResponse failure.
-      stopReason: z.string().catch('end_turn'),
+      // But a missing/malformed reason must not become a claim that the agent
+      // said 'end_turn' — that was the 0.2.49 stage B laundering, minting a
+      // completion the wire never reported. The field's own absence is the
+      // honest reading; `surfaceStopReason` speaks it as "not reported"
+      // (CoOberViewController.ts:2272), matching the sibling treatment at
+      // `acpSchemas.ts:335`, which nullish-transforms the same field on
+      // `state_update` rather than fabricating a value for it.
+      stopReason: z.string().optional().catch(undefined),
       usage: z
         .object({
           totalTokens: z.number().catch(0),

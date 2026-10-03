@@ -1595,6 +1595,50 @@ describe('CoOberViewController', () => {
       expect(deps.renderer.addSystemMessage).toHaveBeenCalledTimes(sysCalls);
     });
 
+    describe('an absent stopReason speaks "not reported", not clean completion (0.2.49 stage B)', () => {
+      // The AcpClient schema used to `.catch('end_turn')` a missing or
+      // malformed stopReason, so a transport that acknowledged the turn
+      // without ever naming why it ended reached `surfaceStopReason` with
+      // `reason === 'end_turn'` and skipped the whole branch chain in
+      // silence. The view already refuses this shape for a reason it does
+      // not recognize (badged verbatim at :2295); laundering absence into
+      // 'end_turn' at the schema layer let the transport defeat that
+      // discipline. Same family as 0.2.44 A ("asked", not "landed") and
+      // 0.2.48 C (accepted ≠ applied).
+      it('fires the notReported badge when the resolved response carries no stopReason', async () => {
+        const client = createMockClient({
+          sendMessage: vi.fn().mockResolvedValue({}),
+        });
+        (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+        (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+        await controller.send('hello', []);
+
+        expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().stopReason.notReported);
+      });
+
+      it('stays silent for a clean end_turn', async () => {
+        const client = createMockClient({
+          sendMessage: vi.fn().mockResolvedValue({ stopReason: 'end_turn' }),
+        });
+        (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+        (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+        const before = (deps.renderer.addSystemMessage as ReturnType<typeof vi.fn>).mock.calls.length;
+
+        await controller.send('hello', []);
+
+        expect(deps.renderer.addSystemMessage).toHaveBeenCalledTimes(before);
+      });
+
+      it('does not collapse "not reported" into the verbatim-unknown badge', () => {
+        // Two claims that used to share a bucket: the agent named a reason
+        // we don't recognize, and the agent named nothing at all. If those
+        // strings ever converge, the transport-side fix cannot be told
+        // apart from the view-side discipline it replaced.
+        expect(t().stopReason.notReported).not.toBe(t().stopReason.unknown.replace('{reason}', ''));
+      });
+    });
+
     it('hands the refusal badge the key that drew it, so a language switch re-speaks it', async () => {
       // The refusal line is a token-free t() string that reaches addError on the
       // error path, so refreshLocale can re-speak it on a locale switch — but

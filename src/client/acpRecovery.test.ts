@@ -289,16 +289,21 @@ describe('AcpClient generation fencing', () => {
       await expect(p).resolves.toMatchObject({ stopReason: 'some_new_reason' });
     });
 
-    it('a response missing the stop reason falls back to end_turn instead of discarding usage', async () => {
+    it('a response missing the stop reason keeps its usage without claiming end_turn (0.2.49 stage B)', async () => {
       FakeSubprocess.instances.length = 0;
       FakeTransport.instances.length = 0;
       const { client, transport } = await connectedClient();
       const p = client.sendMessage('ses-1', [{ type: 'text', text: 'hi' }], () => {});
       await tick();
       transport.deferred.resolve({ usage: { totalTokens: 1, inputTokens: 1, outputTokens: 0 } });
-      // Rejecting the whole response over one missing field also threw away
-      // its usage; the catch keeps the turn accountable with a neutral badge.
-      await expect(p).resolves.toMatchObject({ stopReason: 'end_turn', usage: { totalTokens: 1 } });
+      // Rejecting the whole response over one missing field threw away its
+      // usage; the earlier fix kept the turn accountable with a neutral
+      // badge. 0.2.49 stage B refused the neutral badge: 'end_turn' asserted
+      // a completion the agent never reported. Keep the usage, leave the
+      // reason absent — the view now speaks "not reported".
+      await expect(p).resolves.toMatchObject({ usage: { totalTokens: 1 } });
+      const res = await p;
+      expect(res.stopReason).toBeUndefined();
     });
   });
 
