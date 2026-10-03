@@ -562,6 +562,14 @@ export class AcpClient implements OpencodeClient {
     return this.connected;
   }
 
+  isReconnectExhausted(): boolean {
+    // A client that is currently connected is not exhausted by definition —
+    // the counter is reset on a successful attempt (:1476) and on reconnect()
+    // (:1458). The flag only reports meaningfully after a drop.
+    if (this.connected) return false;
+    return this.reconnectAttempts >= this.maxReconnectAttempts;
+  }
+
   /** Monotonic counter identifying the current subprocess connection attempt. */
   get generation(): number {
     return this.kernelGeneration;

@@ -177,6 +177,50 @@ describe('WelcomeView', () => {
 			// connected.
 			expect(connectionStatus({ isConnected: () => false })).toBe('connecting');
 		});
+
+		it('names a client whose reconnect loop has given up as disconnected (0.2.47 stage C)', () => {
+			// The badge used to collapse "attempt in flight" and "attempts
+			// exhausted" into one 'connecting' reading, so a pane that had
+			// already painted "could not be reached after repeated reconnect
+			// attempts" in its transcript kept showing the connecting glyph on
+			// any later auto-repaint (tab switch, /new, rewind, restore). The
+			// sibling reconnect button (CoOberView.ts:897-900) speaks the three
+			// states as text/connecting/failed via its own `reconnectFailed`
+			// field; the badge now reaches the same three-way split through the
+			// client's own `isReconnectExhausted` flag instead of a duplicate
+			// widget-side field.
+			expect(connectionStatus({
+				isConnected: () => false,
+				isReconnectExhausted: () => true,
+			})).toBe('disconnected');
+		});
+
+		it('leaves an unexhausted drop in the connecting reading', () => {
+			// The fix must not trade one lie for another by calling every
+			// down-client an abandoned one: while the retry loop is still in
+			// flight the honest sentence is still "Connecting…".
+			expect(connectionStatus({
+				isConnected: () => false,
+				isReconnectExhausted: () => false,
+			})).toBe('connecting');
+		});
+
+		it('speaks two different badges for the two drop classes, so the split cannot be silently re-merged', () => {
+			// Anti-remerge guard: the whole point of the split is that a
+			// not-yet-given-up drop and a given-up drop paint differently. A
+			// future edit that either dropped the branch or collapsed the two
+			// return values would keep the individual assertions passing while
+			// making the two situations unreadable again.
+			const exhausted = connectionStatus({
+				isConnected: () => false,
+				isReconnectExhausted: () => true,
+			});
+			const retrying = connectionStatus({
+				isConnected: () => false,
+				isReconnectExhausted: () => false,
+			});
+			expect(exhausted).not.toBe(retrying);
+		});
 	});
 
 	describe('locale subscription', () => {

@@ -9,10 +9,24 @@ export type WelcomeStatus = 'connected' | 'connecting' | 'disconnected';
  * reconnect is after a drop — and a screen that says "Connected" at that
  * moment is telling the reader to type into a composer whose every send is
  * about to fail.
+ *
+ * Once the auto-reconnect loop has fired its final attempt (isReconnectExhausted
+ * on the client), nothing is in flight any more: the transport has been
+ * abandoned by the code, and a badge that still reads "Connecting…" invites
+ * the reader to wait for a handshake that will never land. The sibling
+ * reconnect button (CoOberView.ts:897-900) already speaks this three-way
+ * split through `reconnect.text` / `reconnect.connecting` / `reconnect.failed`;
+ * the welcome badge used to collapse it into a two-way split — any non-null
+ * client with `isConnected() === false` read as "connecting" forever, so a
+ * later auto-repaint (tab switch, /new, rewind, restore) flipped the badge
+ * back onto the in-flight reading over a transcript that already said "could
+ * not be reached after repeated reconnect attempts". Two adjacent surfaces,
+ * one screen, two stories about whether anything is being tried at all.
  */
-export function connectionStatus(client: { isConnected(): boolean } | null): WelcomeStatus {
+export function connectionStatus(client: { isConnected(): boolean; isReconnectExhausted?(): boolean } | null): WelcomeStatus {
 	if (!client) return 'disconnected';
-	return client.isConnected() ? 'connected' : 'connecting';
+	if (client.isConnected()) return 'connected';
+	return client.isReconnectExhausted?.() ? 'disconnected' : 'connecting';
 }
 
 function statusText(status: WelcomeStatus): string {

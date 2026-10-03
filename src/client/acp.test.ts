@@ -1717,6 +1717,43 @@ describe('AcpClient subprocess close during the connect handshake', () => {
     expect(schedule).toHaveBeenCalled();
     errSpy.mockRestore();
   });
+
+  it('reports isReconnectExhausted as false while a fresh connection is up (0.2.47 stage C)', () => {
+    // A live handshake overrides the counter: a badge that consults this flag
+    // must not read "disconnected" over a client that just reconnected. The
+    // counter only speaks meaningfully after a drop, and the field resets on a
+    // successful attempt (:1476) and on reconnect() (:1458), but a defensive
+    // guard costs nothing and stops a future edit that forgets to clear the
+    // counter on a fresh connect from lighting the disconnected badge on a
+    // working session.
+    const { client } = makeClient();
+    Reflect.set(client, 'connected', true);
+    Reflect.set(client, 'reconnectAttempts', 99);
+    expect(client.isReconnectExhausted()).toBe(false);
+  });
+
+  it('reports isReconnectExhausted once the attempts match the ceiling', () => {
+    // The scheduleReconnect loop stops rescheduling at
+    // `reconnectAttempts >= maxReconnectAttempts` (:1480) and fires
+    // onReconnectFailed. Once that boundary is reached nothing is in flight;
+    // the welcome badge must be able to see the same fact the button uses to
+    // pick its "failed" label, and reach it through the client rather than
+    // a duplicated widget-side field.
+    const { client } = makeClient();
+    Reflect.set(client, 'connected', false);
+    Reflect.set(client, 'reconnectAttempts', Reflect.get(client, 'maxReconnectAttempts') as number);
+    expect(client.isReconnectExhausted()).toBe(true);
+  });
+
+  it('leaves isReconnectExhausted false while a retry is still owed', () => {
+    // The fix must not trade one lie for another by calling every down client
+    // an abandoned one: while attempts remain under the ceiling the badge
+    // should still speak the connecting reading.
+    const { client } = makeClient();
+    Reflect.set(client, 'connected', false);
+    Reflect.set(client, 'reconnectAttempts', 1);
+    expect(client.isReconnectExhausted()).toBe(false);
+  });
 });
 
 describe('0.2.3 stage 1 per-connection drop warnings', () => {

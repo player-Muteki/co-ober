@@ -44,6 +44,14 @@ export interface ClientHandlers {
 
 export interface OpencodeClient {
   isConnected(): boolean;
+  /**
+   * Whether the auto-reconnect loop has fired its final attempt and given up.
+   * A client that has stopped trying is not "connecting" — a badge that says
+   * otherwise invites the reader to wait for a handshake the code has already
+   * abandoned. Optional because only a transport that runs a retry loop can
+   * answer; one that never reconnects has nothing to exhaust.
+   */
+  isReconnectExhausted?(): boolean;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   getAgentCapabilities(): AgentCapabilities | null;
