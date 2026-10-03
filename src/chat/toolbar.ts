@@ -279,11 +279,15 @@ export class InputToolbar {
    * The model selector's one-line reading of what is in force. A current the
    * agent reported but the reader hid from the common list is still the model
    * running, so it is named even when the selectable list is empty — claiming
-   * "No models" over a model that is in force contradicts the dropdown's own
-   * rule (a populated list that omits the current still names it). Only a
-   * current of undefined earns a no-selection line, and the two empty cases
-   * differ: nothing reported against an empty list is "no models", against a
-   * populated one simply nothing was named.
+   * "no model" over one that is in force contradicts the dropdown's own rule
+   * (a populated list that omits the current still names it). Only a current
+   * of undefined earns a no-selection line, and the two empty cases differ:
+   * nothing reported against an empty list reads "No model yet" (the same
+   * not-yet-surveyed ruling the 0.2.44 stage B slash no-arg branch and the
+   * 0.2.42 stage C settings branch both arrived at on the same wire-shape
+   * — `state.availableModels` defaults to `[]`, and no config chunk has yet
+   * written it), while an empty selectable list against a populated report
+   * reads "Not set" — the inventory exists, nothing has been picked.
    */
   private modelLabelText(): string {
     const named = this.modelOptions.find(o => o.value === this.currentModel)?.label

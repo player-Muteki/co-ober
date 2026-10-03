@@ -395,7 +395,7 @@ const zh: Locale = {
     attachImageNoAgent: '无法添加图片 — 尚未连接任何 Agent',
     applyFailed: '设置失败，已回退为智能体侧当前值',
     agentTitle: 'Agent 模式',
-    noModels: '无可用模型',
+    noModels: '尚未获得模型',
     unset: '未设定',
     effort: {
       default: '默认',

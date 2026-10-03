@@ -15,20 +15,21 @@ describe('InputToolbar locale refresh', () => {
     toolbar.updateModels([]);
     toolbar.setSending(true);
 
-    // Custom model selector - label shows "No models" when empty
-    expect(container.querySelector('.co-ober-model-label')?.textContent).toBe('No models');
+    // Custom model selector - label shows "No model yet" when nothing has
+    // been reported, mirroring the 0.2.44 stage B slash no-arg ruling.
+    expect(container.querySelector('.co-ober-model-label')?.textContent).toBe('No model yet');
     expect(container.querySelector('.co-ober-send-btn')?.classList.contains('mod-stop')).toBe(true);
 
     setLocale('zh');
     toolbar.refreshLocale();
 
-    expect(container.querySelector('.co-ober-model-label')?.textContent).toBe('无可用模型');
+    expect(container.querySelector('.co-ober-model-label')?.textContent).toBe('尚未获得模型');
     // An empty effort list stays withdrawn across a locale switch. Nothing was
     // negotiating tiers, so an explicit pick has no client to reach — the same
     // dead affordance the disconnect path now empties. This used to fall back to
     // re-minting the built-in defaults (and once even named 默认 as selected);
     // refreshLocale now maps the real (empty) list, so the picker offers nothing
-    // and the label reports none, exactly as the models row reads "No models".
+    // and the label reports none, exactly as the models row reads "No model yet".
     expect(container.querySelector('.co-ober-effort-label')?.textContent).toBe('—');
     const effortOptions = Array.from(container.querySelectorAll('.co-ober-effort-option'))
       .filter((el) => !el.classList.contains('empty'));
@@ -43,7 +44,7 @@ describe('InputToolbar locale refresh', () => {
     // The agent says a model is in force but none of the selectable list is
     // offered to us (every provider hidden, say). updateModels' populated branch
     // already names a current absent from the list; the empty branch printed "No
-    // models" regardless — contradicting the model that IS running. Both the
+    // model yet" regardless — contradicting the model that IS running. Both the
     // setter and a later locale switch must keep naming it.
     toolbar.updateModels([], 'weird/model', 'Weird');
     const label = () => container.querySelector('.co-ober-model-label')?.textContent;
@@ -54,13 +55,37 @@ describe('InputToolbar locale refresh', () => {
     setLocale('en');
 
     // With no friendly label supplied, the raw current is still better than a
-    // false "no models".
+    // false "no model".
     toolbar.updateModels([], 'weird/bare');
     expect(label()).toBe('weird/bare');
 
-    // And nothing reported against an empty list still reads the honest none.
+    // And nothing reported against an empty list still reads the honest
+    // provisional none.
     toolbar.updateModels([], undefined);
-    expect(label()).toBe('No models');
+    expect(label()).toBe('No model yet');
+  });
+
+  it('carries the provisional reading on a toolbar that never received a model list', () => {
+    setLocale('en');
+    const container = document.createElement('div') as HTMLDivElement;
+    // No `updateModels` call at all: the array has never been populated, so
+    // the toolbar has no observation to report. The chip must not claim
+    // "No models" (a statement about the agent's inventory), only the
+    // provisional "No model yet" that 0.2.44 stage B settled on for the
+    // slash no-arg branch on the same `state.availableModels` default.
+    new InputToolbar(container, {});
+    expect(container.querySelector('.co-ober-model-label')?.textContent).toBe('No model yet');
+    expect(container.querySelector('.co-ober-model-label')?.textContent).not.toBe('No models');
+
+    setLocale('zh');
+    // A locale switch on the never-surveyed state must keep the provisional
+    // reading, not collapse back to the old "无可用模型" (which asserted an
+    // empty inventory the code never observed).
+    const zhContainer = document.createElement('div') as HTMLDivElement;
+    const zhToolbar = new InputToolbar(zhContainer, {});
+    zhToolbar.refreshLocale();
+    expect(zhContainer.querySelector('.co-ober-model-label')?.textContent).toBe('尚未获得模型');
+    setLocale('en');
   });
 
   it('names no tier after a locale switch that never named one', () => {
@@ -459,7 +484,7 @@ describe('InputToolbar cycle button a11y', () => {
     const effort = container.querySelector('.co-ober-effort-btn') as HTMLElement;
 
     // Built with nothing reported: each dropdown's sole row is the non-activatable
-    // "No models"/"—" line, so a button role, a tab stop and aria-haspopup=listbox
+    // "No model yet"/"—" line, so a button role, a tab stop and aria-haspopup=listbox
     // were promising a pickable listbox that a reader could open but never choose
     // from. The mode chip's rule (above), read across the two pickers.
     expect(model.getAttribute('role')).toBeNull();
@@ -530,7 +555,7 @@ describe('InputToolbar withdrawn picker stays inert', () => {
     // applyModelOperability removes role/tabindex/aria-haspopup on an empty list,
     // but the click and key listeners from wireDropdown survive — so a mouse press
     // called open() anyway, stamping aria-expanded="true" onto a now role-less div
-    // and revealing a listbox whose only row is the non-activatable "No models"
+    // and revealing a listbox whose only row is the non-activatable "No model yet"
     // line. A withdrawn picker must be genuinely shut.
     setLocale('en');
     const container = document.createElement('div') as HTMLDivElement;

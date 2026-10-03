@@ -393,7 +393,7 @@ const en = {
     attachImageNoAgent: 'Attach image disabled — no agent is connected',
     applyFailed: 'Setting failed; reverted to the agent-side value',
     agentTitle: 'Agent mode',
-    noModels: 'No models',
+    noModels: 'No model yet',
     unset: 'Not set',
     effort: {
       default: 'Default',
