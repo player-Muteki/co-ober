@@ -837,6 +837,89 @@ describe('a config answer that is a real value (0.2.6 stage 2)', () => {
   });
 });
 
+describe('a mode/model RPC that resolves without a chunk keeps the reported id (0.2.48 stage C)', () => {
+  // setModel/setMode used to write `metaFor(id).currentModelId/ModeId` the
+  // moment the transport acknowledged the request. 0.2.44 A ruled that the
+  // current id is written only by the agent's own config chunks
+  // (streamController.ts:312-320 for the state side; acp.ts:1258-1268 for
+  // the session-meta side); the sibling setConfigOption path (:935) applies
+  // only what the agent returned. The optimistic write was the last caller
+  // that insisted on the value it had sent, so a transport that accepted
+  // the RPC and then kept the old model would leave the snapshot asserting
+  // a switch the very next turn contradicted.
+
+  function clientWithStream(sid: string): { client: AcpClient; dispatch: (params: unknown) => void } {
+    const client = new AcpClient('opencode');
+    const streams = Reflect.get(client, 'activeStreams') as Map<string, { handler: (u: NormalizedUpdate) => void; abort: AbortController }>;
+    streams.set(sid, { handler: () => {}, abort: new AbortController() });
+    Reflect.set(client, 'sessionId_', sid);
+    return {
+      client,
+      dispatch: (params: unknown) => Reflect.get(client, 'dispatchSessionUpdate').call(client, params),
+    };
+  }
+
+  it('does not repaint currentModelId when setModel resolves with no chunk following', async () => {
+    const { client, dispatch } = clientWithStream('s1');
+    dispatch({
+      sessionId: 's1',
+      update: { sessionUpdate: 'current_model_update', currentModelId: 'claude-old', availableModels: [] },
+    });
+    expect(client.getSessionSnapshotFor('s1').currentModelId).toBe('claude-old');
+
+    Reflect.set(client, 'requestWithFallback', vi.fn().mockResolvedValue({}));
+    await client.setModel('s1', 'gpt-new');
+
+    // Accepted, not landed: the RPC returned but the agent never said it
+    // switched, so the reader is entitled to the last id the agent actually
+    // reported. Painting 'gpt-new' here would be the assertion 0.2.44 A
+    // refuses.
+    expect(client.getSessionSnapshotFor('s1').currentModelId).toBe('claude-old');
+  });
+
+  it('repaints currentModelId once the chunk the agent reports arrives', async () => {
+    const { client, dispatch } = clientWithStream('s1');
+    Reflect.set(client, 'requestWithFallback', vi.fn().mockResolvedValue({}));
+    await client.setModel('s1', 'gpt-new');
+    expect(client.getSessionSnapshotFor('s1').currentModelId).toBeNull();
+
+    dispatch({
+      sessionId: 's1',
+      update: { sessionUpdate: 'current_model_update', currentModelId: 'gpt-new', availableModels: [] },
+    });
+
+    expect(client.getSessionSnapshotFor('s1').currentModelId).toBe('gpt-new');
+  });
+
+  it('does not repaint currentModeId when setMode resolves with no chunk following', async () => {
+    const { client, dispatch } = clientWithStream('s1');
+    dispatch({
+      sessionId: 's1',
+      update: { sessionUpdate: 'current_mode_update', currentModeId: 'plan', availableModes: [] },
+    });
+    expect(client.getSessionSnapshotFor('s1').currentModeId).toBe('plan');
+
+    Reflect.set(client, 'requestWithFallback', vi.fn().mockResolvedValue({}));
+    await client.setMode('s1', 'build');
+
+    expect(client.getSessionSnapshotFor('s1').currentModeId).toBe('plan');
+  });
+
+  it('repaints currentModeId once the chunk the agent reports arrives', async () => {
+    const { client, dispatch } = clientWithStream('s1');
+    Reflect.set(client, 'requestWithFallback', vi.fn().mockResolvedValue({}));
+    await client.setMode('s1', 'build');
+    expect(client.getSessionSnapshotFor('s1').currentModeId).toBeNull();
+
+    dispatch({
+      sessionId: 's1',
+      update: { sessionUpdate: 'current_mode_update', currentModeId: 'build', availableModes: [] },
+    });
+
+    expect(client.getSessionSnapshotFor('s1').currentModeId).toBe('build');
+  });
+});
+
 describe('mergeAvailableCommands', () => {
   it('should deduplicate by name', () => {
     const result = mergeAvailableCommands([

@@ -919,13 +919,16 @@ export class AcpClient implements OpencodeClient {
   }
 
   async setMode(id: string, modeId: string): Promise<void> {
+    // The agent's `current_mode_update` chunk (applySessionUpdate :1258)
+    // is the only writer of meta.currentModeId; the RPC resolving means the
+    // request was accepted, not that the change landed — painting `modeId`
+    // here would be the 0.2.44 A "accepted ≠ landed" lie on the mode face.
     await this.requestWithFallback('setMode', { sessionId: id, modeId }).then(() => {});
-    this.metaFor(id).currentModeId = modeId;
   }
 
   async setModel(id: string, modelId: string): Promise<void> {
+    // Same refusal as setMode above; the chunk path is the only writer.
     await this.requestWithFallback('setModel', { sessionId: id, modelId }).then(() => {});
-    this.metaFor(id).currentModelId = modelId;
   }
 
   // The spec's value is `anyOf`: a value id for a select, a real boolean for a
