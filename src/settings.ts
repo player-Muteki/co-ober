@@ -318,12 +318,16 @@ export class CoOberSettingsTab extends PluginSettingTab {
 
     if (this.runtimeOptionsLoading && !this.runtimeOptionsLoaded) {
       new Setting(containerEl).setName(labels.customSkills.loading);
-    } else if (!this.runtimeOptionsLoaded && this.runtimeOptionsUnavailable) {
-      // An unreadable runtime list is not an empty one; the same failure the
-      // reader's session dropdown already names, on the settings row that
-      // claims "these are all the skills: none" when nothing was actually read.
+    } else if (!this.runtimeOptionsLoaded && (this.runtimeOptionsUnavailable || availableSkills.length === 0)) {
+      // Two ways to not have a runtime list: the fetch was refused, or the
+      // panel was never asked to fetch (a plain open has no Reconnect click
+      // and `getAvailableSkills` falls back to an empty session snapshot).
+      // Both say "the settings cannot certify what the runtime has". Only a
+      // completed empty fetch — the `loaded && length === 0` branch below —
+      // earns the "these are all the skills: none" wording; a survey that was
+      // never taken may not sign off on emptiness.
       new Setting(containerEl).setName(labels.customSkills.loadedUnavailable);
-    } else if (availableSkills.length === 0) {
+    } else if (this.runtimeOptionsLoaded && availableSkills.length === 0) {
       new Setting(containerEl).setName(labels.customSkills.loadedEmpty);
     }
 
@@ -370,9 +374,13 @@ export class CoOberSettingsTab extends PluginSettingTab {
 
     if (this.runtimeOptionsLoading && !this.runtimeOptionsLoaded) {
       new Setting(containerEl).setName(labels.commonModels.loading);
-    } else if (!this.runtimeOptionsLoaded && this.runtimeOptionsUnavailable) {
+    } else if (!this.runtimeOptionsLoaded && (this.runtimeOptionsUnavailable || availableModels.length === 0)) {
+      // The models row shares the survey with skills. A rejected fetch and a
+      // never-asked-to-fetch open both leave the panel unable to say "no
+      // models exist" — that assertion belongs only to a completed empty
+      // read, not to a section the reader just opened.
       new Setting(containerEl).setName(labels.commonModels.unavailable);
-    } else if (availableModels.length === 0) {
+    } else if (this.runtimeOptionsLoaded && availableModels.length === 0) {
       new Setting(containerEl).setName(labels.commonModels.empty);
     }
 

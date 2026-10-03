@@ -519,7 +519,13 @@ describe('CoOberSettingsTab locale refresh', () => {
 
     tab.display();
     expect(tab.containerEl.textContent).not.toContain('skill-writer');
-    expect(tab.containerEl.textContent).toContain('No runtime skills loaded');
+    // A plain open has no completed survey and no fallback rows to show, so
+    // the panel cannot honestly claim "these are all the runtime skills: none"
+    // (0.2.42 stage C refused that wording for a rejected fetch; the same
+    // refusal now covers a fetch never asked for). It says "unavailable", and
+    // the reader can click Reconnect to survey.
+    expect(tab.containerEl.textContent).toContain('Runtime skills unavailable');
+    expect(tab.containerEl.textContent).not.toContain('No runtime skills loaded');
     await flushPromises();
     await flushPromises();
 
@@ -527,6 +533,26 @@ describe('CoOberSettingsTab locale refresh', () => {
     expect(plugin.getClient()?.createSession).not.toHaveBeenCalled();
     expect(plugin.getClient()?.closeSession).not.toHaveBeenCalled();
     expect(tab.containerEl.textContent).not.toContain('skill-writer');
+  });
+
+  it('does not certify an empty runtime list on an open that never asked for one', async () => {
+    // Both sides of the never-surveyed reading: skills AND models, and both
+    // the empty-label assertion (the lie) and the unavailable-label assertion
+    // (the honest substitute). Test 511 covers the skills side; this one pins
+    // the models side too, so a fix that widens one guard and forgets the
+    // other is caught. The panel is not connected to any completed fetch at
+    // this point, so "No models loaded" would be a badge the reader's click
+    // never asked for.
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const tab = new CoOberSettingsTab(plugin);
+
+    tab.display();
+
+    expect(tab.containerEl.textContent).toContain('Runtime models unavailable');
+    expect(tab.containerEl.textContent).not.toContain('No models loaded');
+    expect(tab.containerEl.textContent).toContain('Runtime skills unavailable');
+    expect(tab.containerEl.textContent).not.toContain('No runtime skills loaded');
   });
 
   it('disables http MCP type option when capability is false', () => {
