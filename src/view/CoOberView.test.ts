@@ -1048,6 +1048,41 @@ describe('CoOberView tab panels', () => {
   });
 });
 
+describe('Zen / focus mode', () => {
+  it('toggles the focus class on the pane root', () => {
+    setLocale('en');
+    const view = createView();
+
+    view.setZenMode(true);
+    expect(view.contentEl.classList.contains('co-ober-zen')).toBe(true);
+
+    view.setZenMode(false);
+    expect(view.contentEl.classList.contains('co-ober-zen')).toBe(false);
+  });
+
+  it('re-applies the saved focus state when the pane reopens', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ settings: { autoConnect: false, zenMode: true } });
+    const view = createView(plugin);
+
+    await view.onOpen();
+
+    // The class is the pane's DOM, not the field: a focused pane must come back
+    // focused, and an unfocused one must not be silently focused by a stale class.
+    expect(view.contentEl.classList.contains('co-ober-zen')).toBe(true);
+  });
+
+  it('opens un-focused when the setting is off', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ settings: { autoConnect: false } });
+    const view = createView(plugin);
+
+    await view.onOpen();
+
+    expect(view.contentEl.classList.contains('co-ober-zen')).toBe(false);
+  });
+});
+
 function createView(plugin = createPlugin()): CoOberView {
   const view = new CoOberView({} as never, plugin);
   Reflect.set(view, 'registerEvent', vi.fn());

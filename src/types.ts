@@ -506,6 +506,7 @@ export interface CoOberSettings {
 	commonModels: string[];
 	autoConnect?: boolean;
 	autoScrollEnabled?: boolean;
+	zenMode?: boolean;
 	maxSessionMessages?: number;
 	sessionRetentionDays?: number;
 	maxOpenTabs?: number;
@@ -538,6 +539,7 @@ export const DEFAULT_SETTINGS: CoOberSettings = {
 	// The view auto-connects on open when this is on; off shows the manual button.
 	autoConnect: true,
 	autoScrollEnabled: true,
+	zenMode: false,
 	maxSessionMessages: 200,
 	sessionRetentionDays: 30,
 	maxOpenTabs: 6,

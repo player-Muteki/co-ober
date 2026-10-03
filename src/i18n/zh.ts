@@ -324,6 +324,7 @@ const zh: Locale = {
     ribbon: '打开 Co-Ober',
     cmdOpen: '打开',
     cmdEdit: 'AI 编辑选区',
+    cmdZen: '切换禅意模式',
   },
 
   plan: {
@@ -622,6 +623,8 @@ const zh: Locale = {
       languageDesc: '界面语言',
       autoScroll: '自动滚动',
       autoScrollDesc: '有新消息时自动滚动到底部',
+      zenMode: '禅意模式',
+      zenModeDesc: '隐藏顶栏与标签条，只保留对话及其输入框',
     },
     sessionLimits: {
       heading: '会话限制',

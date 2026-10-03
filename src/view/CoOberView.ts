@@ -573,6 +573,11 @@ export class CoOberView extends ItemView {
       void this.dragDropManager.handleFiles(files);
     };
     this.input.textareaEl.addEventListener('paste', this.pasteHandler);
+
+    // A pane that was focused last session reopens focused: the toggle lives in
+    // Settings, but the class is DOM state this view owns, so it must be
+    // re-applied on open rather than trusted to survive a close.
+    this.setZenMode(this.plugin.settings.zenMode ?? false);
   }
 
   /** Pass the plugin's write outcome on to the tabs that would show it. */
@@ -865,6 +870,18 @@ export class CoOberView extends ItemView {
       if (rt) rt.state.autoScrollEnabled = enabled;
       if (enabled) this.hideNewMessagesBtn(tabId);
     }
+  }
+
+  /**
+   * Focus the pane on the conversation alone: hide the header (title, context
+   * meter, new-session / history buttons) and the tab strip, leaving the
+   * transcript and its composer. The class rides the view root, so every open
+   * tab in this pane is affected at once — the same surface-wide reading
+   * auto-scroll uses.
+   */
+  setZenMode(enabled: boolean): void {
+    if (enabled) this.contentEl.addClass('co-ober-zen');
+    else this.contentEl.removeClass('co-ober-zen');
   }
 
   /**

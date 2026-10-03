@@ -322,6 +322,7 @@ const en = {
     ribbon: 'Open Co-Ober',
     cmdOpen: 'Open',
     cmdEdit: 'AI Edit Selection',
+    cmdZen: 'Toggle Zen mode',
   },
 
   plan: {
@@ -620,6 +621,8 @@ const en = {
       languageDesc: 'UI language',
       autoScroll: 'Auto-scroll',
       autoScrollDesc: 'Automatically scroll to bottom on new messages',
+      zenMode: 'Zen mode',
+      zenModeDesc: 'Hide the header and tab strip so only the conversation and its composer remain',
     },
     sessionLimits: {
       heading: 'Session Limits',

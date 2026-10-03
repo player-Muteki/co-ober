@@ -87,6 +87,11 @@ export default class CoOberPlugin extends Plugin {
       name: t().app.cmdEdit,
       editorCallback: (editor, view) => this.aiEditSelection(editor, view),
     });
+    this.addCommand({
+      id: 'toggle-zen-mode',
+      name: t().app.cmdZen,
+      callback: () => void this.toggleZenMode(),
+    });
   }
 
   override onunload(): void {
@@ -408,6 +413,22 @@ export default class CoOberPlugin extends Plugin {
     const coOberView = leaf?.view as CoOberView | undefined;
     if (coOberView) {
       coOberView.requestInlineEdit(selected, editor);
+    }
+  }
+
+  /**
+   * Flip the shared `zenMode` field and push the new focus state onto every
+   * open pane. The command is the reader's click, so the field it writes is the
+   * one Settings' toggle reads back on the next open — and every pane's header
+   * and tab strip is that pane's own DOM, so all of them are re-applied, not
+   * just the front one.
+   */
+  async toggleZenMode(): Promise<void> {
+    const next = !(this.settings.zenMode ?? false);
+    this.settings.zenMode = next;
+    await this.savePluginData();
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
+      (leaf.view as CoOberView)?.setZenMode?.(next);
     }
   }
 

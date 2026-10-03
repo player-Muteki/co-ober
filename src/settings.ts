@@ -18,6 +18,10 @@ interface AutoScrollView {
   setAutoScrollEnabled?: (enabled: boolean) => void;
 }
 
+interface ZenScrollView {
+  setZenMode?: (enabled: boolean) => void;
+}
+
 /**
  * Parse an integer settings field. Out-of-range input gets a visible hint
  * instead of the previous silent no-save, which left the box showing a value
@@ -507,6 +511,27 @@ export class CoOberSettingsTab extends PluginSettingTab {
             const view = leaf.view as AutoScrollView;
             if (typeof view?.setAutoScrollEnabled === 'function') {
               view.setAutoScrollEnabled(v);
+            }
+          }
+        }));
+
+    new Setting(containerEl)
+      .setName(labels.appearance.zenMode)
+      .setDesc(labels.appearance.zenModeDesc)
+      .addToggle((t) => t.setValue(s.zenMode ?? false)
+        .onChange(async (v) => {
+          s.zenMode = v;
+          await this.save();
+          // Mirror the auto-scroll fanout: the toggle writes one shared field,
+          // and every open pane's header/tab strip is that pane's own DOM. A
+          // split view that stayed on the old chrome would claim a focus state
+          // the reader has already turned off — the same sibling-repaint gap the
+          // permission/model dropdowns refuse from the other side.
+          const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE);
+          for (const leaf of leaves) {
+            const view = leaf.view as ZenScrollView;
+            if (typeof view?.setZenMode === 'function') {
+              view.setZenMode(v);
             }
           }
         }));

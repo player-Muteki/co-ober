@@ -8,6 +8,15 @@
   overflow: hidden;
 }
 
+/* Zen mode — the pane focuses on the conversation and its composer only.
+   The header (title, context meter, new-session / history actions) and the tab
+   strip are direct children of the view root, so hiding them leaves the
+   transcript and input in place; the toggled class lives on that root. */
+.co-ober-view.co-ober-zen > .co-ober-header,
+.co-ober-view.co-ober-zen > .co-ober-tab-bar {
+  display: none;
+}
+
 .co-ober-header {
   position: relative;
   display: flex;

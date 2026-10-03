@@ -63,6 +63,34 @@ describe('CoOberPlugin view activation', () => {
   });
 });
 
+describe('CoOberPlugin Zen mode command', () => {
+  it('flips the saved field and pushes the focus state onto every open pane', async () => {
+    const setA = vi.fn();
+    const setB = vi.fn();
+    const leaves = [{ view: { setZenMode: setA } }, { view: { setZenMode: setB } }];
+    const workspace = {
+      getLeavesOfType: vi.fn((viewType: string) => (viewType === VIEW_TYPE ? leaves : [])),
+    };
+    const plugin = createPlugin(workspace);
+    plugin.savePluginData = vi.fn().mockResolvedValue(undefined);
+    plugin.settings.zenMode = false;
+
+    await plugin.toggleZenMode();
+
+    // The command owns both halves of the claim: the field Settings reads back on
+    // the next open, and the DOM of every pane that is on screen right now. A
+    // front-pane-only write would leave a split sibling still showing its chrome.
+    expect(plugin.settings.zenMode).toBe(true);
+    expect(plugin.savePluginData).toHaveBeenCalledTimes(1);
+    expect(setA).toHaveBeenCalledWith(true);
+    expect(setB).toHaveBeenCalledWith(true);
+
+    await plugin.toggleZenMode();
+    expect(plugin.settings.zenMode).toBe(false);
+    expect(setB).toHaveBeenLastCalledWith(false);
+  });
+});
+
 describe('CoOberPlugin persistence', () => {
   it('serializes concurrent plugin-data saves', async () => {
     let resolveFirstSave!: () => void;

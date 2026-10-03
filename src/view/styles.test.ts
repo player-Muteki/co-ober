@@ -40,6 +40,14 @@ describe('the stylesheet and the DOM it is answerable to', () => {
     expect(css).toMatch(/\.co-ober-error-action:disabled\s*\{[^}]*opacity/);
   });
 
+  it('hides the header and tab strip the code turns off in Zen mode', () => {
+    // CoOberView.setZenMode writes the class on the view root, and the header /
+    // tab-bar are its direct children — so the rule has to match that tree, not a
+    // stray global. A Zen toggle that painted a class with no rule behind it would
+    // claim a focus the reader never got: chrome still on screen.
+    expect(css).toMatch(/\.co-ober-view\.co-ober-zen\s*>\s*\.co-ober-header,[^{]*\.co-ober-tab-bar\s*\{[^}]*display:\s*none/);
+  });
+
   it('drops no rule for a class no code applies', () => {
     // A whole block styled .co-ober-tool-status with its own spinner. Nothing in
     // src/ ever wrote that class, so it was a status icon no tool card had —
