@@ -653,6 +653,53 @@ describe('CoOberView tab panels', () => {
     expect(label).not.toBe(t().toolbar.permSafe);
   });
 
+  it('pushes the new tier from a bar click onto every other open pane (0.2.43 stage A)', async () => {
+    // The Settings dropdown already fans the tier out to every leaf
+    // (settings.ts:205 refreshOpenViewsPermission); the bar's own chip has to
+    // make the same push, or a split view's sibling pane keeps naming the tier
+    // the reader just replaced while requests are already handled under the new
+    // one — same sibling-repaint gap seen from the other side of the shared
+    // settings.permissionMode field. No client is needed here: the fanout runs
+    // off settings, and the client-side tier path is separately tested above.
+    const plugin = createPlugin();
+    const view = await openView(plugin);
+    const sibling = { refreshPermissionMode: vi.fn() };
+    (plugin.app.workspace.getLeavesOfType as ReturnType<typeof vi.fn>).mockReturnValue([
+      { view },
+      { view: sibling as unknown as CoOberView },
+    ]);
+
+    const toggle = view.contentEl.querySelector('.co-ober-perm-toggle') as HTMLElement;
+    toggle.click();
+
+    expect(sibling.refreshPermissionMode).toHaveBeenCalledTimes(1);
+  });
+
+  it('bar-click fanout names the tier the reader just picked, not the one before (0.2.43 stage A)', async () => {
+    // The refreshPermissionMode on the sibling reads plugin.settings.permissionMode
+    // — so the write has to land before the loop starts, or a split view repainted
+    // to a stale value and the honesty pack would only have replaced one lie with
+    // another. This test pins the ordering: settings first, fanout after.
+    const plugin = createPlugin({ settings: { permissionMode: 'safe' } });
+    const view = await openView(plugin);
+    const seen: string[] = [];
+    const sibling = {
+      refreshPermissionMode: vi.fn(() => {
+        seen.push(plugin.settings.permissionMode);
+      }),
+    };
+    (plugin.app.workspace.getLeavesOfType as ReturnType<typeof vi.fn>).mockReturnValue([
+      { view },
+      { view: sibling as unknown as CoOberView },
+    ]);
+
+    // safe → readonly is the first click on the four-step cycle.
+    (view.contentEl.querySelector('.co-ober-perm-toggle') as HTMLElement).click();
+
+    expect(sibling.refreshPermissionMode).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual(['readonly']);
+  });
+
   it('brings the jump-to-latest button back for a tab scrolled up in', async () => {
     const view = await openView(createPlugin({ client: createClient() }));
     const { tabA, tabB } = await openSecondTab(view);

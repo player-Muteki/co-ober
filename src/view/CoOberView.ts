@@ -343,6 +343,16 @@ export class CoOberView extends ItemView {
           client.permissionMode = mode as import('../types').PermissionLevel;
           applyPermissionTier(client, this.plugin.settings.permissionMode, this.plugin.settings);
         }
+        // The Settings dropdown's own writer already pushes the new tier onto
+        // every open view (settings.ts:205 refreshOpenViewsPermission). The bar's
+        // chip has to make the same push or a split view's sibling pane keeps
+        // naming the tier this click just replaced — same sibling-repaint gap
+        // the settings dropdown refused, seen from the other side of the shared
+        // settings.permissionMode field.
+        for (const leaf of this.plugin.app.workspace.getLeavesOfType(VIEW_TYPE)) {
+          const sibling = leaf.view as CoOberView;
+          sibling.refreshPermissionMode?.();
+        }
       },
       onSend: () => this.input.triggerSend(),
       onStop: () => this.input.triggerStop(),
