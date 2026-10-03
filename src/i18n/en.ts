@@ -58,6 +58,7 @@ const en = {
     empty: 'No sessions found',
     defaultTitle: 'Chat {time}',
     loadedNative: 'Loaded an OpenCode session. Earlier turns live in OpenCode history; new replies continue here.',
+    resumedNativeWithoutReplay: 'Re-attached to this OpenCode session; no earlier turns were replayed. New replies continue here.',
     loadNativeFailed: 'Could not load this OpenCode session.',
     nativeSessionMissing: 'This OpenCode session no longer exists (it may have been deleted from OpenCode).',
     runtimeSessionLost: 'The agent no longer holds this session (it may have restarted). Local history is kept; your next message starts a fresh agent session.',

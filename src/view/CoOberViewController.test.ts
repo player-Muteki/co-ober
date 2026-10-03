@@ -1993,6 +1993,68 @@ describe('CoOberViewController', () => {
       // never actually observed. It stays cause-neutral.
       expect(t().session.loadNativeFailed).not.toMatch(/session\/load|not supported|unavailable/i);
     });
+
+    describe('the "earlier turns" claim only earns itself on a real replay (0.2.47 stage A / 0.2.48 A)', () => {
+      // `switchSession(id, 'opencode')` fires one system message after the
+      // sync completes. The old code unconditionally spoke "Loaded an
+      // OpenCode session. Earlier turns live in OpenCode history", a
+      // completion claim about history the collector never saw. Three
+      // branches inside `syncRuntimeSession` (isSessionLoaded early return at
+      // :1359, resume-without-replay at :1364, syncUnsupported at :1372) all
+      // reach that line with an empty collector. Same class 0.2.45 stage A
+      // refused on the plan panel and 0.2.42 stage C refused on the runtime
+      // options fetch — the "nothing here" claim belongs only to a survey the
+      // code completed.
+      it('speaks the loadedNative reading when the replay delivered turns', async () => {
+        const client = createMockClient({
+          loadSession: vi.fn(
+            async (_id: string, _cwd: string, _mcp: unknown, onReplay?: (u: NormalizedUpdate) => void) => {
+              onReplay?.({
+                kind: 'message_chunk',
+                role: 'user',
+                messageId: 'u1',
+                chunkText: 'question',
+                accumulatedText: 'question',
+              });
+            },
+          ),
+        });
+        (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+        controller = new CoOberViewController(deps, callbacks);
+
+        await controller.switchSession('ses_replay', 'opencode');
+
+        expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().session.loadedNative);
+        expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(t().session.resumedNativeWithoutReplay);
+      });
+
+      it('speaks the resumed-without-replay reading when the collector saw nothing', async () => {
+        // A plain `createMockClient` loadSession resolves without invoking
+        // `onReplay`, so the collector stays empty — exactly the state
+        // `isSessionLoaded`, resume-without-replay, and syncUnsupported all
+        // reach the message line in. The claim "earlier turns live in
+        // OpenCode history" is now known false; the honest reading is "no
+        // earlier turns were replayed here".
+        const client = createMockClient();
+        (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+        controller = new CoOberViewController(deps, callbacks);
+
+        await controller.switchSession('ses_quiet', 'opencode');
+
+        expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().session.resumedNativeWithoutReplay);
+        expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(t().session.loadedNative);
+      });
+
+      it('speaks two different strings so the two replay classes cannot be silently re-merged', () => {
+        // Anti-remerge guard matching the shape 0.2.46 stage B's terminal-
+        // unknown vs. terminal-gone pin uses: the whole point of the split is
+        // that a completed replay and a no-replay reconnect say different
+        // things. A future edit that quietly set both locale keys to the same
+        // value would keep every other assertion passing while collapsing
+        // the two situations back into one lie.
+        expect(t().session.loadedNative).not.toBe(t().session.resumedNativeWithoutReplay);
+      });
+    });
   });
 
   describe('session loss reporting', () => {

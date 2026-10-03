@@ -1641,9 +1641,26 @@ export class CoOberViewController {
     try {
       const collector = new SessionReplayCollector();
       await this.syncRuntimeSession(sessionId, (u) => collector.handle(u), rt);
-      await this.adoptReplay(sessionId, collector.finish());
+      const replayed = collector.finish();
+      await this.adoptReplay(sessionId, replayed);
       if (source === 'opencode') {
-        rt.renderer.addSystemMessage(t().session.loadedNative);
+        // The "earlier turns live in OpenCode history" reading is only earned
+        // by a replay that actually delivered turns. Three branches inside
+        // `syncRuntimeSession` reach this line without streaming a single
+        // chunk — the `isSessionLoaded` early return at :1359 (the client
+        // already holds the session, so nothing needs to be re-played), the
+        // `caps.loadSession === false` + resume branch at :1364 (whose own
+        // comment says resume reconnects WITHOUT replaying history), and the
+        // `syncUnsupported` branch at :1372 (which already painted its own
+        // more specific line above). None of those three sampled whether the
+        // session has earlier turns, so the second sentence pointed the reader
+        // at a history the code has not observed. Same class 0.2.45 stage A
+        // refused on the plan panel (a settled empty must paint empty) and
+        // 0.2.42 stage C refused on runtime options (a fetch that never
+        // answered must say "cannot certify", not "nothing was found").
+        rt.renderer.addSystemMessage(
+          replayed.length === 0 ? t().session.resumedNativeWithoutReplay : t().session.loadedNative,
+        );
       }
     } catch (e) {
       console.error('[co-ober] session switch sync:', e);
