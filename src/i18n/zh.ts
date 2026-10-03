@@ -345,9 +345,11 @@ const zh: Locale = {
     copy: '复制整段对话到剪贴板',
     helpHeader: '可用命令',
     availableModels: '可用模型：',
-    modelSwitched: '已切换模型：',
+    modelSwitched: '已请求切换模型：',
+    modelSwitchFailed: '无法请求切换模型',
     availableModes: '可用模式：',
-    modeSwitched: '已切换模式：',
+    modeSwitched: '已请求切换模式：',
+    modeSwitchFailed: '无法请求切换模式',
     resumeHint: '请传入会话 ID（/resume <id>），或打开历史下拉框选择要恢复的会话。',
   },
   slashTitles: {

@@ -3406,6 +3406,76 @@ describe('CoOberViewController — 0.1.31 correctness patches', () => {
     });
   });
 
+  describe('/model', () => {
+    it('names the request, not a completed switch, when setModel resolves', async () => {
+      controller.state.sessionId = 'mdl-1';
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      await commandRegistry.find('model')!.run('gpt-4o');
+
+      expect(client.setModel).toHaveBeenCalledWith('mdl-1', 'gpt-4o');
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(
+        `${t().slash.modelSwitched} \`gpt-4o\``,
+      );
+      expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(
+        expect.stringContaining('Switched to model'),
+      );
+    });
+
+    it('surfaces a rejected setModel instead of leaving the transcript silent', async () => {
+      controller.state.sessionId = 'mdl-2';
+      const client = createMockClient({
+        setModel: vi.fn().mockRejectedValue(new Error('transport died')),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      await commandRegistry.find('model')!.run('gpt-5');
+
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(
+        `${t().slash.modelSwitchFailed}: transport died`,
+      );
+      expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(
+        expect.stringContaining('gpt-5'),
+      );
+    });
+  });
+
+  describe('/mode', () => {
+    it('names the request, not a completed switch, when setMode resolves', async () => {
+      controller.state.sessionId = 'mod-1';
+      const client = createMockClient();
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      await commandRegistry.find('mode')!.run('agent');
+
+      expect(client.setMode).toHaveBeenCalledWith('mod-1', 'agent');
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(
+        `${t().slash.modeSwitched} \`agent\``,
+      );
+      expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(
+        expect.stringContaining('Switched to mode'),
+      );
+    });
+
+    it('surfaces a rejected setMode instead of leaving the transcript silent', async () => {
+      controller.state.sessionId = 'mod-2';
+      const client = createMockClient({
+        setMode: vi.fn().mockRejectedValue(new Error('no such mode')),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      await commandRegistry.find('mode')!.run('bogus');
+
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(
+        `${t().slash.modeSwitchFailed}: no such mode`,
+      );
+      expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(
+        expect.stringContaining('bogus'),
+      );
+    });
+  });
+
   describe('syncRuntimeSession capability gating', () => {
     it('falls back to resume when the agent cannot load sessions', async () => {
       const client = createMockClient({

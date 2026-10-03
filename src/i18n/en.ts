@@ -343,9 +343,11 @@ const en = {
     copy: 'copy the whole conversation to the clipboard',
     helpHeader: 'Available Commands',
     availableModels: 'Available models:',
-    modelSwitched: 'Switched to model:',
+    modelSwitched: 'Asked the agent to switch to model:',
+    modelSwitchFailed: 'Co-Ober could not request the model change',
     availableModes: 'Available modes:',
-    modeSwitched: 'Switched to mode:',
+    modeSwitched: 'Asked the agent to switch to mode:',
+    modeSwitchFailed: 'Co-Ober could not request the mode change',
     resumeHint: 'Pass a session id (/resume <id>) or open the history dropdown to pick a session.',
   },
   slashTitles: {

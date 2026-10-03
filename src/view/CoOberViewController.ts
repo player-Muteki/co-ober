@@ -850,8 +850,24 @@ export class CoOberViewController {
         }
         const c = client();
         if (!c || !rt.state.sessionId) return;
-        await c.setModel(rt.state.sessionId, modelId);
-        rt.renderer.addSystemMessage(`${t().slash.modelSwitched} \`${modelId}\``);
+        // The request wording is the honest one: `setModel` resolving says the
+        // RPC was accepted, not that the agent moved. The current-model id is
+        // written only by the agent's own config chunks (`streamController`),
+        // so a session that ignores or refuses the id leaves the toolbar
+        // naming the old model — and the transcript claiming a completed
+        // switch next to it would be the "two adjacent widgets, incompatible
+        // stories" shape the 0.2.42 attach-tooltip and 0.2.43 permission-chip
+        // fixes both refused. A rejection is also visible now: `await def.run`
+        // bubbles to the send path with no catch on this side, so before this
+        // an agent transport that died left the transcript silent after the
+        // reader typed `/model X`.
+        try {
+          await c.setModel(rt.state.sessionId, modelId);
+          rt.renderer.addSystemMessage(`${t().slash.modelSwitched} \`${modelId}\``);
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          rt.renderer.addSystemMessage(`${t().slash.modelSwitchFailed}: ${detail}`);
+        }
       },
     });
     registry.registerBuiltin({
@@ -875,8 +891,16 @@ export class CoOberViewController {
         }
         const c = client();
         if (!c || !rt.state.sessionId) return;
-        await c.setMode(rt.state.sessionId, modeId);
-        rt.renderer.addSystemMessage(`${t().slash.modeSwitched} \`${modeId}\``);
+        // Same request-not-result wording and same visible-rejection rule as
+        // `/model` above; the mode id reaches the agent through a different
+        // channel but the transcript's claim shape is identical.
+        try {
+          await c.setMode(rt.state.sessionId, modeId);
+          rt.renderer.addSystemMessage(`${t().slash.modeSwitched} \`${modeId}\``);
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          rt.renderer.addSystemMessage(`${t().slash.modeSwitchFailed}: ${detail}`);
+        }
       },
     });
   }
