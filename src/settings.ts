@@ -288,8 +288,14 @@ export class CoOberSettingsTab extends PluginSettingTab {
             return;
           }
           s.maxNoteSize = n;
+          // `savePluginData` swallows the write failure into a sticky alarm and
+          // resolves either way; only `lastSaveOk === true` means the value
+          // reached data.json. Announcing "Setting saved" over a swallowed
+          // failure — the reader would look for their change on next reopen
+          // and find the older value — is the same "completed vs accepted"
+          // ruling 0.2.44 stage A applied to the model-switch RPC.
           await this.save();
-          new Notice(locale().settings.notes.saved);
+          if (this.plugin.lastSaveOk === true) new Notice(locale().settings.notes.saved);
           // Live push: the connected handler caches maxBytes at set time.
           const client = this.plugin.getClient();
           if (client) applyPermissionTier(client, s.permissionMode, s);

@@ -840,7 +840,7 @@ function createPlugin(
     setTerminalCapabilityMode: vi.fn(),
     idleTimeoutMs: 300000,
   };
-  return {
+  const plugin = {
     app: {
       workspace: {
         getLeavesOfType: vi.fn((viewType: string) => (
@@ -849,11 +849,13 @@ function createPlugin(
       },
     },
     settings,
-    savePluginData: vi.fn().mockResolvedValue(undefined),
+    savePluginData: vi.fn(async () => { (plugin as { lastSaveOk: boolean | null }).lastSaveOk = true; }),
+    lastSaveOk: null as boolean | null,
     initClient: vi.fn().mockResolvedValue(initClientResult),
     getClient: vi.fn(() => client),
     client: null,
   } as unknown as CoOberPlugin;
+  return plugin;
 }
 
 function flushPromises(): Promise<void> {
@@ -921,6 +923,42 @@ describe('CoOberSettingsTab live capability push', () => {
 
     expect(plugin.settings.maxNoteSize).toBe(4096);
     expect(client.setFsCapabilityMode).toHaveBeenCalledWith('enabled', 4096);
+  });
+
+  it('says "Setting saved" only when the write actually landed (0.2.47 stage A)', async () => {
+    // `savePluginData` swallows the disk failure into a sticky alarm and
+    // resolves identically either way — the Notice path used to fire on every
+    // resolve and certify a write that had not happened. A reader with an
+    // unreadable data.json was told "Setting saved", closed the panel, and
+    // reloaded to find the old value in place.
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    // Simulate a swallowed failure: savePluginData resolves but the ok fact
+    // it publishes says the write did not land.
+    vi.mocked(plugin.savePluginData).mockImplementation(async () => { plugin.lastSaveOk = false; });
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+    Notice.messages.length = 0;
+
+    await changeInput(findTextSettingInput(tab, 'Max Note Reference Size'), '4096');
+
+    expect(plugin.settings.maxNoteSize).toBe(4096);
+    expect(Notice.messages).not.toContain('Setting saved');
+  });
+
+  it('still says "Setting saved" on a save that reached the disk (0.2.47 stage A)', async () => {
+    // The fix must not trade one lie for another by refusing to confirm a real
+    // success. The default mock sets lastSaveOk = true, mirroring what the
+    // plugin actually does on a write that landed.
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+    Notice.messages.length = 0;
+
+    await changeInput(findTextSettingInput(tab, 'Max Note Reference Size'), '4096');
+
+    expect(Notice.messages).toContain('Setting saved');
   });
 
   it('pushes terminal timeout and max output live', async () => {

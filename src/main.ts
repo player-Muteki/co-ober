@@ -227,6 +227,15 @@ export default class CoOberPlugin extends Plugin {
     alarm?.hide();
   }
 
+  /**
+   * Never rejects. Fire-and-forget call sites rely on that. Whether the write
+   * reached the disk travels as `lastSaveOk` — the same fact the failure Notice
+   * and the `onPersistenceOutcome` handler already carry, now also readable by
+   * a caller that wants to say "saved" only when the save landed. `null` means
+   * no save has finished yet (the plugin just loaded).
+   */
+  lastSaveOk: boolean | null = null;
+
   async savePluginData(): Promise<void> {
     let ok = false;
     try {
@@ -254,6 +263,7 @@ export default class CoOberPlugin extends Plugin {
         this.saveAlarm = new Notice(t().notice.saveFailed, 0);
       }
     }
+    this.lastSaveOk = ok;
     // A successful write ends the failure streak: drop the alarm and let the
     // next failure notify immediately.
     if (ok) {

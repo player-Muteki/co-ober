@@ -158,6 +158,10 @@ describe('CoOberPlugin persistence', () => {
     };
 
     await expect(plugin.savePluginData()).resolves.toBeUndefined();
+    // The save API is never-rejects AND the outcome handler exploding must not
+    // relabel the write: `lastSaveOk` still says the disk path succeeded even
+    // though the view callback died.
+    expect(plugin.lastSaveOk).toBe(true);
 
     errSpy.mockRestore();
     saveSpy.mockRestore();
