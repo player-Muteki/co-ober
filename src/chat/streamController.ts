@@ -177,8 +177,14 @@ export class StreamController {
           if (surfaced) {
             const open = surfaced.toolStatus !== 'completed' && surfaced.toolStatus !== 'failed';
             if (open) {
+              // Stickiness: OpenCode re-sends `raw.name` on the first snapshot
+              // and not on later updates, so `renderKind` reads `other` for a
+              // `task` call whose name an in-progress frame dropped. A card the
+              // agent already certified as a sub-agent keeps that identity — the
+              // missing name is an information gap, not a contradiction.
+              const kind = surfaced.toolKind === 'subagent' ? 'subagent' : renderKind;
               surfaced.toolStatus = ch.status;
-              surfaced.toolKind = renderKind;
+              surfaced.toolKind = kind;
               renderer.updateToolCall(
                 ch.toolCallId,
                 ch.status,
@@ -186,7 +192,7 @@ export class StreamController {
                 ch.contents,
                 ch.rawInput,
                 ch.locations,
-                renderKind,
+                kind,
               );
             }
           } else {
@@ -197,21 +203,30 @@ export class StreamController {
         } else {
           // Flush any buffered pending tools, then update completed/failed
           this.flushToolBuffer();
+          let kind = renderKind;
           // An agent that reports only the finished call — no pending or
           // in_progress frame first — still gets a card. Without one there is
           // no element for the update to write into, and the step vanished
           // from the live transcript and from the blocks a reload renders.
           if (!this.toolBlocks.has(ch.toolCallId)) {
-            renderer.addToolCall(ch.toolCallId, ch.title || ch.toolCallId, renderKind, ch.rawInput, ch.locations);
+            renderer.addToolCall(ch.toolCallId, ch.title || ch.toolCallId, kind, ch.rawInput, ch.locations);
             const block: ContentBlock = {
               type: 'tool_use',
               toolCallId: ch.toolCallId,
               toolTitle: ch.title,
-              toolKind: renderKind,
+              toolKind: kind,
               toolStatus: ch.status === 'failed' ? 'failed' : 'completed',
             };
             this.currentContentBlocks.push(block);
             this.toolBlocks.set(ch.toolCallId, block);
+          } else {
+            // Stickiness, same ruling as the in-progress branch above: a frame
+            // that settles a call the agent already certified as a sub-agent
+            // must not downgrade it because the settle frame omitted
+            // `raw.name`. The persisted block keeps `subagent`, so a reload
+            // re-renders the sub-agent card instead of the plain one.
+            const existing = this.toolBlocks.get(ch.toolCallId);
+            if (existing && existing.toolKind === 'subagent') kind = 'subagent';
           }
           renderer.updateToolCall(
             ch.toolCallId,
@@ -220,14 +235,14 @@ export class StreamController {
             ch.contents,
             ch.rawInput,
             ch.locations,
-            renderKind,
+            kind,
           );
           // Safety net: ensure tool is collapsed on final states
           renderer.collapseToolCall(ch.toolCallId);
           const block = this.toolBlocks.get(ch.toolCallId);
           if (block) {
             block.toolStatus = ch.status === 'failed' ? 'failed' : 'completed';
-            block.toolKind = renderKind;
+            block.toolKind = kind;
           }
         }
 

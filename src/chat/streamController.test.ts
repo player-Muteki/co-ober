@@ -1487,4 +1487,84 @@ describe('StreamController sub-agent render kind (0.2.50 stage A)', () => {
     });
     expect(deps.renderer.addToolCall).toHaveBeenCalledWith('read-1', 'read a.ts', 'read', { file_path: '/a.ts' }, undefined);
   });
+
+  // 0.2.50 stage A follow-up: OpenCode re-sends `raw.name` on the first
+  // snapshot and omits it on later frames, so a per-frame re-derivation
+  // dropped a settled sub-agent back to the `other` look the raw ACP kind
+  // collapses to — live and, through the persisted block, on reload. The
+  // kind a frame already certified must outlive a frame that forgot the name.
+  it('keeps the sub-agent kind when a settle frame drops the tool name', () => {
+    const session: { messages: Array<{ contentBlocks?: Array<Record<string, unknown>> }>; updatedAt: number } = {
+      messages: [],
+      updatedAt: 0,
+    };
+    deps.sessionStore.get.mockReturnValue(session);
+
+    controller.handleChunk({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'task-1',
+      title: 'explore',
+      toolName: 'task',
+      toolKind: 'other',
+      status: 'pending',
+      rawInput: {},
+      contents: [],
+    });
+    // Flush the buffer: the card is drawn as a sub-agent from the name it saw.
+    controller.handleChunk({ kind: 'message_chunk', role: 'agent', messageId: 'm1', chunkText: 'go', accumulatedText: 'go' });
+    expect(deps.renderer.addToolCall).toHaveBeenCalledWith('task-1', 'explore', 'subagent', {}, undefined, 'pending');
+
+    (deps.renderer.updateToolCall as ReturnType<typeof vi.fn>).mockClear();
+    // The completing frame carries no name — the only signal that said `task`.
+    controller.handleChunk({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'task-1',
+      title: 'explore',
+      toolKind: 'other',
+      status: 'completed',
+      rawOutput: { ok: true },
+      contents: [],
+    });
+
+    // Live: the card is not repainted as a plain `other` call.
+    const lastUpdate = (deps.renderer.updateToolCall as ReturnType<typeof vi.fn>).mock.calls.at(-1) as unknown[];
+    expect(lastUpdate[lastUpdate.length - 1]).toBe('subagent');
+
+    // Reload: the persisted block still says `subagent`, so the restored card
+    // agrees with the live one instead of silently reverting.
+    controller.handleChunk({ kind: 'message_chunk', role: 'agent', messageId: 'm2', chunkText: 'x', accumulatedText: 'x' });
+    const blocks = (session.messages.at(-1)?.contentBlocks ?? []) as Array<Record<string, unknown>>;
+    expect(blocks.find((b) => b.toolCallId === 'task-1')?.toolKind).toBe('subagent');
+  });
+
+  it('keeps the sub-agent kind through an in-progress update that drops the name', () => {
+    const session: { messages: Array<Record<string, unknown>>; updatedAt: number } = { messages: [], updatedAt: 0 };
+    deps.sessionStore.get.mockReturnValue(session);
+
+    controller.handleChunk({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'task-2',
+      title: 'explore',
+      toolName: 'task',
+      toolKind: 'other',
+      status: 'pending',
+      rawInput: {},
+      contents: [],
+    });
+    controller.handleChunk({ kind: 'message_chunk', role: 'agent', messageId: 'm1', chunkText: 'go', accumulatedText: 'go' });
+
+    (deps.renderer.updateToolCall as ReturnType<typeof vi.fn>).mockClear();
+    // A mid-stream update with no name — the surfaced card must stay a sub-agent.
+    controller.handleChunk({
+      kind: 'tool_call_snapshot',
+      toolCallId: 'task-2',
+      title: 'explore',
+      toolKind: 'other',
+      status: 'in_progress',
+      rawInput: {},
+      contents: [],
+    });
+    const lastUpdate = (deps.renderer.updateToolCall as ReturnType<typeof vi.fn>).mock.calls.at(-1) as unknown[];
+    expect(lastUpdate[lastUpdate.length - 1]).toBe('subagent');
+  });
 });
