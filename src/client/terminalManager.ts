@@ -304,6 +304,18 @@ export class TerminalManager {
 	}
 
 	/**
+	 * The wire string for a terminal this manager cannot act on. `output`
+	 * carries it in-band, and the sibling handlers (kill, release, wait_for_exit)
+	 * raise it as an error — they all reach the same two-situation distinction
+	 * and should speak it in the same words. Keeping the format here means the
+	 * output path and the handler path can never drift into naming the absence
+	 * differently.
+	 */
+	absentTerminalMessage(terminalId: string): string {
+		return `Terminal ${this.releasedIds.has(terminalId) ? 'released' : 'unknown'}: ${terminalId}`;
+	}
+
+	/**
 	 * Stop every command still running, keeping the terminals themselves so
 	 * their output stays readable and the agent can still release them. Used
 	 * when the capability tier closes mid-session: a live process is work that

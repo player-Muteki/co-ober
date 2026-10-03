@@ -415,7 +415,11 @@ describe('a terminal answer the protocol can read (0.2.5 stage 2)', () => {
   function terminalHandler(manager: Record<string, unknown>) {
     const handler = makeHandler({});
     handler.setTerminalCapabilityMode('enabled');
-    Reflect.set(handler, 'terminalManager', { dispose: vi.fn(), ...manager });
+    Reflect.set(handler, 'terminalManager', {
+      dispose: vi.fn(),
+      absentTerminalMessage: (id: string) => `Terminal unknown: ${id}`,
+      ...manager,
+    });
     return handler;
   }
 
@@ -489,6 +493,78 @@ describe('a terminal answer the protocol can read (0.2.5 stage 2)', () => {
       truncated: false,
       exitStatus: { exitCode: 0 },
     });
+    handler.dispose();
+  });
+});
+
+describe('terminal sibling rpc names the absence class, not the merged "not found" (0.2.46 stage B)', () => {
+  function call(handler: AcpRequestHandler, method: string, params: Record<string, unknown>): Promise<unknown> {
+    const fn = Reflect.get(handler, method) as (p: Record<string, unknown>) => Promise<unknown>;
+    return fn.call(handler, params);
+  }
+
+  // Mirrors `TerminalManager.absentTerminalMessage` — the manager owns the wire
+  // string so the output path (which uses it in-band since 0.2.44 stage C) and
+  // the kill/release/wait_for_exit paths (which raise it as an error now) can
+  // not drift into naming the two absences differently.
+  function handlerWithManager(mockManager: {
+    kill?: (id: string) => boolean;
+    release?: (id: string) => boolean;
+    waitForExit?: (id: string) => Promise<{ exitCode: number | null; signal: string | null } | null>;
+    releasedIds: Set<string>;
+  }) {
+    const handler = makeHandler({});
+    handler.setTerminalCapabilityMode('enabled');
+    Reflect.set(handler, 'terminalManager', {
+      dispose: vi.fn(),
+      absentTerminalMessage: (id: string) =>
+        `Terminal ${mockManager.releasedIds.has(id) ? 'released' : 'unknown'}: ${id}`,
+      kill: mockManager.kill ?? (() => false),
+      release: mockManager.release ?? (() => false),
+      waitForExit: mockManager.waitForExit ?? (async () => null),
+    });
+    return handler;
+  }
+
+  it('kill on a released id says released, not unknown', async () => {
+    const handler = handlerWithManager({ releasedIds: new Set(['term-3']) });
+    await expect(call(handler, 'handleTerminalKill', { terminalId: 'term-3' })).rejects.toThrow(/Terminal released: term-3/);
+    handler.dispose();
+  });
+
+  it('kill on a never-held id says unknown, not released', async () => {
+    const handler = handlerWithManager({ releasedIds: new Set() });
+    const message = await call(handler, 'handleTerminalKill', { terminalId: 'term-99' }).catch((e: unknown) => (e as Error).message);
+    expect(message).toMatch(/Terminal unknown: term-99/);
+    expect(message).not.toMatch(/released/);
+    handler.dispose();
+  });
+
+  it('release on a released id says released, not unknown', async () => {
+    const handler = handlerWithManager({ releasedIds: new Set(['term-3']) });
+    await expect(call(handler, 'handleTerminalRelease', { terminalId: 'term-3' })).rejects.toThrow(/Terminal released: term-3/);
+    handler.dispose();
+  });
+
+  it('release on a never-held id says unknown, not released', async () => {
+    const handler = handlerWithManager({ releasedIds: new Set() });
+    const message = await call(handler, 'handleTerminalRelease', { terminalId: 'term-99' }).catch((e: unknown) => (e as Error).message);
+    expect(message).toMatch(/Terminal unknown: term-99/);
+    expect(message).not.toMatch(/released/);
+    handler.dispose();
+  });
+
+  it('wait_for_exit on a released id says released, not unknown', async () => {
+    const handler = handlerWithManager({ releasedIds: new Set(['term-3']) });
+    await expect(call(handler, 'handleTerminalWaitForExit', { terminalId: 'term-3' })).rejects.toThrow(/Terminal released: term-3/);
+    handler.dispose();
+  });
+
+  it('wait_for_exit on a never-held id says unknown, not released', async () => {
+    const handler = handlerWithManager({ releasedIds: new Set() });
+    const message = await call(handler, 'handleTerminalWaitForExit', { terminalId: 'term-99' }).catch((e: unknown) => (e as Error).message);
+    expect(message).toMatch(/Terminal unknown: term-99/);
+    expect(message).not.toMatch(/released/);
     handler.dispose();
   });
 });
@@ -653,6 +729,7 @@ describe('AcpRequestHandler capability-surface and not-found error shape (0.2.7 
       release: () => false,
       output: () => ({ error: 'Terminal not found: t404' }),
       waitForExit: () => Promise.resolve(null),
+      absentTerminalMessage: (id: string) => `Terminal unknown: ${id}`,
     });
     await expect(callPrivate(h, 'handleTerminalKill', { terminalId: 't404' })).rejects.toBeInstanceOf(AcpResourceNotFoundError);
     await expect(callPrivate(h, 'handleTerminalRelease', { terminalId: 't404' })).rejects.toBeInstanceOf(AcpResourceNotFoundError);

@@ -105,6 +105,19 @@ describe('TerminalManager', () => {
 			expect(result.errorReason).toBe('released');
 			expect(result.error).toContain('released');
 		});
+
+		it('absentTerminalMessage speaks the same two classes the output path does', () => {
+			// The sibling kill/release/wait_for_exit handlers raise this string as
+			// a wire error while `output` carries it in-band. If they drifted into
+			// different wording the transcript would show one absence in two
+			// vocabularies and re-teach the collapse 0.2.44 stage C undid.
+			const instance = manager.create({ command: 'echo' }, '/vault');
+			expect(manager.absentTerminalMessage(instance.terminalId)).toBe(`Terminal unknown: ${instance.terminalId}`);
+
+			manager.release(instance.terminalId);
+			expect(manager.absentTerminalMessage(instance.terminalId)).toBe(`Terminal released: ${instance.terminalId}`);
+			expect(manager.absentTerminalMessage(instance.terminalId)).toBe(manager.output(instance.terminalId).error);
+		});
 	});
 
 	describe('output budget', () => {

@@ -623,8 +623,15 @@ export class AcpRequestHandler {
 
     // KillTerminalResponse is an empty object: there is no field in which a
     // refusal can travel, so a kill that found nothing has to be an error.
+    // The id may be one this manager created and someone released, or one it
+    // never held at all; the `output` path split those in 0.2.44 stage C, and
+    // these three sibling handlers have to speak the same distinction — a
+    // reader who released term-3 and then retried kill on term-3 is looking at
+    // a different situation from a reader whose agent hallucinated term-99, and
+    // telling both "not found" points the first at a lookup that will never
+    // resolve while telling the second about a release that never happened.
     if (!this.terminalManager.kill(parsed.data.terminalId)) {
-      return Promise.reject(new AcpResourceNotFoundError(`Terminal not found: ${parsed.data.terminalId}`));
+      return Promise.reject(new AcpResourceNotFoundError(this.terminalManager.absentTerminalMessage(parsed.data.terminalId)));
     }
     return Promise.resolve({});
   }
@@ -640,7 +647,7 @@ export class AcpRequestHandler {
     }
 
     if (!this.terminalManager.release(parsed.data.terminalId)) {
-      return Promise.reject(new AcpResourceNotFoundError(`Terminal not found: ${parsed.data.terminalId}`));
+      return Promise.reject(new AcpResourceNotFoundError(this.terminalManager.absentTerminalMessage(parsed.data.terminalId)));
     }
     return Promise.resolve({});
   }
@@ -659,12 +666,14 @@ export class AcpRequestHandler {
       return Promise.reject(invalidParams(parsed.error, 'Missing required parameter: terminalId'));
     }
 
-    return this.terminalManager
+    const manager = this.terminalManager;
+    return manager
       .waitForExit(parsed.data.terminalId)
       .then((result) => {
         // WaitForTerminalExitResponse says how the process ended; null means
-        // there was no such terminal to end.
-        if (!result) throw new AcpResourceNotFoundError(`Terminal not found: ${parsed.data.terminalId}`);
+        // there was no such terminal to end, and the same released/unknown
+        // split the sibling handlers carry.
+        if (!result) throw new AcpResourceNotFoundError(manager.absentTerminalMessage(parsed.data.terminalId));
         return result;
       });
   }
