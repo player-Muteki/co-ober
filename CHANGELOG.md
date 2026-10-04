@@ -1,4 +1,14 @@
-## 0.2.53 - 2026-10-04
+## 0.2.54 - 2026-10-04
+
+### Added
+
+- **The native catalog leaves the diagnostic and becomes a surface you can read** (stage C, #280 remainder): 0.2.53 proved `opencode serve` lists a real catalog and put only its *counts* in Diagnostics, explicitly "not yet a picker wiring." This spends it — a new Settings section runs the same probe behind a button and lists what it observed: each model with its context window, each command, each agent with its description. Because the probe starts a throwaway loopback server it is never run on render; the reader asks, and the panel answers. The surface is read-only and marked separate from the connected session, so it reports the native install's catalog without ever implying a selection the ACP wire has not confirmed — the reconciliation hazard 0.2.53 named as the reason to hold the catalog back is met by not turning it into a control. The honest states stay distinct rather than collapsing: a panel that has not been asked says "not loaded" instead of guessing; a `serve` that never answers names itself a reachability failure, not "listed nothing"; a catalog that genuinely lists nothing names the emptiness, not a failure; and a model with no reported context or an entry with no reported description says so instead of inventing one. Four `settings.test.ts` boundaries pin each, with whole-container assertions that keep the empty and unreachable sentences from bleeding into each other.
+
+### Deferred, and why (stage C's other two clauses)
+
+- **Turn-steer over the HTTP kernel and the ACP→HTTP send-path rewire stay open.** Stage C was scoped as "turn-steer + HTTP-backend send-path rewire + spending the catalog on a surface"; only the last clause ships. A native mid-turn steer is `POST /api/session/{id}/prompt` with `delivery:'steer'` plus the SSE `session.inbox.delivered` signal, and native model/agent selection is a `POST .../model` the agent must then answer on — all observable only by running a real turn with real credentials and a live streaming read, which this environment cannot produce. Claiming it would repeat the laundering the earlier cycles refused. The honest ACP form of "steer" already exists and is not rebuilt: the per-tab prompt queue parks a follow-up behind the in-flight turn and releases it when idle — what the stdio channel actually offers. #280's remaining clause is gated on a demonstrable live turn, not on a version number.
+
+
 
 ### Added
 
