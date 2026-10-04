@@ -571,6 +571,101 @@ describe('CoOberSettingsTab locale refresh', () => {
     }
   });
 
+  it('leaves the native catalog section un-answered until the reader asks', async () => {
+    setLocale('en');
+    fakeCatalog = {
+      status: 'observed',
+      models: [{ modelId: 'p/a', name: 'p/Alpha', context: 128000 }],
+      commands: [{ name: 'init', description: 'Initialize' }],
+      agents: [{ id: 'build', description: 'Build agent' }],
+    };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      }));
+      tab.display();
+      // Opening the panel has not contacted the native install, so it must not
+      // already list a catalog it never asked for — the names stay hidden.
+      expect(tab.containerEl.textContent).toContain('Not loaded');
+      expect(tab.containerEl.textContent).not.toContain('p/Alpha');
+    } finally {
+      fakeCatalog = null;
+    }
+  });
+
+  it('lists the native catalog by name once loaded, with each model context', async () => {
+    setLocale('en');
+    fakeCatalog = {
+      status: 'observed',
+      models: [{ modelId: 'p/a', name: 'p/Alpha', context: 128000 }, { modelId: 'p/b', name: 'p/Beta', context: undefined }],
+      commands: [{ name: 'init', description: 'Initialize the repo' }, { name: 'review', description: undefined }],
+      agents: [{ id: 'build', description: undefined }],
+    };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      }));
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Load catalog') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+
+      expect(tab.containerEl.textContent).toContain('p/Alpha');
+      expect(tab.containerEl.textContent).toContain('Context: 128000 tokens');
+      expect(tab.containerEl.textContent).toContain('p/Beta');
+      expect(tab.containerEl.textContent).toContain('No context window reported');
+      expect(tab.containerEl.textContent).toContain('Initialize the repo');
+      expect(tab.containerEl.textContent).toContain('No description reported');
+      expect(tab.containerEl.textContent).toContain('build');
+    } finally {
+      fakeCatalog = null;
+    }
+  });
+
+  it('names the catalog surface as unreachable, not empty, when serve did not answer', async () => {
+    setLocale('en');
+    fakeCatalog = { status: 'unavailable', models: [], commands: [], agents: [] };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      }));
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Load catalog') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+
+      expect(tab.containerEl.textContent).toContain('`opencode serve` did not answer');
+      expect(tab.containerEl.textContent).not.toContain('listed no models');
+    } finally {
+      fakeCatalog = null;
+    }
+  });
+
+  it('names the catalog surface as empty, not unreachable, when it answered with nothing', async () => {
+    setLocale('en');
+    fakeCatalog = { status: 'observed', models: [], commands: [], agents: [] };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      }));
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Load catalog') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+
+      expect(tab.containerEl.textContent).toContain('listed no models');
+      expect(tab.containerEl.textContent).not.toContain('did not answer');
+    } finally {
+      fakeCatalog = null;
+    }
+  });
+
   it('fails the sync folder row for a shape the writer itself rejects (0.2.46 stage C)', async () => {
     // The row used to PASS on `length > 0`. A folder like `notes/..` or
     // `/abs` or `notes<>` produced a green light while every sync threw.
