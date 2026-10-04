@@ -24,6 +24,16 @@ vi.mock('./utils/commandResolution', async (importOriginal) => {
   };
 });
 
+// The version row runs a real subprocess; a settings test must not depend on an
+// OpenCode install on PATH. The probe is faked to a reading each test chooses,
+// defaulting to the honest "did not answer" so any test that forgets to set one
+// sees the failure branch rather than a fabricated success.
+let fakeVersion: { raw: string; version: string | undefined; generation: 1 | 2 | undefined; failed: boolean } | null = null;
+vi.mock('./opencode/OpencodeVersion', () => ({
+  detectOpencodeVersion: vi.fn(async () =>
+    fakeVersion ?? { raw: '', version: undefined, generation: undefined, failed: true }),
+}));
+
 describe('CoOberSettingsTab locale refresh', () => {
   it('redraws settings labels and refreshes open chat views when language changes', async () => {
     setLocale('en');
@@ -423,6 +433,50 @@ describe('CoOberSettingsTab locale refresh', () => {
       expect(tab.containerEl.textContent).not.toContain('Resolved "opencode"');
     } finally {
       fakeResolve = null;
+    }
+  });
+
+  it('shows the version the probe observed, with its generation named', async () => {
+    setLocale('en');
+    fakeVersion = { raw: 'opencode v1.5.3', version: '1.5.3', generation: 1, failed: false };
+    try {
+      const plugin = createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      });
+      const tab = new CoOberSettingsTab(plugin);
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Run Diagnostics') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+
+      expect(tab.containerEl.textContent).toContain('Pass: OpenCode version');
+      expect(tab.containerEl.textContent).toContain('v1 · 1.5.3');
+    } finally {
+      fakeVersion = null;
+    }
+  });
+
+  it('fails the version row when the CLI did not answer, rather than guessing', async () => {
+    setLocale('en');
+    fakeVersion = { raw: '', version: undefined, generation: undefined, failed: true };
+    try {
+      const plugin = createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      });
+      const tab = new CoOberSettingsTab(plugin);
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Run Diagnostics') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+
+      expect(tab.containerEl.textContent).toContain('Fail: OpenCode version');
+      expect(tab.containerEl.textContent).toContain('Could not read the version');
+    } finally {
+      fakeVersion = null;
     }
   });
 

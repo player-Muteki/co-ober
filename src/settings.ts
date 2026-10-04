@@ -9,6 +9,7 @@ import { CLIENT_VERSION } from './client/acp';
 import { applyPermissionTier } from './client/permissionTier';
 import { validateCustomAgent } from './agents/custom';
 import { resolveCommandPath } from './utils/commandResolution';
+import { detectOpencodeVersion } from './opencode/OpencodeVersion';
 import { sanitizeVaultPath } from './sync/templates';
 import { MIN_OPEN_TABS, MAX_OPEN_TABS, DEFAULT_OPEN_TABS } from './constants';
 
@@ -752,6 +753,21 @@ export class CoOberSettingsTab extends PluginSettingTab {
 
     const pathStatus = this.getOpencodePathStatus(this.plugin.settings.opencodePath);
     results.push({ label: labels.path, ok: pathStatus.ok, detail: pathStatus.detail });
+
+    // Ask the configured binary what it is. This is a measurement, not a guess:
+    // a CLI that cannot be run, times out, or answers without a recognizable
+    // number reports as such rather than rounding up to a supported version. The
+    // generation is only named when the version actually states a major of 1 or
+    // 2, so this row can never certify a wire the plugin does not have.
+    const reading = await detectOpencodeVersion(this.plugin.settings.opencodePath);
+    const versionDetail = reading.failed
+      ? labels.versionUnavailable
+      : !reading.version
+        ? labels.versionUnreadable.replace('{raw}', reading.raw || labels.versionBlank)
+        : reading.generation
+          ? labels.versionGeneration.replace('{version}', reading.version).replace('{generation}', String(reading.generation))
+          : reading.version;
+    results.push({ label: labels.version, ok: !reading.failed && !!reading.version, detail: versionDetail });
 
     const existingClient = this.plugin.getClient();
     const connected = existingClient?.isConnected() ? true : await this.plugin.initClient();
