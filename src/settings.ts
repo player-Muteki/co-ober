@@ -12,6 +12,7 @@ import { resolveCommandPath } from './utils/commandResolution';
 import { getVaultPath } from './utils/vault';
 import { detectOpencodeVersion } from './opencode/OpencodeVersion';
 import { detectOpencodeNativeCatalog, type OpencodeCatalogObservation } from './opencode/OpencodeCatalog';
+import { detectOpencodeNativeTurnExecution, type OpencodeTurnObservation } from './opencode/OpencodeTurnProbe';
 import { sanitizeVaultPath } from './sync/templates';
 import { MIN_OPEN_TABS, MAX_OPEN_TABS, DEFAULT_OPEN_TABS } from './constants';
 
@@ -94,6 +95,11 @@ export class CoOberSettingsTab extends PluginSettingTab {
   private nativeCatalogRunning = false;
   private nativeCatalogLoaded = false;
   private nativeCatalog: OpencodeCatalogObservation | null = null;
+  // The turn probe drives one throwaway native turn, so it is run only when the
+  // reader presses its button. `nativeTurn` holds the last observation, `null`
+  // until a probe has run — an un-run probe cannot claim the engine works.
+  private nativeTurnRunning = false;
+  private nativeTurn: OpencodeTurnObservation | null = null;
   // Permission-tier dropdown held on the tab so a chat-view bar click can
   // push its new tier into the same field here. The dropdown's own `.setValue`
   // runs once at build time; a bar chip that writes `settings.permissionMode`
@@ -758,6 +764,11 @@ export class CoOberSettingsTab extends PluginSettingTab {
         });
       });
 
+    this.renderNativeCatalogBody(containerEl, labels);
+    this.renderNativeTurnProbe(containerEl, labels);
+  }
+
+  private renderNativeCatalogBody(containerEl: HTMLElement, labels: ReturnType<typeof locale>['settings']['nativeCatalog']): void {
     if (this.nativeCatalogRunning) {
       new Setting(containerEl).setName(labels.running);
       return;
@@ -796,6 +807,60 @@ export class CoOberSettingsTab extends PluginSettingTab {
     new Setting(containerEl).setName(labels.agentsHeading).setDesc(String(observation.agents.length));
     for (const agent of observation.agents) {
       new Setting(containerEl).setName(agent.id).setDesc(agent.description ?? labels.agentNoDescription);
+    }
+  }
+
+  private renderNativeTurnProbe(containerEl: HTMLElement, labels: ReturnType<typeof locale>['settings']['nativeCatalog']): void {
+    new Setting(containerEl)
+      .setName(labels.turnHeading)
+      .setDesc(labels.turnDescription)
+      .addButton((button) => {
+        button.setButtonText(this.nativeTurnRunning ? labels.turnRunning : this.nativeTurn ? labels.turnRerun : labels.turnRun);
+        button.buttonEl.disabled = this.nativeTurnRunning;
+        button.onClick(async () => {
+          await this.runNativeTurnProbe();
+        });
+      });
+
+    if (this.nativeTurnRunning) {
+      new Setting(containerEl).setName(labels.turnRunningDetail);
+      return;
+    }
+    const reading = this.nativeTurn;
+    if (!reading) {
+      new Setting(containerEl).setName(labels.turnNotRun);
+      return;
+    }
+    if (reading.status === 'unavailable') {
+      new Setting(containerEl).setName(labels.turnUnavailable);
+      return;
+    }
+    if (reading.status === 'admitted') {
+      // The channel took the prompt but no assistant answer was read back in the
+      // window — so the turn is confirmed live, not confirmed executed. Say that.
+      new Setting(containerEl).setName(labels.turnAdmitted);
+      return;
+    }
+    // 'executed': a real assistant answer was observed. Report the concrete fields
+    // the wire returned, and never imply a model or token count the read did not carry.
+    new Setting(containerEl)
+      .setName(labels.turnExecuted)
+      .setDesc(labels.turnExecutedDetail
+        .replace('{model}', reading.modelId ?? labels.turnUnknownModel)
+        .replace('{finish}', reading.finish ?? labels.turnUnknownFinish)
+        .replace('{tokens}', reading.outputTokens === undefined ? labels.turnUnknownTokens : String(reading.outputTokens)));
+  }
+
+  private async runNativeTurnProbe(): Promise<void> {
+    this.nativeTurnRunning = true;
+    this.render();
+    try {
+      this.nativeTurn = await detectOpencodeNativeTurnExecution(this.plugin.settings.opencodePath, getVaultPath(this.plugin.app));
+    } catch {
+      this.nativeTurn = { status: 'unavailable', modelId: undefined, finish: undefined, outputTokens: undefined };
+    } finally {
+      this.nativeTurnRunning = false;
+      this.render();
     }
   }
 

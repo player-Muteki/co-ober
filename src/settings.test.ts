@@ -44,6 +44,15 @@ vi.mock('./opencode/OpencodeCatalog', () => ({
     fakeCatalog ?? { status: 'unavailable', models: [], commands: [], agents: [] }),
 }));
 
+// The native turn probe runs one throwaway `opencode serve` turn; a settings test
+// must never spawn a real CLI or burn a model call. It is faked to the reading each
+// test chooses, defaulting to `unavailable` so an unset test sees the failure branch.
+let fakeTurn: { status: 'executed' | 'admitted' | 'unavailable'; modelId: string | undefined; finish: string | undefined; outputTokens: number | undefined } | null = null;
+vi.mock('./opencode/OpencodeTurnProbe', () => ({
+  detectOpencodeNativeTurnExecution: vi.fn(async () =>
+    fakeTurn ?? { status: 'unavailable', modelId: undefined, finish: undefined, outputTokens: undefined }),
+}));
+
 describe('CoOberSettingsTab locale refresh', () => {
   it('redraws settings labels and refreshes open chat views when language changes', async () => {
     setLocale('en');
@@ -663,6 +672,90 @@ describe('CoOberSettingsTab locale refresh', () => {
       expect(tab.containerEl.textContent).not.toContain('did not answer');
     } finally {
       fakeCatalog = null;
+    }
+  });
+
+  it('leaves the native turn probe un-run until the button is pressed', async () => {
+    setLocale('en');
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      }));
+      tab.display();
+      // Opening the panel has not spent a model call, so it must not already
+      // claim a turn ran — the executed sentence stays hidden until asked.
+      expect(tab.containerEl.textContent).toContain('Not run');
+      expect(tab.containerEl.textContent).not.toContain('executed a throwaway turn');
+    } finally {
+      fakeTurn = null;
+    }
+  });
+
+  it('reports the native turn executed only with the model it read back', async () => {
+    setLocale('en');
+    fakeTurn = { status: 'executed', modelId: 'p/a', finish: 'stop', outputTokens: 7 };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      }));
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Probe a turn') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+
+      expect(tab.containerEl.textContent).toContain('executed a throwaway turn');
+      expect(tab.containerEl.textContent).toContain('Model p/a · finished stop · 7 output tokens');
+    } finally {
+      fakeTurn = null;
+    }
+  });
+
+  it('separates an admitted-but-unanswered turn from an executed one', async () => {
+    setLocale('en');
+    fakeTurn = { status: 'admitted', modelId: undefined, finish: undefined, outputTokens: undefined };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      }));
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Probe a turn') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+
+      // A prompt the kernel took but never answered is the honest middle state:
+      // the channel is live, execution is NOT confirmed. It must not read as a
+      // success nor as the total-failure branch.
+      expect(tab.containerEl.textContent).toContain('turn channel live, execution not confirmed');
+      expect(tab.containerEl.textContent).not.toContain('executed a throwaway turn');
+      expect(tab.containerEl.textContent).not.toContain('Could not run a native turn');
+    } finally {
+      fakeTurn = null;
+    }
+  });
+
+  it('names an unreachable native turn as failed, not as admitted or executed', async () => {
+    setLocale('en');
+    fakeTurn = { status: 'unavailable', modelId: undefined, finish: undefined, outputTokens: undefined };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      }));
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Probe a turn') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+
+      expect(tab.containerEl.textContent).toContain('Could not run a native turn');
+      expect(tab.containerEl.textContent).not.toContain('turn channel live');
+      expect(tab.containerEl.textContent).not.toContain('executed a throwaway turn');
+    } finally {
+      fakeTurn = null;
     }
   });
 
