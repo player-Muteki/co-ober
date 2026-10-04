@@ -34,6 +34,16 @@ vi.mock('./opencode/OpencodeVersion', () => ({
     fakeVersion ?? { raw: '', version: undefined, generation: undefined, failed: true }),
 }));
 
+// The native catalog row starts a brief loopback `opencode serve`; a settings test
+// must not spawn a real CLI. The probe is faked to a reading each test chooses,
+// defaulting to the honest "could not be read" so a test that forgets to set one
+// sees the failure branch rather than a catalog the fake never observed.
+let fakeCatalog: { status: 'observed' | 'unavailable'; models: unknown[]; commands: unknown[]; agents: unknown[] } | null = null;
+vi.mock('./opencode/OpencodeCatalog', () => ({
+  detectOpencodeNativeCatalog: vi.fn(async () =>
+    fakeCatalog ?? { status: 'unavailable', models: [], commands: [], agents: [] }),
+}));
+
 describe('CoOberSettingsTab locale refresh', () => {
   it('redraws settings labels and refreshes open chat views when language changes', async () => {
     setLocale('en');
@@ -476,6 +486,87 @@ describe('CoOberSettingsTab locale refresh', () => {
       expect(tab.containerEl.textContent).toContain('Fail: OpenCode version');
       expect(tab.containerEl.textContent).toContain('Could not read the version');
     } finally {
+      fakeVersion = null;
+    }
+  });
+
+  it('shows the native catalog counts the probe observed', async () => {
+    setLocale('en');
+    fakeCatalog = {
+      status: 'observed',
+      models: [{ modelId: 'p/a', name: 'p/Alpha', context: undefined }],
+      commands: [{ name: 'init', description: undefined }],
+      agents: [{ id: 'build', description: undefined }, { id: 'plan', description: undefined }],
+    };
+    try {
+      const plugin = createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      });
+      const tab = new CoOberSettingsTab(plugin);
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Run Diagnostics') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+
+      expect(tab.containerEl.textContent).toContain('Pass: Native OpenCode catalog');
+      expect(tab.containerEl.textContent).toContain('1 models, 1 commands, 2 agents');
+    } finally {
+      fakeCatalog = null;
+    }
+  });
+
+  it('fails the catalog row when serve did not answer, not as an empty catalog', async () => {
+    setLocale('en');
+    fakeCatalog = { status: 'unavailable', models: [], commands: [], agents: [] };
+    try {
+      const plugin = createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      });
+      const tab = new CoOberSettingsTab(plugin);
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Run Diagnostics') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+
+      expect(tab.containerEl.textContent).toContain('Fail: Native OpenCode catalog');
+      expect(tab.containerEl.textContent).toContain('`opencode serve` did not answer');
+      // An unreachable install is never dressed up as a catalog that is genuinely
+      // empty — the two failures carry different remedies and must not collapse.
+      expect(tab.containerEl.textContent).not.toContain('listed no models');
+    } finally {
+      fakeCatalog = null;
+    }
+  });
+
+  it('fails the catalog row when an answered catalog lists nothing', async () => {
+    setLocale('en');
+    // Pin the version probe to a clean reading so the whole-container negative
+    // assertion below isolates the catalog row: the version row's default
+    // failure also prints "did not answer", and this test is about the catalog
+    // not collapsing its empty branch into the unavailable sentence.
+    fakeVersion = { raw: 'opencode v1.5.3', version: '1.5.3', generation: 1, failed: false };
+    fakeCatalog = { status: 'observed', models: [], commands: [], agents: [] };
+    try {
+      const plugin = createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      });
+      const tab = new CoOberSettingsTab(plugin);
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Run Diagnostics') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+
+      expect(tab.containerEl.textContent).toContain('Fail: Native OpenCode catalog');
+      expect(tab.containerEl.textContent).toContain('listed no models');
+      expect(tab.containerEl.textContent).not.toContain('did not answer');
+    } finally {
+      fakeCatalog = null;
       fakeVersion = null;
     }
   });

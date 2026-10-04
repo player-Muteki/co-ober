@@ -9,7 +9,9 @@ import { CLIENT_VERSION } from './client/acp';
 import { applyPermissionTier } from './client/permissionTier';
 import { validateCustomAgent } from './agents/custom';
 import { resolveCommandPath } from './utils/commandResolution';
+import { getVaultPath } from './utils/vault';
 import { detectOpencodeVersion } from './opencode/OpencodeVersion';
+import { detectOpencodeNativeCatalog } from './opencode/OpencodeCatalog';
 import { sanitizeVaultPath } from './sync/templates';
 import { MIN_OPEN_TABS, MAX_OPEN_TABS, DEFAULT_OPEN_TABS } from './constants';
 
@@ -768,6 +770,26 @@ export class CoOberSettingsTab extends PluginSettingTab {
           ? labels.versionGeneration.replace('{version}', reading.version).replace('{generation}', String(reading.generation))
           : reading.version;
     results.push({ label: labels.version, ok: !reading.failed && !!reading.version, detail: versionDetail });
+
+    // Ask the native install what it offers, over a brief loopback `opencode
+    // serve`. This is a different channel from the runtime metadata row below it:
+    // ACP reports what the connected session exposes, this reports what the native
+    // install's own catalog lists. Both are observations of a real signal — the
+    // row Passes only when the server answered AND named something, so an install
+    // that could not be reached reads as a failure, not as "the catalog is empty",
+    // and a catalog that genuinely has nothing reads as a failure too, never as a
+    // fabricated roster.
+    const catalog = await detectOpencodeNativeCatalog(this.plugin.settings.opencodePath, getVaultPath(this.plugin.app));
+    const catalogTotal = catalog.models.length + catalog.commands.length + catalog.agents.length;
+    const catalogDetail = catalog.status === 'unavailable'
+      ? labels.catalogUnavailable
+      : catalogTotal === 0
+        ? labels.catalogEmpty
+        : labels.catalogDetail
+          .replace('{models}', String(catalog.models.length))
+          .replace('{commands}', String(catalog.commands.length))
+          .replace('{agents}', String(catalog.agents.length));
+    results.push({ label: labels.catalog, ok: catalog.status === 'observed' && catalogTotal > 0, detail: catalogDetail });
 
     const existingClient = this.plugin.getClient();
     const connected = existingClient?.isConnected() ? true : await this.plugin.initClient();
