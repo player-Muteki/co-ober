@@ -1090,6 +1090,55 @@ describe('CoOberViewController — one tab’s teardown stays inside that tab (0
       expect(toolbar.updateModels).toHaveBeenCalledWith([], undefined, undefined);
       expect(toolbar.updateAgents).toHaveBeenCalledWith([], undefined);
     });
+
+    it('leaves the strip empty instead of minting a replacement tab', async () => {
+      // The reader's last close is the act of sending the tab away; a fresh
+      // badge appearing in its place advertised a tab with no session, no
+      // negotiable model and nothing to select. The placeholder anchoring the
+      // shared surfaces stays off the strip until an action claims it.
+      const tabA = h.controller.activeTabId();
+      await h.controller.closeTab(tabA);
+      expect(h.controller.listTabIds()).toEqual([]);
+      expect(h.controller.tabDescriptors()).toEqual([]);
+    });
+
+    it('does not persist the off-strip placeholder as a restorable tab', async () => {
+      const tabA = h.controller.activeTabId();
+      await h.controller.closeTab(tabA);
+      const setTabShell = h.deps.sessionStore.setTabShell as ReturnType<typeof vi.fn>;
+      expect(setTabShell).toHaveBeenLastCalledWith([], null);
+    });
+
+    it('claims the placeholder as a tab once the reader asks it a question', async () => {
+      const client = createMockClient();
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      const tabA = h.controller.activeTabId();
+      await h.controller.closeTab(tabA);
+      expect(h.controller.listTabIds()).toEqual([]);
+
+      await h.controller.send('hello', []);
+
+      expect(h.controller.listTabIds()).toHaveLength(1);
+      expect(h.controller.tabDescriptors()[0]).toMatchObject({
+        tabId: h.controller.activeTabId(),
+        active: true,
+      });
+    });
+
+    it('retires the off-strip placeholder when + opens a real tab', async () => {
+      const client = createMockClient();
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      const tabA = h.controller.activeTabId();
+      await h.controller.closeTab(tabA);
+      const placeholderTabId = h.controller.activeTabId();
+      expect(h.controller.listTabIds()).toEqual([]);
+
+      await h.controller.newSession(true);
+
+      expect(h.controller.listTabIds()).toHaveLength(1);
+      expect(h.controller.activeTabId()).not.toBe(placeholderTabId);
+      expect(h.disposedTabs).toContain(placeholderTabId);
+    });
   });
 
   describe('a contested stream slot', () => {
@@ -2938,10 +2987,12 @@ describe('CoOberViewController — the shared surfaces a tab leaves behind (0.2.
 
     await h.controller.closeTab(tabId);
 
-    // The strip starts a fresh tab, but nothing hands the shared bar or the arc
-    // to it: without this the welcome screen kept the stopped tab's *stop*
-    // button and an arc full of a context that no longer existed.
-    expect(h.controller.listTabIds()).toHaveLength(1);
+    // Closing the last tab leaves no strip behind — the placeholder that
+    // anchors the shared surfaces is deliberately off it — and nothing hands
+    // the bar or the arc a tab: without the re-projection below the welcome
+    // screen kept the stopped tab's *stop* button and an arc full of a
+    // context that no longer existed.
+    expect(h.controller.listTabIds()).toEqual([]);
     expect(setStreaming).toHaveBeenLastCalledWith(false);
     expect(setSending).toHaveBeenLastCalledWith(false);
     expect(meter).toHaveBeenLastCalledWith(null);

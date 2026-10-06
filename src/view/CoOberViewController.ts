@@ -183,6 +183,16 @@ export class CoOberViewController {
   private sessionMutex = new Mutex();
   private runtimes = new Map<string, SessionRuntime>();
   private activeRuntime!: SessionRuntime;
+  /**
+   * The off-strip placeholder left behind by the last tab's close. It is the
+   * projection anchor for the shared surfaces — composer, send button,
+   * context arc, welcome — while no tab exists, and it is deliberately not a
+   * tab: a badge there would advertise a session-less surface with no model
+   * to negotiate. `claimTab` promotes it the moment the reader starts a
+   * conversation from it; `activateRuntime` retires it when a real tab takes
+   * over instead.
+   */
+  private placeholderRuntime: SessionRuntime | null = null;
   private tabSeq = 0;
   private persistFailed = false;
   private disposed = false;
@@ -272,6 +282,22 @@ export class CoOberViewController {
     return [...this.runtimes.keys()];
   }
 
+  /**
+   * Make the off-strip placeholder a real tab. Closing the last tab leaves a
+   * projection anchor that is deliberately not on the strip — a badge there
+   * would advertise a tab with no session and no negotiable model. This runs
+   * the moment the reader starts a conversation from it (a send, `+`, an
+   * opened session), which is when it earns a place on the strip; for a
+   * runtime already on the strip it is a no-op.
+   */
+  private claimTab(rt: SessionRuntime): void {
+    if (this.runtimes.has(rt.tabId)) return;
+    this.runtimes.set(rt.tabId, rt);
+    if (rt === this.placeholderRuntime) this.placeholderRuntime = null;
+    this.notifyTabsChanged();
+    this.persistTabShell();
+  }
+
   runtimeForTab(tabId: string): SessionRuntime | undefined {
     return this.runtimes.get(tabId);
   }
@@ -311,6 +337,16 @@ export class CoOberViewController {
     rt.renderer.setActive(true);
     rt.unread = false;
     this.deps.onActiveTabChanged?.(prev?.tabId ?? null, rt.tabId);
+    if (prev && prev !== rt && prev === this.placeholderRuntime) {
+      // The reader chose a real tab over the off-strip placeholder: it has no
+      // session and nothing was ever claimed on it, so it retires — panel and
+      // stream teardown included — rather than orphaning a second invisible
+      // surface. A just-closed tab is not the placeholder; its teardown
+      // already ran in closeTab.
+      this.placeholderRuntime = null;
+      this.deps.disposeTabPanel?.(prev.tabId);
+      void prev.streamCtrl.dispose();
+    }
     if (rt.sessionId) this.deps.sessionStore.setActive(rt.sessionId);
     this.loadToolbarOptions();
     // The context meter is one shared surface too: a background turn updates
@@ -419,7 +455,17 @@ export class CoOberViewController {
       if (next) {
         this.activateRuntime(next);
       } else {
-        this.activeRuntime = this.openRuntime(null);
+        const placeholder = this.openRuntime(null);
+        // The placeholder is the projection anchor for the shared surfaces —
+        // composer, send button, context arc, welcome — while no tab exists.
+        // It must not itself reappear on the strip: closing the last tab is
+        // the act of sending it away, and a badge minted in its place is a
+        // tab with no session, no negotiable model and nothing to select.
+        // It joins the strip only when an action (a send, `+`, an opened
+        // session) turns it into a conversation — see claimTab.
+        this.runtimes.delete(placeholder.tabId);
+        this.placeholderRuntime = placeholder;
+        this.activeRuntime = placeholder;
         // The composer, the send button and the context arc are shared surfaces,
         // and activating a tab re-projects them from the tab coming forward.
         // Closing the last one has no tab to hand them to, so the dead tab's
@@ -576,7 +622,12 @@ export class CoOberViewController {
       if (draft) shell.draft = draft;
       return shell;
     });
-    this.deps.sessionStore.setTabShell(shells, this.activeRuntime.tabId);
+    // The front tab is only meaningful when it is on the strip; the
+    // off-strip placeholder must not be written as a restorable tab —
+    // that is precisely the invalid model-less tab this state refuses to
+    // show, and persisting it would reopen it on the next launch.
+    const activeTabId = this.runtimes.has(this.activeRuntime.tabId) ? this.activeRuntime.tabId : null;
+    this.deps.sessionStore.setTabShell(shells, activeTabId);
     // The shell (and the half-typed draft riding on it) is only on disk once a
     // save runs; schedule the same debounced write the transcript stream uses so
     // a tab switch or an edited draft reaches data.json without a chat turn.
@@ -960,6 +1011,12 @@ export class CoOberViewController {
     for (const rt of this.runtimes.values()) this.dropQueuedPrompts(rt);
     for (const rt of this.runtimes.values()) this.endSideChat(rt);
     for (const rt of this.runtimes.values()) await rt.streamCtrl.dispose();
+    // The off-strip placeholder is not in `runtimes`; its stream teardown has
+    // to run too, or a view closed over an unclaimed placeholder leaks it.
+    if (this.placeholderRuntime) {
+      await this.placeholderRuntime.streamCtrl.dispose();
+      this.placeholderRuntime = null;
+    }
     if (this.shellSaveTimer !== null) {
       window.clearTimeout(this.shellSaveTimer);
       this.shellSaveTimer = null;
@@ -1489,6 +1546,7 @@ export class CoOberViewController {
     const adopt = !forceNewTab && this.canAdoptTab(homeTab);
     if (!adopt && this.tabLimitReached()) return;
     const rt = adopt ? homeTab : this.openRuntime(null);
+    this.claimTab(rt);
     if (!adopt) this.activateRuntime(rt);
     else this.resetRuntimeView(rt);
 
@@ -1589,6 +1647,7 @@ export class CoOberViewController {
   }
 
   async ensureRuntimeSession(rt: SessionRuntime = this.activeRuntime): Promise<string | null> {
+    this.claimTab(rt);
     if (!(await this.ensureClientConnected())) return null;
     const client = this.deps.runtime.getClient();
     if (!client) return null;
@@ -1645,6 +1704,7 @@ export class CoOberViewController {
     const adopt = this.canAdoptActiveTab();
     if (!adopt && this.tabLimitReached()) return;
     const rt = adopt ? this.activeRuntime : this.openRuntime(sessionId);
+    this.claimTab(rt);
     if (adopt) this.resetRuntimeView(rt);
     else this.activateRuntime(rt);
     rt.state.sessionId = sessionId;
@@ -1876,6 +1936,7 @@ export class CoOberViewController {
     const adopt = this.canAdoptTab(home);
     if (!adopt && this.tabLimitReached()) return;
     const rt = adopt ? home : this.openRuntime(sessionId);
+    this.claimTab(rt);
     if (adopt) this.resetRuntimeView(rt);
     else this.activateRuntime(rt);
     rt.state.sessionId = sessionId;
@@ -2551,6 +2612,9 @@ export class CoOberViewController {
     rt: SessionRuntime = this.activeRuntime,
     opts: { paintedHead?: boolean; imagesHead?: PromptPart[]; inlineEditHead?: InlineEditState } = {},
   ): Promise<boolean> {
+    // Asking a conversation of the placeholder is the reader claiming it as a
+    // tab: from here on its transcript, queue and badge must be reachable.
+    this.claimTab(rt);
     if (this.promptParkedFor(rt)) {
       // A queued prompt would be answered by the agent after the pending
       // request is decided anyway, so the reader is told to decide it first
