@@ -13,6 +13,7 @@ import { getVaultPath } from './utils/vault';
 import { detectOpencodeVersion } from './opencode/OpencodeVersion';
 import { detectOpencodeNativeCatalog, type OpencodeCatalogObservation } from './opencode/OpencodeCatalog';
 import { detectOpencodeNativeTurnExecution, type OpencodeTurnObservation } from './opencode/OpencodeTurnProbe';
+import { detectOpencodeNativeTurnStream, type OpencodeStreamObservation } from './opencode/OpencodeStreamProbe';
 import { sanitizeVaultPath } from './sync/templates';
 import { MIN_OPEN_TABS, MAX_OPEN_TABS, DEFAULT_OPEN_TABS } from './constants';
 
@@ -100,6 +101,12 @@ export class CoOberSettingsTab extends PluginSettingTab {
   // until a probe has run — an un-run probe cannot claim the engine works.
   private nativeTurnRunning = false;
   private nativeTurn: OpencodeTurnObservation | null = null;
+  // The stream probe runs one throwaway turn too, but reads its answer off the
+  // live SSE delta channel rather than the finished message — so it is likewise
+  // opt-in. `nativeStream` is `null` until it has run; an un-run probe claims no
+  // streaming at all.
+  private nativeStreamRunning = false;
+  private nativeStream: OpencodeStreamObservation | null = null;
   // Permission-tier dropdown held on the tab so a chat-view bar click can
   // push its new tier into the same field here. The dropdown's own `.setValue`
   // runs once at build time; a bar chip that writes `settings.permissionMode`
@@ -766,6 +773,7 @@ export class CoOberSettingsTab extends PluginSettingTab {
 
     this.renderNativeCatalogBody(containerEl, labels);
     this.renderNativeTurnProbe(containerEl, labels);
+    this.renderNativeStreamProbe(containerEl, labels);
   }
 
   private renderNativeCatalogBody(containerEl: HTMLElement, labels: ReturnType<typeof locale>['settings']['nativeCatalog']): void {
@@ -860,6 +868,61 @@ export class CoOberSettingsTab extends PluginSettingTab {
       this.nativeTurn = { status: 'unavailable', modelId: undefined, finish: undefined, outputTokens: undefined };
     } finally {
       this.nativeTurnRunning = false;
+      this.render();
+    }
+  }
+
+  private renderNativeStreamProbe(containerEl: HTMLElement, labels: ReturnType<typeof locale>['settings']['nativeCatalog']): void {
+    new Setting(containerEl)
+      .setName(labels.streamHeading)
+      .setDesc(labels.streamDescription)
+      .addButton((button) => {
+        button.setButtonText(this.nativeStreamRunning ? labels.streamRunning : this.nativeStream ? labels.streamRerun : labels.streamRun);
+        button.buttonEl.disabled = this.nativeStreamRunning;
+        button.onClick(async () => {
+          await this.runNativeStreamProbe();
+        });
+      });
+
+    if (this.nativeStreamRunning) {
+      new Setting(containerEl).setName(labels.streamRunningDetail);
+      return;
+    }
+    const reading = this.nativeStream;
+    if (!reading) {
+      new Setting(containerEl).setName(labels.streamNotRun);
+      return;
+    }
+    if (reading.status === 'unavailable') {
+      new Setting(containerEl).setName(labels.streamUnavailable);
+      return;
+    }
+    if (reading.status === 'admitted') {
+      // The kernel took the turn but streamed no answer text over the event channel,
+      // so streaming is live-capable yet not confirmed — never reported as streamed.
+      new Setting(containerEl).setName(labels.streamAdmitted);
+      return;
+    }
+    // 'streamed': a non-empty answer was assembled purely from live delta frames.
+    // State the concrete counts the wire carried, and only claim the kernel agreed
+    // when its own ended frame matched the assembly.
+    new Setting(containerEl)
+      .setName(labels.streamAnswer.replace('{answer}', reading.answer ?? ''))
+      .setDesc(labels.streamAnswerDetail
+        .replace('{text}', String(reading.textDeltas))
+        .replace('{reasoning}', String(reading.reasoningDeltas))
+        .replace('{agreement}', reading.confirmed ? labels.streamConfirmed : labels.streamUnconfirmed));
+  }
+
+  private async runNativeStreamProbe(): Promise<void> {
+    this.nativeStreamRunning = true;
+    this.render();
+    try {
+      this.nativeStream = await detectOpencodeNativeTurnStream(this.plugin.settings.opencodePath, getVaultPath(this.plugin.app));
+    } catch {
+      this.nativeStream = { status: 'unavailable', textDeltas: 0, reasoningDeltas: 0, answer: undefined, confirmed: false };
+    } finally {
+      this.nativeStreamRunning = false;
       this.render();
     }
   }

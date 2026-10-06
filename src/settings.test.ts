@@ -53,6 +53,15 @@ vi.mock('./opencode/OpencodeTurnProbe', () => ({
     fakeTurn ?? { status: 'unavailable', modelId: undefined, finish: undefined, outputTokens: undefined }),
 }));
 
+// The native stream probe runs one throwaway turn and rebuilds its answer from the
+// live event stream; a settings test must never spawn a real CLI or burn a model call.
+// Faked to the reading each test chooses, defaulting to `unavailable`.
+let fakeStream: { status: 'streamed' | 'admitted' | 'unavailable'; textDeltas: number; reasoningDeltas: number; answer: string | undefined; confirmed: boolean } | null = null;
+vi.mock('./opencode/OpencodeStreamProbe', () => ({
+  detectOpencodeNativeTurnStream: vi.fn(async () =>
+    fakeStream ?? { status: 'unavailable', textDeltas: 0, reasoningDeltas: 0, answer: undefined, confirmed: false }),
+}));
+
 describe('CoOberSettingsTab locale refresh', () => {
   it('redraws settings labels and refreshes open chat views when language changes', async () => {
     setLocale('en');
@@ -756,6 +765,113 @@ describe('CoOberSettingsTab locale refresh', () => {
       expect(tab.containerEl.textContent).not.toContain('executed a throwaway turn');
     } finally {
       fakeTurn = null;
+    }
+  });
+
+  it('leaves the native stream probe un-run until the button is pressed', async () => {
+    setLocale('en');
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      }));
+      tab.display();
+      // Opening the panel has not spent a model call, so it must not already claim
+      // the kernel streamed an answer it never watched.
+      expect(tab.containerEl.textContent).toContain('Probe the stream');
+      expect(tab.containerEl.textContent).not.toContain('streamed an answer live');
+    } finally {
+      fakeStream = null;
+    }
+  });
+
+  it('reports the answer the stream probe assembled, and that the kernel agreed', async () => {
+    setLocale('en');
+    fakeStream = { status: 'streamed', textDeltas: 1, reasoningDeltas: 15, answer: 'OK', confirmed: true };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      }));
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Probe the stream') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+
+      expect(tab.containerEl.textContent).toContain('streamed an answer live');
+      expect(tab.containerEl.textContent).toContain('1 text deltas');
+      expect(tab.containerEl.textContent).toContain('15 reasoning deltas');
+      expect(tab.containerEl.textContent).toContain('kernel agreed: yes');
+    } finally {
+      fakeStream = null;
+    }
+  });
+
+  it('does not claim the kernel agreed when the ended frame disagreed', async () => {
+    setLocale('en');
+    fakeStream = { status: 'streamed', textDeltas: 2, reasoningDeltas: 0, answer: 'OK', confirmed: false };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      }));
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Probe the stream') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+
+      expect(tab.containerEl.textContent).toContain('streamed an answer live');
+      // The answer still streamed, but the honesty rule keeps agreement a separate
+      // claim: no matching ended frame means "no", never an assumed "yes".
+      expect(tab.containerEl.textContent).toContain('kernel agreed: no');
+      expect(tab.containerEl.textContent).not.toContain('kernel agreed: yes');
+    } finally {
+      fakeStream = null;
+    }
+  });
+
+  it('separates an admitted-but-unstreamed turn from a streamed one', async () => {
+    setLocale('en');
+    fakeStream = { status: 'admitted', textDeltas: 0, reasoningDeltas: 0, answer: undefined, confirmed: false };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      }));
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Probe the stream') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+
+      expect(tab.containerEl.textContent).toContain('event channel live, streaming not confirmed');
+      expect(tab.containerEl.textContent).not.toContain('streamed an answer live');
+      expect(tab.containerEl.textContent).not.toContain('Could not read the native event stream');
+    } finally {
+      fakeStream = null;
+    }
+  });
+
+  it('names an unreadable native event stream as failed, not admitted or streamed', async () => {
+    setLocale('en');
+    fakeStream = { status: 'unavailable', textDeltas: 0, reasoningDeltas: 0, answer: undefined, confirmed: false };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      }));
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Probe the stream') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+
+      expect(tab.containerEl.textContent).toContain('Could not read the native event stream');
+      expect(tab.containerEl.textContent).not.toContain('event channel live');
+      expect(tab.containerEl.textContent).not.toContain('streamed an answer live');
+    } finally {
+      fakeStream = null;
     }
   });
 
