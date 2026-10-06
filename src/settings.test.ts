@@ -62,6 +62,15 @@ vi.mock('./opencode/OpencodeStreamProbe', () => ({
     fakeStream ?? { status: 'unavailable', textDeltas: 0, reasoningDeltas: 0, answer: undefined, confirmed: false }),
 }));
 
+// The native fork probe forks one throwaway session and reads back the child; a
+// settings test must never spawn a real CLI or fork real sessions. Faked to the
+// reading each test chooses, defaulting to `unavailable`.
+let fakeFork: { status: 'anchored' | 'copied-whole' | 'child-empty' | 'unexpected' | 'unavailable'; parentRows: number; childRows: number; apiForkRoute: 'json' | 'html' | 'error' } | null = null;
+vi.mock('./opencode/OpencodeForkProbe', () => ({
+  detectOpencodeNativeCheckpointFork: vi.fn(async () =>
+    fakeFork ?? { status: 'unavailable', parentRows: 0, childRows: 0, apiForkRoute: 'error' }),
+}));
+
 describe('CoOberSettingsTab locale refresh', () => {
   it('redraws settings labels and refreshes open chat views when language changes', async () => {
     setLocale('en');
@@ -872,6 +881,87 @@ describe('CoOberSettingsTab locale refresh', () => {
       expect(tab.containerEl.textContent).not.toContain('streamed an answer live');
     } finally {
       fakeStream = null;
+    }
+  });
+
+  it('leaves the native fork probe un-run until the button is pressed', async () => {
+    setLocale('en');
+    fakeFork = null;
+    const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
+      availableModes: [{ id: 'build', name: 'Build' }],
+    }));
+    tab.display();
+    expect(tab.containerEl.textContent).toContain('Probe a fork');
+    expect(tab.containerEl.textContent).toContain('Not run — press');
+    expect(tab.containerEl.textContent).not.toContain('carried no history');
+    expect(tab.containerEl.textContent).not.toContain('fork-from-here is buildable');
+  });
+
+  it('reports a forked child that carried no history as an empty child, not a truncation', async () => {
+    setLocale('en');
+    fakeFork = { status: 'child-empty', parentRows: 4, childRows: 0, apiForkRoute: 'html' };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      }));
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Probe a fork') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+
+      expect(tab.containerEl.textContent).toContain('carried no history');
+      expect(tab.containerEl.textContent).toContain('4 source rows · 0 child rows');
+      // The web UI catch-all must be named for what the probe measured, not as an API.
+      expect(tab.containerEl.textContent).toContain('web UI catch-all (not an API)');
+      expect(tab.containerEl.textContent).not.toContain('fork-from-here is buildable');
+    } finally {
+      fakeFork = null;
+    }
+  });
+
+  it('calls a through-the-boundary copy buildable, and only when the readback showed it', async () => {
+    setLocale('en');
+    fakeFork = { status: 'anchored', parentRows: 5, childRows: 2, apiForkRoute: 'json' };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      }));
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Probe a fork') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+
+      expect(tab.containerEl.textContent).toContain('fork-from-here is buildable');
+      expect(tab.containerEl.textContent).toContain('5 source rows · 2 child rows · /api fork route: answers as JSON');
+      expect(tab.containerEl.textContent).not.toContain('carried no history');
+    } finally {
+      fakeFork = null;
+    }
+  });
+
+  it('names an unreachable native fork as failed, not as an empty child', async () => {
+    setLocale('en');
+    fakeFork = { status: 'unavailable', parentRows: 0, childRows: 0, apiForkRoute: 'error' };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
+        availableModes: [{ id: 'build', name: 'Build' }],
+      }));
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Probe a fork') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+
+      expect(tab.containerEl.textContent).toContain('Could not fork natively');
+      expect(tab.containerEl.textContent).not.toContain('carried no history');
+      expect(tab.containerEl.textContent).not.toContain('fork-from-here is buildable');
+    } finally {
+      fakeFork = null;
     }
   });
 

@@ -36,3 +36,33 @@ the v2 session RFDs) or when opencode ships a fork API that accepts a
 `messageID` boundary. The hook points are already known: a per-message
 action in `ChatRenderer` message wraps and a controller method alongside
 `CoOberViewController.forkSession`.
+
+## Re-check against the live kernel (0.2.57 stage F)
+
+The second trigger condition has now arrived and been measured, not assumed.
+`opencode serve` 1.18.33 ships a fork endpoint that takes a `messageID`
+boundary — `POST /session/{id}/fork?directory=<cwd>` with body `{ messageID }`,
+whose OpenAPI summary reads "Create a new session by forking an existing
+session at a specific message point." A probe (`OpencodeForkProbe.ts`) drives a
+throwaway session and reads back what the child holds.
+
+The measurement overturns the premise that the *anchor* was the missing piece,
+but confirms the decision for a newly-observed reason:
+
+1. **The v2 JSON fork route does not exist.** The `POST /api/session/{id}/fork`
+   shape other references use is caught by the server's single-page web UI and
+   answers `200` with `text/html` — a caller that parsed `.data.id` would be
+   reading a page, not a fork. The probe records this as `apiForkRoute: html`.
+2. **The real fork carries no history into the child.** Forking at the first
+   user message returns a child session (id, "(fork #N)" title) that reads back
+   **zero rows** — confirmed through both the v2 `.../message` API and the
+   kernel's own `session_message` SQLite table (the store co-ober reads). The
+   boundary is accepted and ignored.
+
+So "fork from here" is still not buildable on this install — not because the
+protocol lacks an anchor (it now has one) but because the kernel's fork does
+not copy the source transcript at any boundary. The per-message action stays
+unimplemented; `OpencodeForkProbe.ts` reports `child-empty` on the Settings
+surface so this is re-measurable on any future install, and only an `anchored`
+reading there would justify building the feature.
+

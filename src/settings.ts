@@ -14,6 +14,7 @@ import { detectOpencodeVersion } from './opencode/OpencodeVersion';
 import { detectOpencodeNativeCatalog, type OpencodeCatalogObservation } from './opencode/OpencodeCatalog';
 import { detectOpencodeNativeTurnExecution, type OpencodeTurnObservation } from './opencode/OpencodeTurnProbe';
 import { detectOpencodeNativeTurnStream, type OpencodeStreamObservation } from './opencode/OpencodeStreamProbe';
+import { detectOpencodeNativeCheckpointFork, type OpencodeForkObservation } from './opencode/OpencodeForkProbe';
 import { sanitizeVaultPath } from './sync/templates';
 import { MIN_OPEN_TABS, MAX_OPEN_TABS, DEFAULT_OPEN_TABS } from './constants';
 
@@ -107,6 +108,11 @@ export class CoOberSettingsTab extends PluginSettingTab {
   // streaming at all.
   private nativeStreamRunning = false;
   private nativeStream: OpencodeStreamObservation | null = null;
+  // The fork probe forks one throwaway session at a message boundary and reads
+  // back what the child holds. It never waits for an answer, but it does start a
+  // server and fork sessions, so it is opt-in like the others.
+  private nativeForkRunning = false;
+  private nativeFork: OpencodeForkObservation | null = null;
   // Permission-tier dropdown held on the tab so a chat-view bar click can
   // push its new tier into the same field here. The dropdown's own `.setValue`
   // runs once at build time; a bar chip that writes `settings.permissionMode`
@@ -774,6 +780,7 @@ export class CoOberSettingsTab extends PluginSettingTab {
     this.renderNativeCatalogBody(containerEl, labels);
     this.renderNativeTurnProbe(containerEl, labels);
     this.renderNativeStreamProbe(containerEl, labels);
+    this.renderNativeForkProbe(containerEl, labels);
   }
 
   private renderNativeCatalogBody(containerEl: HTMLElement, labels: ReturnType<typeof locale>['settings']['nativeCatalog']): void {
@@ -923,6 +930,63 @@ export class CoOberSettingsTab extends PluginSettingTab {
       this.nativeStream = { status: 'unavailable', textDeltas: 0, reasoningDeltas: 0, answer: undefined, confirmed: false };
     } finally {
       this.nativeStreamRunning = false;
+      this.render();
+    }
+  }
+
+  private renderNativeForkProbe(containerEl: HTMLElement, labels: ReturnType<typeof locale>['settings']['nativeCatalog']): void {
+    new Setting(containerEl)
+      .setName(labels.forkHeading)
+      .setDesc(labels.forkDescription)
+      .addButton((button) => {
+        button.setButtonText(this.nativeForkRunning ? labels.forkRunning : this.nativeFork ? labels.forkRerun : labels.forkRun);
+        button.buttonEl.disabled = this.nativeForkRunning;
+        button.onClick(async () => {
+          await this.runNativeForkProbe();
+        });
+      });
+
+    if (this.nativeForkRunning) {
+      new Setting(containerEl).setName(labels.forkRunningDetail);
+      return;
+    }
+    const reading = this.nativeFork;
+    if (!reading) {
+      new Setting(containerEl).setName(labels.forkNotRun);
+      return;
+    }
+    if (reading.status === 'unavailable') {
+      new Setting(containerEl).setName(labels.forkUnavailable);
+      return;
+    }
+    // Every other status really did fork a child — the reading says what that
+    // child turned out to hold. The row counts and the v2 route shape are the
+    // concrete facts the wire carried; nothing here implies a truncation the
+    // readback did not show.
+    const routeLabel = reading.apiForkRoute === 'json' ? labels.forkRouteJson
+      : reading.apiForkRoute === 'html' ? labels.forkRouteHtml
+        : labels.forkRouteError;
+    const statusLabel = reading.status === 'child-empty' ? labels.forkChildEmpty
+      : reading.status === 'copied-whole' ? labels.forkCopiedWhole
+        : reading.status === 'anchored' ? labels.forkAnchored
+          : labels.forkUnexpected;
+    new Setting(containerEl)
+      .setName(statusLabel)
+      .setDesc(labels.forkDetail
+        .replace('{parent}', String(reading.parentRows))
+        .replace('{child}', String(reading.childRows))
+        .replace('{route}', routeLabel));
+  }
+
+  private async runNativeForkProbe(): Promise<void> {
+    this.nativeForkRunning = true;
+    this.render();
+    try {
+      this.nativeFork = await detectOpencodeNativeCheckpointFork(this.plugin.settings.opencodePath, getVaultPath(this.plugin.app));
+    } catch {
+      this.nativeFork = { status: 'unavailable', parentRows: 0, childRows: 0, apiForkRoute: 'error' };
+    } finally {
+      this.nativeForkRunning = false;
       this.render();
     }
   }
