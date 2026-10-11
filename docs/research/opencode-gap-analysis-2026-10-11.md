@@ -1,5 +1,9 @@
 # Co-Ober 与 Claudian OpenCode 实现差距调研
 
+> 后续更新：0.2.61 已将 Claudian 快进至 `630bfec9` / 2.3.16，并补齐诊断
+> 任务生命周期。新的基线、差距与验证见
+> [诊断生命周期调研](opencode-diagnostics-lifecycle-2026-10-11.md)；本文保留当轮证据。
+
 调研日期：2026-10-11。
 
 ## 1. 基线与证据边界

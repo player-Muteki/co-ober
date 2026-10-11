@@ -1,3 +1,17 @@
+## 0.2.61 - 2026-10-11
+
+### Added
+
+- **Owned, cancellable diagnostics**: Settings now offers a localized cancel action. One service captures the CLI, working directory and launch environment for the entire run, fences each stage and final publication, and withdraws old diagnostic passes when the source changes. Cancel, Settings close, CLI changes and locale changes suppress late results; retries do not wait for an uncooperative collector. Diagnostics redraw only their own container, preserving edited connection controls.
+
+### Fixed
+
+- **Version probe shutdown**: pre-cancelled operations no longer launch a process. Cancellation, deadlines and excessive output settle promptly even if termination throws or close never arrives; environment snapshots, bounded stdout, stderr draining and late-error handling keep the probe isolated. Cancelling diagnostics never closes a shared ACP chat session; already-started shared runtime requests may finish internally, but cannot publish or start later diagnostic stages.
+
+### Validation
+
+- 81 test files / 2,407 tests passed, with TypeScript and ESLint. A read-only check observed OpenCode 1.18.33; cancelling a real version subprocess returned a failed reading and observed its SIGKILL close without creating a session or invoking a model. Claudian was fast-forwarded by 38 exact, hash-verified commits to `630bfec9` (2.3.16) and its latest OpenCode changes were reviewed. V2 HTTP execution, native skills/compact/steer and turn/stream/fork probe cancellation remain outside this release; ACP remains the chat backend.
+
 ## 0.2.60 - 2026-10-11
 
 ### Added

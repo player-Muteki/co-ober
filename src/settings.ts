@@ -13,6 +13,7 @@ import { getVaultPath } from './utils/vault';
 import { detectOpencodeVersion } from './opencode/OpencodeVersion';
 import { detectOpencodeNativeCatalog } from './opencode/OpencodeCatalog';
 import { OpencodeCatalogService } from './opencode/OpencodeCatalogService';
+import { OpencodeDiagnosticsService, type DiagnosticResult, type OpencodeDiagnosticContext } from './opencode/OpencodeDiagnosticsService';
 import { detectOpencodeNativeTurnExecution, type OpencodeTurnObservation } from './opencode/OpencodeTurnProbe';
 import { detectOpencodeNativeTurnStream, type OpencodeStreamObservation } from './opencode/OpencodeStreamProbe';
 import { detectOpencodeNativeCheckpointFork, type OpencodeForkObservation } from './opencode/OpencodeForkProbe';
@@ -65,12 +66,6 @@ interface ToolbarAwareView {
   reloadToolbarOptions?: () => void;
 }
 
-interface DiagnosticResult {
-  label: string;
-  ok: boolean;
-  detail: string;
-}
-
 interface PathDiagnostic {
   ok: boolean;
   detail: string;
@@ -87,8 +82,8 @@ export class CoOberSettingsTab extends PluginSettingTab {
   // answer". A `false` loaded only means "nothing here" if the fetch also
   // did not fail — otherwise the guard below would call a failure an empty.
   private runtimeOptionsUnavailable = false;
-  private diagnosticsRunning = false;
-  private diagnosticsResults: DiagnosticResult[] = [];
+  private readonly diagnosticsService = new OpencodeDiagnosticsService();
+  private diagnosticsEl?: HTMLElement;
   private readonly catalogService = new OpencodeCatalogService();
   private nativeCatalogEl?: HTMLElement;
   private shown = false;
@@ -128,6 +123,7 @@ export class CoOberSettingsTab extends PluginSettingTab {
   override hide(): void {
     this.shown = false;
     this.catalogService.cancel();
+    this.diagnosticsService.cancel();
   }
 
   private catalogSource() {
@@ -173,6 +169,8 @@ export class CoOberSettingsTab extends PluginSettingTab {
           if (this.validateOpencodePath(trimmed)) {
             s.opencodePath = trimmed;
             this.catalogService.setSource(this.catalogSource());
+            this.diagnosticsService.setSource(this.catalogSource());
+            this.redrawDiagnostics();
             this.redrawNativeCatalog();
             await this.save();
           } else {
@@ -201,7 +199,8 @@ export class CoOberSettingsTab extends PluginSettingTab {
       .addToggle((t) => t.setValue(s.autoConnect ?? true)
         .onChange(async (v) => { s.autoConnect = v; await this.save(); }));
 
-    this.addDiagnosticsBlock(containerEl);
+    this.diagnosticsEl = containerEl.createDiv();
+    this.addDiagnosticsBlock(this.diagnosticsEl);
 
     // ── Agent ──
   }
@@ -530,16 +529,10 @@ export class CoOberSettingsTab extends PluginSettingTab {
         .onChange(async (v) => {
           s.language = v;
           setLocale(v);
+          // Cached rows and pending work belong to the locale they started in.
+          // Withdraw both before yielding to save; discovery remains user-owned.
+          this.diagnosticsService.clear();
           await this.save();
-          // The diagnostics rows are the finished label/detail strings that
-          // collectDiagnostics baked from the locale it ran in. Re-rendering
-          // restamps the PASS/FAIL prefix (read fresh below) but can only echo
-          // those cached strings verbatim, so a reader who switched to 中文 kept
-          // seeing English rows — "Path: found at …" — inside an otherwise
-          // translated panel. They are restorable only by probing again, which is
-          // the user's click, not ours; withdraw them to the honest "not run yet"
-          // state the panel shows before the first run rather than freeze them.
-          this.diagnosticsResults = [];
           this.refreshOpenViewsLocale();
           this.render();
         }));
@@ -757,19 +750,28 @@ export class CoOberSettingsTab extends PluginSettingTab {
 
   private addDiagnosticsBlock(containerEl: HTMLElement): void {
     const labels = locale().settings.diagnostics;
+    this.diagnosticsService.setSource(this.catalogSource());
+    const state = this.diagnosticsService.getSnapshot();
     new Setting(containerEl).setName(labels.heading).setHeading();
 
     new Setting(containerEl)
       .setName(labels.description)
       .addButton((button) => {
-        button.setButtonText(this.diagnosticsRunning ? labels.running : labels.run);
-        button.buttonEl.disabled = this.diagnosticsRunning;
+        button.setButtonText(state.running ? labels.running : labels.run);
+        button.buttonEl.disabled = state.running;
         button.onClick(async () => {
           await this.runDiagnostics();
         });
       });
 
-    for (const result of this.diagnosticsResults) {
+    if (state.running) {
+      new Setting(containerEl).addButton((button) => {
+        button.setButtonText(labels.cancel);
+        button.onClick(() => { this.diagnosticsService.cancel(); this.redrawDiagnostics(); });
+      });
+    }
+    const results = state.failed ? [{ label: labels.heading, ok: false, detail: labels.unexpectedError }] : state.results;
+    for (const result of results) {
       new Setting(containerEl)
         .setName(`${result.ok ? labels.pass : labels.fail} ${result.label}`)
         .setDesc(result.detail);
@@ -1013,26 +1015,26 @@ export class CoOberSettingsTab extends PluginSettingTab {
     this.redrawNativeCatalog();
   }
 
-  private async runDiagnostics(): Promise<void> {
-    this.diagnosticsRunning = true;
-    this.render();
-
-    try {
-      this.diagnosticsResults = await this.collectDiagnostics();
-    } catch {
-      const labels = locale().settings.diagnostics;
-      this.diagnosticsResults = [{ label: labels.heading, ok: false, detail: labels.unexpectedError }];
-    } finally {
-      this.diagnosticsRunning = false;
-      this.render();
-    }
+  private redrawDiagnostics(): void {
+    if (!this.shown || !this.diagnosticsEl) return;
+    this.diagnosticsEl.empty();
+    this.addDiagnosticsBlock(this.diagnosticsEl);
   }
 
-  private async collectDiagnostics(): Promise<DiagnosticResult[]> {
+  private async runDiagnostics(): Promise<void> {
+    const pending = this.diagnosticsService.run(this.catalogSource(), (context) => this.collectDiagnostics(context));
+    this.redrawDiagnostics();
+    await pending;
+    this.redrawDiagnostics();
+  }
+
+  private async collectDiagnostics({ source, signal, checkCurrent }: OpencodeDiagnosticContext): Promise<DiagnosticResult[]> {
     const labels = locale().settings.diagnostics;
     const results: DiagnosticResult[] = [];
-
-    const pathStatus = this.getOpencodePathStatus(this.plugin.settings.opencodePath);
+    const servers = this.plugin.settings.mcpServers.map((server) => ({ ...server }));
+    const syncFolder = this.plugin.settings.defaultNoteFolder.trim();
+    checkCurrent();
+    const pathStatus = this.getOpencodePathStatus(source.cliPath, source.env);
     results.push({ label: labels.path, ok: pathStatus.ok, detail: pathStatus.detail });
 
     // Ask the configured binary what it is. This is a measurement, not a guess:
@@ -1040,7 +1042,8 @@ export class CoOberSettingsTab extends PluginSettingTab {
     // number reports as such rather than rounding up to a supported version. The
     // generation is only named when the version actually states a major of 1 or
     // 2, so this row can never certify a wire the plugin does not have.
-    const reading = await detectOpencodeVersion(this.plugin.settings.opencodePath);
+    const reading = await detectOpencodeVersion(source.cliPath, { env: source.env, signal });
+    checkCurrent();
     const versionDetail = reading.failed
       ? labels.versionUnavailable
       : !reading.version
@@ -1058,7 +1061,8 @@ export class CoOberSettingsTab extends PluginSettingTab {
     // that could not be reached reads as a failure, not as "the catalog is empty",
     // and a catalog that genuinely has nothing reads as a failure too, never as a
     // fabricated roster.
-    const catalog = await detectOpencodeNativeCatalog(this.plugin.settings.opencodePath, getVaultPath(this.plugin.app));
+    const catalog = await detectOpencodeNativeCatalog(source.cliPath, source.cwd, { env: source.env, signal });
+    checkCurrent();
     const catalogTotal = catalog.models.length + catalog.commands.length + catalog.agents.length;
     const catalogPartial = catalog.routes && Object.values(catalog.routes).some((status) => status === 'unavailable');
     const catalogDetail = catalog.status === 'unavailable'
@@ -1075,6 +1079,7 @@ export class CoOberSettingsTab extends PluginSettingTab {
 
     const existingClient = this.plugin.getClient();
     const connected = existingClient?.isConnected() ? true : await this.plugin.initClient();
+    checkCurrent();
     const client = this.plugin.getClient();
     results.push({
       label: labels.connection,
@@ -1102,6 +1107,7 @@ export class CoOberSettingsTab extends PluginSettingTab {
     const runtimeOutcome = runtimeQueried && client
       ? await this.getRuntimeMetadataCounts(client)
       : null;
+    checkCurrent();
     const runtimeCounts = runtimeOutcome?.ok ? runtimeOutcome.counts : { modes: 0, models: 0, commands: 0 };
     const runtimeLine = runtimeOutcome === null
       ? labels.runtimeNotQueried
@@ -1118,8 +1124,8 @@ export class CoOberSettingsTab extends PluginSettingTab {
       detail: runtimeLine,
     });
 
-    const configuredMcp = this.plugin.settings.mcpServers.length;
-    const enabledServers = this.plugin.settings.mcpServers.filter((server) => server.enabled);
+    const configuredMcp = servers.length;
+    const enabledServers = servers.filter((server) => server.enabled);
     const enabledMcp = enabledServers.length;
     // A Pass has to mean the enabled servers can actually be launched, not merely
     // that their counts were read. An enabled stdio entry with no command, or an
@@ -1135,7 +1141,6 @@ export class CoOberSettingsTab extends PluginSettingTab {
         .replace('{configured}', String(configuredMcp)),
     });
 
-    const syncFolder = this.plugin.settings.defaultNoteFolder.trim();
     // Same validator the sync engine uses, so a PASS here can never disagree
     // with what actually writes: `length > 0` accepted `notes/..`, `/abs`,
     // `notes<>` — every one of which `buildSyncNote` throws on. The row now
@@ -1387,7 +1392,7 @@ export class CoOberSettingsTab extends PluginSettingTab {
     return status.ok;
   }
 
-  private getOpencodePathStatus(path: string): PathDiagnostic {
+  private getOpencodePathStatus(path: string, env?: NodeJS.ProcessEnv): PathDiagnostic {
     const labels = locale().settings.diagnostics;
     if (!path) return { ok: false, detail: labels.pathEmpty };
     // Same resolver the spawn path uses, so diagnostics can never disagree
@@ -1395,7 +1400,7 @@ export class CoOberSettingsTab extends PluginSettingTab {
     // row is titled "Resolved", so it names the target the resolver landed on —
     // not the query: a reader chasing a PATH gap needs the absolute path the
     // spawn will use, and echoing the bare command back would hide it.
-    const resolved = resolveCommandPath(path);
+    const resolved = resolveCommandPath(path, process.platform, env);
     if (resolved) return { ok: true, detail: labels.pathFound.replace('{path}', resolved) };
     return { ok: false, detail: locale().settings.opencodePath.notFound.replace('{path}', path) };
   }

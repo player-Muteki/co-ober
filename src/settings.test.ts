@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
+import { detectOpencodeVersion } from './opencode/OpencodeVersion';
 import { CoOberSettingsTab } from './settings';
 import { detectOpencodeNativeCatalog, type OpencodeCatalogObservation } from './opencode/OpencodeCatalog';
 import { DEFAULT_SETTINGS, VIEW_TYPE } from './types';
@@ -410,6 +411,151 @@ describe('CoOberSettingsTab locale refresh', () => {
 
     expect(plugin.settings.commonModels).toEqual(['openai/gpt']);
     expect(refreshedView.reloadToolbarOptions).toHaveBeenCalled();
+  });
+
+
+  it('cancels diagnostics on hide without launching later probes or repainting hidden settings', async () => {
+    setLocale('en');
+    let resolve!: (value: Awaited<ReturnType<typeof detectOpencodeVersion>>) => void;
+    const read = vi.mocked(detectOpencodeVersion);
+    read.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    const catalog = vi.mocked(detectOpencodeNativeCatalog);
+    const count = catalog.mock.calls.length;
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+    [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Run Diagnostics')!.click();
+    const signal = read.mock.calls.at(-1)?.[1]?.signal;
+    tab.hide();
+    tab.containerEl.textContent = 'Hidden settings sentinel';
+    resolve({ raw: '1.18.33', version: '1.18.33', generation: 1, failed: false });
+    await flushPromises();
+    expect(signal?.aborted).toBe(true);
+    expect(catalog).toHaveBeenCalledTimes(count);
+    expect(plugin.initClient).not.toHaveBeenCalled();
+    expect(tab.containerEl.textContent).toBe('Hidden settings sentinel');
+  });
+
+
+  it('recovers the diagnostics controls when an environment change fences a pending read', async () => {
+    setLocale('en');
+    let resolve!: (value: Awaited<ReturnType<typeof detectOpencodeVersion>>) => void;
+    const read = vi.mocked(detectOpencodeVersion);
+    read.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    const catalog = vi.mocked(detectOpencodeNativeCatalog);
+    const count = catalog.mock.calls.length;
+    const previous = process.env.OPENCODE_DIAGNOSTIC_TEST;
+    const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
+    try {
+      process.env.OPENCODE_DIAGNOSTIC_TEST = 'old';
+      tab.display();
+      [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Run Diagnostics')!.click();
+      expect(read.mock.calls.at(-1)?.[1]?.env?.OPENCODE_DIAGNOSTIC_TEST).toBe('old');
+      process.env.OPENCODE_DIAGNOSTIC_TEST = 'new';
+      resolve({ raw: '1.18.33', version: '1.18.33', generation: 1, failed: false });
+      await flushPromises();
+      expect(catalog).toHaveBeenCalledTimes(count);
+      expect(tab.containerEl.textContent).not.toContain('1.18.33');
+      const button = [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Run Diagnostics');
+      expect(button?.disabled).toBe(false);
+    } finally {
+      tab.hide();
+      if (previous === undefined) delete process.env.OPENCODE_DIAGNOSTIC_TEST;
+      else process.env.OPENCODE_DIAGNOSTIC_TEST = previous;
+    }
+  });
+
+
+  it('fences old diagnostics when CLI changes without replacing the edited input', async () => {
+    setLocale('en');
+    let resolve!: (value: Awaited<ReturnType<typeof detectOpencodeVersion>>) => void;
+    const read = vi.mocked(detectOpencodeVersion);
+    read.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+    const input = [...tab.containerEl.querySelectorAll('input')].find((el) => el.value === 'opencode')!;
+    [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Run Diagnostics')!.click();
+    expect([...tab.containerEl.querySelectorAll('input')]).toContain(input);
+    const signal = read.mock.calls.at(-1)?.[1]?.signal;
+    fakeResolve = () => '/usr/bin/new-opencode';
+    try {
+      input.value = 'new-opencode';
+      input.dispatchEvent(new Event('change'));
+      await flushPromises();
+      expect(signal?.aborted).toBe(true);
+      resolve({ raw: '1.18.33', version: '1.18.33', generation: 1, failed: false });
+      await flushPromises();
+      expect(tab.containerEl.textContent).not.toContain('1.18.33');
+      expect([...tab.containerEl.querySelectorAll('input')]).toContain(input);
+      expect(plugin.settings.opencodePath).toBe('new-opencode');
+      expect([...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Run Diagnostics')?.disabled).toBe(false);
+    } finally { fakeResolve = null; }
+  });
+
+  it('lets diagnostics cancel and retry while a shared runtime metadata read is pending', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const client = plugin.getClient()!;
+    let resolve!: (value: Awaited<ReturnType<typeof client.getAvailableModels>>) => void;
+    vi.mocked(client.getAvailableModels).mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+    const input = [...tab.containerEl.querySelectorAll('input')].find((el) => el.value === 'opencode')!;
+    [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Run Diagnostics')!.click();
+    await flushPromises();
+    [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Cancel diagnostics')!.click();
+    expect([...tab.containerEl.querySelectorAll('input')]).toContain(input);
+    expect(client.closeSession).not.toHaveBeenCalled();
+    expect(client.isConnected()).toBe(true);
+    [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Run Diagnostics')!.click();
+    await flushPromises();
+    expect(tab.containerEl.textContent).toContain('Pass: ACP connection');
+    resolve([{ modelId: 'old/model', name: 'Late model' }]);
+    await flushPromises();
+    expect(tab.containerEl.textContent).not.toContain('1 model');
+    expect(client.createSession).not.toHaveBeenCalled();
+    expect(client.closeSession).not.toHaveBeenCalled();
+  });
+
+  it('does not query shared runtime metadata after an in-flight connection was cancelled', async () => {
+    setLocale('en');
+    const plugin = createPlugin({ refreshLocale: vi.fn() }, {}, {}, false);
+    let resolve!: (value: boolean) => void;
+    vi.mocked(plugin.initClient).mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+    [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Run Diagnostics')!.click();
+    await flushPromises();
+    expect(plugin.initClient).toHaveBeenCalledTimes(1);
+    [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Cancel diagnostics')!.click();
+    resolve(true);
+    await flushPromises();
+    expect(plugin.getClient()?.getAvailableModels).not.toHaveBeenCalled();
+    expect(plugin.getClient()?.closeSession).not.toHaveBeenCalled();
+    expect(tab.containerEl.textContent).not.toContain('Pass: ACP connection');
+  });
+
+  it('cancels in-flight diagnostic rows when the locale changes', async () => {
+    setLocale('en');
+    let resolve!: (value: Awaited<ReturnType<typeof detectOpencodeVersion>>) => void;
+    const read = vi.mocked(detectOpencodeVersion);
+    read.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
+    tab.display();
+    [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Run Diagnostics')!.click();
+    const signal = read.mock.calls.at(-1)?.[1]?.signal;
+    const select = [...tab.containerEl.querySelectorAll('select')].find((el) => [...el.options].some((option) => option.value === 'zh'))!;
+    select.value = 'zh';
+    select.dispatchEvent(new Event('change'));
+    await flushPromises();
+    expect(signal?.aborted).toBe(true);
+    resolve({ raw: '1.18.33', version: '1.18.33', generation: 1, failed: false });
+    await flushPromises();
+    expect(tab.containerEl.textContent).not.toContain('1.18.33');
+    expect(tab.containerEl.textContent).not.toContain('ACP connection');
+    expect(tab.containerEl.textContent).toContain('运行诊断');
+    setLocale('en');
   });
 
   it('renders successful diagnostics for connection and runtime metadata', async () => {

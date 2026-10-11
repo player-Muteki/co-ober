@@ -12,6 +12,7 @@ export interface OpencodeVersionDeps {
   platform?: NodeJS.Platform;
   spawn?: (command: string, args: string[], options: SpawnOptions) => ChildProcess;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 export interface OpencodeVersionReading {
@@ -62,16 +63,16 @@ export async function detectOpencodeVersion(
   deps: OpencodeVersionDeps = {},
 ): Promise<OpencodeVersionReading> {
   const empty: OpencodeVersionReading = { raw: '', version: undefined, generation: undefined, failed: true };
-  if (!cliPath?.trim()) return empty;
+  if (!cliPath?.trim() || deps.signal?.aborted) return empty;
 
-  const env = deps.env ?? process.env;
+  const env = { ...(deps.env ?? process.env) };
   const platform = deps.platform ?? process.platform;
   const spawnFn = deps.spawn ?? spawn;
   const timeoutMs = deps.timeoutMs ?? VERSION_TIMEOUT_MS;
 
   let raw: string;
   try {
-    raw = await runVersion(spawnFn, cliPath.trim(), ['--version'], env, platform, timeoutMs);
+    raw = await runVersion(spawnFn, cliPath.trim(), ['--version'], env, platform, timeoutMs, deps.signal);
   } catch {
     return empty;
   }
@@ -88,6 +89,7 @@ function runVersion(
   env: NodeJS.ProcessEnv,
   platform: NodeJS.Platform,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<string> {
   const info = getSpawnInfo(command, args, platform, env);
   return new Promise<string>((resolve, reject) => {
@@ -105,32 +107,44 @@ function runVersion(
 
     let stdout = '';
     let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      child.kill('SIGKILL');
-      reject(new Error(`timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-
-    child.stdout?.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString('utf-8');
-      if (stdout.length > VERSION_OUTPUT_MAX_CHARS) child.kill('SIGKILL');
-    });
-    child.on('error', (error) => {
+    const finish = (error?: Error, terminate = false): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      reject(error);
-    });
-    child.on('close', (code) => {
+      signal?.removeEventListener('abort', onAbort);
+      child.stdout?.removeListener('data', onData);
+      child.stderr?.removeListener('data', drainStderr);
+      // Keep the error sink until close: spawn/kill may emit an error after abort.
+      if (terminate) {
+        try { child.kill('SIGKILL'); } catch { /* Already gone or unable to signal. */ }
+      }
+      if (error) reject(error);
+      else resolve(stdout);
+    };
+    const onAbort = (): void => finish(new Error('OpenCode version probe aborted.'), true);
+    const onData = (chunk: Buffer): void => {
       if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      // A version probe answers on exit 0. Any other exit — or a killed process —
-      // is an attempt that did not produce a reading, not a version of zero, so it
-      // rejects and the caller reports "could not be read" rather than a number.
-      if (code === 0) resolve(stdout);
-      else reject(new Error(`exit code ${code}`));
-    });
+      const text = chunk.toString('utf-8');
+      if (stdout.length + text.length > VERSION_OUTPUT_MAX_CHARS) {
+        finish(new Error('OpenCode version output exceeded the limit.'), true);
+        return;
+      }
+      stdout += text;
+    };
+    // Drain without retaining stderr so a noisy CLI cannot block on its pipe.
+    const drainStderr = (): void => {};
+    const onError = (error: Error): void => finish(error, true);
+    const onClose = (code: number | null): void => {
+      child.removeListener('error', onError);
+      // Only exit zero certifies a version reading; null is a killed process.
+      finish(code === 0 ? undefined : new Error(`exit code ${code}`));
+    };
+    const timer = setTimeout(() => finish(new Error(`timed out after ${timeoutMs}ms`), true), timeoutMs);
+    child.stdout?.on('data', onData);
+    child.stderr?.on('data', drainStderr);
+    child.on('error', onError);
+    child.once('close', onClose);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort();
   });
 }

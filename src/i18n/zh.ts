@@ -491,6 +491,7 @@ const zh: Locale = {
       desc: '在 Co-Ober 面板打开时、或你在其中操作时连接 OpenCode；Obsidian 启动时恢复这个面板同样算“打开”',
     },
     diagnostics: {
+      cancel: '取消诊断',
       heading: '诊断',
       description: '检查本地 OpenCode 环境和 Co-Ober 运行时元数据',
       run: '运行诊断',

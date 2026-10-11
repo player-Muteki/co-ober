@@ -489,6 +489,7 @@ const en = {
       desc: 'Connect when a Co-Ober panel opens or when you act in it. Obsidian restoring this panel at startup counts as opening it.',
     },
     diagnostics: {
+      cancel: 'Cancel diagnostics',
       heading: 'Diagnostics',
       description: 'Check the local OpenCode environment and Co-Ober runtime metadata',
       run: 'Run Diagnostics',

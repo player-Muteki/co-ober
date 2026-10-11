@@ -1,31 +1,14 @@
 import { detectOpencodeNativeCatalog, type OpencodeCatalogObservation } from './OpencodeCatalog';
 
-export interface OpencodeCatalogSource {
-  cliPath: string;
-  cwd: string;
-  env?: NodeJS.ProcessEnv;
-}
+import { captureOpencodeProbeSource as capture, opencodeProbeSourceKey as sourceKey } from './OpencodeProbeSource';
+export type { OpencodeProbeSource as OpencodeCatalogSource } from './OpencodeProbeSource';
+import type { OpencodeProbeSource as OpencodeCatalogSource } from './OpencodeProbeSource';
 
 export interface OpencodeCatalogSnapshot {
   loading: boolean;
   observation: OpencodeCatalogObservation | null;
   stale: boolean;
   unavailable: boolean;
-}
-
-function capture(source: OpencodeCatalogSource): Required<OpencodeCatalogSource> {
-  return { cliPath: source.cliPath.trim(), cwd: source.cwd, env: { ...(source.env ?? process.env) } };
-}
-
-function sourceKey(source: Required<OpencodeCatalogSource>): string {
-  // Private and ephemeral: never persist or display environment values.
-  return JSON.stringify([
-    source.cliPath,
-    source.cwd,
-    Object.keys(source.env)
-      .sort()
-      .map((key) => [key, source.env[key]]),
-  ]);
 }
 
 /** Read-only discovery owns its cancellation/publication, never a chat session. */
