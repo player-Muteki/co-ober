@@ -7,6 +7,7 @@ export interface AcpSubprocessLaunchSpec {
   args: string[];
   command: string;
   cwd: string;
+  env?: NodeJS.ProcessEnv;
 }
 type CloseListener = (error?: Error) => void;
 export class AcpSubprocess {
@@ -28,6 +29,7 @@ export class AcpSubprocess {
     this.lastExit = null;
     const proc = spawn(this.launchSpec.command, this.launchSpec.args, {
       cwd: this.launchSpec.cwd,
+      ...(this.launchSpec.env ? { env: this.launchSpec.env } : {}),
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
       shell: false,

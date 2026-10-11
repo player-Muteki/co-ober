@@ -64,6 +64,8 @@ const en = {
     nativeSessionMissing: 'This OpenCode session no longer exists (it may have been deleted from OpenCode).',
     runtimeSessionLost: 'The agent no longer holds this session (it may have restarted). Local history is kept; your next message starts a fresh agent session.',
     syncUnsupported: 'This agent supports neither session/load nor session/resume, so the stored session cannot be re-attached. Your next message will start in a fresh agent session.',
+    databaseMismatch: 'Session database mismatch: expected {expected}, current {actual}. Reconnect with the original OpenCode database or create a new conversation; this session was not replaced.',
+    databaseUnknown: 'unknown database',
     syncFailed: 'Could not resume the agent session',
     notSaved: 'Co-Ober could not write this conversation to disk — it only exists in this window until the next successful save.',
     truncated: '[{count} messages truncated]',

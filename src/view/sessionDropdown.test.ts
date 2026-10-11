@@ -596,14 +596,14 @@ describe('SessionDropdown', () => {
     });
 
     it('switches to native session with opencode source', async () => {
-      const dd = makeDropdown(async () => [{ sessionId: 'ses_native_1', title: 'Terminal chat' }]);
+      const dd = makeDropdown(async () => [{ sessionId: 'ses_native_1', title: 'Terminal chat', nativeDatabasePath: '/listed/opencode.db' }]);
       dd.open();
       await new Promise((r) => setTimeout(r, 10));
       const nativeItem = container.querySelector('.co-ober-session-native') as HTMLElement;
       expect(nativeItem).not.toBeNull();
       nativeItem.click();
       await new Promise((r) => setTimeout(r, 10));
-      expect(callbacks.onSwitch).toHaveBeenCalledWith('ses_native_1', 'opencode');
+      expect(callbacks.onSwitch).toHaveBeenCalledWith('ses_native_1', 'opencode', '/listed/opencode.db');
       dd.destroy();
     });
 
@@ -874,14 +874,14 @@ describe('SessionDropdown', () => {
     });
 
     it('switches to a content match with the opencode source', async () => {
-      const dd = makeContentDropdown(async () => [{ sessionId: 'ses_deep', title: 'Deep chat' }]);
+      const dd = makeContentDropdown(async () => [{ sessionId: 'ses_deep', title: 'Deep chat', nativeDatabasePath: '/searched/opencode.db' }]);
       typeQuery(dd, 'foo');
       await new Promise((r) => setTimeout(r, 10));
       const item = container.querySelector('.co-ober-session-content') as HTMLElement;
       expect(item).not.toBeNull();
       item.click();
       await new Promise((r) => setTimeout(r, 10));
-      expect(callbacks.onSwitch).toHaveBeenCalledWith('ses_deep', 'opencode');
+      expect(callbacks.onSwitch).toHaveBeenCalledWith('ses_deep', 'opencode', '/searched/opencode.db');
       dd.destroy();
     });
 

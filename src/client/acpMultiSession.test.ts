@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => {
     stdin = { fake: 'stdin' };
     shutdownCalls = 0;
 
-    constructor(_spec: unknown) {
+    constructor(public readonly spec: unknown) {
       FakeSubprocess.instances.push(this);
     }
 
@@ -304,5 +304,52 @@ describe('AgentRuntime per-session passthroughs', () => {
     expect(acp.getSessionSnapshotFor).toHaveBeenCalledWith('sX');
     expect(runtime.isSessionLoaded('sX')).toBe(true);
     expect(runtime.activeStreamCount()).toBe(2);
+  });
+});
+
+
+describe('AcpClient database launch identity', () => {
+  it('keeps database reads tied to the environment actually passed to the subprocess', async () => {
+    vi.stubEnv('OPENCODE_DB', '/captured/opencode.db');
+    try {
+      const { client } = await connected();
+      vi.stubEnv('OPENCODE_DB', '/changed/opencode.db');
+      expect(client.getNativeDatabasePath()).toBe('/captured/opencode.db');
+      expect(FakeSubprocess.instances.at(-1)?.spec).toMatchObject({ env: { OPENCODE_DB: '/captured/opencode.db' } });
+      expect(new AgentRuntime(client).getNativeDatabasePath()).toBe('/captured/opencode.db');
+      await client.disconnect();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+describe('AcpClient database reconnect identity', () => {
+  it('captures a fresh source for a new subprocess connection', async () => {
+    vi.stubEnv('OPENCODE_DB', '/original/opencode.db');
+    try {
+      const { client } = await connected();
+      expect(client.getNativeDatabasePath()).toBe('/original/opencode.db');
+      await client.disconnect();
+      vi.stubEnv('OPENCODE_DB', '/new/opencode.db');
+      const reconnecting = client.connect();
+      await tick();
+      FakeTransport.instances.at(-1)!.pending('initialize').resolve({});
+      await reconnecting;
+      expect(client.getNativeDatabasePath()).toBe('/new/opencode.db');
+      await client.disconnect();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+  it('does not bind a separate SQLite reader to an in-memory agent database', async () => {
+    vi.stubEnv('OPENCODE_DB', ':memory:');
+    try {
+      const { client } = await connected();
+      expect(client.getNativeDatabasePath()).toBeNull();
+      await client.disconnect();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

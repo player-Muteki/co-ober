@@ -168,6 +168,7 @@ export class AgentRuntime implements OpencodeClient {
     return rejectOption()?.optionId ?? 'reject_once';
   }
 
+  getNativeDatabasePath(): string | null { return this.acp.getNativeDatabasePath(); }
   getAgentCapabilities(): AgentCapabilities | null { return this.acp.getAgentCapabilities(); }
   /** The ACP version the agent answered `initialize` with, or null if unknown. */
   getAgentProtocolVersion(): number | null { return this.acp.agentProtocolVersion; }

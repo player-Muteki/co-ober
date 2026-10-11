@@ -66,6 +66,8 @@ const zh: Locale = {
     nativeSessionMissing: '该 OpenCode 会话已不存在（可能已在 OpenCode 中删除）。',
     runtimeSessionLost: 'Agent 端已不再持有该会话（可能已重启）。本地历史仍会保留；下一条消息将开启新的 Agent 会话。',
     syncUnsupported: '该 Agent 既不支持 session/load 也不支持 session/resume，无法重新挂载已存储的会话。下一条消息将在新的 Agent 会话中发送。',
+    databaseMismatch: '会话数据库不一致：原数据库 {expected}，当前 {actual}。请使用原 OpenCode 数据库重新连接，或新建会话；当前会话未被替换。',
+    databaseUnknown: '数据库未知',
     syncFailed: '无法恢复 Agent 会话',
     notSaved: 'Co-Ober 未能把这段对话写入磁盘 — 在下一次保存成功之前，它只存在于这个窗口里。',
     truncated: '[已省略 {count} 条消息]',

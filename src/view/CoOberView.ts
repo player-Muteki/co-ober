@@ -457,9 +457,9 @@ export class CoOberView extends ItemView {
       this.sessionStore,
       () => this.controller.getSessionId(),
       {
-        onSwitch: async (sessionId: string, source?: 'local' | 'opencode') => {
+        onSwitch: async (sessionId: string, source?: 'local' | 'opencode', nativeDatabasePath?: string) => {
           this.closeSessionDropdown();
-          await this.controller.switchSession(sessionId, source);
+          await this.controller.switchSession(sessionId, source, nativeDatabasePath);
         },
         onDelete: async (sessionId: string) => {
           this.closeSessionDropdown();

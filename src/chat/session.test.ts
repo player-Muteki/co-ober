@@ -749,3 +749,17 @@ describe('pruning happens on the save snapshot, not the live transcript (0.2.7 s
     expect(kept[0]?.content).toBe('message 0');
   });
 });
+
+
+describe('SessionRepository native database persistence', () => {
+  it('keeps provenance through a saved snapshot, restart, and history listing', () => {
+    const { repository } = createRepository();
+    const session = repository.getOrCreate('bound');
+    session.nativeDatabasePath = '/captured/opencode.db';
+    const snapshot = repository.snapshot();
+    const restored = createRepository().repository;
+    restored.hydrate(snapshot.sessions, snapshot.activeSessionId);
+    expect(restored.get('bound')?.nativeDatabasePath).toBe('/captured/opencode.db');
+    expect(restored.list()[0].nativeDatabasePath).toBe('/captured/opencode.db');
+  });
+});

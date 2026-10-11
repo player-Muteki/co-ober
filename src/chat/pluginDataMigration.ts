@@ -1,4 +1,5 @@
 import type { CoOberSettings, ContextRef, SerializedMessage, SerializedSession, StoredDraft, TabShell } from '../types';
+import { isNativeDatabasePath } from '../opencode/NativeDatabaseBinding';
 import type { SerializedSessionState } from './session';
 import { MAX_OPEN_TABS, MAX_TIMESTAMP_MS } from '../constants';
 
@@ -119,7 +120,7 @@ function sanitizeSession(value: unknown): SerializedSession | null {
   const messages = Array.isArray(value.messages)
     ? value.messages.map(sanitizeMessage).filter((m): m is SerializedMessage => m !== null)
     : [];
-  return {
+  const session = {
     ...value,
     sessionId: value.sessionId,
     title: typeof value.title === 'string' ? value.title : '',
@@ -127,6 +128,8 @@ function sanitizeSession(value: unknown): SerializedSession | null {
     updatedAt: toTimestamp(value.updatedAt),
     messages,
   } as unknown as SerializedSession;
+  if (!isNativeDatabasePath(session.nativeDatabasePath)) delete session.nativeDatabasePath;
+  return session;
 }
 
 /**

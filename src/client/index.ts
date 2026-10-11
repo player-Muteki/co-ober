@@ -57,6 +57,8 @@ export interface OpencodeClient {
   getAgentCapabilities(): AgentCapabilities | null;
   /** The protocol version the agent negotiated, when the handshake reported one. */
   getAgentProtocolVersion?(): number | null;
+  /** Native file source captured from the subprocess environment; null when unresolved. */
+  getNativeDatabasePath?(): string | null;
 
   createSession(cwd?: string, mcpServers?: McpServerConfig[]): Promise<SessionId>;
   loadSession(sessionId: SessionId, cwd?: string, mcpServers?: McpServerConfig[], onReplayUpdate?: (chunk: NormalizedUpdate) => void): Promise<void>;

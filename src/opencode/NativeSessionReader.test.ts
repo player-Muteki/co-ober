@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import type { SqliteRow } from './SqliteReader';
 import {
 	escapeSqlLiteral,
 	escapeLikePattern,
@@ -41,7 +42,7 @@ const V1_PROBE_ROW = { session_table: 1, session_columns: 6, v2_tables: 0 };
 const FORK_CLEAN_ROW = { migrated: 0, v2_rows: 0 };
 
 /** Read helper that answers the schema probe with v1 shapes (or a custom row). */
-function sqliteBacked(rows: unknown[], probeRow: unknown = V1_PROBE_ROW) {
+function sqliteBacked(rows: SqliteRow[], probeRow: SqliteRow = V1_PROBE_ROW) {
 	return {
 		requireSqliteModule: () => ({
 			DatabaseSync: class {
@@ -114,6 +115,7 @@ describe('listNativeSessions', () => {
 		});
 		expect(sessions.length).toBe(2);
 		expect(sessions[0]).toEqual({
+			nativeDatabasePath: dbPath,
 			sessionId: 'ses_a',
 			title: 'Alpha',
 			cwd: '/vault',
@@ -442,6 +444,7 @@ describe('native session content search', () => {
 		});
 		expect(sessions.length).toBe(2);
 		expect(sessions[0]).toEqual({
+			nativeDatabasePath: dbPath,
 			sessionId: 'ses_a',
 			title: 'Alpha',
 			cwd: '/vault',
@@ -791,7 +794,7 @@ describe('native schema probe (v2 defense)', () => {
 		expect(await probeNativeSchema(dbPath, { sqlite: deps as never })).toBe('forked');
 		const sessions = await listNativeSessions('/vault', { ...base, sqlite: deps as never });
 		expect(sessions).toEqual([
-			{ sessionId: 'ses_a', title: 'Alpha', cwd: '/vault', updatedAt: new Date(123).toISOString() },
+			{ nativeDatabasePath: dbPath, sessionId: 'ses_a', title: 'Alpha', cwd: '/vault', updatedAt: new Date(123).toISOString() },
 		]);
 		await readNativeSessionUsage('ses_a', { ...base, sqlite: deps as never });
 		await readNativeMessageStats('ses_a', { ...base, sqlite: deps as never });
@@ -1010,4 +1013,71 @@ describe('native whole-conversation transcript (0.2.50 stage B)', () => {
 			warn.mockRestore();
 		});
 	});
+});
+
+
+describe('captured native database', () => {
+  it('reads all session details from the captured database, not a later environment override', async () => {
+    const opened: string[] = [];
+    const deps = {
+      databasePath: dbPath,
+      env: { OPENCODE_DB: '/other/opencode.db' },
+      sqlite: {
+        requireSqliteModule: () => ({
+          DatabaseSync: class {
+            constructor(p: string) {
+              opened.push(p);
+            }
+            close() {}
+            prepare(sql: string) {
+              return {
+                all: () =>
+                  sql.includes('sqlite_master')
+                    ? [V1_PROBE_ROW]
+                    : sql.includes('data_migration')
+                      ? [FORK_CLEAN_ROW]
+                      : [],
+              };
+            }
+          },
+        }),
+      },
+    };
+    for (const reader of [
+      readNativeSessionUsage,
+      readNativeSessionTodos,
+      readNativeMessageStats,
+      readNativeToolErrors,
+      readNativeTurnStats,
+      readNativeSessionTranscript,
+    ]) {
+      await reader('ses_bound', deps);
+    }
+    expect(opened.length).toBeGreaterThan(0);
+    expect(new Set(opened)).toEqual(new Set([dbPath]));
+  });
+});
+
+describe('native database provenance', () => {
+  it.each([null, ':memory:', '', 'relative.db', '/tmp/db\0bad'])(
+    'never falls back to environment for an unavailable captured source %s',
+    async (databasePath) => {
+      const requireSqliteModule = vi.fn(sqliteBacked([]).requireSqliteModule);
+      await readNativeSessionUsage('ses', {
+        databasePath,
+        env: { OPENCODE_DB: dbPath },
+        sqlite: { requireSqliteModule },
+      });
+      expect(requireSqliteModule).not.toHaveBeenCalled();
+    },
+  );
+  it('carries the source path through native listing and content search', async () => {
+    const deps = { databasePath: dbPath, sqlite: sqliteBacked([{ id: 'ses', title: 'hello' }]) };
+    for (const results of [
+      await listNativeSessions('/vault', deps),
+      await searchNativeSessions('/vault', 'hello', deps),
+    ]) {
+      expect(results[0]).toMatchObject({ sessionId: 'ses', nativeDatabasePath: dbPath });
+    }
+  });
 });

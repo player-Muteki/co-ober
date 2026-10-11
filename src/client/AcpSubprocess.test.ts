@@ -64,6 +64,13 @@ describe('AcpSubprocess', () => {
     });
   });
 
+  it('launches with the captured environment rather than inheriting later changes', () => {
+    const env = { OPENCODE_DB: '/captured/opencode.db' };
+    const spec = { ...launchSpec, env };
+    new AcpSubprocess(spec).start();
+    expect(child_process.spawn).toHaveBeenCalledWith(spec.command, spec.args, expect.objectContaining({ env }));
+  });
+
   it('start() multiple times only spawns once', () => {
     const subprocess = new AcpSubprocess(launchSpec);
     subprocess.start();

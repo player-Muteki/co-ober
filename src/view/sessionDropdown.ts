@@ -26,7 +26,7 @@ export function nativeSummaryText(s: SessionMeta): string | null {
 }
 
 export interface SessionDropdownCallbacks {
-	onSwitch(sessionId: string, source?: 'local' | 'opencode'): Promise<void>;
+	onSwitch(sessionId: string, source?: 'local' | 'opencode', nativeDatabasePath?: string): Promise<void>;
 	onDelete(sessionId: string): Promise<void>;
 	onNewSession(): Promise<void>;
 	onFork?(sessionId: string): Promise<void>;
@@ -256,7 +256,7 @@ export class SessionDropdown {
 				it.createSpan({ cls: 'session-time', text: this.formatSessionDate(s.updatedAt) });
 			}
 			it.onclick = () => {
-				void this.callbacks.onSwitch(s.sessionId, 'opencode').catch((e) => this.reportActionError(e));
+				void this.callbacks.onSwitch(s.sessionId, 'opencode', s.nativeDatabasePath).catch((e) => this.reportActionError(e));
 			};
 		}
 		return filteredNative.length;
@@ -335,7 +335,7 @@ export class SessionDropdown {
 			if (s.updatedAt) it.createSpan({ cls: 'session-time', text: this.formatSessionDate(s.updatedAt) });
 			if (s.snippet) it.createDiv({ cls: 'session-snippet', text: s.snippet.trim() });
 			it.onclick = () => {
-				void this.callbacks.onSwitch(s.sessionId, 'opencode').catch((e) => this.reportActionError(e));
+				void this.callbacks.onSwitch(s.sessionId, 'opencode', s.nativeDatabasePath).catch((e) => this.reportActionError(e));
 			};
 		}
 		return extra.length;

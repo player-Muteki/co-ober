@@ -1,3 +1,5 @@
+import type { NativeSessionReaderDeps } from '../opencode/NativeSessionReader';
+import { NativeDatabaseMismatchError, isNativeDatabasePath, sameNativeDatabase } from '../opencode/NativeDatabaseBinding';
 import type {
   CapabilityGrant,
   NormalizedUpdate,
@@ -393,6 +395,7 @@ export class CoOberViewController {
     if (!sessionId) return;
     const client = this.deps.runtime.getClient();
     if (!client?.getAgentCapabilities?.()?.sessionCapabilities?.close) return;
+    if (!this.canAddressSession(sessionId, client)) return;
     void client.closeSession(sessionId).catch((e) => console.error('[co-ober] release agent session:', e));
   }
 
@@ -426,7 +429,7 @@ export class CoOberViewController {
       rt.busy = false;
       rt.state.isStreaming = false;
       rt.streamCtrl.finalizeBufferedToolCalls();
-      if (client && rt.sessionId) {
+      if (client && rt.sessionId && this.canAddressSession(rt.sessionId, client)) {
         try {
           await client.cancel(rt.sessionId);
         } catch (e) {
@@ -673,7 +676,7 @@ export class CoOberViewController {
       rt.busy = false;
       rt.state.isStreaming = false;
       rt.streamCtrl.finalizeBufferedToolCalls();
-      if (client && rt.sessionId) {
+      if (client && rt.sessionId && this.canAddressSession(rt.sessionId, client)) {
         try {
           await client.cancel(rt.sessionId);
         } catch (e) {
@@ -1410,6 +1413,42 @@ export class CoOberViewController {
 
   // ── Session lifecycle ──
 
+  /** A known source must never be resumed by a kernel addressing another database. */
+  private assertSessionDatabase(sessionId: string, client = this.deps.runtime.getClient()): void {
+    const bound = this.deps.sessionStore.get(sessionId)?.nativeDatabasePath;
+    if (!bound) return; // Legacy sessions have no proven source to compare.
+    const current = client?.getNativeDatabasePath?.();
+    if (!current || !sameNativeDatabase(bound, current)) {
+      throw new NativeDatabaseMismatchError(t().session.databaseMismatch
+        .replace('{expected}', bound).replace('{actual}', current ?? t().session.databaseUnknown));
+    }
+  }
+
+  /** Teardown is best-effort; do not cancel/close an identically named session in another store. */
+  private canAddressSession(sessionId: string, client: OpencodeClient): boolean {
+    try {
+      this.assertSessionDatabase(sessionId, client);
+      return true;
+    } catch (error) {
+      if (error instanceof NativeDatabaseMismatchError) return false;
+      throw error;
+    }
+  }
+
+  private bindSessionDatabase(sessionId: string, client = this.deps.runtime.getClient()): void {
+    const databasePath = client?.getNativeDatabasePath?.();
+    if (!isNativeDatabasePath(databasePath)) return;
+    const session = this.deps.sessionStore.getOrCreate(sessionId);
+    if (!session.nativeDatabasePath) session.nativeDatabasePath = databasePath;
+  }
+
+  private nativeReadDeps(sessionId: string): NativeSessionReaderDeps {
+    // A bound transcript remains readable even if the active kernel has moved.
+    // With no saved source, use only the kernel's captured environment, never process.env.
+    return { databasePath: this.deps.sessionStore.get(sessionId)?.nativeDatabasePath
+      ?? this.deps.runtime.getClient()?.getNativeDatabasePath?.() ?? null };
+  }
+
   async syncRuntimeSession(
     sessionId: string | null,
     onReplayUpdate?: (u: NormalizedUpdate) => void,
@@ -1419,18 +1458,23 @@ export class CoOberViewController {
     return this.sessionMutex.runExclusive(async () => {
       const client = this.deps.runtime.getClient();
       if (!client) return;
+      this.assertSessionDatabase(sessionId, client);
       // "Already loaded" is per session, not a single current-session pointer:
       // with several tabs open the client may legitimately hold many.
       const loaded = client.isSessionLoaded
         ? client.isSessionLoaded(sessionId)
         : client.getCurrentSessionId() === sessionId;
-      if (loaded) return;
+      if (loaded) {
+        this.bindSessionDatabase(sessionId, client);
+        return;
+      }
       const caps = client.getAgentCapabilities?.();
       if (caps && caps.loadSession === false) {
         // Agents without session/load can still hand a stored session back —
         // but resume reconnects WITHOUT replaying history, unlike session/load.
         if (caps.sessionCapabilities?.resume) {
           await client.resumeSession(sessionId, this.getVaultCwd(), onReplayUpdate);
+          this.bindSessionDatabase(sessionId, client);
           return;
         }
         // Neither path exists: say so instead of silently keeping the client
@@ -1441,6 +1485,7 @@ export class CoOberViewController {
         return;
       }
       await client.loadSession(sessionId, this.getVaultCwd(), this.deps.runtime.settings.mcpServers, onReplayUpdate);
+      this.bindSessionDatabase(sessionId, client);
     });
   }
 
@@ -1567,6 +1612,7 @@ export class CoOberViewController {
       }
       if (rt.state.sessionId) {
         this.deps.sessionStore.getOrCreate(rt.state.sessionId);
+        this.bindSessionDatabase(rt.state.sessionId, c);
         if (this.isActiveTab(rt)) this.deps.sessionStore.setActive(rt.state.sessionId);
       }
       await this.deps.sessionStore.save();
@@ -1656,6 +1702,10 @@ export class CoOberViewController {
       try {
         await this.syncRuntimeSession(rt.state.sessionId, undefined, rt);
       } catch (e) {
+        if (e instanceof NativeDatabaseMismatchError) {
+          rt.renderer.addError(e.message);
+          return null;
+        }
         console.error('[co-ober] session sync failed, creating new session:', e);
         rt.state.sessionId = null;
       }
@@ -1677,6 +1727,7 @@ export class CoOberViewController {
       }
       if (rt.state.sessionId) {
         this.deps.sessionStore.getOrCreate(rt.state.sessionId);
+        this.bindSessionDatabase(rt.state.sessionId, client);
         if (this.isActiveTab(rt)) this.deps.sessionStore.setActive(rt.state.sessionId);
       }
       await this.deps.sessionStore.save();
@@ -1691,7 +1742,16 @@ export class CoOberViewController {
 
   // ── Session dropdown actions ──
 
-  async switchSession(sessionId: string, source?: 'local' | 'opencode'): Promise<void> {
+  async switchSession(sessionId: string, source?: 'local' | 'opencode', nativeDatabasePath?: string): Promise<void> {
+    if (isNativeDatabasePath(nativeDatabasePath)) {
+      const session = this.deps.sessionStore.getOrCreate(sessionId);
+      if (session.nativeDatabasePath && !sameNativeDatabase(session.nativeDatabasePath, nativeDatabasePath)) {
+        this.renderer.addError(t().session.databaseMismatch
+          .replace('{expected}', session.nativeDatabasePath).replace('{actual}', nativeDatabasePath));
+        return;
+      }
+      if (!session.nativeDatabasePath) session.nativeDatabasePath = nativeDatabasePath;
+    }
     // A session that already lives in a tab only takes focus — looking at a
     // conversation never cancels its stream.
     const existing = this.findRuntimeBySession(sessionId);
@@ -1742,7 +1802,7 @@ export class CoOberViewController {
           // with no text parts) keeps the "no earlier turns were replayed"
           // notice: an unavailable read is never dressed up as a restored
           // conversation, exactly as it was never dressed up as an empty one.
-          const transcript = await readNativeSessionTranscript(sessionId);
+          const transcript = await readNativeSessionTranscript(sessionId, this.nativeReadDeps(sessionId));
           if (transcript.length > 0) {
             await this.adoptReplay(sessionId, transcript);
             rt.renderer.addSystemMessage(t().session.restoredNativeHistory);
@@ -1753,7 +1813,13 @@ export class CoOberViewController {
       }
     } catch (e) {
       console.error('[co-ober] session switch sync:', e);
-      if (source === 'opencode') {
+      if (e instanceof NativeDatabaseMismatchError) {
+        rt.renderer.addError(e.message);
+        if (source === 'opencode') {
+          const transcript = await readNativeSessionTranscript(sessionId, this.nativeReadDeps(sessionId));
+          await this.adoptReplay(sessionId, transcript);
+        }
+      } else if (source === 'opencode') {
         rt.renderer.addError(
           e instanceof AcpSessionMissingError ? t().session.nativeSessionMissing : t().session.loadNativeFailed,
           undefined,
@@ -1784,11 +1850,13 @@ export class CoOberViewController {
   }
 
   async deleteSession(sessionId: string): Promise<void> {
+    const rt = this.findRuntimeBySession(sessionId);
+    // Teardown needs the saved source to decide whether this kernel can address the id.
+    // Removing the mirror first would turn a known mismatch into an unbound session.
+    if (rt) await this.closeTab(rt.tabId);
     this.deps.sessionStore.remove(sessionId);
     await this.deps.sessionStore.save();
-    const rt = this.findRuntimeBySession(sessionId);
     if (!rt) return;
-    await this.closeTab(rt.tabId);
     // Losing the shown conversation must land the user on a fresh session,
     // exactly like before tabs existed.
     if (!this.activeRuntime.state.sessionId) await this.newSession();
@@ -1805,6 +1873,7 @@ export class CoOberViewController {
     // otherwise keep the reason while the reader looks at a blank note.
     let branchRenderer: ChatRenderer | null = null;
     try {
+      this.assertSessionDatabase(sessionId, client);
       const source = this.deps.sessionStore.get(sessionId);
       const forkedId = await client.forkSession(sessionId, this.getVaultCwd());
       if (this.disposed) {
@@ -1820,6 +1889,7 @@ export class CoOberViewController {
       this.activateRuntime(rt);
       branchRenderer = rt.renderer;
       const forked = this.deps.sessionStore.getOrCreate(forkedId);
+      this.bindSessionDatabase(forkedId, client);
       if (source && forked.messages.length === 0) {
         // A branch must own its transcript: StreamController mutates tool
         // blocks in place as calls settle, so a shallow copy would let the
@@ -1890,6 +1960,7 @@ export class CoOberViewController {
       const client = this.deps.runtime.getClient();
       const sideId = rt.sideChatSessionId;
       if (!client || !sideId) throw new Error(t().sideChat.notConnected);
+      if (rt.state.sessionId) this.assertSessionDatabase(rt.state.sessionId, client);
       return client.sendMessage(sideId, [{ type: 'text', text }], onChunk);
     };
   }
@@ -1906,6 +1977,7 @@ export class CoOberViewController {
     rt.sideChatSessionId = null;
     if (!sideId) return;
     const client = this.deps.runtime.getClient();
+    if (client && rt.state.sessionId && !this.canAddressSession(rt.state.sessionId, client)) return;
     if (client?.getAgentCapabilities?.()?.sessionCapabilities?.close) {
       void client.closeSession(sideId).catch((e) => console.error('[co-ober] close side session:', e));
     }
@@ -1918,6 +1990,7 @@ export class CoOberViewController {
     if (!sideId) return;
     const client = this.deps.runtime.getClient();
     if (!client) return;
+    if (rt?.state.sessionId && !this.canAddressSession(rt.state.sessionId, client)) return;
     void client.cancel(sideId).catch((e) => console.warn('[co-ober] side chat cancel:', e));
   }
 
@@ -1944,7 +2017,9 @@ export class CoOberViewController {
     const collector = new SessionReplayCollector();
     try {
       await this.sessionMutex.runExclusive(async () => {
+        this.assertSessionDatabase(sessionId, client);
         await client.resumeSession(sessionId, this.getVaultCwd(), (u) => collector.handle(u));
+        this.bindSessionDatabase(sessionId, client);
       });
       await this.adoptReplay(sessionId, collector.finish());
     } catch (e) {
@@ -2016,6 +2091,10 @@ export class CoOberViewController {
     try {
       renewed = await this.renewAgentSession(rt);
     } catch (e) {
+      if (e instanceof NativeDatabaseMismatchError) {
+        rt.renderer.addError(e.message);
+        return;
+      }
       console.error('[co-ober] rewind session renew:', e);
       renewed = null;
     }
@@ -2056,6 +2135,7 @@ export class CoOberViewController {
     const oldId = rt.state.sessionId;
     let missedDefaults: string[] = [];
     const newId = await this.sessionMutex.runExclusive(async () => {
+      if (oldId) this.assertSessionDatabase(oldId, client);
       const sid = await client.createSession(this.getVaultCwd(), this.deps.runtime.settings.mcpServers);
       missedDefaults = await applyDefaultSessionSettings(client, sid, this.deps.runtime.settings);
       // The rotation is one transaction. Releasing the outgoing session and
@@ -2067,6 +2147,7 @@ export class CoOberViewController {
         if (client.getAgentCapabilities()?.sessionCapabilities?.close) await client.closeSession(oldId);
         this.deps.sessionStore.rekey(oldId, sid);
       }
+      this.bindSessionDatabase(sid, client);
       return sid;
     });
     this.reportMissedDefaults(rt, missedDefaults);
@@ -2215,6 +2296,7 @@ export class CoOberViewController {
       // Capabilities can change across reconnects; re-check before sending.
       const caps = c.getAgentCapabilities?.();
       parts.push(...(supportsPromptCapability(caps, 'image') ? imageParts : []));
+      this.assertSessionDatabase(sessionId, c);
       const response = await c.sendMessage(sessionId, parts, (ch: NormalizedUpdate) => {
         if (rt.genId !== currentGen || !rt.busy || rt.state.sessionId !== sessionId) return;
         rt.streamCtrl.handleChunk(ch);
@@ -2422,7 +2504,7 @@ export class CoOberViewController {
    * database. Silently no-ops when the database is unavailable.
    */
   private async refreshNativeUsage(sessionId: string, currencyHint?: string, rt: SessionRuntime = this.activeRuntime): Promise<void> {
-    const usage = await readNativeSessionUsage(sessionId);
+    const usage = await readNativeSessionUsage(sessionId, this.nativeReadDeps(sessionId));
     if (!usage || rt.state.sessionId !== sessionId) return;
     rt.state.usage = {
       totalTokens: usage.inputTokens + usage.outputTokens + usage.reasoningTokens,
@@ -2451,7 +2533,7 @@ export class CoOberViewController {
    * `setPlanEntries(ch.entries)`) had already learned not to tell.
    */
   private async refreshNativePlan(sessionId: string, rt: SessionRuntime = this.activeRuntime): Promise<void> {
-    const todos = await readNativeSessionTodos(sessionId);
+    const todos = await readNativeSessionTodos(sessionId, this.nativeReadDeps(sessionId));
     if (rt.state.sessionId !== sessionId) return;
     if (todos === null) {
       rt.renderer.setPlanStale(true);
@@ -2467,10 +2549,11 @@ export class CoOberViewController {
    * when unavailable.
    */
   private async enrichMessagesFromNative(session: SerializedSession): Promise<boolean> {
+    const deps = this.nativeReadDeps(session.sessionId);
     const [stats, toolErrors, turnStats] = await Promise.all([
-      readNativeMessageStats(session.sessionId),
-      readNativeToolErrors(session.sessionId),
-      readNativeTurnStats(session.sessionId),
+      readNativeMessageStats(session.sessionId, deps),
+      readNativeToolErrors(session.sessionId, deps),
+      readNativeTurnStats(session.sessionId, deps),
     ]);
     let changed = false;
     if (stats.length > 0) changed = this.attachNativeUsage(session, stats);

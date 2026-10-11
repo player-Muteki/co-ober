@@ -221,6 +221,7 @@ export class SessionRepository implements SessionStore {
           meta.updatedAt = new Date(session.updatedAt).toISOString();
         }
         if (session.pinned) meta.pinned = true;
+        if (session.nativeDatabasePath) meta.nativeDatabasePath = session.nativeDatabasePath;
         return meta;
       });
   }

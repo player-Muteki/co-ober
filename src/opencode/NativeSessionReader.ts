@@ -1,4 +1,5 @@
 import type { SessionMeta, SerializedMessage } from '../types';
+import { isNativeDatabasePath } from './NativeDatabaseBinding';
 import { MAX_TIMESTAMP_MS } from '../constants';
 import { resolveOpencodeDatabasePath, type PathFs } from './OpencodePaths';
 import { querySqliteJson, type SqliteReaderDeps, type SqliteRow } from './SqliteReader';
@@ -7,9 +8,16 @@ export const NATIVE_SESSION_LIMIT = 50;
 export const NATIVE_SESSION_SEARCH_LIMIT = 20;
 
 export interface NativeSessionReaderDeps {
+	/** Captured source; null explicitly disables reads instead of discovering another database. */
+	databasePath?: string | null;
 	env?: NodeJS.ProcessEnv;
 	fs?: PathFs;
 	sqlite?: SqliteReaderDeps;
+}
+
+function resolveReaderDatabasePath(deps: NativeSessionReaderDeps): string | null {
+	if (deps.databasePath !== undefined) return isNativeDatabasePath(deps.databasePath) ? deps.databasePath : null;
+	return resolveOpencodeDatabasePath(deps.env ?? process.env, deps.fs);
 }
 
 function hasControlCharacter(value: string): boolean {
@@ -309,8 +317,7 @@ function toOptionalNumber(value: unknown): number | undefined {
 
 /** Resolve the OpenCode database and run a read-only query; undefined on any failure. */
 async function readNativeRows(sqlFor: (format: NativeReadFormat) => string, deps: NativeSessionReaderDeps, context: string): Promise<SqliteRow[] | undefined> {
-	const env = deps.env ?? process.env;
-	const databasePath = resolveOpencodeDatabasePath(env, deps.fs);
+	const databasePath = resolveReaderDatabasePath(deps);
 	if (!databasePath) return undefined;
 	const format = await resolveNativeReadFormat(databasePath, deps);
 	if (!format) return undefined;
@@ -329,8 +336,7 @@ async function readNativeRows(sqlFor: (format: NativeReadFormat) => string, deps
  */
 export async function readNativeSessionUsage(sessionId: string, deps: NativeSessionReaderDeps = {}): Promise<NativeSessionUsage | undefined> {
 	if (!sessionId) return undefined;
-	const env = deps.env ?? process.env;
-	const databasePath = resolveOpencodeDatabasePath(env, deps.fs);
+	const databasePath = resolveReaderDatabasePath(deps);
 	if (!databasePath) return undefined;
 	const format = await resolveNativeReadFormat(databasePath, deps);
 	if (!format) return undefined;
@@ -747,8 +753,7 @@ export function mapNativeTranscriptRows(rows: SqliteRow[]): SerializedMessage[] 
  */
 export async function readNativeSessionTranscript(sessionId: string, deps: NativeSessionReaderDeps = {}): Promise<SerializedMessage[]> {
 	if (!sessionId) return [];
-	const env = deps.env ?? process.env;
-	const databasePath = resolveOpencodeDatabasePath(env, deps.fs);
+	const databasePath = resolveReaderDatabasePath(deps);
 	if (!databasePath) return [];
 	const format = await resolveNativeReadFormat(databasePath, deps);
 	if (!format) return [];
@@ -770,8 +775,7 @@ export async function readNativeSessionTranscript(sessionId: string, deps: Nativ
  * for a lookup that never ran.
  */
 export async function listNativeSessions(cwd: string, deps: NativeSessionReaderDeps = {}): Promise<SessionMeta[]> {
-	const env = deps.env ?? process.env;
-	const databasePath = resolveOpencodeDatabasePath(env, deps.fs);
+	const databasePath = resolveReaderDatabasePath(deps);
 	if (!databasePath) return [];
 	const format = await resolveNativeReadFormat(databasePath, deps);
 	if (!format) {
@@ -796,6 +800,7 @@ export async function listNativeSessions(cwd: string, deps: NativeSessionReaderD
 		const updatedAt = toIsoString(row.time_updated);
 		const meta: SessionMeta = {
 			sessionId,
+			nativeDatabasePath: databasePath,
 			title: typeof row.title === 'string' && row.title.trim() ? row.title : sessionId,
 			cwd: typeof row.directory === 'string' ? row.directory : undefined,
 		};
@@ -840,8 +845,7 @@ export function buildNativeSessionSearchSql(cwd: string, query: string, limit: n
 export async function searchNativeSessions(cwd: string, query: string, deps: NativeSessionReaderDeps = {}): Promise<SessionMeta[]> {
 	const trimmed = query.trim();
 	if (!trimmed) return [];
-	const env = deps.env ?? process.env;
-	const databasePath = resolveOpencodeDatabasePath(env, deps.fs);
+	const databasePath = resolveReaderDatabasePath(deps);
 	if (!databasePath) return [];
 	const format = await resolveNativeReadFormat(databasePath, deps);
 	if (!format) {
@@ -868,6 +872,7 @@ export async function searchNativeSessions(cwd: string, query: string, deps: Nat
 		if (!sessionId) continue;
 		const meta: SessionMeta = {
 			sessionId,
+			nativeDatabasePath: databasePath,
 			title: typeof row.title === 'string' && row.title.trim() ? row.title : sessionId,
 			cwd: typeof row.directory === 'string' ? row.directory : undefined,
 			updatedAt: toIsoString(row.time_updated),

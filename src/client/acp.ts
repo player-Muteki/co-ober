@@ -1,3 +1,5 @@
+import { resolveOpencodeDatabasePath } from '../opencode/OpencodePaths';
+import { isNativeDatabasePath } from '../opencode/NativeDatabaseBinding';
 import { ACP_LIST_SESSIONS_LIMIT, ACP_LIST_SESSIONS_MAX_PAGES, ACP_RECONNECT_BACKOFF_BASE_MS, ACP_LOAD_SESSION_IDLE_TIMEOUT_MS, MAX_CONCURRENT_STREAMS, MAX_SESSION_NORMALIZERS } from '../constants';
 import { getSpawnInfo } from '../utils/commandResolution';
 import { AcpSubprocess, type AcpSubprocessLaunchSpec } from './AcpSubprocess';
@@ -69,7 +71,7 @@ import { z } from 'zod';
 // lost piece of the conversation.
 const UNPLACED_UPDATE_KINDS = new Set(['message_chunk', 'tool_call_snapshot', 'plan', 'notice', 'compaction']);
 
-export const CLIENT_VERSION = '0.2.58';
+export const CLIENT_VERSION = '0.2.59';
 
 /** Tail length of the agent stderr snapshot attached to a close error. */
 const STDERR_SNAPSHOT_CHARS = 800;
@@ -487,6 +489,8 @@ export class AcpClient implements OpencodeClient {
   private loadedSessionIds = new Set<string>();
   private cmdPath: string;
   private cwd?: string;
+  private launchEnv: NodeJS.ProcessEnv | null = null;
+  private nativeDatabasePath: string | null = null;
   private vaultIo?: VaultWriteIo;
   /** Session metadata per session id; the null key is the pre-session slot. */
   private sessionMeta = new Map<string | null, AcpSessionMeta>();
@@ -587,8 +591,13 @@ export class AcpClient implements OpencodeClient {
     const args = ['acp'];
     const cwd = this.cwd ?? process.cwd();
 
-    const spawnInfo = getSpawnInfo(cmd, args, process.platform, process.env);
+    const env = { ...process.env };
+    this.launchEnv = env;
+    this.nativeDatabasePath = null;
+    this.getNativeDatabasePath();
+    const spawnInfo = getSpawnInfo(cmd, args, process.platform, env);
     const launchSpec: AcpSubprocessLaunchSpec = {
+      env,
       command: spawnInfo.command,
       args: spawnInfo.args,
       cwd,
@@ -717,6 +726,15 @@ export class AcpClient implements OpencodeClient {
     } finally {
       if (this.connectingGeneration === generation) this.connectingGeneration = null;
     }
+  }
+
+  /** Resolve using the launch environment, and freeze the first durable source found. */
+  getNativeDatabasePath(): string | null {
+    if (this.nativeDatabasePath) return this.nativeDatabasePath;
+    if (!this.launchEnv) return null;
+    const candidate = resolveOpencodeDatabasePath(this.launchEnv);
+    if (isNativeDatabasePath(candidate)) this.nativeDatabasePath = candidate;
+    return this.nativeDatabasePath;
   }
 
   getAgentCapabilities(): AgentCapabilities | null {

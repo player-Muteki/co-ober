@@ -3,6 +3,8 @@ export type ToolCallId = string;
 export type MessageId = string;
 
 export interface SessionMeta {
+  /** Database that supplied this native history entry. */
+  nativeDatabasePath?: string;
   sessionId: string;
   cwd?: string;
   title?: string;
@@ -443,6 +445,8 @@ export interface TurnStats {
 }
 
 export interface SerializedSession {
+  /** Captured OpenCode database source; absent for legacy/unresolved sessions. */
+  nativeDatabasePath?: string;
   sessionId: string;
   title: string;
   opencodeSessionId?: string;

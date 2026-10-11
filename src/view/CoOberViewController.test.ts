@@ -246,6 +246,230 @@ describe('CoOberViewController', () => {
     controller = new CoOberViewController(deps, callbacks);
   });
 
+  describe('native database binding', () => {
+    it('refuses to continue a bound session on another database without silently creating a replacement', async () => {
+      const session = { sessionId: 'bound', nativeDatabasePath: '/original/opencode.db', messages: [], updatedAt: 0 };
+      vi.mocked(deps.sessionStore.get).mockReturnValue(session as any);
+      const client = createMockClient({
+        getNativeDatabasePath: () => '/other/opencode.db',
+        isSessionLoaded: () => true,
+      });
+      vi.mocked(deps.runtime.getClient).mockReturnValue(client as any);
+      controller.state.sessionId = 'bound';
+      expect(await controller.ensureRuntimeSession()).toBeNull();
+      expect(controller.state.sessionId).toBe('bound');
+      expect(client.loadSession).not.toHaveBeenCalled();
+      expect(client.createSession).not.toHaveBeenCalled();
+      expect(deps.renderer.addError).toHaveBeenCalledWith(expect.stringContaining('database'));
+    });
+  });
+
+  describe('native database source propagation', () => {
+    it('persists the launch source when a new conversation is created', async () => {
+      const session = { sessionId: 'new-session', messages: [], updatedAt: 0 } as any;
+      vi.mocked(deps.sessionStore.getOrCreate).mockReturnValue(session);
+      const client = createMockClient({ getNativeDatabasePath: () => '/launch/opencode.db' });
+      vi.mocked(deps.runtime.getClient).mockReturnValue(client as any);
+      await controller.newSession();
+      expect(session.nativeDatabasePath).toBe('/launch/opencode.db');
+      expect(deps.sessionStore.save).toHaveBeenCalled();
+    });
+    it('enriches a stored transcript from its bound source even when the client changed', async () => {
+      const session = {
+        sessionId: 'bound',
+        nativeDatabasePath: '/original/opencode.db',
+        messages: [],
+        updatedAt: 0,
+      } as any;
+      vi.mocked(deps.sessionStore.get).mockReturnValue(session);
+      vi.mocked(deps.runtime.getClient).mockReturnValue(
+        createMockClient({ getNativeDatabasePath: () => '/other/opencode.db' }) as any,
+      );
+      controller.state.sessionId = 'bound';
+      await controller.restoreSession();
+      for (const reader of [
+        readNativeMessageStats,
+        readNativeToolErrors,
+        readNativeTurnStats,
+        readNativeSessionTodos,
+      ]) {
+        expect(reader).toHaveBeenCalledWith('bound', { databasePath: '/original/opencode.db' });
+      }
+    });
+  });
+
+  describe('native database lifecycle safety', () => {
+    it.each(['fork', 'resume'] as const)(
+      'refuses %s before calling a kernel with a different source',
+      async (operation) => {
+        const session = {
+          sessionId: 'bound',
+          nativeDatabasePath: '/original/opencode.db',
+          messages: [],
+          updatedAt: 0,
+        } as any;
+        vi.mocked(deps.sessionStore.get).mockReturnValue(session);
+        vi.mocked(deps.sessionStore.getOrCreate).mockReturnValue(session);
+        const client = createMockClient({ getNativeDatabasePath: () => '/other/opencode.db' });
+        vi.mocked(deps.runtime.getClient).mockReturnValue(client as any);
+        if (operation === 'fork') await controller.forkSession('bound');
+        else await controller.resumeSession('bound');
+        expect(client.forkSession).not.toHaveBeenCalled();
+        expect(client.resumeSession).not.toHaveBeenCalled();
+        expect(session.nativeDatabasePath).toBe('/original/opencode.db');
+        expect(deps.renderer.addError).toHaveBeenCalledWith(expect.stringContaining('database'));
+      },
+    );
+    it('keeps native discovery provenance and reads its history without loading it into a different database', async () => {
+      const session = { sessionId: 'native', messages: [], updatedAt: 0 } as any;
+      vi.mocked(deps.sessionStore.get).mockReturnValue(session);
+      vi.mocked(deps.sessionStore.getOrCreate).mockReturnValue(session);
+      const client = createMockClient({ getNativeDatabasePath: () => '/other/opencode.db' });
+      vi.mocked(deps.runtime.getClient).mockReturnValue(client as any);
+      await controller.switchSession('native', 'opencode', '/original/opencode.db');
+      expect(client.loadSession).not.toHaveBeenCalled();
+      expect(session.nativeDatabasePath).toBe('/original/opencode.db');
+      expect(readNativeSessionTranscript).toHaveBeenCalledWith('native', { databasePath: '/original/opencode.db' });
+      expect(deps.renderer.addError).toHaveBeenCalledWith(expect.stringContaining('database'));
+    });
+  });
+
+  describe('native database binding compatibility', () => {
+    it.each([null, undefined])(
+      'refuses a known source when the kernel source is unavailable (%s)',
+      async (databasePath) => {
+        vi.mocked(deps.sessionStore.get).mockReturnValue({
+          nativeDatabasePath: '/original/opencode.db',
+          messages: [],
+        } as any);
+        const client = createMockClient({ getNativeDatabasePath: () => databasePath });
+        vi.mocked(deps.runtime.getClient).mockReturnValue(client as any);
+        controller.state.sessionId = 'bound';
+        expect(await controller.ensureRuntimeSession()).toBeNull();
+        expect(client.createSession).not.toHaveBeenCalled();
+        expect(client.loadSession).not.toHaveBeenCalled();
+      },
+    );
+    it('does not fabricate a binding for a legacy session whose load failed', async () => {
+      const session = { sessionId: 'legacy', messages: [], updatedAt: 0 } as any;
+      vi.mocked(deps.sessionStore.get).mockReturnValue(session);
+      vi.mocked(deps.sessionStore.getOrCreate).mockReturnValue(session);
+      const client = createMockClient({
+        getNativeDatabasePath: () => '/launch/opencode.db',
+        loadSession: vi.fn().mockRejectedValue(new Error('unavailable')),
+      });
+      vi.mocked(deps.runtime.getClient).mockReturnValue(client as any);
+      await expect(controller.syncRuntimeSession('legacy')).rejects.toThrow('unavailable');
+      expect(session.nativeDatabasePath).toBeUndefined();
+    });
+    it('binds a legacy session only after successfully attaching it', async () => {
+      const session = { sessionId: 'legacy', messages: [], updatedAt: 0 } as any;
+      vi.mocked(deps.sessionStore.get).mockReturnValue(session);
+      vi.mocked(deps.sessionStore.getOrCreate).mockReturnValue(session);
+      const client = createMockClient({ getNativeDatabasePath: () => '/launch/opencode.db' });
+      vi.mocked(deps.runtime.getClient).mockReturnValue(client as any);
+      await controller.syncRuntimeSession('legacy');
+      expect(session.nativeDatabasePath).toBe('/launch/opencode.db');
+    });
+    it('treats equivalent Windows path spellings as the same database', async () => {
+      const session = { sessionId: 'bound', nativeDatabasePath: 'C:\\OpenCode\\native.db', messages: [] } as any;
+      vi.mocked(deps.sessionStore.get).mockReturnValue(session);
+      const client = createMockClient({
+        getNativeDatabasePath: () => 'c:/opencode/native.db',
+        isSessionLoaded: () => true,
+      });
+      vi.mocked(deps.runtime.getClient).mockReturnValue(client as any);
+      controller.state.sessionId = 'bound';
+      expect(await controller.ensureRuntimeSession()).toBe('bound');
+      expect(session.nativeDatabasePath).toBe('C:\\OpenCode\\native.db');
+    });
+    it('binds a fork to the same launch source as its parent', async () => {
+      const parent = {
+        sessionId: 'parent',
+        nativeDatabasePath: '/launch/opencode.db',
+        messages: [],
+        updatedAt: 0,
+      } as any;
+      const child = { sessionId: 'forked-session', messages: [], updatedAt: 0 } as any;
+      vi.mocked(deps.sessionStore.get).mockImplementation((id) => (id === 'parent' ? parent : child));
+      vi.mocked(deps.sessionStore.getOrCreate).mockImplementation((id) => (id === 'parent' ? parent : child));
+      const client = createMockClient({ getNativeDatabasePath: () => '/launch/opencode.db' });
+      vi.mocked(deps.runtime.getClient).mockReturnValue(client as any);
+      await controller.forkSession('parent');
+      expect(child.nativeDatabasePath).toBe(parent.nativeDatabasePath);
+      expect(client.forkSession).toHaveBeenCalled();
+    });
+  });
+
+  describe('database-bound session resources', () => {
+    it('does not release a saved session through a kernel on another database when its tab closes', async () => {
+      const session = { sessionId: 'bound', nativeDatabasePath: '/original/opencode.db', messages: [] } as any;
+      vi.mocked(deps.sessionStore.get).mockReturnValue(session);
+      const client = createMockClient({
+        getNativeDatabasePath: () => '/other/opencode.db',
+        getAgentCapabilities: () => ({ sessionCapabilities: { close: true } }),
+      });
+      vi.mocked(deps.runtime.getClient).mockReturnValue(client as any);
+      controller.state.sessionId = 'bound';
+      await controller.closeTab(controller.activeTabId());
+      expect(client.closeSession).not.toHaveBeenCalled();
+    });
+    it('keeps the source available for teardown when deleting a session from another database', async () => {
+      const session = { sessionId: 'bound', nativeDatabasePath: '/original/opencode.db', messages: [] } as any;
+      vi.mocked(deps.sessionStore.get).mockReturnValue(session);
+      vi.mocked(deps.sessionStore.remove).mockImplementation(() => {
+        vi.mocked(deps.sessionStore.get).mockReturnValue(undefined);
+      });
+      const client = createMockClient({
+        getNativeDatabasePath: () => '/other/opencode.db',
+        getAgentCapabilities: () => ({ sessionCapabilities: { close: true } }),
+      });
+      vi.mocked(deps.runtime.getClient).mockReturnValue(client as any);
+      controller.state.sessionId = 'bound';
+      await controller.deleteSession('bound');
+      expect(client.closeSession).not.toHaveBeenCalled();
+      expect(deps.sessionStore.remove).toHaveBeenCalledWith('bound');
+    });
+    it('does not rewind or truncate a transcript through a kernel on another database', async () => {
+      const session = {
+        sessionId: 'bound',
+        nativeDatabasePath: '/original/opencode.db',
+        messages: [{ role: 'user', content: 'keep me' }],
+        updatedAt: 0,
+      } as any;
+      vi.mocked(deps.sessionStore.get).mockReturnValue(session);
+      const client = createMockClient({ getNativeDatabasePath: () => '/other/opencode.db' });
+      vi.mocked(deps.runtime.getClient).mockReturnValue(client as any);
+      controller.state.sessionId = 'bound';
+      await controller.rewindUserTurn(1);
+      expect(session.messages).toHaveLength(1);
+      expect(client.createSession).not.toHaveBeenCalled();
+      expect(deps.renderer.addError).toHaveBeenCalledWith(expect.stringContaining('database'));
+    });
+    it('refuses side-chat sends and teardown RPCs after the database changes', async () => {
+      const session = { sessionId: 'bound', nativeDatabasePath: '/original/opencode.db', messages: [] } as any;
+      vi.mocked(deps.sessionStore.get).mockReturnValue(session);
+      vi.mocked(deps.sessionStore.getOrCreate).mockReturnValue(session);
+      let databasePath = '/original/opencode.db';
+      const client = createMockClient({
+        getNativeDatabasePath: () => databasePath,
+        getAgentCapabilities: () => ({ sessionCapabilities: { fork: true, close: true } }),
+      });
+      vi.mocked(deps.runtime.getClient).mockReturnValue(client as any);
+      const onOpenSideChat = vi.fn();
+      controller = new CoOberViewController(deps, { ...callbacks, onOpenSideChat });
+      controller.state.sessionId = 'bound';
+      await controller.startSideChat('question');
+      const ask = onOpenSideChat.mock.calls[0][0];
+      databasePath = '/other/opencode.db';
+      await expect(ask('follow up', () => {})).rejects.toThrow('database');
+      expect(client.sendMessage).not.toHaveBeenCalled();
+      controller.endSideChat();
+      expect(client.cancel).not.toHaveBeenCalled();
+      expect(client.closeSession).not.toHaveBeenCalled();
+    });
+  });
+
   describe('initialization', () => {
     it('creates with default state', () => {
       expect(controller.state.sessionId).toBeNull();
@@ -850,7 +1074,7 @@ describe('CoOberViewController', () => {
 
       await controller.restoreSession();
 
-      expect(readNativeSessionTodos).toHaveBeenCalledWith('test');
+      expect(readNativeSessionTodos).toHaveBeenCalledWith('test', { databasePath: null });
       expect(setPlanEntries).toHaveBeenCalledWith(todos);
     });
 
@@ -2123,7 +2347,7 @@ describe('CoOberViewController', () => {
 
         await controller.switchSession('ses_db', 'opencode');
 
-        expect(readNativeSessionTranscript).toHaveBeenCalledWith('ses_db');
+        expect(readNativeSessionTranscript).toHaveBeenCalledWith('ses_db', { databasePath: null });
         expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().session.restoredNativeHistory);
         // Disk-restore claims neither the agent-replay reading nor the empty one.
         expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(t().session.resumedNativeWithoutReplay);
@@ -2145,7 +2369,7 @@ describe('CoOberViewController', () => {
         // The read was still asked — it came back with nothing to show, which
         // is a different fact than never asking, but the notice stays honest
         // either way: no earlier turns reached the panel.
-        expect(readNativeSessionTranscript).toHaveBeenCalledWith('ses_db_empty');
+        expect(readNativeSessionTranscript).toHaveBeenCalledWith('ses_db_empty', { databasePath: null });
         expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().session.resumedNativeWithoutReplay);
         expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(t().session.restoredNativeHistory);
       });
@@ -2303,7 +2527,7 @@ describe('CoOberViewController', () => {
 
       await controller.resumeSession('paused-session');
 
-      expect(readNativeSessionUsage).toHaveBeenCalledWith('paused-session');
+      expect(readNativeSessionUsage).toHaveBeenCalledWith('paused-session', { databasePath: null });
       // The native DB row carried an amount but no currency; the client must
       // not name one it never saw. 0.2.14 rendered an un-currencyed amount as
       // a bare number, so a fabricated 'USD' here would be pure invention.
@@ -2356,7 +2580,7 @@ describe('CoOberViewController', () => {
 
       await controller.resumeSession('paused-session');
 
-      expect(readNativeSessionTodos).toHaveBeenCalledWith('paused-session');
+      expect(readNativeSessionTodos).toHaveBeenCalledWith('paused-session', { databasePath: null });
       expect(setPlanEntries).toHaveBeenCalledWith(todos);
     });
   });
@@ -2454,7 +2678,7 @@ describe('CoOberViewController', () => {
 
       await controller.switchSession('ses_native', 'opencode');
 
-      expect(readNativeSessionUsage).toHaveBeenCalledWith('ses_native');
+      expect(readNativeSessionUsage).toHaveBeenCalledWith('ses_native', { databasePath: null });
       expect(controller.state.usage).toEqual({
         totalTokens: 1250,
         inputTokens: 1000,

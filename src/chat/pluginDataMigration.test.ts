@@ -348,3 +348,22 @@ describe('sanitizeLoadedSettings', () => {
     expect(buildMcpServers(sanitized.mcpServers).map((server) => server.name)).toEqual(['filesystem', 'api']);
   });
 });
+
+
+describe('native database binding migration', () => {
+  it.each([42, null, '', 'relative.db', ':memory:', '/tmp/db\0bad'])(
+    'drops an invalid binding %s without losing the transcript',
+    (nativeDatabasePath) => {
+      const state = migratePluginDataSessions([validSession('ses', { nativeDatabasePath })], 'ses');
+      expect(state.sessions[0].nativeDatabasePath).toBeUndefined();
+      expect(state.sessions[0].messages).toHaveLength(1);
+    },
+  );
+  it.each(['/tmp/native.db', 'C:\\OpenCode\\native.db', '\\\\server\\share\\native.db'])(
+    'preserves an absolute source %s',
+    (nativeDatabasePath) => {
+      const state = migratePluginDataSessions([validSession('ses', { nativeDatabasePath })], 'ses');
+      expect(state.sessions[0].nativeDatabasePath).toBe(nativeDatabasePath);
+    },
+  );
+});

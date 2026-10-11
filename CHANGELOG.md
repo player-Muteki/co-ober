@@ -1,3 +1,9 @@
+## 0.2.59 - 2026-10-11
+
+### Added
+
+- **Native database path binding without changing the ACP backend**: sessions now retain the database path resolved from the ACP subprocess's captured launch environment. Native history listing and search carry their source into the local mirror; transcript, usage, todo, tool-error and turn-stat reads use that saved path instead of rediscovering a database from a changed environment. Restore, resume, fork and send refuse a known source mismatch (including an unresolved current source), keep the conversation intact, and show a localized explanation rather than silently replacing it. Session and side-chat teardown also avoid addressing an old id through a different database. Legacy sessions acquire a binding only after a successful attach; malformed, relative and in-memory bindings are not persisted. This is path-based isolation using the existing resolver, not a new HTTP kernel, filesystem identity verification, or live CLI capability certification.
+
 ## 0.2.58 - 2026-10-06
 
 ### Fixed
