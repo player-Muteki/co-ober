@@ -278,3 +278,11 @@ src/client/acpMultiSession.test.ts
 - 旧记录不在迁移时猜测来源；成功 attach 后才补充绑定。相对路径、空值、控制字符和 `:memory:` 不作为持久化绑定。
 
 边界：路径来自现有 `OpencodePaths` 解析器和启动环境，而不是 ACP 握手返回的数据库声明；多候选路径、符号链接/文件替换、CLI wrapper 自行改变环境等情况不属于已认证的文件身份。没有新增 HTTP kernel，也没有重新实测安装版本、fork 复制、steer 等运行时契约。本轮测试是模拟依赖与本地回归，不消耗真实模型 turn。
+
+## 11. 第二轮代码实施：独立目录发现
+
+详见 `docs/research/opencode-metadata-discovery-2026-10-11.md`。
+本轮落地目录服务的取消、来源快照、晚到发布隔离、旧目录保留/标记和逐端点
+证据，仍保留 ACP 后端。本轮实际 CLI 版本为 `1.18.33`；只读目录实测观察到
+47 个模型、2 个命令、7 个 Agent，没有创建 session 或调用模型。
+未把这一读数扩张为模型应用、steer、fork 或 V2 HTTP 后端的能力认证。

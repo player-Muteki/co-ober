@@ -523,6 +523,10 @@ const en = {
       unexpectedError: 'Diagnostics failed unexpectedly',
     },
     nativeCatalog: {
+      cancel: 'Cancel catalog read',
+      stale: 'Previous catalog — the source changed or refresh failed. Reload to validate it.',
+      partial: 'Only part of the catalog was observed; unavailable routes are not empty lists.',
+      routeUnavailable: 'Unavailable — no valid catalog response',
       heading: 'Native OpenCode catalog',
       description: 'Read what the native OpenCode install lists, over a brief loopback `opencode serve`. This is separate from the connected session and does not change it.',
       load: 'Load catalog',

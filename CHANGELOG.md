@@ -1,3 +1,17 @@
+## 0.2.60 - 2026-10-11
+
+### Added
+
+- **Owned, cancellable native catalog discovery**: a dedicated read-only service captures CLI, working directory and launch environment, fences publication after source changes, and lets the reader cancel or close Settings without a late result restoring the old catalog. Existing rows remain visible with a stale-source warning until a successful explicit refresh; discovery never creates a chat session or changes the ACP model selection.
+
+### Fixed
+
+- **Catalog reachability is no longer fabricated as emptiness**: operation-level cancellation and deadlines settle even if a request ignores abort. Only the existing `{ data: [...] }` response dialect counts as a valid route; HTML catch-alls, malformed payloads and failed routes are unavailable, not empty. Partial catalogs carry per-route evidence in Settings and no longer pass diagnostics as a complete roster. Process shutdown also absorbs delayed spawn errors until close. Catalog updates redraw only their own settings container.
+
+### Validation
+
+- 80 test files / 2,389 tests passed, with TypeScript, ESLint and release checks. A read-only probe of the currently installed OpenCode 1.18.33 observed all three catalog routes (47 enabled models, 2 commands, 7 agents) without creating sessions or invoking a model. This does not certify V2 HTTP execution, model application, steer, or checkpoint fork; ACP remains the chat backend.
+
 ## 0.2.59 - 2026-10-11
 
 ### Added

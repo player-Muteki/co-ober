@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
 import { CoOberSettingsTab } from './settings';
+import { detectOpencodeNativeCatalog, type OpencodeCatalogObservation } from './opencode/OpencodeCatalog';
 import { DEFAULT_SETTINGS, VIEW_TYPE } from './types';
 import { setLocale, t as locale } from './i18n/index';
 import { Notice } from './test/obsidianMock';
@@ -72,6 +73,116 @@ vi.mock('./opencode/OpencodeForkProbe', () => ({
 }));
 
 describe('CoOberSettingsTab locale refresh', () => {
+  it('aborts an in-flight catalog when the configured CLI changes and rejects its late rows', async () => {
+    setLocale('en');
+    let resolve!: (value: OpencodeCatalogObservation) => void;
+    const read = vi.mocked(detectOpencodeNativeCatalog);
+    read.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+    [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Load catalog')!.click();
+    const signal = read.mock.calls.at(-1)?.[2]?.signal;
+    const input = [...tab.containerEl.querySelectorAll('input')].find((el) => el.value === 'opencode')!;
+    fakeResolve = () => '/usr/bin/new-opencode';
+    try {
+      input.value = 'new-opencode';
+      input.dispatchEvent(new Event('change'));
+      expect(signal?.aborted).toBe(true);
+      resolve({ status: 'observed', models: [{ modelId: 'old/a', name: 'Wrong source', context: undefined }], commands: [], agents: [] });
+      await flushPromises();
+      expect(tab.containerEl.textContent).not.toContain('Wrong source');
+      expect(tab.containerEl.textContent).toContain('Not loaded');
+      expect(plugin.getClient()?.createSession).not.toHaveBeenCalled();
+    } finally { fakeResolve = null; }
+  });
+
+  it('keeps old catalog rows but marks them stale after a CLI change without automatic discovery', async () => {
+    setLocale('en');
+    const read = vi.mocked(detectOpencodeNativeCatalog);
+    read.mockResolvedValueOnce({ status: 'observed', models: [{ modelId: 'old/a', name: 'Previous model', context: undefined }], commands: [], agents: [] });
+    const plugin = createPlugin({ refreshLocale: vi.fn() });
+    const tab = new CoOberSettingsTab(plugin);
+    tab.display();
+    [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Load catalog')!.click();
+    await flushPromises();
+    const callCount = read.mock.calls.length;
+    const input = [...tab.containerEl.querySelectorAll('input')].find((el) => el.value === 'opencode')!;
+    fakeResolve = () => '/usr/bin/new-opencode';
+    try {
+      input.value = 'new-opencode';
+      input.dispatchEvent(new Event('change'));
+      await flushPromises();
+      expect(plugin.settings.opencodePath).toBe('new-opencode');
+      expect(tab.containerEl.textContent).toContain('Previous model');
+      expect(tab.containerEl.textContent).toContain('Previous catalog');
+      expect(read).toHaveBeenCalledTimes(callCount);
+      expect(plugin.getClient()?.createSession).not.toHaveBeenCalled();
+    } finally { fakeResolve = null; }
+  });
+
+  it('lets the reader cancel discovery and retry without hiding settings', async () => {
+    setLocale('en');
+    let resolve!: (value: OpencodeCatalogObservation) => void;
+    const read = vi.mocked(detectOpencodeNativeCatalog);
+    read.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
+    tab.display();
+    [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Load catalog')!.click();
+    const signal = read.mock.calls.at(-1)?.[2]?.signal;
+    [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Cancel catalog read')!.click();
+    expect(signal?.aborted).toBe(true);
+    resolve({ status: 'observed', models: [{ modelId: 'old/a', name: 'Cancelled model', context: undefined }], commands: [], agents: [] });
+    await flushPromises();
+    expect(tab.containerEl.textContent).not.toContain('Cancelled model');
+    const button = [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Load catalog')!;
+    expect(button.disabled).toBe(false);
+  });
+
+  it('shows route failures separately from a valid empty models roster', async () => {
+    setLocale('en');
+    vi.mocked(detectOpencodeNativeCatalog).mockResolvedValueOnce({ status: 'observed', models: [], commands: [], agents: [],
+      routes: { models: 'observed', commands: 'unavailable', agents: 'unavailable' } });
+    const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
+    tab.display();
+    [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Load catalog')!.click();
+    await flushPromises();
+    expect(tab.containerEl.textContent).toContain('Only part of the catalog');
+    expect(tab.containerEl.textContent).toContain('Unavailable — no valid catalog response');
+    expect(tab.containerEl.textContent).not.toContain('listed no models, commands, or agents');
+  });
+
+  it('does not pass diagnostics as a complete roster when a route is unavailable', async () => {
+    setLocale('en');
+    vi.mocked(detectOpencodeNativeCatalog).mockResolvedValueOnce({ status: 'observed', models: [{ modelId: 'p/a', name: 'Alpha', context: undefined }], commands: [], agents: [],
+      routes: { models: 'observed', commands: 'unavailable', agents: 'observed' } });
+    const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
+    tab.display();
+    [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Run Diagnostics')!.click();
+    await flushPromises();
+    await flushPromises();
+    expect(tab.containerEl.textContent).toContain('Fail: Native OpenCode catalog');
+    expect(tab.containerEl.textContent).toContain('Only part of the catalog');
+  });
+
+  it('cancels catalog discovery when settings are hidden and ignores the late answer', async () => {
+    setLocale('en');
+    let resolve!: (value: OpencodeCatalogObservation) => void;
+    vi.mocked(detectOpencodeNativeCatalog).mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
+    tab.display();
+    const button = [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Load catalog')!;
+    button.click();
+    const signal = vi.mocked(detectOpencodeNativeCatalog).mock.calls.at(-1)?.[2]?.signal;
+    tab.hide();
+    expect(signal?.aborted).toBe(true);
+    resolve({ status: 'observed', models: [{ modelId: 'old/a', name: 'Late model', context: undefined }], commands: [], agents: [] });
+    await flushPromises();
+    tab.display();
+    expect(tab.containerEl.textContent).not.toContain('Late model');
+    expect(tab.containerEl.textContent).toContain('Not loaded');
+  });
+
   it('redraws settings labels and refreshes open chat views when language changes', async () => {
     setLocale('en');
     const refreshedView = { refreshLocale: vi.fn() };

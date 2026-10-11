@@ -36,6 +36,8 @@ export interface OpencodeCatalogObservation {
   models: OpencodeNativeModel[];
   commands: OpencodeNativeCommand[];
   agents: OpencodeNativeAgent[];
+  /** Per-route evidence; absent on older callers' observations. */
+  routes?: Record<'models' | 'commands' | 'agents', OpencodeCatalogStatus>;
 }
 
 export interface OpencodeCatalogDeps {
@@ -44,6 +46,7 @@ export interface OpencodeCatalogDeps {
   spawn?: (command: string, args: string[], options: SpawnOptions) => ChildProcess;
   request?: (url: string, signal?: AbortSignal) => Promise<unknown>;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 /**
@@ -148,29 +151,40 @@ export async function detectOpencodeNativeCatalog(
   deps: OpencodeCatalogDeps = {},
 ): Promise<OpencodeCatalogObservation> {
   const empty: OpencodeCatalogObservation = { status: 'unavailable', models: [], commands: [], agents: [] };
-  if (!cliPath?.trim()) return empty;
+  if (!cliPath?.trim() || deps.signal?.aborted) return empty;
 
-  const env = deps.env ?? process.env;
+  const env = { ...(deps.env ?? process.env) };
   const platform = deps.platform ?? process.platform;
   const spawnFn = deps.spawn ?? spawn;
   const requestFn = deps.request ?? defaultRequest;
   const timeoutMs = deps.timeoutMs ?? SERVER_TIMEOUT_MS;
 
-  const info = getSpawnInfo(cliPath.trim(), ['serve', '--hostname', '127.0.0.1', '--port', '0'], platform, env);
   let child: ChildProcess;
   try {
+    const info = getSpawnInfo(cliPath.trim(), ['serve', '--hostname', '127.0.0.1', '--port', '0'], platform, env);
     child = spawnFn(info.command, info.args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, env });
   } catch {
     return empty;
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => {
-    controller.abort();
-    child.kill('SIGKILL');
-  }, timeoutMs);
+  const abort = (): void => controller.abort();
+  let onAbort: () => void = () => {};
+  const aborted = new Promise<OpencodeCatalogObservation>((resolve) => {
+    onAbort = () => resolve(empty);
+    controller.signal.addEventListener('abort', onAbort, { once: true });
+  });
+  const timer = setTimeout(abort, timeoutMs);
+  deps.signal?.addEventListener('abort', abort, { once: true });
+  child.on('error', abort);
+  const onProcessClose = (): void => {
+    child.removeListener('error', abort);
+    abort();
+  };
+  child.once('close', onProcessClose);
+  if (deps.signal?.aborted) abort();
 
-  try {
+  const read = async (): Promise<OpencodeCatalogObservation> => {
     const origin = await waitForServerUrl(child, controller);
     const suffix = `location%5Bdirectory%5D=${encodeURIComponent(cwd)}`;
     const settled = await Promise.allSettled([
@@ -178,41 +192,60 @@ export async function detectOpencodeNativeCatalog(
       requestFn(`${origin}/api/command?${suffix}`, controller.signal),
       requestFn(`${origin}/api/agent?${suffix}`, controller.signal),
     ]);
-    // A route that answered is read honestly; a route that failed contributes an
-    // empty list. `unavailable` is reserved for the whole probe failing — the
-    // server never came up, or every catalog read failed — so a partial read is
-    // never laundered into "the install has nothing" nor an unreachable install
-    // into "the install is empty".
-    if (settled.every((entry) => entry.status === 'rejected')) return empty;
-    const models = settled[0].status === 'fulfilled' ? mapNativeModels(settled[0].value) : [];
-    const commands = settled[1].status === 'fulfilled' ? mapNativeCommands(settled[1].value) : [];
-    const agents = settled[2].status === 'fulfilled' ? mapNativeAgents(settled[2].value) : [];
-    return { status: 'observed', models, commands, agents };
+    // HTTP success is not catalog evidence: HTML catch-alls and other JSON
+    // dialects must not become a confidently empty roster.
+    const payloads = settled.map((entry) => entry.status === 'fulfilled'
+      && entry.value !== null && typeof entry.value === 'object'
+      && Array.isArray((entry.value as { data?: unknown }).data) ? entry.value : undefined);
+    const routes: NonNullable<OpencodeCatalogObservation['routes']> = {
+      models: payloads[0] === undefined ? 'unavailable' : 'observed',
+      commands: payloads[1] === undefined ? 'unavailable' : 'observed',
+      agents: payloads[2] === undefined ? 'unavailable' : 'observed',
+    };
+    if (payloads.every((payload) => payload === undefined)) return { ...empty, routes };
+    return {
+      status: 'observed', routes,
+      models: mapNativeModels(payloads[0]),
+      commands: mapNativeCommands(payloads[1]),
+      agents: mapNativeAgents(payloads[2]),
+    };
+  };
+  try {
+    // The deadline belongs to this operation, not to the injected transport's
+    // willingness to honour AbortSignal. Late results cannot publish success.
+    return await Promise.race([aborted, read()]);
   } catch {
     return empty;
   } finally {
     clearTimeout(timer);
+    deps.signal?.removeEventListener('abort', abort);
     controller.abort();
-    child.kill('SIGKILL');
+    controller.signal.removeEventListener('abort', onAbort);
+    // spawn/kill can report an asynchronous error after cancellation. Keep the
+    // harmless error sink until close so shutdown cannot create an unhandled event.
+    try { child.kill('SIGKILL'); } catch { /* The process may already be gone. */ }
   }
 }
 
 function waitForServerUrl(child: ChildProcess, controller: AbortController): Promise<string> {
   return new Promise<string>((resolve, reject) => {
+    if (controller.signal.aborted) { reject(new Error('OpenCode serve startup aborted.')); return; }
     let output = '';
     let settled = false;
     const finish = (error?: Error, origin?: string): void => {
       if (settled) return;
       settled = true;
       controller.signal.removeEventListener('abort', onAbort);
+      child.removeListener('error', onError);
+      child.removeListener('close', onClose);
+      child.stdout?.removeListener('data', onData);
       if (error) reject(error);
       else resolve(origin!);
     };
     const onAbort = (): void => finish(new Error('OpenCode serve startup aborted.'));
-    controller.signal.addEventListener('abort', onAbort, { once: true });
-    child.on('error', () => finish(new Error('Could not start OpenCode serve.')));
-    child.on('close', () => finish(new Error('OpenCode serve closed before readiness.')));
-    child.stdout?.on('data', (chunk: Buffer) => {
+    const onError = (): void => finish(new Error('Could not start OpenCode serve.'));
+    const onClose = (): void => finish(new Error('OpenCode serve closed before readiness.'));
+    const onData = (chunk: Buffer): void => {
       if (settled) return;
       output += chunk.toString('utf-8');
       if (output.length > SERVER_OUTPUT_MAX_CHARS) {
@@ -221,6 +254,10 @@ function waitForServerUrl(child: ChildProcess, controller: AbortController): Pro
       }
       const origin = parseOpencodeServerUrl(output);
       if (origin) finish(undefined, origin);
-    });
+    };
+    controller.signal.addEventListener('abort', onAbort, { once: true });
+    child.on('error', onError);
+    child.on('close', onClose);
+    child.stdout?.on('data', onData);
   });
 }

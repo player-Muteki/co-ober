@@ -525,6 +525,10 @@ const zh: Locale = {
       unexpectedError: '诊断意外失败',
     },
     nativeCatalog: {
+      cancel: '取消目录读取',
+      stale: '上次读取的目录 — 来源已变化或刷新失败，请重新加载以确认。',
+      partial: '仅观察到部分目录；不可用的端点不代表列表为空。',
+      routeUnavailable: '不可用 — 未收到有效目录响应',
       heading: '原生 OpenCode 目录',
       description: '通过一次短暂的本地 `opencode serve` 读取原生 OpenCode 安装列出的内容。这与已连接的会话相互独立，不会改变它。',
       load: '加载目录',

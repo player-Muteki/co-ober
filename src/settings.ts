@@ -11,7 +11,8 @@ import { validateCustomAgent } from './agents/custom';
 import { resolveCommandPath } from './utils/commandResolution';
 import { getVaultPath } from './utils/vault';
 import { detectOpencodeVersion } from './opencode/OpencodeVersion';
-import { detectOpencodeNativeCatalog, type OpencodeCatalogObservation } from './opencode/OpencodeCatalog';
+import { detectOpencodeNativeCatalog } from './opencode/OpencodeCatalog';
+import { OpencodeCatalogService } from './opencode/OpencodeCatalogService';
 import { detectOpencodeNativeTurnExecution, type OpencodeTurnObservation } from './opencode/OpencodeTurnProbe';
 import { detectOpencodeNativeTurnStream, type OpencodeStreamObservation } from './opencode/OpencodeStreamProbe';
 import { detectOpencodeNativeCheckpointFork, type OpencodeForkObservation } from './opencode/OpencodeForkProbe';
@@ -88,15 +89,9 @@ export class CoOberSettingsTab extends PluginSettingTab {
   private runtimeOptionsUnavailable = false;
   private diagnosticsRunning = false;
   private diagnosticsResults: DiagnosticResult[] = [];
-  // The native catalog surface reads what `opencode serve` lists, separate from
-  // the connected session. It is fetched only when the reader presses the button,
-  // because probing means starting a throwaway local server; `loaded` says a read
-  // completed, `running` says one is in flight, and the observation itself carries
-  // observed vs unavailable. An opening panel therefore shows nothing rather than
-  // guessing at a catalog it never asked about.
-  private nativeCatalogRunning = false;
-  private nativeCatalogLoaded = false;
-  private nativeCatalog: OpencodeCatalogObservation | null = null;
+  private readonly catalogService = new OpencodeCatalogService();
+  private nativeCatalogEl?: HTMLElement;
+  private shown = false;
   // The turn probe drives one throwaway native turn, so it is run only when the
   // reader presses its button. `nativeTurn` holds the last observation, `null`
   // until a probe has run — an un-run probe cannot claim the engine works.
@@ -128,14 +123,30 @@ export class CoOberSettingsTab extends PluginSettingTab {
 
   // display is deprecated since Obsidian 1.13.0, but minAppVersion is 1.8.0
   // so getSettingDefinitions() cannot be used until the target is bumped.
-  override display(): void { this.render(); }
+  override display(): void { this.shown = true; this.render(); }
+
+  override hide(): void {
+    this.shown = false;
+    this.catalogService.cancel();
+  }
+
+  private catalogSource() {
+    return { cliPath: this.plugin.settings.opencodePath, cwd: getVaultPath(this.plugin.app) };
+  }
+
+  private redrawNativeCatalog(): void {
+    if (!this.shown || !this.nativeCatalogEl) return;
+    this.nativeCatalogEl.empty();
+    this.renderNativeCatalogSection(this.nativeCatalogEl);
+  }
 
   private render(): void {
     const { containerEl } = this;
     containerEl.empty();
 
     this.renderConnectionSection(containerEl);
-    this.renderNativeCatalogSection(containerEl);
+    this.nativeCatalogEl = containerEl.createDiv();
+    this.renderNativeCatalogSection(this.nativeCatalogEl);
     this.renderAgentSection(containerEl);
     this.renderSystemPromptSection(containerEl);
     this.renderNotesSection(containerEl);
@@ -161,6 +172,8 @@ export class CoOberSettingsTab extends PluginSettingTab {
           const trimmed = v.trim();
           if (this.validateOpencodePath(trimmed)) {
             s.opencodePath = trimmed;
+            this.catalogService.setSource(this.catalogSource());
+            this.redrawNativeCatalog();
             await this.save();
           } else {
             // The path was refused and nothing was stored, so the box must not
@@ -764,19 +777,27 @@ export class CoOberSettingsTab extends PluginSettingTab {
   }
 
   private renderNativeCatalogSection(containerEl: HTMLElement): void {
+    this.catalogService.setSource(this.catalogSource());
+    const state = this.catalogService.getSnapshot();
     const labels = locale().settings.nativeCatalog;
     new Setting(containerEl).setName(labels.heading).setHeading();
 
     new Setting(containerEl)
       .setName(labels.description)
       .addButton((button) => {
-        button.setButtonText(this.nativeCatalogRunning ? labels.refreshing : this.nativeCatalogLoaded ? labels.reload : labels.load);
-        button.buttonEl.disabled = this.nativeCatalogRunning;
+        button.setButtonText(state.loading ? labels.refreshing : state.observation || state.unavailable ? labels.reload : labels.load);
+        button.buttonEl.disabled = state.loading;
         button.onClick(async () => {
           await this.loadNativeCatalog();
         });
       });
 
+    if (state.loading) {
+      new Setting(containerEl).addButton((button) => {
+        button.setButtonText(labels.cancel);
+        button.onClick(() => { this.catalogService.cancel(); this.redrawNativeCatalog(); });
+      });
+    }
     this.renderNativeCatalogBody(containerEl, labels);
     this.renderNativeTurnProbe(containerEl, labels);
     this.renderNativeStreamProbe(containerEl, labels);
@@ -784,42 +805,36 @@ export class CoOberSettingsTab extends PluginSettingTab {
   }
 
   private renderNativeCatalogBody(containerEl: HTMLElement, labels: ReturnType<typeof locale>['settings']['nativeCatalog']): void {
-    if (this.nativeCatalogRunning) {
-      new Setting(containerEl).setName(labels.running);
+    const state = this.catalogService.getSnapshot();
+    if (state.loading) new Setting(containerEl).setName(labels.running);
+    if (state.unavailable) new Setting(containerEl).setName(labels.unavailable);
+    const observation = state.observation;
+    if (!observation) {
+      if (!state.loading && !state.unavailable) new Setting(containerEl).setName(labels.notLoaded);
       return;
     }
-    const observation = this.nativeCatalog;
-    if (!this.nativeCatalogLoaded || !observation) {
-      // The panel has not asked the native install anything yet, so it cannot
-      // say the catalog is empty or full. An un-posed question stays un-answered.
-      new Setting(containerEl).setName(labels.notLoaded);
-      return;
-    }
-    if (observation.status === 'unavailable') {
-      // A throwaway server that never answered is a reachability failure, not a
-      // settled "this install lists nothing"; the two carry different remedies.
-      new Setting(containerEl).setName(labels.unavailable);
-      return;
-    }
+    if (state.stale) new Setting(containerEl).setName(labels.stale);
+    const partial = observation.routes && Object.values(observation.routes).some((status) => status === 'unavailable');
+    if (partial) new Setting(containerEl).setName(labels.partial);
     const total = observation.models.length + observation.commands.length + observation.agents.length;
-    if (total === 0) {
+    if (total === 0 && !partial) {
       new Setting(containerEl).setName(labels.empty);
       return;
     }
 
-    new Setting(containerEl).setName(labels.modelsHeading).setDesc(String(observation.models.length));
+    new Setting(containerEl).setName(labels.modelsHeading).setDesc(observation.routes?.models === 'unavailable' ? labels.routeUnavailable : String(observation.models.length));
     for (const model of observation.models) {
       new Setting(containerEl)
         .setName(model.name)
         .setDesc(model.context === undefined ? labels.modelNoContext : labels.modelContext.replace('{context}', String(model.context)));
     }
 
-    new Setting(containerEl).setName(labels.commandsHeading).setDesc(String(observation.commands.length));
+    new Setting(containerEl).setName(labels.commandsHeading).setDesc(observation.routes?.commands === 'unavailable' ? labels.routeUnavailable : String(observation.commands.length));
     for (const command of observation.commands) {
       new Setting(containerEl).setName(command.name).setDesc(command.description ?? labels.commandNoDescription);
     }
 
-    new Setting(containerEl).setName(labels.agentsHeading).setDesc(String(observation.agents.length));
+    new Setting(containerEl).setName(labels.agentsHeading).setDesc(observation.routes?.agents === 'unavailable' ? labels.routeUnavailable : String(observation.agents.length));
     for (const agent of observation.agents) {
       new Setting(containerEl).setName(agent.id).setDesc(agent.description ?? labels.agentNoDescription);
     }
@@ -992,20 +1007,10 @@ export class CoOberSettingsTab extends PluginSettingTab {
   }
 
   private async loadNativeCatalog(): Promise<void> {
-    this.nativeCatalogRunning = true;
-    this.render();
-    try {
-      this.nativeCatalog = await detectOpencodeNativeCatalog(this.plugin.settings.opencodePath, getVaultPath(this.plugin.app));
-      this.nativeCatalogLoaded = true;
-    } catch {
-      // The probe never throws, but a failure to reach it still must not leave a
-      // loaded panel claiming an empty catalog. Report it as not answerable.
-      this.nativeCatalog = { status: 'unavailable', models: [], commands: [], agents: [] };
-      this.nativeCatalogLoaded = true;
-    } finally {
-      this.nativeCatalogRunning = false;
-      this.render();
-    }
+    const pending = this.catalogService.refresh(this.catalogSource());
+    this.redrawNativeCatalog();
+    await pending;
+    this.redrawNativeCatalog();
   }
 
   private async runDiagnostics(): Promise<void> {
@@ -1055,15 +1060,18 @@ export class CoOberSettingsTab extends PluginSettingTab {
     // fabricated roster.
     const catalog = await detectOpencodeNativeCatalog(this.plugin.settings.opencodePath, getVaultPath(this.plugin.app));
     const catalogTotal = catalog.models.length + catalog.commands.length + catalog.agents.length;
+    const catalogPartial = catalog.routes && Object.values(catalog.routes).some((status) => status === 'unavailable');
     const catalogDetail = catalog.status === 'unavailable'
       ? labels.catalogUnavailable
+      : catalogPartial
+        ? locale().settings.nativeCatalog.partial
       : catalogTotal === 0
         ? labels.catalogEmpty
         : labels.catalogDetail
           .replace('{models}', String(catalog.models.length))
           .replace('{commands}', String(catalog.commands.length))
           .replace('{agents}', String(catalog.agents.length));
-    results.push({ label: labels.catalog, ok: catalog.status === 'observed' && catalogTotal > 0, detail: catalogDetail });
+    results.push({ label: labels.catalog, ok: catalog.status === 'observed' && !catalogPartial && catalogTotal > 0, detail: catalogDetail });
 
     const existingClient = this.plugin.getClient();
     const connected = existingClient?.isConnected() ? true : await this.plugin.initClient();

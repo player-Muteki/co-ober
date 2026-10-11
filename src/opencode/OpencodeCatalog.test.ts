@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'events';
+import type { OpencodeCatalogDeps } from './OpencodeCatalog';
 import { PassThrough } from 'stream';
 import {
   parseOpencodeServerUrl,
@@ -109,6 +110,117 @@ describe('mapNativeAgents', () => {
 });
 
 describe('detectOpencodeNativeCatalog', () => {
+  it('absorbs a delayed spawn error after cancellation until the child closes', async () => {
+    const child = fakeServeChild('not ready');
+    const controller = new AbortController();
+    const pending = detectOpencodeNativeCatalog('opencode', '/vault', {
+      signal: controller.signal, spawn: vi.fn(() => child as never), env: {}, platform: 'linux',
+    });
+    controller.abort();
+    await pending;
+    expect(() => child.emit('error', new Error('delayed ENOENT'))).not.toThrow();
+    child.emit('close', 1);
+    expect(child.listenerCount('error')).toBe(0);
+    expect(child.listenerCount('close')).toBe(0);
+  });
+
+  it('does not launch a server for a pre-cancelled read', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const spawn = vi.fn();
+    const request = vi.fn();
+    const result = await detectOpencodeNativeCatalog('opencode', '/vault', { signal: controller.signal, spawn, request });
+    expect(result.status).toBe('unavailable');
+    expect(spawn).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('cancels startup and removes the readiness listeners', async () => {
+    const child = fakeServeChild('not ready');
+    const controller = new AbortController();
+    const pending = detectOpencodeNativeCatalog('opencode', '/vault', {
+      signal: controller.signal, spawn: vi.fn(() => child as never), env: {}, platform: 'linux',
+    });
+    controller.abort();
+    expect((await pending).status).toBe('unavailable');
+    expect(child.kill).toHaveBeenCalledTimes(1);
+    child.emit('close', 0);
+    expect(child.listenerCount('close')).toBe(0);
+    expect(child.listenerCount('error')).toBe(0);
+    expect(child.stdout.listenerCount('data')).toBe(0);
+  });
+
+  it('never upgrades an aborted read when ignored requests finish late', async () => {
+    const child = fakeServeChild('http://127.0.0.1:4096');
+    const controller = new AbortController();
+    let ready!: () => void;
+    const started = new Promise<void>((resolve) => { ready = resolve; });
+    let complete!: (value: unknown) => void;
+    const late = new Promise<unknown>((resolve) => { complete = resolve; });
+    const pending = detectOpencodeNativeCatalog('opencode', '/vault', {
+      signal: controller.signal, spawn: vi.fn(() => child as never),
+      request: vi.fn(() => { ready(); return late; }), env: {}, platform: 'linux',
+    });
+    await started;
+    controller.abort();
+    const result = await pending;
+    complete({ data: [] });
+    await Promise.resolve();
+    expect(result.status).toBe('unavailable');
+    expect(child.kill).toHaveBeenCalledTimes(1);
+  });
+
+  it('records unavailable routes separately from valid empty arrays', async () => {
+    const child = fakeServeChild('http://127.0.0.1:4096');
+    const result = await detectOpencodeNativeCatalog('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), env: {}, platform: 'linux',
+      request: requestRouter({ '/api/model': { data: [] }, '/api/command': '<html>UI</html>', '/api/agent': new Error('offline') }),
+    });
+    expect(result).toMatchObject({ status: 'observed', models: [], commands: [], agents: [],
+      routes: { models: 'observed', commands: 'unavailable', agents: 'unavailable' } });
+  });
+
+  it('captures the launch environment rather than retaining a mutable caller object', async () => {
+    const child = fakeServeChild('http://127.0.0.1:4096');
+    const env = { OPENCODE_DB: '/old.db' };
+    const spawn = vi.fn<NonNullable<OpencodeCatalogDeps['spawn']>>(() => child as never);
+    const pending = detectOpencodeNativeCatalog('opencode', '/vault', {
+      spawn, env, platform: 'linux', request: requestRouter({ '/api/model': { data: [] }, '/api/command': { data: [] }, '/api/agent': { data: [] } }),
+    });
+    env.OPENCODE_DB = '/new.db';
+    await pending;
+    expect(spawn.mock.calls[0][2].env?.OPENCODE_DB).toBe('/old.db');
+  });
+
+  it('settles at the deadline even when a catalog request ignores abort', async () => {
+    const child = fakeServeChild('http://127.0.0.1:4096');
+    const pending = detectOpencodeNativeCatalog('opencode', '/vault', {
+      spawn: vi.fn(() => child as never) as never,
+      request: vi.fn(() => new Promise(() => {})), env: {}, platform: 'linux', timeoutMs: 10,
+    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const result = await Promise.race([
+      pending,
+      new Promise<string>((resolve) => { timer = setTimeout(() => resolve('still pending'), 80); }),
+    ]);
+    clearTimeout(timer);
+    expect(result).toMatchObject({ status: 'unavailable' });
+    expect(child.kill).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not certify HTML or a different JSON dialect as an empty catalog', async () => {
+    const child = fakeServeChild('http://127.0.0.1:4096');
+    const request = requestRouter({
+      '/api/model': '<html>web UI</html>',
+      '/api/command': { commands: [] },
+      '/api/agent': { data: {} },
+    });
+    const result = await detectOpencodeNativeCatalog('opencode', '/vault', {
+      spawn: vi.fn(() => child as never) as never, request: request as never, env: {}, platform: 'linux',
+    });
+    expect(result.status).toBe('unavailable');
+  });
+
   it('observes the three lists over the discovered loopback address', async () => {
     const child = fakeServeChild('opencode server listening on http://127.0.0.1:4096\n');
     const request = requestRouter({
