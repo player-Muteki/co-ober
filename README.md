@@ -4,8 +4,6 @@
 ![GitHub release](https://img.shields.io/github/v/release/player-Muteki/co-ober)
 ![License](https://img.shields.io/github/license/player-Muteki/co-ober)
 
-> Beta. Currently in public testing.
-
 > English | [中文](#中文)
 
 An Obsidian plugin that brings the [OpenCode](https://opencode.ai) AI Agent into your vault as a living assistant. It understands your notes, explores your vault structure, and helps you think, write, and organize. All without leaving Obsidian.
@@ -46,6 +44,12 @@ Most Obsidian AI plugins need third-party API keys (ongoing token costs) or midd
 
 ## Installation
 
+### Official community plugin marketplace (recommended)
+
+1. Open Obsidian and go to Settings → Community plugins → Browse
+2. Search for "Co-Ober" in the official community plugin marketplace
+3. Click **Install**, then **Enable**
+
 ### Manual
 
 1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](../../releases/latest)
@@ -55,9 +59,6 @@ Most Obsidian AI plugins need third-party API keys (ongoing token costs) or midd
    ```
 3. Copy the downloaded files into the `co-ober` folder
 4. Enable the plugin in Obsidian: Settings → Community plugins → Enable "Co-Ober"
-
-> [!NOTE]
-> Community plugin listing is pending review. For now, manual install is required.
 
 ### From source (development)
 
@@ -244,8 +245,6 @@ Licensed under the [MIT License](LICENSE).
 
 > [English](#co-ober) | 中文
 
-> Beta，目前处于公开测试阶段。
-
 将 [OpenCode](https://opencode.ai) AI Agent 带入你的 Obsidian 仓库，成为一个住在 Vault 里的助手。它能理解你的笔记、探索仓库结构，帮你思考、写作和整理——全程不用离开 Obsidian。
 
 ## 为什么做 Co-Ober
@@ -284,6 +283,12 @@ Licensed under the [MIT License](LICENSE).
 
 ## 安装方式
 
+### 官方插件市场下载（推荐）
+
+1. 打开 Obsidian，进入 设置 → 第三方插件 → 浏览
+2. 在官方插件市场中搜索 "Co-Ober"
+3. 点击**安装**，安装完成后点击**启用**
+
 ### 手动安装
 
 1. 从[最新 Release](../../releases/latest) 下载 `main.js`、`manifest.json` 和 `styles.css`
@@ -293,9 +298,6 @@ Licensed under the [MIT License](LICENSE).
    ```
 3. 将下载的文件复制到 `co-ober` 文件夹
 4. 在 Obsidian 中启用插件：设置 → 第三方插件 → 启用 "Co-Ober"
-
-> [!NOTE]
-> 社区插件市场审核中，当前仅支持手动安装。
 
 ### 从源码安装（开发）
 
