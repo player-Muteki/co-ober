@@ -4,6 +4,7 @@ import { PassThrough } from 'stream';
 import {
   assistantTextOf,
   detectOpencodeNativeTurnExecution,
+  type OpencodeTurnObservation,
 } from './OpencodeTurnProbe';
 
 /** A serve child that prints its readiness line and stays alive until killed. */
@@ -153,5 +154,63 @@ describe('detectOpencodeNativeTurnExecution', () => {
     });
     const createCall = request.mock.calls.find(([url]) => String(url).endsWith('/api/session'));
     expect(createCall?.[1]).toMatchObject({ method: 'POST', body: { location: { directory: '/a vault/dir' } } });
+  });
+
+  it('does not spawn a server for a reader who already cancelled', async () => {
+    // This probe spends a real model turn. Starting a server after the reader gave up is
+    // work they did not ask for and cannot be taken back.
+    const spawn = vi.fn();
+    const reading = await detectOpencodeNativeTurnExecution('opencode', '/vault', {
+      spawn: spawn as never, platform: 'linux', env: {}, signal: AbortSignal.abort(),
+    });
+    expect(reading.status).toBe('unavailable');
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('settles a cancelled probe without waiting for a request helper that ignores the signal', async () => {
+    const child = fakeServeChild(READY);
+    const controller = new AbortController();
+    // A helper that never settles stands in for a request the abort could not reach.
+    const request = vi.fn(() => new Promise<unknown>(() => {}));
+    let result: OpencodeTurnObservation | undefined;
+    const pending = detectOpencodeNativeTurnExecution('opencode', '/vault', {
+      spawn: vi.fn(() => child) as never, request: request as never, platform: 'linux', env: {},
+      pollMs: 0, pollAttempts: 3, signal: controller.signal,
+    }).then((reading) => { result = reading; return reading; });
+    controller.abort();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settled = await Promise.race([
+      pending.then(() => 'settled'),
+      new Promise<string>((resolve) => { timer = setTimeout(() => resolve('still pending'), 40); }),
+    ]);
+    clearTimeout(timer);
+    expect(settled).toBe('settled');
+    expect(result?.status).toBe('unavailable');
+    // The server the reader started must not outlive the reader's interest in it.
+    expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+  });
+
+  it('still reports admitted when its own deadline expires mid-poll', async () => {
+    // The deadline must NOT collapse into the cancel path. A kernel that took the prompt
+    // and returned no answer inside the window is `admitted` — live channel, execution not
+    // confirmed. Racing the deadline in here would answer `unavailable` instead, trading
+    // one lie for another and merging the two sentences 0.2.55 separated.
+    const child = fakeServeChild(READY);
+    const request = requestRouter({
+      // Hold the poll open past the deadline so the timeout genuinely lands mid-window
+      // rather than after the loop has already finished on its own.
+      '/message': async () => {
+        await new Promise((done) => setTimeout(done, 40));
+        return { data: [{ type: 'user', text: 'q' }] };
+      },
+      '/prompt': { data: { id: 'msg_a', admittedSeq: 1 } },
+      '/interrupt': {},
+      '/api/session': { data: { id: 'ses_1' } },
+    });
+    const reading = await detectOpencodeNativeTurnExecution('opencode', '/vault', {
+      spawn: vi.fn(() => child) as never, request: request as never, platform: 'linux', env: {},
+      pollMs: 0, pollAttempts: 4, timeoutMs: 2,
+    });
+    expect(reading.status).toBe('admitted');
   });
 });

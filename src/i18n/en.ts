@@ -526,6 +526,10 @@ const en = {
     nativeCatalog: {
       cancel: 'Cancel catalog read',
       stale: 'Previous catalog — the source changed or refresh failed. Reload to validate it.',
+      probeStale: 'Measured against an earlier OpenCode source — the CLI path or environment changed since. Probe again to validate it.',
+      turnCancel: 'Cancel turn probe',
+      streamCancel: 'Cancel stream probe',
+      forkCancel: 'Cancel fork probe',
       partial: 'Only part of the catalog was observed; unavailable routes are not empty lists.',
       routeUnavailable: 'Unavailable — no valid catalog response',
       heading: 'Native OpenCode catalog',

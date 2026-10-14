@@ -20,6 +20,12 @@ import { parseOpencodeServerUrl } from './OpencodeCatalog';
  * anchor and not beyond it. No model answer is waited for or required: two
  * admitted prompts put two user rows on the transcript, which is enough to
  * distinguish an empty child, a whole copy, and a true truncation.
+ *
+ * An external `signal` cancels the probe: nothing is spawned if the signal is already
+ * aborted, and an in-flight probe settles without waiting for a request helper that
+ * ignores the signal. Cancellation still attempts the interrupt and the deletes, but does
+ * not claim the throwaway sessions are gone — a probe that gives up mid-teardown is not a
+ * measurement, and the reading it returns says nothing.
  */
 
 const FORK_TIMEOUT_MS = 20_000;
@@ -47,6 +53,9 @@ export interface OpencodeForkDeps {
   timeoutMs?: number;
   pollMs?: number;
   pollAttempts?: number;
+  /** The reader's own cancellation. Cancelling stops this probe publishing and stops the
+   *  fork; it is not a claim that the throwaway sessions vanished from the kernel. */
+  signal?: AbortSignal;
 }
 
 const DEFAULT_FORK: OpencodeForkObservation = { status: 'unavailable', parentRows: 0, childRows: 0, apiForkRoute: 'error' };
@@ -176,7 +185,10 @@ export async function detectOpencodeNativeCheckpointFork(
   cwd: string,
   deps: OpencodeForkDeps = {},
 ): Promise<OpencodeForkObservation> {
-  if (!cliPath?.trim()) return DEFAULT_FORK;
+  // A reader that has already given up must not have a server started under it: the
+  // probe forks real sessions, so spawning one after the cancel does work that cannot be
+  // taken back and nobody asked for.
+  if (!cliPath?.trim() || deps.signal?.aborted) return DEFAULT_FORK;
 
   const env = deps.env ?? process.env;
   const platform = deps.platform ?? process.platform;
@@ -196,15 +208,36 @@ export async function detectOpencodeNativeCheckpointFork(
   }
 
   const controller = new AbortController();
+  // A kill that throws must not block the reader; the deadline and the cancel both have
+  // to settle regardless of how the child reacts.
+  const killChild = (): void => {
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      // The server is already gone; nothing left to stop.
+    }
+  };
+  // Only the READER's cancel short-circuits this probe. The internal deadline deliberately
+  // does not: a poll that ran out of attempts below reports its own honest `unavailable`,
+  // and racing the deadline in here would decide the reading before that code is reached.
+  let onCancel: () => void = () => {};
+  const cancelled = new Promise<OpencodeForkObservation>((resolve) => {
+    onCancel = () => {
+      controller.abort();
+      killChild();
+      resolve(DEFAULT_FORK);
+    };
+    deps.signal?.addEventListener('abort', onCancel, { once: true });
+  });
   const timer = setTimeout(() => {
     controller.abort();
-    child.kill('SIGKILL');
+    killChild();
   }, timeoutMs);
 
   let sessionId: string | null = null;
   let forkedId: string | null = null;
   let origin: string | undefined;
-  try {
+  const run = async (): Promise<OpencodeForkObservation> => {
     origin = await waitForServerUrl(child, controller);
     const created = await requestFn(
       `${origin}/api/session`,
@@ -287,17 +320,26 @@ export async function detectOpencodeNativeCheckpointFork(
       childRows: childRows.length,
       apiForkRoute,
     };
+  };
+
+  try {
+    // The cancel arm settles even if the request helper ignores the signal it was given,
+    // so a reader that walks away is never held hostage by a collector that will not stop.
+    return await Promise.race([cancelled, run()]);
   } catch {
     return DEFAULT_FORK;
   } finally {
     clearTimeout(timer);
+    deps.signal?.removeEventListener('abort', onCancel);
     if (sessionId && origin) {
       try {
         await requestFn(`${origin}/api/session/${encodeURIComponent(sessionId)}/interrupt?resume=false`, { method: 'POST' });
       } catch { /* ignore interrupt outcome */ }
       // A forked child that held history would be real user data; here it is at
       // most an empty throwaway, and the probe deletes both it and its source
-      // session so the measurement leaves nothing behind to discover later.
+      // session so the measurement leaves nothing behind to discover later. This is
+      // an attempt, not a proof: a cancel mid-teardown may leave the server unable
+      // to answer the delete.
       if (forkedId) {
         try {
           await requestFn(`${origin}/session/${encodeURIComponent(forkedId)}?directory=${encodeURIComponent(cwd)}`, { method: 'DELETE' });
@@ -308,7 +350,7 @@ export async function detectOpencodeNativeCheckpointFork(
       } catch { /* ignore delete outcome */ }
     }
     controller.abort();
-    child.kill('SIGKILL');
+    killChild();
   }
 }
 

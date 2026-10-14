@@ -5,6 +5,7 @@ import {
   parseSseDataFrames,
   reduceNativeStream,
   detectOpencodeNativeTurnStream,
+  type OpencodeStreamObservation,
 } from './OpencodeStreamProbe';
 
 /** A serve child that prints its readiness line and stays alive until killed. */
@@ -253,5 +254,38 @@ describe('detectOpencodeNativeTurnStream', () => {
     expect(streamUrl).toContain('/api/event?location%5Bdirectory%5D=%2Fa%20vault%2Fdir');
     const createCall = request.mock.calls.find(([url]) => String(url).endsWith('/api/session'));
     expect(createCall?.[1]).toMatchObject({ method: 'POST', body: { location: { directory: '/a vault/dir' } } });
+  });
+
+  it('does not spawn a server for a reader who already cancelled', async () => {
+    // This probe spends a real model turn. Starting a server after the reader gave up is
+    // work they did not ask for and cannot be taken back.
+    const spawn = vi.fn();
+    const reading = await detectOpencodeNativeTurnStream('opencode', '/vault', {
+      spawn: spawn as never, platform: 'linux', env: {}, signal: AbortSignal.abort(),
+    });
+    expect(reading.status).toBe('unavailable');
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('settles a cancelled probe without waiting for a request helper that ignores the signal', async () => {
+    const child = fakeServeChild(READY);
+    const controller = new AbortController();
+    // A helper that never settles stands in for a request the abort could not reach.
+    const request = vi.fn(() => new Promise<unknown>(() => {}));
+    let result: OpencodeStreamObservation | undefined;
+    const pending = detectOpencodeNativeTurnStream('opencode', '/vault', {
+      spawn: vi.fn(() => child) as never, request: request as never, platform: 'linux', env: {}, signal: controller.signal,
+    }).then((reading) => { result = reading; return reading; });
+    controller.abort();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settled = await Promise.race([
+      pending.then(() => 'settled'),
+      new Promise<string>((resolve) => { timer = setTimeout(() => resolve('still pending'), 40); }),
+    ]);
+    clearTimeout(timer);
+    expect(settled).toBe('settled');
+    expect(result?.status).toBe('unavailable');
+    // The server the reader started must not outlive the reader's interest in it.
+    expect(child.kill).toHaveBeenCalledWith('SIGKILL');
   });
 });

@@ -528,6 +528,10 @@ const zh: Locale = {
     nativeCatalog: {
       cancel: '取消目录读取',
       stale: '上次读取的目录 — 来源已变化或刷新失败，请重新加载以确认。',
+      probeStale: '基于更早的 OpenCode 来源测得 — 此后 CLI 路径或环境已变化，请重新探测以确认。',
+      turnCancel: '取消回合探测',
+      streamCancel: '取消流式探测',
+      forkCancel: '取消分叉探测',
       partial: '仅观察到部分目录；不可用的端点不代表列表为空。',
       routeUnavailable: '不可用 — 未收到有效目录响应',
       heading: '原生 OpenCode 目录',

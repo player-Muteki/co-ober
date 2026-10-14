@@ -38,6 +38,9 @@ export interface OpencodeTurnDeps {
   timeoutMs?: number;
   pollMs?: number;
   pollAttempts?: number;
+  /** The reader's own cancellation. Cancelling stops this probe publishing; it does not
+   *  claim the already-admitted turn stopped generating on the machine. */
+  signal?: AbortSignal;
 }
 
 const DEFAULT_OBSERVATION: OpencodeTurnObservation = { status: 'unavailable', modelId: undefined, finish: undefined, outputTokens: undefined };
@@ -101,13 +104,22 @@ async function defaultRequest(
  * `unavailable` or `admitted` rather than a fabricated execution. `executed` is
  * reserved for the one reading the probe actually watched — an assistant message
  * whose text content was non-empty.
+ *
+ * An external `signal` cancels the probe: no server is started if the signal is already
+ * aborted, an in-flight probe settles without waiting for a request helper that ignores
+ * the signal it was handed, and teardown still runs. What cancellation does NOT claim is
+ * that the already-admitted turn stopped on the machine — the interrupt below is an
+ * attempt, and the honest outcome is "this probe stopped reporting".
  */
 export async function detectOpencodeNativeTurnExecution(
   cliPath: string,
   cwd: string,
   deps: OpencodeTurnDeps = {},
 ): Promise<OpencodeTurnObservation> {
-  if (!cliPath?.trim()) return DEFAULT_OBSERVATION;
+  // A reader that has already given up must not have a server started under it: the
+  // probe spends a real model turn, so spawning one after the cancel is work nobody
+  // asked for and cannot be taken back.
+  if (!cliPath?.trim() || deps.signal?.aborted) return DEFAULT_OBSERVATION;
 
   const env = deps.env ?? process.env;
   const platform = deps.platform ?? process.platform;
@@ -126,14 +138,36 @@ export async function detectOpencodeNativeTurnExecution(
   }
 
   const controller = new AbortController();
+  // A kill that throws (the process already exited, or a wrapper that refuses) must not
+  // block the reader: the deadline and the cancel both have to settle regardless.
+  const killChild = (): void => {
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      // The server is already gone; nothing left to stop.
+    }
+  };
+  // Only the READER's cancel short-circuits this probe. The internal deadline deliberately
+  // does not: a timeout mid-poll means the kernel admitted the prompt and no answer came
+  // back inside the window, which is `admitted` — not the `unavailable` a short-circuit
+  // would return. The two buckets must stay the distinct sentences 0.2.55 gave them.
+  let onCancel: () => void = () => {};
+  const cancelled = new Promise<OpencodeTurnObservation>((resolve) => {
+    onCancel = () => {
+      controller.abort();
+      killChild();
+      resolve(DEFAULT_OBSERVATION);
+    };
+    deps.signal?.addEventListener('abort', onCancel, { once: true });
+  });
   const timer = setTimeout(() => {
     controller.abort();
-    child.kill('SIGKILL');
+    killChild();
   }, timeoutMs);
 
   let sessionId: string | null = null;
   let origin: string | undefined;
-  try {
+  const run = async (): Promise<OpencodeTurnObservation> => {
     origin = await waitForServerUrl(child, controller);
     const created = await requestFn(
       `${origin}/api/session`,
@@ -175,21 +209,29 @@ export async function detectOpencodeNativeTurnExecution(
     // Admitted, but no assistant answer observed within the window: the channel is
     // live, the turn is not confirmed. Report that rather than a completion.
     return { status: 'admitted', modelId: undefined, finish: undefined, outputTokens: undefined };
+  };
+
+  try {
+    // The cancel arm settles even if the request helper ignores the signal it was given,
+    // so a reader that walks away is never held hostage by a collector that will not stop.
+    return await Promise.race([cancelled, run()]);
   } catch {
     return DEFAULT_OBSERVATION;
   } finally {
     clearTimeout(timer);
+    deps.signal?.removeEventListener('abort', onCancel);
     if (sessionId && origin) {
       // Best-effort: stop the throwaway turn so it does not keep generating, and
       // swallow any interrupt error — teardown must not mask the reading. A 204
       // answer carries no JSON body, so the request helper may throw; that is the
-      // expected success shape and is ignored here.
+      // expected success shape and is ignored here. This is an attempt, not a proof:
+      // after a cancel the turn may already have finished on the machine.
       try {
         await requestFn(`${origin}/api/session/${encodeURIComponent(sessionId)}/interrupt?resume=false`, { method: 'POST' });
       } catch { /* ignore interrupt outcome */ }
     }
     controller.abort();
-    child.kill('SIGKILL');
+    killChild();
   }
 }
 

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { detectOpencodeVersion } from './opencode/OpencodeVersion';
 import { CoOberSettingsTab } from './settings';
 import { detectOpencodeNativeCatalog, type OpencodeCatalogObservation } from './opencode/OpencodeCatalog';
+import { detectOpencodeNativeTurnExecution, type OpencodeTurnObservation } from './opencode/OpencodeTurnProbe';
 import { DEFAULT_SETTINGS, VIEW_TYPE } from './types';
 import { setLocale, t as locale } from './i18n/index';
 import { Notice } from './test/obsidianMock';
@@ -1219,6 +1220,132 @@ describe('CoOberSettingsTab locale refresh', () => {
       expect(tab.containerEl.textContent).not.toContain('fork-from-here is buildable');
     } finally {
       fakeFork = null;
+    }
+  });
+
+  it('cancels an in-flight turn probe when the reader closes the panel, and drops its late answer', async () => {
+    // Closing the panel ends the reader's interest. A probe that spends a real model turn
+    // must not keep running to a 20s deadline, and must not paint onto a panel nobody is
+    // looking at — or, worse, into the rebuilt tab that would have discarded the
+    // connection input the reader was editing.
+    setLocale('en');
+    let resolve!: (value: OpencodeTurnObservation) => void;
+    const read = vi.mocked(detectOpencodeNativeTurnExecution);
+    read.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    fakeTurn = { status: 'executed', modelId: 'p/a', finish: 'stop', outputTokens: 7 };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
+      tab.display();
+      const input = [...tab.containerEl.querySelectorAll('input')].find((el) => el.value === 'opencode') as HTMLInputElement;
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Probe a turn') as HTMLButtonElement
+      ).click();
+      const signal = read.mock.calls.at(-1)?.[2]?.signal;
+      expect(tab.containerEl.textContent).toContain('Running one throwaway native turn');
+
+      tab.hide();
+      expect(signal?.aborted).toBe(true);
+
+      resolve(fakeTurn);
+      await flushPromises();
+      await flushPromises();
+      // The panel is closed, so nothing repainted — and the reading never appeared.
+      expect(tab.containerEl.textContent).not.toContain('executed a throwaway turn');
+      expect(tab.containerEl.contains(input)).toBe(true);
+    } finally {
+      fakeTurn = null;
+    }
+  });
+
+  it('offers a cancel for a running turn probe, and the cancel stops the probe', async () => {
+    // Three probes spend model turns, so each running one needs the reader's way out —
+    // the same affordance Diagnostics and the catalog read already carry.
+    setLocale('en');
+    let resolve!: (value: OpencodeTurnObservation) => void;
+    const read = vi.mocked(detectOpencodeNativeTurnExecution);
+    read.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    fakeTurn = { status: 'executed', modelId: 'p/a', finish: 'stop', outputTokens: 7 };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Probe a turn') as HTMLButtonElement
+      ).click();
+      const signal = read.mock.calls.at(-1)?.[2]?.signal;
+      expect(tab.containerEl.textContent).toContain('Cancel turn probe');
+
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Cancel turn probe') as HTMLButtonElement
+      ).click();
+      expect(signal?.aborted).toBe(true);
+      await flushPromises();
+      expect(tab.containerEl.textContent).not.toContain('Running one throwaway native turn');
+
+      resolve(fakeTurn);
+      await flushPromises();
+      await flushPromises();
+      // A cancelled probe observed nothing this reader may keep, so the row stays un-run.
+      expect(tab.containerEl.textContent).not.toContain('executed a throwaway turn');
+      expect(tab.containerEl.textContent).toContain('Not run');
+    } finally {
+      fakeTurn = null;
+    }
+  });
+
+  it('marks a turn reading stale after a CLI change instead of letting it speak for the new install', async () => {
+    // The probe measured the binary that was configured when it ran. Once the path moves,
+    // that reading answers a question about an install no longer on screen.
+    setLocale('en');
+    fakeTurn = { status: 'executed', modelId: 'p/a', finish: 'stop', outputTokens: 7 };
+    try {
+      const plugin = createPlugin({ refreshLocale: vi.fn() });
+      const tab = new CoOberSettingsTab(plugin);
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Probe a turn') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+      expect(tab.containerEl.textContent).toContain('executed a throwaway turn');
+      expect(tab.containerEl.textContent).not.toContain('Measured against an earlier OpenCode source');
+
+      const input = [...tab.containerEl.querySelectorAll('input')].find((el) => el.value === 'opencode') as HTMLInputElement;
+      fakeResolve = () => '/usr/bin/new-opencode';
+      try {
+        input.value = 'new-opencode';
+        input.dispatchEvent(new Event('change'));
+        await flushPromises();
+        expect(plugin.settings.opencodePath).toBe('new-opencode');
+        // The reader saw the result, so it stays visible — but it stops claiming to
+        // describe the install now configured.
+        expect(tab.containerEl.textContent).toContain('executed a throwaway turn');
+        expect(tab.containerEl.textContent).toContain('Measured against an earlier OpenCode source');
+      } finally { fakeResolve = null; }
+    } finally {
+      fakeTurn = null;
+    }
+  });
+
+  it('redraws only the native section when a probe runs, preserving the connection input', async () => {
+    // The probes used to call the whole-panel render(), which empties the container and
+    // rebuilds every section — discarding a connection input the reader was editing.
+    setLocale('en');
+    fakeStream = { status: 'streamed', textDeltas: 3, reasoningDeltas: 1, answer: 'OK', confirmed: true };
+    try {
+      const plugin = createPlugin({ refreshLocale: vi.fn() });
+      const tab = new CoOberSettingsTab(plugin);
+      tab.display();
+      const pathInput = [...tab.containerEl.querySelectorAll('input')].find((el) => el.value === 'opencode') as HTMLInputElement;
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Probe the stream') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+
+      expect(tab.containerEl.textContent).toContain('streamed an answer live');
+      expect(tab.containerEl.contains(pathInput)).toBe(true);
+    } finally {
+      fakeStream = null;
     }
   });
 

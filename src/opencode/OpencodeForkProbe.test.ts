@@ -6,6 +6,7 @@ import {
   detectOpencodeNativeCheckpointFork,
   forkRouteShape,
   type ForkRow,
+  type OpencodeForkObservation,
 } from './OpencodeForkProbe';
 
 /** A serve child that prints its readiness line and stays alive until killed. */
@@ -228,5 +229,38 @@ describe('detectOpencodeNativeCheckpointFork', () => {
       spawn: vi.fn(() => child) as never, request: request as never, platform: 'linux', env: {}, pollMs: 0, pollAttempts: 2,
     });
     expect(reading.status).toBe('unavailable');
+  });
+
+  it('does not spawn a server for a reader who already cancelled', async () => {
+    // This probe forks real sessions. Starting a server after the reader gave up does
+    // work that cannot be taken back, and forks nobody asked for.
+    const spawn = vi.fn();
+    const reading = await detectOpencodeNativeCheckpointFork('opencode', '/vault', {
+      spawn: spawn as never, platform: 'linux', env: {}, signal: AbortSignal.abort(),
+    });
+    expect(reading.status).toBe('unavailable');
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('settles a cancelled probe without waiting for a request helper that ignores the signal', async () => {
+    const child = fakeServeChild(READY);
+    const controller = new AbortController();
+    // A helper that never settles stands in for a request the abort could not reach.
+    const request = vi.fn(() => new Promise<unknown>(() => {}));
+    let result: OpencodeForkObservation | undefined;
+    const pending = detectOpencodeNativeCheckpointFork('opencode', '/vault', {
+      spawn: vi.fn(() => child) as never, request: request as never, platform: 'linux', env: {}, signal: controller.signal,
+    }).then((reading) => { result = reading; return reading; });
+    controller.abort();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settled = await Promise.race([
+      pending.then(() => 'settled'),
+      new Promise<string>((resolve) => { timer = setTimeout(() => resolve('still pending'), 40); }),
+    ]);
+    clearTimeout(timer);
+    expect(settled).toBe('settled');
+    expect(result?.status).toBe('unavailable');
+    // The server the reader started must not outlive the reader's interest in it.
+    expect(child.kill).toHaveBeenCalledWith('SIGKILL');
   });
 });

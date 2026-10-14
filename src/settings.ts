@@ -14,9 +14,10 @@ import { detectOpencodeVersion } from './opencode/OpencodeVersion';
 import { detectOpencodeNativeCatalog } from './opencode/OpencodeCatalog';
 import { OpencodeCatalogService } from './opencode/OpencodeCatalogService';
 import { OpencodeDiagnosticsService, type DiagnosticResult, type OpencodeDiagnosticContext } from './opencode/OpencodeDiagnosticsService';
-import { detectOpencodeNativeTurnExecution, type OpencodeTurnObservation } from './opencode/OpencodeTurnProbe';
-import { detectOpencodeNativeTurnStream, type OpencodeStreamObservation } from './opencode/OpencodeStreamProbe';
-import { detectOpencodeNativeCheckpointFork, type OpencodeForkObservation } from './opencode/OpencodeForkProbe';
+import { detectOpencodeNativeTurnExecution } from './opencode/OpencodeTurnProbe';
+import { detectOpencodeNativeTurnStream } from './opencode/OpencodeStreamProbe';
+import { detectOpencodeNativeCheckpointFork } from './opencode/OpencodeForkProbe';
+import { OpencodeProbeService } from './opencode/OpencodeProbeService';
 import { sanitizeVaultPath } from './sync/templates';
 import { MIN_OPEN_TABS, MAX_OPEN_TABS, DEFAULT_OPEN_TABS } from './constants';
 
@@ -87,22 +88,15 @@ export class CoOberSettingsTab extends PluginSettingTab {
   private readonly catalogService = new OpencodeCatalogService();
   private nativeCatalogEl?: HTMLElement;
   private shown = false;
-  // The turn probe drives one throwaway native turn, so it is run only when the
-  // reader presses its button. `nativeTurn` holds the last observation, `null`
-  // until a probe has run — an un-run probe cannot claim the engine works.
-  private nativeTurnRunning = false;
-  private nativeTurn: OpencodeTurnObservation | null = null;
-  // The stream probe runs one throwaway turn too, but reads its answer off the
-  // live SSE delta channel rather than the finished message — so it is likewise
-  // opt-in. `nativeStream` is `null` until it has run; an un-run probe claims no
-  // streaming at all.
-  private nativeStreamRunning = false;
-  private nativeStream: OpencodeStreamObservation | null = null;
-  // The fork probe forks one throwaway session at a message boundary and reads
-  // back what the child holds. It never waits for an answer, but it does start a
-  // server and fork sessions, so it is opt-in like the others.
-  private nativeForkRunning = false;
-  private nativeFork: OpencodeForkObservation | null = null;
+  // The three opt-in probes each drive the native kernel (one or two throwaway model
+  // turns, or a real fork), so each is owned rather than held as a pair of tab fields:
+  // the service keeps the running flag, the last reading, and the source that reading
+  // belongs to. Before this, a probe could not be cancelled, could not be fenced when the
+  // CLI path changed underneath it, and painted a late result after the reader closed the
+  // panel. `reading` is `null` until a probe has run — an un-run probe claims nothing.
+  private readonly turnProbe = new OpencodeProbeService(detectOpencodeNativeTurnExecution);
+  private readonly streamProbe = new OpencodeProbeService(detectOpencodeNativeTurnStream);
+  private readonly forkProbe = new OpencodeProbeService(detectOpencodeNativeCheckpointFork);
   // Permission-tier dropdown held on the tab so a chat-view bar click can
   // push its new tier into the same field here. The dropdown's own `.setValue`
   // runs once at build time; a bar chip that writes `settings.permissionMode`
@@ -124,6 +118,11 @@ export class CoOberSettingsTab extends PluginSettingTab {
     this.shown = false;
     this.catalogService.cancel();
     this.diagnosticsService.cancel();
+    // Closing the panel ends the reader's interest. These three spend real model turns,
+    // so leaving them to run out their 20-30s deadlines is work nobody is waiting for.
+    this.turnProbe.cancel();
+    this.streamProbe.cancel();
+    this.forkProbe.cancel();
   }
 
   private catalogSource() {
@@ -170,6 +169,12 @@ export class CoOberSettingsTab extends PluginSettingTab {
             s.opencodePath = trimmed;
             this.catalogService.setSource(this.catalogSource());
             this.diagnosticsService.setSource(this.catalogSource());
+            // A probe that was measuring the previous CLI answers a question about a
+            // binary that is no longer configured. Cancel it, and keep whatever reading
+            // the reader already saw — marked stale, not blanked.
+            this.turnProbe.setSource(this.catalogSource());
+            this.streamProbe.setSource(this.catalogSource());
+            this.forkProbe.setSource(this.catalogSource());
             this.redrawDiagnostics();
             this.redrawNativeCatalog();
             await this.save();
@@ -843,26 +848,29 @@ export class CoOberSettingsTab extends PluginSettingTab {
   }
 
   private renderNativeTurnProbe(containerEl: HTMLElement, labels: ReturnType<typeof locale>['settings']['nativeCatalog']): void {
+    const state = this.turnProbe.getSnapshot();
     new Setting(containerEl)
       .setName(labels.turnHeading)
       .setDesc(labels.turnDescription)
       .addButton((button) => {
-        button.setButtonText(this.nativeTurnRunning ? labels.turnRunning : this.nativeTurn ? labels.turnRerun : labels.turnRun);
-        button.buttonEl.disabled = this.nativeTurnRunning;
+        button.setButtonText(state.running ? labels.turnRunning : state.reading ? labels.turnRerun : labels.turnRun);
+        button.buttonEl.disabled = state.running;
         button.onClick(async () => {
           await this.runNativeTurnProbe();
         });
       });
 
-    if (this.nativeTurnRunning) {
+    if (state.running) {
       new Setting(containerEl).setName(labels.turnRunningDetail);
+      this.addProbeCancel(containerEl, labels.turnCancel, this.turnProbe);
       return;
     }
-    const reading = this.nativeTurn;
+    const reading = state.reading;
     if (!reading) {
       new Setting(containerEl).setName(labels.turnNotRun);
       return;
     }
+    if (state.stale) new Setting(containerEl).setName(labels.probeStale);
     if (reading.status === 'unavailable') {
       new Setting(containerEl).setName(labels.turnUnavailable);
       return;
@@ -884,39 +892,36 @@ export class CoOberSettingsTab extends PluginSettingTab {
   }
 
   private async runNativeTurnProbe(): Promise<void> {
-    this.nativeTurnRunning = true;
-    this.render();
-    try {
-      this.nativeTurn = await detectOpencodeNativeTurnExecution(this.plugin.settings.opencodePath, getVaultPath(this.plugin.app));
-    } catch {
-      this.nativeTurn = { status: 'unavailable', modelId: undefined, finish: undefined, outputTokens: undefined };
-    } finally {
-      this.nativeTurnRunning = false;
-      this.render();
-    }
+    const pending = this.turnProbe.run(this.catalogSource());
+    this.redrawNativeCatalog();
+    await pending;
+    this.redrawNativeCatalog();
   }
 
   private renderNativeStreamProbe(containerEl: HTMLElement, labels: ReturnType<typeof locale>['settings']['nativeCatalog']): void {
+    const state = this.streamProbe.getSnapshot();
     new Setting(containerEl)
       .setName(labels.streamHeading)
       .setDesc(labels.streamDescription)
       .addButton((button) => {
-        button.setButtonText(this.nativeStreamRunning ? labels.streamRunning : this.nativeStream ? labels.streamRerun : labels.streamRun);
-        button.buttonEl.disabled = this.nativeStreamRunning;
+        button.setButtonText(state.running ? labels.streamRunning : state.reading ? labels.streamRerun : labels.streamRun);
+        button.buttonEl.disabled = state.running;
         button.onClick(async () => {
           await this.runNativeStreamProbe();
         });
       });
 
-    if (this.nativeStreamRunning) {
+    if (state.running) {
       new Setting(containerEl).setName(labels.streamRunningDetail);
+      this.addProbeCancel(containerEl, labels.streamCancel, this.streamProbe);
       return;
     }
-    const reading = this.nativeStream;
+    const reading = state.reading;
     if (!reading) {
       new Setting(containerEl).setName(labels.streamNotRun);
       return;
     }
+    if (state.stale) new Setting(containerEl).setName(labels.probeStale);
     if (reading.status === 'unavailable') {
       new Setting(containerEl).setName(labels.streamUnavailable);
       return;
@@ -939,39 +944,36 @@ export class CoOberSettingsTab extends PluginSettingTab {
   }
 
   private async runNativeStreamProbe(): Promise<void> {
-    this.nativeStreamRunning = true;
-    this.render();
-    try {
-      this.nativeStream = await detectOpencodeNativeTurnStream(this.plugin.settings.opencodePath, getVaultPath(this.plugin.app));
-    } catch {
-      this.nativeStream = { status: 'unavailable', textDeltas: 0, reasoningDeltas: 0, answer: undefined, confirmed: false };
-    } finally {
-      this.nativeStreamRunning = false;
-      this.render();
-    }
+    const pending = this.streamProbe.run(this.catalogSource());
+    this.redrawNativeCatalog();
+    await pending;
+    this.redrawNativeCatalog();
   }
 
   private renderNativeForkProbe(containerEl: HTMLElement, labels: ReturnType<typeof locale>['settings']['nativeCatalog']): void {
+    const state = this.forkProbe.getSnapshot();
     new Setting(containerEl)
       .setName(labels.forkHeading)
       .setDesc(labels.forkDescription)
       .addButton((button) => {
-        button.setButtonText(this.nativeForkRunning ? labels.forkRunning : this.nativeFork ? labels.forkRerun : labels.forkRun);
-        button.buttonEl.disabled = this.nativeForkRunning;
+        button.setButtonText(state.running ? labels.forkRunning : state.reading ? labels.forkRerun : labels.forkRun);
+        button.buttonEl.disabled = state.running;
         button.onClick(async () => {
           await this.runNativeForkProbe();
         });
       });
 
-    if (this.nativeForkRunning) {
+    if (state.running) {
       new Setting(containerEl).setName(labels.forkRunningDetail);
+      this.addProbeCancel(containerEl, labels.forkCancel, this.forkProbe);
       return;
     }
-    const reading = this.nativeFork;
+    const reading = state.reading;
     if (!reading) {
       new Setting(containerEl).setName(labels.forkNotRun);
       return;
     }
+    if (state.stale) new Setting(containerEl).setName(labels.probeStale);
     if (reading.status === 'unavailable') {
       new Setting(containerEl).setName(labels.forkUnavailable);
       return;
@@ -996,16 +998,22 @@ export class CoOberSettingsTab extends PluginSettingTab {
   }
 
   private async runNativeForkProbe(): Promise<void> {
-    this.nativeForkRunning = true;
-    this.render();
-    try {
-      this.nativeFork = await detectOpencodeNativeCheckpointFork(this.plugin.settings.opencodePath, getVaultPath(this.plugin.app));
-    } catch {
-      this.nativeFork = { status: 'unavailable', parentRows: 0, childRows: 0, apiForkRoute: 'error' };
-    } finally {
-      this.nativeForkRunning = false;
-      this.render();
-    }
+    const pending = this.forkProbe.run(this.catalogSource());
+    this.redrawNativeCatalog();
+    await pending;
+    this.redrawNativeCatalog();
+  }
+
+  /**
+   * Offer the reader a way out of a probe that costs a model turn. The cancel belongs to
+   * the service that owns the run, never to the widget — so the button cancels the work
+   * and the redraw reads the owner's own answer to "is it still running?".
+   */
+  private addProbeCancel(containerEl: HTMLElement, text: string, probe: { cancel(): void }): void {
+    new Setting(containerEl).addButton((button) => {
+      button.setButtonText(text);
+      button.onClick(() => { probe.cancel(); this.redrawNativeCatalog(); });
+    });
   }
 
   private async loadNativeCatalog(): Promise<void> {

@@ -40,6 +40,9 @@ export interface OpencodeStreamDeps {
   request?: (url: string, init?: { method?: string; body?: unknown }, signal?: AbortSignal) => Promise<unknown>;
   openEventStream?: (url: string, signal?: AbortSignal) => Promise<AsyncIterable<string>>;
   timeoutMs?: number;
+  /** The reader's own cancellation. Cancelling stops this probe publishing; it does not
+   *  claim the already-admitted turn stopped generating on the machine. */
+  signal?: AbortSignal;
 }
 
 const DEFAULT_STREAM: OpencodeStreamObservation = { status: 'unavailable', textDeltas: 0, reasoningDeltas: 0, answer: undefined, confirmed: false };
@@ -188,13 +191,21 @@ async function defaultOpenEventStream(url: string, signal?: AbortSignal): Promis
  * `streamed` only when a non-empty answer was actually assembled from delta frames. The
  * server is SIGKILLed and the throwaway session interrupted in a `finally`, so neither a
  * process nor a running turn leaks.
+ *
+ * An external `signal` cancels the probe the same way: nothing is spawned if the signal is
+ * already aborted, and an in-flight probe settles without waiting for a request helper or
+ * stream that ignores the signal. Cancellation stops this probe reporting; it does not
+ * claim the admitted turn stopped generating on the machine.
  */
 export async function detectOpencodeNativeTurnStream(
   cliPath: string,
   cwd: string,
   deps: OpencodeStreamDeps = {},
 ): Promise<OpencodeStreamObservation> {
-  if (!cliPath?.trim()) return DEFAULT_STREAM;
+  // A reader that has already given up must not have a server started under it: the
+  // probe spends a real model turn, so spawning one after the cancel is work nobody
+  // asked for and cannot be taken back.
+  if (!cliPath?.trim() || deps.signal?.aborted) return DEFAULT_STREAM;
 
   const env = deps.env ?? process.env;
   const platform = deps.platform ?? process.platform;
@@ -212,14 +223,35 @@ export async function detectOpencodeNativeTurnStream(
   }
 
   const controller = new AbortController();
+  // A kill that throws must not block the reader; the deadline and the cancel both have
+  // to settle regardless of how the child reacts.
+  const killChild = (): void => {
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      // The server is already gone; nothing left to stop.
+    }
+  };
+  // Only the READER's cancel short-circuits this probe. The internal deadline deliberately
+  // does not: a stream that ends at the deadline still reports what it actually assembled,
+  // and collapsing that into the default would replace one reading with another.
+  let onCancel: () => void = () => {};
+  const cancelled = new Promise<OpencodeStreamObservation>((resolve) => {
+    onCancel = () => {
+      controller.abort();
+      killChild();
+      resolve(DEFAULT_STREAM);
+    };
+    deps.signal?.addEventListener('abort', onCancel, { once: true });
+  });
   const timer = setTimeout(() => {
     controller.abort();
-    child.kill('SIGKILL');
+    killChild();
   }, timeoutMs);
 
   let sessionId: string | null = null;
   let origin: string | undefined;
-  try {
+  const run = async (): Promise<OpencodeStreamObservation> => {
     origin = await waitForServerUrl(child, controller);
     const created = await requestFn(
       `${origin}/api/session`,
@@ -262,20 +294,28 @@ export async function detectOpencodeNativeTurnStream(
       return { status: 'admitted', textDeltas: reading.textDeltas, reasoningDeltas: reading.reasoningDeltas, answer: undefined, confirmed: false };
     }
     return DEFAULT_STREAM;
+  };
+
+  try {
+    // The cancel arm settles even if the request helper ignores the signal it was given,
+    // so a reader that walks away is never held hostage by a collector that will not stop.
+    return await Promise.race([cancelled, run()]);
   } catch {
     return DEFAULT_STREAM;
   } finally {
     clearTimeout(timer);
+    deps.signal?.removeEventListener('abort', onCancel);
     if (sessionId && origin) {
       // Stop the throwaway turn so it does not keep generating; a 204 interrupt has no
       // JSON body and may throw in the request helper, which is the expected shape and
-      // is swallowed — teardown must never mask or replace the streaming reading.
+      // is swallowed — teardown must never mask or replace the streaming reading. This
+      // is an attempt, not a proof: after a cancel the turn may already have finished.
       try {
         await requestFn(`${origin}/api/session/${encodeURIComponent(sessionId)}/interrupt?resume=false`, { method: 'POST' });
       } catch { /* ignore interrupt outcome */ }
     }
     controller.abort();
-    child.kill('SIGKILL');
+    killChild();
   }
 }
 
