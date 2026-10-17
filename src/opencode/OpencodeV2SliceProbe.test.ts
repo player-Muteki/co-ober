@@ -6,6 +6,7 @@ import {
   parseOpencodeServeBody,
   reduceV2SliceEvents,
   v2AssistantAnswer,
+  v2TerminalOutcome,
   type OpencodeV2SliceReading,
 } from './OpencodeV2SliceProbe';
 
@@ -50,6 +51,19 @@ describe('parseOpencodeServeBody', () => {
   });
 });
 
+describe('v2TerminalOutcome', () => {
+  it('reads the terminal the kernel recorded on its own transcript, verbatim', () => {
+    // Measured: a successful run appends a row of `type: "idle"` carrying an `outcome`.
+    // The field is read as-is so an outcome this build has never seen still reaches the
+    // reader instead of being rounded into "succeeded".
+    expect(v2TerminalOutcome({ type: 'idle', outcome: 'succeeded' })).toBe('succeeded');
+    expect(v2TerminalOutcome({ type: 'idle', outcome: 'provider.transport' })).toBe('provider.transport');
+    expect(v2TerminalOutcome({ type: 'idle' })).toBeUndefined();
+    expect(v2TerminalOutcome({ type: 'assistant', outcome: 'succeeded' })).toBeUndefined();
+    expect(v2TerminalOutcome(undefined)).toBeUndefined();
+  });
+});
+
 describe('reduceV2SliceEvents', () => {
   const event = (type: string, sessionID: string) => ({ type, data: { sessionID } });
 
@@ -83,6 +97,42 @@ describe('reduceV2SliceEvents', () => {
       'not-an-event',
     ], 'ses_1').started).toBe(false);
   });
+
+  it('assembles the answer from the answer channel and keeps a non-answer ordinal out', () => {
+    // Measured: the v2 streaming channel is session.text.*, keyed by assistantMessageID
+    // and an `ordinal` that separates parts of the same step. Splicing a later ordinal
+    // into the answer would fabricate words the model never put there in that channel.
+    const seen = reduceV2SliceEvents([
+      { type: 'session.text.delta', data: { sessionID: 'ses_1', ordinal: 0, delta: 'O' } },
+      { type: 'session.text.delta', data: { sessionID: 'ses_1', ordinal: 0, delta: 'K' } },
+      { type: 'session.text.delta', data: { sessionID: 'ses_1', ordinal: 1, delta: 'REASONING' } },
+      { type: 'session.text.ended', data: { sessionID: 'ses_1', ordinal: 0, text: 'OK' } },
+    ], 'ses_1');
+    expect(seen.assembled).toBe('OK');
+    expect(seen.endedText).toBe('OK');
+  });
+
+  it('records the terminal event by its own name without inventing the ones it never saw', () => {
+    expect(reduceV2SliceEvents([
+      { type: 'session.execution.succeeded', data: { sessionID: 'ses_1' } },
+    ], 'ses_1').terminal).toBe('session.execution.succeeded');
+    // Only `succeeded` was ever observed on this install. An unseen terminal name is
+    // recorded verbatim rather than being mapped onto a meaning we have not measured.
+    expect(reduceV2SliceEvents([
+      { type: 'session.execution.something-new', data: { sessionID: 'ses_1' } },
+    ], 'ses_1').terminal).toBe('session.execution.something-new');
+  });
+
+  it('reads the model and step facts the terminal frame carries', () => {
+    const seen = reduceV2SliceEvents([
+      { type: 'session.step.started', data: { sessionID: 'ses_1', model: { id: 'alpha', providerID: 'p' } } },
+      { type: 'session.step.ended', data: { sessionID: 'ses_1', finish: 'stop', cost: 0, tokens: { output: 7 } } },
+    ], 'ses_1');
+    expect(seen.modelId).toBe('p/alpha');
+    expect(seen.finish).toBe('stop');
+    expect(seen.cost).toBe(0);
+    expect(seen.outputTokens).toBe(7);
+  });
 });
 
 describe('v2AssistantAnswer', () => {
@@ -105,6 +155,81 @@ describe('detectOpencodeV2ExecutionSlice', () => {
     [/\/interrupt/u, {}],
     [/\/api\/session$/u, { data: { id: 'ses_1' } }],
   ];
+
+  it('reports answered with the streamed answer and whether the kernel agreed', async () => {
+    const child = fakeServeChild(READY);
+    const openEventStream = vi.fn(async () => eventStream([
+      frame({ type: 'session.execution.started', data: { sessionID: 'ses_1' } }),
+      frame({ type: 'session.text.delta', data: { sessionID: 'ses_1', ordinal: 0, delta: 'O' } }),
+      frame({ type: 'session.text.delta', data: { sessionID: 'ses_1', ordinal: 0, delta: 'K' } }),
+      frame({ type: 'session.text.ended', data: { sessionID: 'ses_1', ordinal: 0, text: 'OK' } }),
+      frame({ type: 'session.execution.succeeded', data: { sessionID: 'ses_1' } }),
+    ]));
+    const reading = await detectOpencodeV2ExecutionSlice('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), platform: 'linux', env: {}, settleMs: 20,
+      request: requestRouter(baseRoutes([[/\/message/u, { data: [{ type: 'idle', outcome: 'succeeded' }] }]])) as never,
+      openEventStream: openEventStream as never,
+    });
+    expect(reading).toMatchObject({
+      status: 'answered', answer: 'OK', streamed: true, confirmed: true,
+      outcome: 'succeeded', leftover: false,
+    });
+  });
+
+  it('says the kernel disagreed when its ended frame differs from the delta assembly', async () => {
+    // The two are independent reads of one run. Smoothing over a disagreement would let a
+    // panel launder "I saw fragments" into "the kernel confirmed them" — the refusal
+    // 0.2.56 made for the 1.x stream probe.
+    const child = fakeServeChild(READY);
+    const openEventStream = vi.fn(async () => eventStream([
+      frame({ type: 'session.text.delta', data: { sessionID: 'ses_1', ordinal: 0, delta: 'O' } }),
+      frame({ type: 'session.text.ended', data: { sessionID: 'ses_1', ordinal: 0, text: 'OK!' } }),
+    ]));
+    const reading = await detectOpencodeV2ExecutionSlice('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), platform: 'linux', env: {}, settleMs: 20,
+      request: requestRouter(baseRoutes([[/\/message/u, { data: [{ type: 'idle', outcome: 'succeeded' }] }]])) as never,
+      openEventStream: openEventStream as never,
+    });
+    expect(reading).toMatchObject({ streamed: true, confirmed: false });
+  });
+
+  it('reports failed when the kernel recorded a terminal that is not a success', async () => {
+    // `OPENCODE_SIMULATE` parks a run in a named provider.transport retry; that terminal
+    // is a failure the reader must be able to see, not a silent absence of an answer.
+    const child = fakeServeChild(READY);
+    const reading = await detectOpencodeV2ExecutionSlice('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), platform: 'linux', env: {}, settleMs: 20,
+      request: requestRouter(baseRoutes([[/\/message/u, { data: [
+        { type: 'idle', outcome: 'provider.transport' },
+        { type: 'assistant', model: { id: 'a', providerID: 'p' }, content: [], retry: { attempt: 3 } },
+      ] }]])) as never,
+      openEventStream: vi.fn(async () => eventStream([
+        frame({ type: 'session.execution.started', data: { sessionID: 'ses_1' } }),
+        frame({ type: 'session.retry.scheduled', data: { sessionID: 'ses_1' } }),
+      ])) as never,
+    });
+    expect(reading.status).toBe('failed');
+    expect(reading.outcome).toBe('provider.transport');
+    expect(reading.answer).toBeUndefined();
+  });
+
+  it('does not turn a successful terminal with no text into an answer', async () => {
+    // A run that finished without saying anything is neither an answer nor a failure.
+    const child = fakeServeChild(READY);
+    const reading = await detectOpencodeV2ExecutionSlice('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), platform: 'linux', env: {}, settleMs: 20,
+      request: requestRouter(baseRoutes([[/\/message/u, { data: [
+        { type: 'idle', outcome: 'succeeded' },
+        { type: 'assistant', model: { id: 'a', providerID: 'p' }, content: [] },
+      ] }]])) as never,
+      openEventStream: vi.fn(async () => eventStream([
+        frame({ type: 'session.execution.started', data: { sessionID: 'ses_1' } }),
+      ])) as never,
+    });
+    expect(reading.status).toBe('admitted');
+    expect(reading.outcome).toBe('succeeded');
+    expect(reading.answer).toBeUndefined();
+  });
 
   it('reports admitted when the kernel started the run but produced no answer', async () => {
     const child = fakeServeChild(READY);

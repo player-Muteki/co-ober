@@ -50,7 +50,7 @@ const POLL_MS = 250;
 /** How long the event stream is given to deliver frames emitted alongside the answer. */
 const FRAME_DRAIN_MS = 250;
 
-export type OpencodeV2SliceStatus = 'answered' | 'admitted' | 'unavailable';
+export type OpencodeV2SliceStatus = 'answered' | 'failed' | 'admitted' | 'unavailable';
 
 export interface OpencodeV2SliceReading {
   status: OpencodeV2SliceStatus;
@@ -60,8 +60,17 @@ export interface OpencodeV2SliceReading {
   delivered: boolean;
   /** `session.execution.started` — the kernel actually began executing. */
   started: boolean;
+  /** Whether the answer was assembled purely from live `session.text.delta` frames. */
+  streamed: boolean;
+  /** The kernel's own `session.text.ended` text agreed with that assembly. */
+  confirmed: boolean;
   answer: string | undefined;
   modelId: string | undefined;
+  /** The terminal outcome the kernel itself recorded, verbatim and uninterpreted. */
+  outcome: string | undefined;
+  finish: string | undefined;
+  cost: number | undefined;
+  outputTokens: number | undefined;
   /** True when teardown could not remove the throwaway session on the route that exists. */
   leftover: boolean;
 }
@@ -79,7 +88,8 @@ export interface OpencodeV2SliceDeps {
 
 const DEFAULT_SLICE: OpencodeV2SliceReading = {
   status: 'unavailable', enqueued: false, delivered: false, started: false,
-  answer: undefined, modelId: undefined, leftover: false,
+  streamed: false, confirmed: false, answer: undefined, modelId: undefined,
+  outcome: undefined, finish: undefined, cost: undefined, outputTokens: undefined, leftover: false,
 };
 
 export interface NativeV2SliceEvents {
@@ -88,6 +98,17 @@ export interface NativeV2SliceEvents {
   started: boolean;
   steps: number;
   retries: number;
+  /** The terminal execution event observed, by its own name, e.g. `session.execution.succeeded`. */
+  terminal: string | undefined;
+  /** Answer assembled purely from `session.text.delta` frames, in arrival order. */
+  assembled: string | undefined;
+  /** The text the kernel's own `session.text.ended` frame carried. */
+  endedText: string | undefined;
+  finish: string | undefined;
+  cost: number | undefined;
+  outputTokens: number | undefined;
+  /** The model the step announced, from `session.step.started`. */
+  modelId: string | undefined;
 }
 
 /**
@@ -95,9 +116,22 @@ export interface NativeV2SliceEvents {
  * another session are dropped: the directory-scoped stream carries global hydration noise
  * and any concurrent session's frames, and counting those would let a foreign execution
  * certify this one.
+ *
+ * The namespace and the frame keys are read off a running 2.0.32 server, not assumed. The
+ * streaming channel is `session.text.*` — keyed by `assistantMessageID` and an `ordinal`
+ * that distinguishes reasoning from answer text — and not the 1.x `session.next.text.*`
+ * this plugin's older stream probe encodes. `session.execution.succeeded` is the terminal
+ * event actually observed; any *other* `session.execution.*` name is recorded verbatim
+ * rather than guessed into a meaning, because naming an unobserved terminal would be the
+ * same fabrication this probe exists to stop.
  */
 export function reduceV2SliceEvents(events: unknown[], sessionId: string): NativeV2SliceEvents {
-  const seen: NativeV2SliceEvents = { enqueued: false, delivered: false, started: false, steps: 0, retries: 0 };
+  const seen: NativeV2SliceEvents = {
+    enqueued: false, delivered: false, started: false, steps: 0, retries: 0,
+    terminal: undefined, assembled: undefined, endedText: undefined,
+    finish: undefined, cost: undefined, outputTokens: undefined, modelId: undefined,
+  };
+  let assembled = '';
   for (const event of events) {
     if (event === null || typeof event !== 'object' || Array.isArray(event)) continue;
     const e = event as Record<string, unknown>;
@@ -105,16 +139,49 @@ export function reduceV2SliceEvents(events: unknown[], sessionId: string): Nativ
     if (d === null || typeof d !== 'object' || Array.isArray(d)) continue;
     const data = d as Record<string, unknown>;
     if (data.sessionID !== sessionId) continue;
-    switch (e.type) {
+    const type = typeof e.type === 'string' ? e.type : '';
+    switch (type) {
       case 'session.inbox.enqueued': seen.enqueued = true; break;
       case 'session.inbox.delivered': seen.delivered = true; break;
       case 'session.execution.started': seen.started = true; break;
-      case 'session.step.started': seen.steps += 1; break;
+      case 'session.step.started':
+        seen.steps += 1;
+        seen.modelId = stepModelId(data) ?? seen.modelId;
+        break;
       case 'session.retry.scheduled': seen.retries += 1; break;
-      default: break;
+      // Only the answer channel (ordinal 0 in the observed run) is assembled; a later
+      // ordinal is a different part of the same step and must not be spliced into it.
+      case 'session.text.delta':
+        if (data.ordinal === 0 && typeof data.delta === 'string') assembled += data.delta;
+        break;
+      case 'session.text.ended':
+        if (data.ordinal === 0 && typeof data.text === 'string') seen.endedText = data.text;
+        break;
+      case 'session.step.ended':
+        if (typeof data.finish === 'string') seen.finish = data.finish;
+        if (typeof data.cost === 'number') seen.cost = data.cost;
+        if (data.tokens !== null && typeof data.tokens === 'object' && !Array.isArray(data.tokens)) {
+          const output = (data.tokens as Record<string, unknown>).output;
+          if (typeof output === 'number') seen.outputTokens = output;
+        }
+        break;
+      default:
+        if (type.startsWith('session.execution.') && seen.terminal === undefined) seen.terminal = type;
+        break;
     }
   }
+  seen.assembled = assembled.trim().length > 0 ? assembled : undefined;
   return seen;
+}
+
+/**
+ * The terminal the kernel recorded on its own transcript. A successful run appends a row
+ * of `type: "idle"` carrying an `outcome`; the field is read verbatim so an outcome this
+ * build has never seen still reaches the reader instead of being rounded into "succeeded".
+ */
+export function v2TerminalOutcome(row: Record<string, unknown> | undefined): string | undefined {
+  if (!row || row.type !== 'idle') return undefined;
+  return typeof row.outcome === 'string' ? row.outcome : undefined;
 }
 
 /**
@@ -138,7 +205,12 @@ export function v2AssistantAnswer(row: Record<string, unknown> | undefined): { t
 }
 
 function assistantModelId(row: Record<string, unknown>): string | undefined {
-  const model = row.model;
+  return stepModelId(row);
+}
+
+/** The `{providerID}/{id}` pair both an assistant row and a `session.step.started` frame carry. */
+function stepModelId(data: Record<string, unknown>): string | undefined {
+  const model = data.model;
   if (model !== null && typeof model === 'object' && !Array.isArray(model)) {
     const m = model as Record<string, unknown>;
     if (typeof m.id === 'string' && typeof m.providerID === 'string') return `${m.providerID}/${m.id}`;
@@ -298,7 +370,8 @@ export async function detectOpencodeV2ExecutionSlice(
     // Poll the transcript for a real answer, bounded by the settle window. The run may
     // finish without one — a transport failure looks exactly like this — and that is the
     // honest `admitted` middle state rather than a fabricated completion.
-    let answer: { text: string; modelId?: string } | undefined;
+    let answerCell: { text: string; modelId?: string } | undefined;
+    let rows: Record<string, unknown>[] = [];
     const deadline = Date.now() + settleMs;
     for (;;) {
       const page = await requestFn(
@@ -306,24 +379,44 @@ export async function detectOpencodeV2ExecutionSlice(
         undefined,
         controller.signal,
       ) as { data?: unknown[] } | undefined;
-      const rows = Array.isArray(page?.data)
+      rows = Array.isArray(page?.data)
         ? page.data.filter((r): r is Record<string, unknown> => !!r && typeof r === 'object' && !Array.isArray(r))
         : [];
-      answer = rows.map(v2AssistantAnswer).find((a) => a !== undefined);
-      if (answer || controller.signal.aborted || Date.now() >= deadline) break;
+      answerCell = rows.map(v2AssistantAnswer).find((a) => a !== undefined);
+      // A terminal the kernel recorded means there is nothing further to wait for.
+      if (answerCell || rows.map(v2TerminalOutcome).find(Boolean) || controller.signal.aborted || Date.now() >= deadline) break;
       await sleep(POLL_MS);
     }
+    const answerModelId = answerCell?.modelId;
+    const assistantRow = rows.find((r) => r.type === 'assistant');
+    const answerFinish = typeof assistantRow?.finish === 'string' ? assistantRow.finish : undefined;
     // Give the stream one last turn so frames emitted alongside the answer are not lost.
     await Promise.race([watch, sleep(FRAME_DRAIN_MS)]);
 
     const events = reduceV2SliceEvents(parseSseDataFrames(collected.join('')), sessionId);
+    // The delta assembly and the transcript are two independent reads of the same run, so
+    // disagreement is worth reporting rather than smoothing over: `confirmed` says the
+    // kernel's own ended frame matched what the deltas produced.
+    const streamedAnswer = events.assembled;
+    // One resolved answer for both the status and the payload. Deriving the status from
+    // only one of the two reads would let the panel say "no answer was read back" while
+    // the same row displays an answer.
+    const answer = answerCell?.text ?? streamedAnswer;
+
+    const outcome = rows.map(v2TerminalOutcome).find((o) => o !== undefined);
     return {
-      status: answer ? 'answered' : 'admitted',
+      status: answer ? 'answered' : (outcome !== undefined && outcome !== 'succeeded') ? 'failed' : events.started ? 'admitted' : 'unavailable',
       enqueued: events.enqueued,
       delivered: events.delivered,
       started: events.started,
-      answer: answer?.text,
-      modelId: answer?.modelId,
+      streamed: streamedAnswer !== undefined,
+      confirmed: events.endedText !== undefined && events.endedText === streamedAnswer,
+      answer,
+      modelId: answerModelId ?? events.modelId,
+      outcome,
+      finish: answerFinish ?? events.finish,
+      cost: events.cost,
+      outputTokens: events.outputTokens,
       leftover: false,
     };
   };

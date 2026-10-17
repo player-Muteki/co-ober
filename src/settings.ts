@@ -848,6 +848,14 @@ export class CoOberSettingsTab extends PluginSettingTab {
       return;
     }
     if (reading.leftover) new Setting(containerEl).setName(labels.sliceLeftover);
+    if (reading.status === 'failed') {
+      // A terminal the kernel itself recorded, named verbatim. The remedy for a named
+      // provider failure is not the same as the one for an unreachable kernel, so this
+      // must not borrow that sentence.
+      new Setting(containerEl)
+        .setName(labels.sliceFailed.replace('{outcome}', reading.outcome ?? labels.sliceUnknownOutcome));
+      return;
+    }
     if (reading.status === 'admitted') {
       // The kernel took the prompt and began executing, but no answer was read back. The
       // lifecycle legs are reported individually because "started" and "delivered" are
@@ -862,9 +870,14 @@ export class CoOberSettingsTab extends PluginSettingTab {
     }
     new Setting(containerEl)
       .setName(labels.sliceAnswered.replace('{answer}', reading.answer ?? ''))
-      .setDesc(labels.sliceAnsweredDetail
-        .replace('{model}', reading.modelId ?? labels.turnUnknownModel)
-        .replace('{delivered}', labels.sliceYes(reading.delivered)));
+      .setDesc([
+        labels.sliceAnsweredDetail
+          .replace('{model}', reading.modelId ?? labels.turnUnknownModel)
+          .replace('{finish}', reading.finish ?? labels.turnUnknownFinish)
+          .replace('{cost}', reading.cost === undefined ? labels.sliceUnknownCost : String(reading.cost))
+          .replace('{tokens}', reading.outputTokens === undefined ? labels.turnUnknownTokens : String(reading.outputTokens)),
+        labels.sliceStreamed.replace('{agreement}', reading.confirmed ? labels.streamConfirmed : labels.streamUnconfirmed),
+      ].join(' '));
   }
 
   private async runNativeSliceProbe(): Promise<void> {

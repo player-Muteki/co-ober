@@ -1,3 +1,24 @@
+## 0.2.65 - 2026-10-17
+
+No new capabilities; the chat backend is unchanged. This release closes the two measurements 0.2.64 recorded as unobserved — a real assistant answer, and the terminal state of a run — using a local OpenAI-compatible provider instead of credentials.
+
+### Added
+
+- **A real turn, a real answer, and a named terminal — measured without credentials.** 0.2.64 could only report `admitted` and could say nothing about *why*, because `OPENCODE_SIMULATE` is a network gate rather than a fake model: it parks the run in a named `provider.transport` retry. OpenCode also accepts an OpenAI-compatible provider declared in its config with its own `baseURL`, so a loopback chat-completions endpoint gives the kernel a model to actually answer with. Against that, the full lifecycle was observed end to end for the first time: `session.inbox.enqueued` → `session.execution.started` → `session.inbox.delivered` → `session.step.started` → `session.text.started` → `session.text.delta` → `session.text.ended` → `session.step.streamed` → `session.step.ended` → **`session.execution.succeeded`**. Three facts this closes: the streaming channel on this generation is **`session.text.*`** keyed by `assistantMessageID` and an `ordinal` — not the `session.next.text.*` the 0.2.56 stream probe encodes, which would have matched nothing even if admitted; the terminal event is **`session.execution.succeeded`**; and a successful run appends an **`idle` row carrying an `outcome`** to the transcript. That last one is the more robust terminal source, because it reads a *field*: an outcome this build has never seen still reaches the reader verbatim instead of being rounded into "succeeded".
+- **The slice reading now covers the whole loop, in four non-merging buckets.** `failed` joins `unavailable`, `admitted` and `answered`: it is claimed only when the kernel itself recorded a terminal that is not a success, and it carries that outcome by name (`sliceFailed` renders `{outcome}`, falling back to "an unnamed outcome" when there is none). `streamed` and `confirmed` split "rebuilt from live delta frames" from "the kernel's own ended frame agreed", the same separation 0.2.56 established for the 1.x stream probe — disagreement between two independent reads of one run is reported, never smoothed. `modelId`, `finish`, `cost` and output tokens are carried from `session.step.started` / `session.step.ended`, with "unreported" wherever the frame did not carry them. Only the **answer channel** (`ordinal === 0`) is assembled: splicing a later ordinal into the answer would fabricate words in a channel the model never put them in.
+
+### Fixed
+
+- **A reading can no longer say "no answer was read back" while displaying an answer.** The status was derived from the transcript read while the `answer` field was derived from the transcript *or* the delta assembly, so a run whose answer had streamed but not yet landed on the transcript produced both at once — one field contradicting the other about the same run. The answer is now resolved once and both the status and the payload use it, pinned by a boundary that reads an answer out of the stream alone.
+
+### Validation
+
+- 84 test files / 2,474 tests passed, with TypeScript and ESLint (baseline 2,466/84). Verified against a real running kernel driven by a loopback OpenAI-compatible provider: `{"status":"answered","enqueued":true,"delivered":true,"started":true,"streamed":true,"confirmed":true,"answer":"OK","modelId":"fakeprov/fake-model","outcome":"succeeded","finish":"stop","cost":0,"outputTokens":0,"leftover":false}`. Reference baseline: Claudian is unchanged at `31dd256b` (2.3.22), confirmed via the GitHub API after local `git fetch` failed repeatedly with TLS resets. **No real provider credential was used and no billed model turn was spent** — the answering model was a loopback stub.
+
+### Still unknown, and deliberately not invented
+
+The specific terminal **event names** for failure and interruption remain unmeasured: only the success path was driven. `provider.transport` and friends were observed as `outcome` *field values* on the transcript's `idle` row, not as event names, and the reducer records any unseen `session.execution.*` name verbatim rather than mapping it onto a meaning this build has never watched. The fork probe's teardown still deletes on the 405 route and may leave throwaway sessions on this generation. The chat backend is still ACP — the probe measures the loop, it does not wire one.
+
 ## 0.2.64 - 2026-10-17
 
 No new capabilities, and the chat backend is unchanged: ACP still carries every conversation. This release measures the execution leg on the kernel generation this install actually runs, and stops the three 1.x-era probes from calling a live, healthy kernel one that "did not answer".
