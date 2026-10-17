@@ -1,3 +1,24 @@
+## 0.2.66 - 2026-10-17
+
+No new capabilities; the chat backend is unchanged. This release drives the two paths 0.2.65 left undriven — a failing provider and an interrupt — and fixes the throwaway-session leak that made the fork probe's cleanup a silent no-op on this kernel generation.
+
+### Added
+
+- **A named failure is now the earliest honest signal, not a terminal event.** Measured against a stub provider returning 500: the kernel does not fail, it **retries** — `session.retry.scheduled` fired eight times with an interval that grows on every attempt (+2.2s, +9s, +10s, +10s, +8s, +10s, +11s as observed), and **no terminal event arrived inside the probe window**. Waiting for one would report a machine that is visibly failing as merely "in flight". Each retry carries a named error anyway — `{type: "provider.internal", message: "fake upstream refused", status: 500}` — so `failed` is claimed the moment the kernel names the failure, and the reading reports `errorType` / `errorMessage` / `retries`. The **first** named failure is the one kept: a reader shown the eighth retry's error has lost the one that started the trouble.
+- **An interrupt is measured, and kept apart from a failure.** Driving a stub that holds its response for 25s and interrupting at 3s yields `session.step.failed {error: {type: "aborted"}}`, **`session.execution.interrupted {reason: "user"}`**, an `idle` row with `outcome: "interrupted"`, and an assistant row with `finish: "error"`. The probe reports `interrupted` as its own status carrying `reason`. It is deliberately not merged into `failed`: the kernel names the two apart and the remedies differ — an interrupt is something the reader did, a failure is something to go fix. That is the same separation 0.2.46's `terminalUnknown`/`terminalGone` and 0.2.47's exhausted/retrying established. `sliceStatus` is a pure function so the whole five-bucket ordering is testable: an answer outranks a terminal, a terminal outranks a mid-flight observation, and a run that finished without saying anything is neither an answer nor a failure.
+
+### Fixed
+
+- **The fork probe stops leaving throwaway sessions behind in silence.** Its teardown deleted through `DELETE /session/{id}?directory=`, which **2.0.32 answers 405** — the error was swallowed by an empty `catch`, so both the forked child and its source session stayed in the kernel's history while the panel implied the measurement had cleaned up after itself. Teardown now tries the route this generation has (`DELETE /api/session/{id}?directory=…`, 204) first and keeps the 1.x form as a fallback, so a 1.x install still gets cleaned up; the observation carries `leftover`, and Settings says so when a throwaway survived. This is the item 0.2.64 and 0.2.65 both recorded as outstanding.
+
+### Validation
+
+- 84 test files / 2,485 tests passed, with TypeScript and ESLint (baseline 2,474/84). Verified against a real running kernel with a deliberately slow stub: an in-flight run reports `{"status":"admitted","enqueued":true,"delivered":true,"started":true,"streamed":false,"confirmed":false,"retries":0,"leftover":false}` — a run that has not finished is not dressed up with any terminal. Reference baseline: Claudian unchanged at `31dd256b` (2.3.22). **No real credential was used and no billed model turn was spent.** Three existing fork assertions were widened by `leftover: false` rather than loosened — the observation now carries one more fact, and the assertions still pin the whole object.
+
+### Still unknown, and deliberately not invented
+
+`session.execution.failed` as an **event name** remains unmeasured: on the 500 path the kernel kept retrying and never reached it. The failure information was read from the `error` carried by `retry.scheduled` and by the assistant row, not from an event name, and the reducer still records any unseen `session.execution.*` name verbatim rather than mapping it onto a meaning this build has never watched. The chat backend is still ACP.
+
 ## 0.2.65 - 2026-10-17
 
 No new capabilities; the chat backend is unchanged. This release closes the two measurements 0.2.64 recorded as unobserved — a real assistant answer, and the terminal state of a run — using a local OpenAI-compatible provider instead of credentials.

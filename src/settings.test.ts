@@ -68,18 +68,34 @@ vi.mock('./opencode/OpencodeStreamProbe', () => ({
 // The native fork probe forks one throwaway session and reads back the child; a
 // settings test must never spawn a real CLI or fork real sessions. Faked to the
 // reading each test chooses, defaulting to `unavailable`.
-let fakeFork: { status: 'anchored' | 'copied-whole' | 'child-empty' | 'unexpected' | 'unsupported' | 'unavailable'; parentRows: number; childRows: number; apiForkRoute: 'json' | 'html' | 'error' } | null = null;
+let fakeFork: { status: 'anchored' | 'copied-whole' | 'child-empty' | 'unexpected' | 'unsupported' | 'unavailable'; parentRows: number; childRows: number; apiForkRoute: 'json' | 'html' | 'error'; leftover: boolean } | null = null;
 vi.mock('./opencode/OpencodeForkProbe', () => ({
   detectOpencodeNativeCheckpointFork: vi.fn(async () =>
-    fakeFork ?? { status: 'unavailable', parentRows: 0, childRows: 0, apiForkRoute: 'error' }),
+    fakeFork ?? { status: 'unavailable', parentRows: 0, childRows: 0, apiForkRoute: 'error', leftover: false }),
 }));
 
 // The execution-slice probe drives one throwaway native session on the current kernel
 // generation; a settings test must never spawn a real CLI or burn a model call.
-let fakeSlice: { status: 'answered' | 'admitted' | 'unavailable'; enqueued: boolean; delivered: boolean; started: boolean; answer: string | undefined; modelId: string | undefined; leftover: boolean } | null = null;
+const sliceDefaults = {
+  enqueued: false, delivered: false, started: false, streamed: false, confirmed: false,
+  answer: undefined as string | undefined, modelId: undefined as string | undefined,
+  outcome: undefined as string | undefined, terminal: undefined as string | undefined,
+  reason: undefined as string | undefined, errorType: undefined as string | undefined,
+  errorMessage: undefined as string | undefined, retries: 0,
+  finish: undefined as string | undefined, cost: undefined as number | undefined,
+  outputTokens: undefined as number | undefined, leftover: false,
+};
+
+let fakeSlice: { status: 'answered' | 'interrupted' | 'failed' | 'admitted' | 'unavailable'; enqueued: boolean; delivered: boolean; started: boolean; streamed: boolean; confirmed: boolean; answer: string | undefined; modelId: string | undefined; outcome: string | undefined; terminal: string | undefined; reason: string | undefined; errorType: string | undefined; errorMessage: string | undefined; retries: number; finish: string | undefined; cost: number | undefined; outputTokens: number | undefined; leftover: boolean } | null = null;
 vi.mock('./opencode/OpencodeV2SliceProbe', () => ({
   detectOpencodeV2ExecutionSlice: vi.fn(async () =>
-    fakeSlice ?? { status: 'unavailable', enqueued: false, delivered: false, started: false, answer: undefined, modelId: undefined, leftover: false }),
+    fakeSlice ?? {
+      status: 'unavailable', enqueued: false, delivered: false, started: false,
+      streamed: false, confirmed: false, answer: undefined, modelId: undefined,
+      outcome: undefined, terminal: undefined, reason: undefined,
+      errorType: undefined, errorMessage: undefined, retries: 0,
+      finish: undefined, cost: undefined, outputTokens: undefined, leftover: false,
+    }),
 }));
 
 describe('CoOberSettingsTab locale refresh', () => {
@@ -1215,7 +1231,7 @@ describe('CoOberSettingsTab locale refresh', () => {
 
   it('reports a forked child that carried no history as an empty child, not a truncation', async () => {
     setLocale('en');
-    fakeFork = { status: 'child-empty', parentRows: 4, childRows: 0, apiForkRoute: 'html' };
+    fakeFork = { status: 'child-empty', parentRows: 4, childRows: 0, apiForkRoute: 'html', leftover: false };
     try {
       const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
         availableModes: [{ id: 'build', name: 'Build' }],
@@ -1239,7 +1255,7 @@ describe('CoOberSettingsTab locale refresh', () => {
 
   it('calls a through-the-boundary copy buildable, and only when the readback showed it', async () => {
     setLocale('en');
-    fakeFork = { status: 'anchored', parentRows: 5, childRows: 2, apiForkRoute: 'json' };
+    fakeFork = { status: 'anchored', parentRows: 5, childRows: 2, apiForkRoute: 'json', leftover: false };
     try {
       const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
         availableModes: [{ id: 'build', name: 'Build' }],
@@ -1261,7 +1277,7 @@ describe('CoOberSettingsTab locale refresh', () => {
 
   it('names an unreachable native fork as failed, not as an empty child', async () => {
     setLocale('en');
-    fakeFork = { status: 'unavailable', parentRows: 0, childRows: 0, apiForkRoute: 'error' };
+    fakeFork = { status: 'unavailable', parentRows: 0, childRows: 0, apiForkRoute: 'error', leftover: false };
     try {
       const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
         availableModes: [{ id: 'build', name: 'Build' }],
@@ -1444,7 +1460,7 @@ describe('CoOberSettingsTab locale refresh', () => {
 
   it('reports the execution legs it observed individually, never one merged claim', async () => {
     setLocale('en');
-    fakeSlice = { status: 'admitted', enqueued: true, delivered: false, started: true, answer: undefined, modelId: undefined, leftover: false };
+    fakeSlice = { ...sliceDefaults, status: 'admitted', enqueued: true, delivered: false, started: true };
     try {
       const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
       tab.display();
@@ -1465,7 +1481,7 @@ describe('CoOberSettingsTab locale refresh', () => {
 
   it('says so when teardown could not delete the throwaway session', async () => {
     setLocale('en');
-    fakeSlice = { status: 'admitted', enqueued: true, delivered: true, started: true, answer: undefined, modelId: undefined, leftover: true };
+    fakeSlice = { ...sliceDefaults, status: 'admitted', enqueued: true, delivered: true, started: true, leftover: true };
     try {
       const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
       tab.display();
@@ -1496,6 +1512,65 @@ describe('CoOberSettingsTab locale refresh', () => {
     expect(en.forkUnsupported).not.toBe(en.forkUnavailable);
     expect(zh.turnUnsupported).not.toBe(zh.turnUnavailable);
     expect(zh.forkUnsupported).not.toBe(zh.forkUnavailable);
+  });
+
+  it('says the run was interrupted rather than that it failed', async () => {
+    // The kernel names these apart (`outcome: "interrupted"` vs a provider error type)
+    // and the remedies differ: an interrupt is something the reader did.
+    setLocale('en');
+    fakeSlice = { ...sliceDefaults, status: 'interrupted', enqueued: true, delivered: true, started: true, outcome: 'interrupted', terminal: 'session.execution.interrupted', reason: 'user' };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Probe the slice') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+      expect(tab.containerEl.textContent).toContain('interrupted (user)');
+      expect(tab.containerEl.textContent).not.toContain('it failed with');
+    } finally {
+      fakeSlice = null;
+    }
+  });
+
+  it('names the failure the kernel reported instead of reporting a missing answer', async () => {
+    setLocale('en');
+    fakeSlice = { ...sliceDefaults, status: 'failed', enqueued: true, delivered: true, started: true, errorType: 'provider.internal', errorMessage: 'fake upstream refused', retries: 3 };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Probe the slice') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+      expect(tab.containerEl.textContent).toContain('it failed with “provider.internal”');
+      expect(tab.containerEl.textContent).toContain('fake upstream refused');
+      expect(tab.containerEl.textContent).toContain('Retried 3 times');
+      // A named failure is not a missing answer, and the two sentences must not merge.
+      expect(tab.containerEl.textContent).not.toContain('no answer was read back');
+    } finally {
+      fakeSlice = null;
+    }
+  });
+
+  it('says so when the fork probe could not remove its throwaway sessions', async () => {
+    setLocale('en');
+    fakeFork = { status: 'child-empty', parentRows: 2, childRows: 0, apiForkRoute: 'html', leftover: true };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Probe a fork') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+      // Otherwise the reader is told the measurement cleaned up after itself.
+      expect(tab.containerEl.textContent).toContain('could not delete the throwaway sessions');
+    } finally {
+      fakeFork = null;
+    }
   });
 
   it('fails the sync folder row for a shape the writer itself rejects (0.2.46 stage C)', async () => {

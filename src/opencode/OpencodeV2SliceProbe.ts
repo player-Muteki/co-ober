@@ -50,7 +50,7 @@ const POLL_MS = 250;
 /** How long the event stream is given to deliver frames emitted alongside the answer. */
 const FRAME_DRAIN_MS = 250;
 
-export type OpencodeV2SliceStatus = 'answered' | 'failed' | 'admitted' | 'unavailable';
+export type OpencodeV2SliceStatus = 'answered' | 'interrupted' | 'failed' | 'admitted' | 'unavailable';
 
 export interface OpencodeV2SliceReading {
   status: OpencodeV2SliceStatus;
@@ -68,10 +68,18 @@ export interface OpencodeV2SliceReading {
   modelId: string | undefined;
   /** The terminal outcome the kernel itself recorded, verbatim and uninterpreted. */
   outcome: string | undefined;
+  /** The terminal execution event's own name, e.g. `session.execution.interrupted`. */
+  terminal: string | undefined;
+  /** The reason the kernel gave for an interrupted terminal, e.g. `user`. */
+  reason: string | undefined;
+  /** A failure the kernel named, taken from `session.step.failed` or the assistant row. */
+  errorType: string | undefined;
+  errorMessage: string | undefined;
+  retries: number;
   finish: string | undefined;
   cost: number | undefined;
   outputTokens: number | undefined;
-  /** True when teardown could not remove the throwaway session on the route that exists. */
+  /** True when teardown could not remove the throwaway session on any known route. */
   leftover: boolean;
 }
 
@@ -89,7 +97,9 @@ export interface OpencodeV2SliceDeps {
 const DEFAULT_SLICE: OpencodeV2SliceReading = {
   status: 'unavailable', enqueued: false, delivered: false, started: false,
   streamed: false, confirmed: false, answer: undefined, modelId: undefined,
-  outcome: undefined, finish: undefined, cost: undefined, outputTokens: undefined, leftover: false,
+  outcome: undefined, terminal: undefined, reason: undefined,
+  errorType: undefined, errorMessage: undefined, retries: 0,
+  finish: undefined, cost: undefined, outputTokens: undefined, leftover: false,
 };
 
 export interface NativeV2SliceEvents {
@@ -109,6 +119,11 @@ export interface NativeV2SliceEvents {
   outputTokens: number | undefined;
   /** The model the step announced, from `session.step.started`. */
   modelId: string | undefined;
+  /** Why the kernel interrupted, from `session.execution.interrupted`. */
+  reason: string | undefined;
+  /** The first failure the kernel named, from `session.step.failed` or a scheduled retry. */
+  errorType: string | undefined;
+  errorMessage: string | undefined;
 }
 
 /**
@@ -130,8 +145,17 @@ export function reduceV2SliceEvents(events: unknown[], sessionId: string): Nativ
     enqueued: false, delivered: false, started: false, steps: 0, retries: 0,
     terminal: undefined, assembled: undefined, endedText: undefined,
     finish: undefined, cost: undefined, outputTokens: undefined, modelId: undefined,
+    reason: undefined, errorType: undefined, errorMessage: undefined,
   };
   let assembled = '';
+  const rememberError = (payload: unknown): void => {
+    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return;
+    const err = payload as Record<string, unknown>;
+    // Keep the FIRST named failure: later frames repeat or replace it, and a reader
+    // shown the eighth retry's error has lost the one that started the trouble.
+    if (seen.errorType === undefined && typeof err.type === 'string') seen.errorType = err.type;
+    if (seen.errorMessage === undefined && typeof err.message === 'string') seen.errorMessage = err.message;
+  };
   for (const event of events) {
     if (event === null || typeof event !== 'object' || Array.isArray(event)) continue;
     const e = event as Record<string, unknown>;
@@ -148,7 +172,13 @@ export function reduceV2SliceEvents(events: unknown[], sessionId: string): Nativ
         seen.steps += 1;
         seen.modelId = stepModelId(data) ?? seen.modelId;
         break;
-      case 'session.retry.scheduled': seen.retries += 1; break;
+      case 'session.retry.scheduled':
+        seen.retries += 1;
+        rememberError(data.error);
+        break;
+      case 'session.step.failed':
+        rememberError(data.error);
+        break;
       // Only the answer channel (ordinal 0 in the observed run) is assembled; a later
       // ordinal is a different part of the same step and must not be spliced into it.
       case 'session.text.delta':
@@ -166,12 +196,58 @@ export function reduceV2SliceEvents(events: unknown[], sessionId: string): Nativ
         }
         break;
       default:
-        if (type.startsWith('session.execution.') && seen.terminal === undefined) seen.terminal = type;
+        if (type.startsWith('session.execution.') && seen.terminal === undefined) {
+          seen.terminal = type;
+          if (typeof data.reason === 'string') seen.reason = data.reason;
+        }
         break;
     }
   }
   seen.assembled = assembled.trim().length > 0 ? assembled : undefined;
   return seen;
+}
+
+/**
+ * Which bucket a run belongs in. The order matters and is the whole point: an answer
+ * beats a terminal, a terminal beats a mid-flight observation, and an interrupt is kept
+ * apart from a failure because the kernel names them apart and the reader's remedy
+ * differs — one of them did this, the other is something to go fix.
+ *
+ * A named failure counts the moment the kernel names it. Waiting for an execution-level
+ * terminal instead means sitting out a retry backoff that grows with every attempt and,
+ * as measured, may not resolve inside the probe window at all — which would report a run
+ * that is visibly failing as merely "in flight".
+ */
+export function sliceStatus(input: {
+  answer: string | undefined;
+  outcome: string | undefined;
+  started: boolean;
+  errorType: string | undefined;
+}): OpencodeV2SliceStatus {
+  if (input.answer) return 'answered';
+  if (input.outcome === 'interrupted') return 'interrupted';
+  if (input.errorType !== undefined) return 'failed';
+  if (input.outcome !== undefined && input.outcome !== 'succeeded') return 'failed';
+  if (input.started) return 'admitted';
+  return 'unavailable';
+}
+
+function rowErrorType(row: Record<string, unknown> | undefined): string | undefined {
+  const error = row?.error;
+  if (error !== null && typeof error === 'object' && !Array.isArray(error)) {
+    const type = (error as Record<string, unknown>).type;
+    return typeof type === 'string' ? type : undefined;
+  }
+  return undefined;
+}
+
+function rowErrorMessage(row: Record<string, unknown> | undefined): string | undefined {
+  const error = row?.error;
+  if (error !== null && typeof error === 'object' && !Array.isArray(error)) {
+    const message = (error as Record<string, unknown>).message;
+    return typeof message === 'string' ? message : undefined;
+  }
+  return undefined;
 }
 
 /**
@@ -405,7 +481,7 @@ export async function detectOpencodeV2ExecutionSlice(
 
     const outcome = rows.map(v2TerminalOutcome).find((o) => o !== undefined);
     return {
-      status: answer ? 'answered' : (outcome !== undefined && outcome !== 'succeeded') ? 'failed' : events.started ? 'admitted' : 'unavailable',
+      status: sliceStatus({ answer, outcome, started: events.started, errorType: events.errorType }),
       enqueued: events.enqueued,
       delivered: events.delivered,
       started: events.started,
@@ -414,6 +490,11 @@ export async function detectOpencodeV2ExecutionSlice(
       answer,
       modelId: answerModelId ?? events.modelId,
       outcome,
+      terminal: events.terminal,
+      reason: events.reason,
+      errorType: events.errorType ?? rowErrorType(assistantRow),
+      errorMessage: events.errorMessage ?? rowErrorMessage(assistantRow),
+      retries: events.retries,
       finish: answerFinish ?? events.finish,
       cost: events.cost,
       outputTokens: events.outputTokens,

@@ -43,6 +43,13 @@ export interface OpencodeForkObservation {
   parentRows: number;
   childRows: number;
   apiForkRoute: OpencodeForkRouteShape;
+  /**
+   * True when neither known delete route could remove the throwaway sessions. Measured:
+   * 2.0.32 moved the route from `DELETE /session/{id}?directory=` (which now answers
+   * **405**) to `DELETE /api/session/{id}?directory=…` (204), so a teardown that only
+   * knew the 1.x form left both throwaways in the kernel's history in silence.
+   */
+  leftover: boolean;
 }
 
 export interface OpencodeForkDeps {
@@ -59,14 +66,14 @@ export interface OpencodeForkDeps {
   signal?: AbortSignal;
 }
 
-const DEFAULT_FORK: OpencodeForkObservation = { status: 'unavailable', parentRows: 0, childRows: 0, apiForkRoute: 'error' };
+const DEFAULT_FORK: OpencodeForkObservation = { status: 'unavailable', parentRows: 0, childRows: 0, apiForkRoute: 'error', leftover: false };
 /**
  * The kernel answered and refused the request *shape*. On 2.0.32 both fork routes this
  * probe uses are gone — the legacy `POST /session/{id}/fork?directory=…` answers 405 and
  * `/api/session/{id}/fork` answers a JSON 404 — so "could not fork" and "this kernel has
  * no such route" are different findings pointing at different places.
  */
-const UNSUPPORTED_FORK: OpencodeForkObservation = { status: 'unsupported', parentRows: 0, childRows: 0, apiForkRoute: 'error' };
+const UNSUPPORTED_FORK: OpencodeForkObservation = { status: 'unsupported', parentRows: 0, childRows: 0, apiForkRoute: 'error', leftover: false };
 
 export interface ForkRow {
   id: string;
@@ -338,36 +345,49 @@ export async function detectOpencodeNativeCheckpointFork(
       parentRows: parent.length,
       childRows: childRows.length,
       apiForkRoute,
+      leftover: false,
     };
+  };
+
+  /**
+   * Remove both throwaway sessions on whichever delete route this kernel generation has,
+   * and report whether either survived. The 1.x form answers 405 on 2.0.32; the 2.x form
+   * is tried first and the legacy form is kept as a fallback so a 1.x install still gets
+   * cleaned up. Silently leaving sessions behind is the failure this makes visible.
+   */
+  const teardown = async (reading: OpencodeForkObservation): Promise<OpencodeForkObservation> => {
+    if (!sessionId || !origin) return reading;
+    try {
+      await requestFn(`${origin}/api/session/${encodeURIComponent(sessionId)}/interrupt?resume=false`, { method: 'POST' });
+    } catch { /* teardown must not mask the reading */ }
+    const ids = [forkedId, sessionId].filter((id): id is string => !!id);
+    let remaining = false;
+    for (const id of ids) {
+      const encoded = encodeURIComponent(id);
+      const query = `directory=${encodeURIComponent(cwd)}`;
+      const routes = [`/api/session/${encoded}?${query}`, `/session/${encoded}?${query}`];
+      let removed = false;
+      for (const route of routes) {
+        try {
+          await requestFn(`${origin}${route}`, { method: 'DELETE' });
+          removed = true;
+          break;
+        } catch { /* try the route this generation actually has */ }
+      }
+      if (!removed) remaining = true;
+    }
+    return { ...reading, leftover: remaining };
   };
 
   try {
     // The cancel arm settles even if the request helper ignores the signal it was given,
-    // so a reader that walks away is never held hostage by a collector that will not stop.
-    return await Promise.race([cancelled, run()]);
+    // so a reader who walks away is never held hostage by a collector that will not stop.
+    return await teardown(await Promise.race([cancelled, run()]).catch(() => DEFAULT_FORK));
   } catch {
     return DEFAULT_FORK;
   } finally {
     clearTimeout(timer);
     deps.signal?.removeEventListener('abort', onCancel);
-    if (sessionId && origin) {
-      try {
-        await requestFn(`${origin}/api/session/${encodeURIComponent(sessionId)}/interrupt?resume=false`, { method: 'POST' });
-      } catch { /* ignore interrupt outcome */ }
-      // A forked child that held history would be real user data; here it is at
-      // most an empty throwaway, and the probe deletes both it and its source
-      // session so the measurement leaves nothing behind to discover later. This is
-      // an attempt, not a proof: a cancel mid-teardown may leave the server unable
-      // to answer the delete.
-      if (forkedId) {
-        try {
-          await requestFn(`${origin}/session/${encodeURIComponent(forkedId)}?directory=${encodeURIComponent(cwd)}`, { method: 'DELETE' });
-        } catch { /* ignore delete outcome */ }
-      }
-      try {
-        await requestFn(`${origin}/session/${encodeURIComponent(sessionId)}?directory=${encodeURIComponent(cwd)}`, { method: 'DELETE' });
-      } catch { /* ignore delete outcome */ }
-    }
     controller.abort();
     killChild();
   }

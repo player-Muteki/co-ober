@@ -848,12 +848,24 @@ export class CoOberSettingsTab extends PluginSettingTab {
       return;
     }
     if (reading.leftover) new Setting(containerEl).setName(labels.sliceLeftover);
+    if (reading.status === 'interrupted') {
+      // Measured: an interrupt yields `session.execution.interrupted {reason}` and an idle
+      // row whose outcome is "interrupted". Who stopped it is a fact the reader needs,
+      // and it is not the same situation as a kernel that broke on its own.
+      new Setting(containerEl)
+        .setName(labels.sliceInterrupted.replace('{reason}', reading.reason ?? labels.sliceUnknownReason));
+      return;
+    }
     if (reading.status === 'failed') {
       // A terminal the kernel itself recorded, named verbatim. The remedy for a named
       // provider failure is not the same as the one for an unreachable kernel, so this
       // must not borrow that sentence.
       new Setting(containerEl)
-        .setName(labels.sliceFailed.replace('{outcome}', reading.outcome ?? labels.sliceUnknownOutcome));
+        .setName(labels.sliceFailed.replace('{outcome}', reading.errorType ?? labels.sliceUnknownOutcome))
+        .setDesc([
+          reading.errorMessage === undefined ? labels.sliceFailedNoDetail : reading.errorMessage,
+          reading.retries > 0 ? labels.sliceRetries.replace('{attempts}', String(reading.retries)) : '',
+        ].filter(Boolean).join(' '));
       return;
     }
     if (reading.status === 'admitted') {
@@ -1079,6 +1091,9 @@ export class CoOberSettingsTab extends PluginSettingTab {
       new Setting(containerEl).setName(labels.forkUnavailable);
       return;
     }
+    // A probe that could not remove its throwaways says so; otherwise the reader is told
+    // the measurement cleaned up after itself when it did not.
+    if (reading.leftover) new Setting(containerEl).setName(labels.forkLeftover);
     // Every other status really did fork a child — the reading says what that
     // child turned out to hold. The row counts and the v2 route shape are the
     // concrete facts the wire carried; nothing here implies a truncation the

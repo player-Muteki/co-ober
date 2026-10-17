@@ -7,6 +7,7 @@ import {
   reduceV2SliceEvents,
   v2AssistantAnswer,
   v2TerminalOutcome,
+  sliceStatus,
   type OpencodeV2SliceReading,
 } from './OpencodeV2SliceProbe';
 
@@ -40,6 +41,38 @@ function requestRouter(routes: [RegExp, unknown][]) {
     throw new Error(`unexpected url ${url}`);
   });
 }
+
+describe('sliceStatus', () => {
+  const base = { answer: undefined, outcome: undefined, started: true, errorType: undefined };
+
+  it('puts an answer ahead of every other observation', () => {
+    // A run can end in a terminal and still carry its answer; the answer is the fact the
+    // reader came for, so it must not be outranked by the bookkeeping around it.
+    expect(sliceStatus({ ...base, answer: 'OK', outcome: 'succeeded', errorType: 'aborted' })).toBe('answered');
+  });
+
+  it('keeps an interrupt apart from a failure', () => {
+    // The kernel names them apart (`outcome: "interrupted"` vs a provider error type) and
+    // the remedies differ: one of these happened because the reader asked.
+    expect(sliceStatus({ ...base, outcome: 'interrupted' })).toBe('interrupted');
+    expect(sliceStatus({ ...base, outcome: 'interrupted', errorType: 'aborted' })).toBe('interrupted');
+    expect(sliceStatus({ ...base, errorType: 'aborted' })).toBe('failed');
+  });
+
+  it('calls a named failure failed the moment it is named, without waiting for a terminal', () => {
+    // Measured: a failing provider retries with a backoff that grows every attempt and
+    // produced no terminal inside the probe window. Waiting for one would report a run
+    // that is visibly failing as merely in flight.
+    expect(sliceStatus({ ...base, errorType: 'provider.internal' })).toBe('failed');
+    expect(sliceStatus({ ...base, outcome: 'failed' })).toBe('failed');
+  });
+
+  it('does not call a successful terminal with no text an answer', () => {
+    expect(sliceStatus({ ...base, outcome: 'succeeded' })).toBe('admitted');
+    expect(sliceStatus({ ...base })).toBe('admitted');
+    expect(sliceStatus({ ...base, started: false })).toBe('unavailable');
+  });
+});
 
 describe('parseOpencodeServeBody', () => {
   it('decodes a body and tolerates the empty one a delete answers with', () => {
@@ -229,6 +262,51 @@ describe('detectOpencodeV2ExecutionSlice', () => {
     expect(reading.status).toBe('admitted');
     expect(reading.outcome).toBe('succeeded');
     expect(reading.answer).toBeUndefined();
+  });
+
+  it('reports interrupted when the kernel ended the run and said who asked', async () => {
+    // Measured on 2.0.32: an interrupt inside a run yields
+    // `session.execution.interrupted {reason:"user"}`, a `session.step.failed` carrying
+    // `{type:"aborted"}`, and an idle row whose outcome is "interrupted".
+    const child = fakeServeChild(READY);
+    const reading = await detectOpencodeV2ExecutionSlice('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), platform: 'linux', env: {}, settleMs: 20,
+      request: requestRouter(baseRoutes([[/\/message/u, { data: [
+        { type: 'idle', outcome: 'interrupted' },
+        { type: 'assistant', content: [], finish: 'error', error: { type: 'aborted', message: 'Step interrupted' } },
+      ] }]])) as never,
+      openEventStream: vi.fn(async () => eventStream([
+        frame({ type: 'session.execution.started', data: { sessionID: 'ses_1' } }),
+        frame({ type: 'session.step.failed', data: { sessionID: 'ses_1', error: { type: 'aborted', message: 'Step interrupted' } } }),
+        frame({ type: 'session.execution.interrupted', data: { sessionID: 'ses_1', reason: 'user' } }),
+      ])) as never,
+    });
+    expect(reading.status).toBe('interrupted');
+    expect(reading.terminal).toBe('session.execution.interrupted');
+    expect(reading.reason).toBe('user');
+    expect(reading.outcome).toBe('interrupted');
+  });
+
+  it('reports the named failure the kernel raised, before any terminal arrives', async () => {
+    const child = fakeServeChild(READY);
+    const reading = await detectOpencodeV2ExecutionSlice('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), platform: 'linux', env: {}, settleMs: 20,
+      request: requestRouter(baseRoutes([[/\/message/u, { data: [
+        { type: 'assistant', model: { id: 'a', providerID: 'p' }, content: [], retry: { attempt: 3 } },
+      ] }]])) as never,
+      openEventStream: vi.fn(async () => eventStream([
+        frame({ type: 'session.execution.started', data: { sessionID: 'ses_1' } }),
+        frame({ type: 'session.retry.scheduled', data: { sessionID: 'ses_1', error: { type: 'provider.internal', message: 'fake upstream refused', status: 500 } } }),
+        frame({ type: 'session.retry.scheduled', data: { sessionID: 'ses_1', error: { type: 'provider.internal', message: 'later attempt', status: 500 } } }),
+      ])) as never,
+    });
+    expect(reading.status).toBe('failed');
+    // The FIRST named failure, not the last: a reader shown the eighth retry's error has
+    // lost the one that started the trouble.
+    expect(reading.errorType).toBe('provider.internal');
+    expect(reading.errorMessage).toBe('fake upstream refused');
+    expect(reading.retries).toBe(2);
+    expect(reading.terminal).toBeUndefined();
   });
 
   it('reports admitted when the kernel started the run but produced no answer', async () => {

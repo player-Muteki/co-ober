@@ -109,7 +109,7 @@ describe('detectOpencodeNativeCheckpointFork', () => {
   it('reports the measured reality: a forked child with no history rows is child-empty', async () => {
     const h = runFork({ data: [] });
     const reading = await h.reading;
-    expect(reading).toEqual({ status: 'child-empty', parentRows: 2, childRows: 0, apiForkRoute: 'html' });
+    expect(reading).toEqual({ status: 'child-empty', parentRows: 2, childRows: 0, apiForkRoute: 'html', leftover: false });
     expect(h.child.kill).toHaveBeenCalledWith('SIGKILL');
   });
 
@@ -136,7 +136,7 @@ describe('detectOpencodeNativeCheckpointFork', () => {
     });
     // The child holds u1+u2 while the anchor (first user row) sits at u1 alone —
     // that is a copy through more than the anchor, so it must not be called anchored.
-    expect(reading).toEqual({ status: 'unexpected', parentRows: 3, childRows: 2, apiForkRoute: 'json' });
+    expect(reading).toEqual({ status: 'unexpected', parentRows: 3, childRows: 2, apiForkRoute: 'json', leftover: false });
   });
 
   it('classifies a true truncated copy as anchored', async () => {
@@ -160,7 +160,7 @@ describe('detectOpencodeNativeCheckpointFork', () => {
       pollMs: 0,
       pollAttempts: 3,
     });
-    expect(reading).toEqual({ status: 'anchored', parentRows: 3, childRows: 1, apiForkRoute: 'json' });
+    expect(reading).toEqual({ status: 'anchored', parentRows: 3, childRows: 1, apiForkRoute: 'json', leftover: false });
   });
 
   it('anchors at the first user row and carries it into the legacy fork request', async () => {
@@ -247,6 +247,52 @@ describe('detectOpencodeNativeCheckpointFork', () => {
       spawn: vi.fn(() => child as never), request: request as never, platform: 'linux', env: {}, pollMs: 0, pollAttempts: 2,
     });
     expect(reading.status).toBe('unsupported');
+  });
+
+  it('deletes both throwaways on the route this generation has, and says when it cannot', async () => {
+    // Measured: 2.0.32 moved the delete from DELETE /session/{id}?directory= (now 405) to
+    // DELETE /api/session/{id}?directory= (204). A teardown that only knew the old form
+    // left both throwaway sessions in the kernel's history, with the 405 swallowed.
+    const child = fakeServeChild(READY);
+    const deleted: string[] = [];
+    const request = vi.fn(async (url: string, init?: { method?: string }) => {
+      if (init?.method === 'DELETE') { deleted.push(String(url)); return {}; }
+      return requestRouter([
+        [/\/api\/session\/ses_1\/message/u, PARENT_TWO_USERS],
+        [/\/session\/ses_1\/fork/u, { id: 'ses_child' }],
+        [/\/api\/session\/ses_child\/message/u, { data: [] }],
+        [/\/prompt/u, { data: { id: 'msg_x', admittedSeq: 1 } }],
+        [/\/interrupt/u, {}],
+        [/\/api\/session$/u, { data: { id: 'ses_1' } }],
+      ])(url, init);
+    });
+    const reading = await detectOpencodeNativeCheckpointFork('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), request: request as never, requestRaw: vi.fn(async () => ({ status: 200, contentType: 'application/json', payload: { data: { id: 'ses_x' } } })) as never,
+      platform: 'linux', env: {}, pollMs: 0, pollAttempts: 2,
+    });
+    expect(deleted).toHaveLength(2);
+    expect(deleted.every((url) => url.includes('/api/session/'))).toBe(true);
+    expect(reading.leftover).toBe(false);
+  });
+
+  it('reports a leftover throwaway rather than leaving it behind in silence', async () => {
+    const child = fakeServeChild(READY);
+    const request = vi.fn(async (url: string, init?: { method?: string }) => {
+      if (init?.method === 'DELETE') throw new Error('405');
+      return requestRouter([
+        [/\/api\/session\/ses_1\/message/u, PARENT_TWO_USERS],
+        [/\/session\/ses_1\/fork/u, { id: 'ses_child' }],
+        [/\/api\/session\/ses_child\/message/u, { data: [] }],
+        [/\/prompt/u, { data: { id: 'msg_x', admittedSeq: 1 } }],
+        [/\/interrupt/u, {}],
+        [/\/api\/session$/u, { data: { id: 'ses_1' } }],
+      ])(url, init);
+    });
+    const reading = await detectOpencodeNativeCheckpointFork('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), request: request as never, requestRaw: vi.fn(async () => ({ status: 200, contentType: 'application/json', payload: { data: { id: 'ses_x' } } })) as never,
+      platform: 'linux', env: {}, pollMs: 0, pollAttempts: 2,
+    });
+    expect(reading.leftover).toBe(true);
   });
 
   it('does not spawn a server for a reader who already cancelled', async () => {
