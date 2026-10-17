@@ -11,7 +11,7 @@ import { validateCustomAgent } from './agents/custom';
 import { resolveCommandPath } from './utils/commandResolution';
 import { getVaultPath } from './utils/vault';
 import { detectOpencodeVersion } from './opencode/OpencodeVersion';
-import { detectOpencodeNativeCatalog } from './opencode/OpencodeCatalog';
+import { detectOpencodeNativeCatalog, type OpencodeCatalogStatus } from './opencode/OpencodeCatalog';
 import { OpencodeCatalogService } from './opencode/OpencodeCatalogService';
 import { OpencodeDiagnosticsService, type DiagnosticResult, type OpencodeDiagnosticContext } from './opencode/OpencodeDiagnosticsService';
 import { detectOpencodeNativeTurnExecution } from './opencode/OpencodeTurnProbe';
@@ -814,34 +814,47 @@ export class CoOberSettingsTab extends PluginSettingTab {
   private renderNativeCatalogBody(containerEl: HTMLElement, labels: ReturnType<typeof locale>['settings']['nativeCatalog']): void {
     const state = this.catalogService.getSnapshot();
     if (state.loading) new Setting(containerEl).setName(labels.running);
-    if (state.unavailable) new Setting(containerEl).setName(labels.unavailable);
+    // A server that read the request and refused it is not a server that stayed silent.
+    // The two send the reader to different places, so the refusal gets its own sentence
+    // and is never folded into the "did not answer" row.
+    const refused = state.observation?.status === 'unauthorized';
+    if (refused) {
+      new Setting(containerEl).setName(labels.unauthorized);
+    } else if (state.unavailable) {
+      new Setting(containerEl).setName(labels.unavailable);
+    }
     const observation = state.observation;
     if (!observation) {
-      if (!state.loading && !state.unavailable) new Setting(containerEl).setName(labels.notLoaded);
+      if (!state.loading && !state.unavailable && !refused) new Setting(containerEl).setName(labels.notLoaded);
       return;
     }
     if (state.stale) new Setting(containerEl).setName(labels.stale);
-    const partial = observation.routes && Object.values(observation.routes).some((status) => status === 'unavailable');
+    const routes = observation.routes;
+    const partial = routes && Object.values(routes).some((status) => status !== 'observed');
     if (partial) new Setting(containerEl).setName(labels.partial);
     const total = observation.models.length + observation.commands.length + observation.agents.length;
     if (total === 0 && !partial) {
       new Setting(containerEl).setName(labels.empty);
       return;
     }
+    const routeLabel = (status: OpencodeCatalogStatus | undefined): string => {
+      if (status === 'unauthorized') return labels.routeUnauthorized;
+      return status === 'unavailable' ? labels.routeUnavailable : String(0);
+    };
 
-    new Setting(containerEl).setName(labels.modelsHeading).setDesc(observation.routes?.models === 'unavailable' ? labels.routeUnavailable : String(observation.models.length));
+    new Setting(containerEl).setName(labels.modelsHeading).setDesc(routes?.models && routes.models !== 'observed' ? routeLabel(routes.models) : String(observation.models.length));
     for (const model of observation.models) {
       new Setting(containerEl)
         .setName(model.name)
         .setDesc(model.context === undefined ? labels.modelNoContext : labels.modelContext.replace('{context}', String(model.context)));
     }
 
-    new Setting(containerEl).setName(labels.commandsHeading).setDesc(observation.routes?.commands === 'unavailable' ? labels.routeUnavailable : String(observation.commands.length));
+    new Setting(containerEl).setName(labels.commandsHeading).setDesc(routes?.commands && routes.commands !== 'observed' ? routeLabel(routes.commands) : String(observation.commands.length));
     for (const command of observation.commands) {
       new Setting(containerEl).setName(command.name).setDesc(command.description ?? labels.commandNoDescription);
     }
 
-    new Setting(containerEl).setName(labels.agentsHeading).setDesc(observation.routes?.agents === 'unavailable' ? labels.routeUnavailable : String(observation.agents.length));
+    new Setting(containerEl).setName(labels.agentsHeading).setDesc(routes?.agents && routes.agents !== 'observed' ? routeLabel(routes.agents) : String(observation.agents.length));
     for (const agent of observation.agents) {
       new Setting(containerEl).setName(agent.id).setDesc(agent.description ?? labels.agentNoDescription);
     }
@@ -1072,8 +1085,13 @@ export class CoOberSettingsTab extends PluginSettingTab {
     const catalog = await detectOpencodeNativeCatalog(source.cliPath, source.cwd, { env: source.env, signal });
     checkCurrent();
     const catalogTotal = catalog.models.length + catalog.commands.length + catalog.agents.length;
-    const catalogPartial = catalog.routes && Object.values(catalog.routes).some((status) => status === 'unavailable');
-    const catalogDetail = catalog.status === 'unavailable'
+    const catalogPartial = catalog.routes && Object.values(catalog.routes).some((status) => status !== 'observed');
+    // A refused read is its own detail, never the "did not answer" sentence: the server was
+    // reachable and named its reason, so claiming it stayed silent would erase the only
+    // thing the reader could act on.
+    const catalogDetail = catalog.status === 'unauthorized'
+      ? locale().settings.nativeCatalog.unauthorized
+      : catalog.status === 'unavailable'
       ? labels.catalogUnavailable
       : catalogPartial
         ? locale().settings.nativeCatalog.partial

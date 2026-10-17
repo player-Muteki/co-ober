@@ -68,10 +68,14 @@ export class OpencodeCatalogService {
         this.setSource(source);
         return false;
       }
+      // A refusal is evidence too. Discarding it would restore the exact lie this stage
+      // removes: the panel would fall back to "did not answer" and the reader would lose
+      // the one thing the server actually said. Only a genuinely unobserved read marks the
+      // snapshot unavailable.
       this.state =
-        observation.status === 'observed'
-          ? { loading: false, observation, stale: false, unavailable: false }
-          : { ...this.state, loading: false, unavailable: true, stale: this.state.observation !== null };
+        observation.status === 'unavailable'
+          ? { ...this.state, loading: false, unavailable: true, stale: this.state.observation !== null }
+          : { loading: false, observation, stale: false, unavailable: false };
       this.active = null;
       return true;
     } catch {

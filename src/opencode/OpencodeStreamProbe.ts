@@ -1,6 +1,7 @@
 import { spawn, type SpawnOptions, type ChildProcess } from 'child_process';
 import { getSpawnInfo } from '../utils/commandResolution';
 import { parseOpencodeServerUrl } from './OpencodeCatalog';
+import { newOpencodeServePassword, opencodeServeAuthHeaders, opencodeServeEnvironment } from './OpencodeServeAuth';
 
 /**
  * Observe whether the native `opencode serve` kernel STREAMS a turn's answer over
@@ -142,13 +143,14 @@ function randomProbeId(): string {
 
 async function defaultRequest(
   url: string,
+  password: string,
   init?: { method?: string; body?: unknown },
   signal?: AbortSignal,
 ): Promise<unknown> {
   const response = await fetch(url, {
     method: init?.method ?? 'GET',
     ...(init?.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...opencodeServeAuthHeaders(password) },
     signal,
   });
   if (!response.ok) throw new Error(`OpenCode serve responded ${response.status}`);
@@ -160,8 +162,8 @@ async function defaultRequest(
  * An abort ends the stream cleanly (the iterator finishes) rather than throwing, so a
  * partially streamed answer is still read and reported rather than lost on teardown.
  */
-async function defaultOpenEventStream(url: string, signal?: AbortSignal): Promise<AsyncIterable<string>> {
-  const response = await fetch(url, { headers: { accept: 'text/event-stream' }, signal });
+async function defaultOpenEventStream(url: string, password: string, signal?: AbortSignal): Promise<AsyncIterable<string>> {
+  const response = await fetch(url, { headers: { accept: 'text/event-stream', ...opencodeServeAuthHeaders(password) }, signal });
   if (!response.ok || !response.body) throw new Error(`OpenCode event stream responded ${response.status}`);
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -207,11 +209,15 @@ export async function detectOpencodeNativeTurnStream(
   // asked for and cannot be taken back.
   if (!cliPath?.trim() || deps.signal?.aborted) return DEFAULT_STREAM;
 
-  const env = deps.env ?? process.env;
+  // Authenticated from the start, for the reason recorded in OpencodeServeAuth: a v2
+  // kernel refuses an unauthenticated request outright, which an unauthenticated probe
+  // could only report as a kernel that "did not answer".
+  const password = newOpencodeServePassword();
+  const env = opencodeServeEnvironment(deps.env ?? process.env, password);
   const platform = deps.platform ?? process.platform;
   const spawnFn = deps.spawn ?? spawn;
-  const requestFn = deps.request ?? defaultRequest;
-  const openStream = deps.openEventStream ?? defaultOpenEventStream;
+  const requestFn = deps.request ?? ((url, init, signal) => defaultRequest(url, password, init, signal));
+  const openStream = deps.openEventStream ?? ((url, signal) => defaultOpenEventStream(url, password, signal));
   const timeoutMs = deps.timeoutMs ?? STREAM_TIMEOUT_MS;
 
   const info = getSpawnInfo(cliPath.trim(), ['serve', '--hostname', '127.0.0.1', '--port', '0'], platform, env);

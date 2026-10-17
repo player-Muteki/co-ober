@@ -1,5 +1,12 @@
 import { spawn, type SpawnOptions, type ChildProcess } from 'child_process';
 import { getSpawnInfo } from '../utils/commandResolution';
+import {
+  newOpencodeServePassword,
+  opencodeServeAuthHeaders,
+  opencodeServeEnvironment,
+  OpencodeServeHttpError,
+  isOpencodeServeAuthenticationFailure,
+} from './OpencodeServeAuth';
 
 /**
  * The native OpenCode catalog read over the loopback `opencode serve` HTTP API.
@@ -29,7 +36,7 @@ export interface OpencodeNativeAgent {
   description: string | undefined;
 }
 
-export type OpencodeCatalogStatus = 'observed' | 'unavailable';
+export type OpencodeCatalogStatus = 'observed' | 'unauthorized' | 'unavailable';
 
 export interface OpencodeCatalogObservation {
   status: OpencodeCatalogStatus;
@@ -38,6 +45,23 @@ export interface OpencodeCatalogObservation {
   agents: OpencodeNativeAgent[];
   /** Per-route evidence; absent on older callers' observations. */
   routes?: Record<'models' | 'commands' | 'agents', OpencodeCatalogStatus>;
+}
+
+/**
+ * What one route actually established. A route that answered with a refusal we can name
+ * is not a route that "did not answer": the two send the reader to different places, so
+ * they must not share a status. Anything else — a connection failure, a malformed body,
+ * an HTML catch-all — stays `unavailable`, because those genuinely leave the cause
+ * unobserved.
+ */
+export function classifyCatalogRoute(entry: PromiseSettledResult<unknown>): OpencodeCatalogStatus {
+  if (entry.status === 'fulfilled'
+    && entry.value !== null && typeof entry.value === 'object'
+    && Array.isArray((entry.value as { data?: unknown }).data)) {
+    return 'observed';
+  }
+  if (entry.status === 'rejected' && isOpencodeServeAuthenticationFailure(entry.reason)) return 'unauthorized';
+  return 'unavailable';
 }
 
 export interface OpencodeCatalogDeps {
@@ -131,9 +155,9 @@ export function mapNativeAgents(payload: unknown): OpencodeNativeAgent[] {
   return agents;
 }
 
-async function defaultRequest(url: string, signal?: AbortSignal): Promise<unknown> {
-  const response = await fetch(url, { signal });
-  if (!response.ok) throw new Error(`OpenCode serve responded ${response.status}`);
+async function defaultRequest(url: string, password: string, signal?: AbortSignal): Promise<unknown> {
+  const response = await fetch(url, { headers: opencodeServeAuthHeaders(password), signal });
+  if (!response.ok) throw new OpencodeServeHttpError(response.status, `OpenCode serve responded ${response.status}`);
   return response.json();
 }
 
@@ -153,10 +177,15 @@ export async function detectOpencodeNativeCatalog(
   const empty: OpencodeCatalogObservation = { status: 'unavailable', models: [], commands: [], agents: [] };
   if (!cliPath?.trim() || deps.signal?.aborted) return empty;
 
-  const env = { ...(deps.env ?? process.env) };
+  // The read is authenticated from the start: this plugin chooses the credential, hands it
+  // to the child it spawned, and presents it on every request. A v2 install refuses an
+  // unauthenticated read outright, so a probe that does not do this reports a live,
+  // fully-stocked server as one that "did not answer".
+  const password = newOpencodeServePassword();
+  const env = opencodeServeEnvironment(deps.env ?? process.env, password);
   const platform = deps.platform ?? process.platform;
   const spawnFn = deps.spawn ?? spawn;
-  const requestFn = deps.request ?? defaultRequest;
+  const requestFn = deps.request ?? ((url, signal) => defaultRequest(url, password, signal));
   const timeoutMs = deps.timeoutMs ?? SERVER_TIMEOUT_MS;
 
   let child: ChildProcess;
@@ -194,14 +223,20 @@ export async function detectOpencodeNativeCatalog(
     ]);
     // HTTP success is not catalog evidence: HTML catch-alls and other JSON
     // dialects must not become a confidently empty roster.
-    const payloads = settled.map((entry) => entry.status === 'fulfilled'
-      && entry.value !== null && typeof entry.value === 'object'
-      && Array.isArray((entry.value as { data?: unknown }).data) ? entry.value : undefined);
+    const statuses = settled.map(classifyCatalogRoute);
     const routes: NonNullable<OpencodeCatalogObservation['routes']> = {
-      models: payloads[0] === undefined ? 'unavailable' : 'observed',
-      commands: payloads[1] === undefined ? 'unavailable' : 'observed',
-      agents: payloads[2] === undefined ? 'unavailable' : 'observed',
+      models: statuses[0],
+      commands: statuses[1],
+      agents: statuses[2],
     };
+    // A route that was not observed contributes nothing. This is why a refusal can never
+    // leak into the lists: only an `observed` route's payload is mapped at all.
+    const payloads = settled.map((entry, i) => (statuses[i] === 'observed' && entry.status === 'fulfilled' ? entry.value : undefined));
+    if (statuses.every((status) => status === 'unauthorized')) {
+      // Every route was refused the same way, so the refusal is the finding — not a server
+      // that failed to answer, and emphatically not a server with nothing to list.
+      return { status: 'unauthorized', models: [], commands: [], agents: [], routes };
+    }
     if (payloads.every((payload) => payload === undefined)) return { ...empty, routes };
     return {
       status: 'observed', routes,

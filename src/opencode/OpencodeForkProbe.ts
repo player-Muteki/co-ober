@@ -1,6 +1,7 @@
 import { spawn, type SpawnOptions, type ChildProcess } from 'child_process';
 import { getSpawnInfo } from '../utils/commandResolution';
 import { parseOpencodeServerUrl } from './OpencodeCatalog';
+import { newOpencodeServePassword, opencodeServeAuthHeaders, opencodeServeEnvironment } from './OpencodeServeAuth';
 
 /**
  * Measure whether the native `opencode serve` kernel can fork a session at a
@@ -138,13 +139,14 @@ function randomProbeId(): string {
 
 async function defaultRequest(
   url: string,
+  password: string,
   init?: { method?: string; body?: unknown },
   signal?: AbortSignal,
 ): Promise<unknown> {
   const response = await fetch(url, {
     method: init?.method ?? 'GET',
     ...(init?.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...opencodeServeAuthHeaders(password) },
     signal,
   });
   if (!response.ok) throw new Error(`OpenCode serve responded ${response.status}`);
@@ -153,13 +155,14 @@ async function defaultRequest(
 
 async function defaultRequestRaw(
   url: string,
+  password: string,
   init?: { method?: string; body?: unknown },
   signal?: AbortSignal,
 ): Promise<{ status: number; contentType: string; payload: unknown }> {
   const response = await fetch(url, {
     method: init?.method ?? 'GET',
     ...(init?.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...opencodeServeAuthHeaders(password) },
     signal,
   });
   const contentType = response.headers.get('content-type') ?? '';
@@ -190,11 +193,15 @@ export async function detectOpencodeNativeCheckpointFork(
   // taken back and nobody asked for.
   if (!cliPath?.trim() || deps.signal?.aborted) return DEFAULT_FORK;
 
-  const env = deps.env ?? process.env;
+  // Authenticated from the start, for the reason recorded in OpencodeServeAuth: a v2
+  // kernel refuses an unauthenticated request outright, which an unauthenticated probe
+  // could only report as a kernel that "did not answer".
+  const password = newOpencodeServePassword();
+  const env = opencodeServeEnvironment(deps.env ?? process.env, password);
   const platform = deps.platform ?? process.platform;
   const spawnFn = deps.spawn ?? spawn;
-  const requestFn = deps.request ?? defaultRequest;
-  const rawFn = deps.requestRaw ?? defaultRequestRaw;
+  const requestFn = deps.request ?? ((url, init, signal) => defaultRequest(url, password, init, signal));
+  const rawFn = deps.requestRaw ?? ((url, init, signal) => defaultRequestRaw(url, password, init, signal));
   const timeoutMs = deps.timeoutMs ?? FORK_TIMEOUT_MS;
   const pollMs = deps.pollMs ?? 1_000;
   const pollAttempts = deps.pollAttempts ?? 8;

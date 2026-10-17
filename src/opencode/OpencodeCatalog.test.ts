@@ -2,13 +2,20 @@ import { describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'events';
 import type { OpencodeCatalogDeps } from './OpencodeCatalog';
 import { PassThrough } from 'stream';
+import type { SpawnOptions } from 'child_process';
 import {
   parseOpencodeServerUrl,
   mapNativeModels,
   mapNativeCommands,
   mapNativeAgents,
   detectOpencodeNativeCatalog,
+  classifyCatalogRoute,
 } from './OpencodeCatalog';
+import {
+  OPENCODE_PASSWORD_ENV,
+  OPENCODE_SERVER_PASSWORD_ENV,
+  OpencodeServeHttpError,
+} from './OpencodeServeAuth';
 
 /** A serve child that prints its readiness line and stays alive until killed. */
 function fakeServeChild(stdoutLine: string) {
@@ -109,7 +116,89 @@ describe('mapNativeAgents', () => {
   });
 });
 
+describe('classifyCatalogRoute', () => {
+  const fulfilled = (value: unknown): PromiseSettledResult<unknown> => ({ status: 'fulfilled', value });
+  const rejected = (reason: unknown): PromiseSettledResult<unknown> => ({ status: 'rejected', reason });
+
+  it('reads an answer only from the { data: [...] } dialect', () => {
+    expect(classifyCatalogRoute(fulfilled({ data: [] }))).toBe('observed');
+    expect(classifyCatalogRoute(fulfilled({}))).toBe('unavailable');
+    expect(classifyCatalogRoute(fulfilled('<html>catch-all</html>'))).toBe('unavailable');
+    expect(classifyCatalogRoute(fulfilled(null))).toBe('unavailable');
+  });
+
+  it('names a refusal the server stated, instead of calling it silence', () => {
+    expect(classifyCatalogRoute(rejected(new OpencodeServeHttpError(401, 'responded 401')))).toBe('unauthorized');
+    expect(classifyCatalogRoute(rejected(new OpencodeServeHttpError(403, 'responded 403')))).toBe('unauthorized');
+  });
+
+  it('leaves a route that simply never answered as unavailable', () => {
+    // "Refused" and "did not answer" send the reader to different places: one to the
+    // credential, one to the install. A connection failure observed neither.
+    expect(classifyCatalogRoute(rejected(new Error('socket hang up')))).toBe('unavailable');
+    expect(classifyCatalogRoute(rejected(new OpencodeServeHttpError(404, 'responded 404')))).toBe('unavailable');
+    expect(classifyCatalogRoute(rejected(new OpencodeServeHttpError(500, 'responded 500')))).toBe('unavailable');
+  });
+});
+
 describe('detectOpencodeNativeCatalog', () => {
+  it('authenticates the child it spawns with a password it chose itself', async () => {
+    // The measured failure this exists for: a v2 kernel answers an unauthenticated read
+    // with 401 on every route, and the panel then calls a live, fully-stocked server one
+    // that "did not answer". Choosing the credential is what stops that.
+    const child = fakeServeChild('server listening on http://127.0.0.1:4096');
+    const spawn = vi.fn((_command: string, _args: string[], _options: SpawnOptions) => child as never);
+    await detectOpencodeNativeCatalog('opencode', '/vault', {
+      spawn, env: { EXISTING: 'yes' }, platform: 'linux',
+      request: requestRouter({ '/api/model': { data: [] }, '/api/command': { data: [] }, '/api/agent': { data: [] } }),
+    });
+    const servedEnv = spawn.mock.calls[0][2]?.env as Record<string, string>;
+    expect(servedEnv.EXISTING).toBe('yes');
+    expect(servedEnv[OPENCODE_PASSWORD_ENV]).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+    expect(servedEnv[OPENCODE_SERVER_PASSWORD_ENV]).toBe(servedEnv[OPENCODE_PASSWORD_ENV]);
+  });
+
+  it('reports a refused read as unauthorized rather than as a server that did not answer', async () => {
+    const child = fakeServeChild('server listening on http://127.0.0.1:4096');
+    const observation = await detectOpencodeNativeCatalog('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), env: {}, platform: 'linux',
+      request: vi.fn(async () => { throw new OpencodeServeHttpError(401, 'OpenCode serve responded 401'); }),
+    });
+    expect(observation.status).toBe('unauthorized');
+    expect(observation.routes).toEqual({ models: 'unauthorized', commands: 'unauthorized', agents: 'unauthorized' });
+    // A refusal observed nothing, so nothing may be listed from it.
+    expect(observation.models).toEqual([]);
+    expect(observation.commands).toEqual([]);
+    expect(observation.agents).toEqual([]);
+  });
+
+  it('still calls an unreachable or malformed route unavailable, not unauthorized', async () => {
+    const child = fakeServeChild('server listening on http://127.0.0.1:4096');
+    const observation = await detectOpencodeNativeCatalog('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), env: {}, platform: 'linux',
+      request: vi.fn(async () => { throw new Error('socket hang up'); }),
+    });
+    expect(observation.status).toBe('unavailable');
+    expect(observation.routes).toEqual({ models: 'unavailable', commands: 'unavailable', agents: 'unavailable' });
+  });
+
+  it('keeps the observed routes when a partial read refuses just one of them', async () => {
+    const child = fakeServeChild('server listening on http://127.0.0.1:4096');
+    const observation = await detectOpencodeNativeCatalog('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), env: {}, platform: 'linux',
+      request: vi.fn(async (url: string) => {
+        if (url.includes('/api/agent')) throw new OpencodeServeHttpError(403, 'OpenCode serve responded 403');
+        if (url.includes('/api/model')) return { data: [{ id: 'a', providerID: 'p', name: 'A', enabled: true, limit: { context: 10 } }] };
+        return { data: [] };
+      }),
+    });
+    expect(observation.status).toBe('observed');
+    expect(observation.routes).toEqual({ models: 'observed', commands: 'observed', agents: 'unauthorized' });
+    // The routes that did answer still report what they actually listed.
+    expect(observation.models).toEqual([{ modelId: 'p/a', name: 'p/A', context: 10 }]);
+    expect(observation.agents).toEqual([]);
+  });
+
   it('absorbs a delayed spawn error after cancellation until the child closes', async () => {
     const child = fakeServeChild('not ready');
     const controller = new AbortController();

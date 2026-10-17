@@ -154,6 +154,56 @@ describe('CoOberSettingsTab locale refresh', () => {
     expect(tab.containerEl.textContent).not.toContain('listed no models, commands, or agents');
   });
 
+  it('names an authentication refusal instead of claiming the server did not answer', async () => {
+    // The measured failure: a v2 kernel answers every route with 401 and a reason. Calling
+    // that "did not answer" erases the only fact the reader can act on — and points a
+    // reader at the install when the credential was the problem.
+    setLocale('en');
+    vi.mocked(detectOpencodeNativeCatalog).mockResolvedValueOnce({
+      status: 'unauthorized', models: [], commands: [], agents: [],
+      routes: { models: 'unauthorized', commands: 'unauthorized', agents: 'unauthorized' },
+    });
+    const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
+    tab.display();
+    [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Load catalog')!.click();
+    await flushPromises();
+    expect(tab.containerEl.textContent).toContain('refused this read');
+    expect(tab.containerEl.textContent).not.toContain('did not answer');
+    expect(tab.containerEl.textContent).not.toContain('listed no models, commands, or agents');
+  });
+
+  it('still says the server did not answer when nothing named a refusal', async () => {
+    // The fix must not turn every failure into a credential problem: a server that never
+    // answered observed no refusal at all, and the sentence must stay the one that fits.
+    setLocale('en');
+    vi.mocked(detectOpencodeNativeCatalog).mockResolvedValueOnce({
+      status: 'unavailable', models: [], commands: [], agents: [],
+      routes: { models: 'unavailable', commands: 'unavailable', agents: 'unavailable' },
+    });
+    const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
+    tab.display();
+    [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Load catalog')!.click();
+    await flushPromises();
+    expect(tab.containerEl.textContent).toContain('did not answer');
+    expect(tab.containerEl.textContent).not.toContain('refused this read');
+  });
+
+  it('speaks two different sentences, so a refusal cannot be re-merged into silence', async () => {
+    // The anti-remerge guard. A future locale edit that quietly set these two keys to the
+    // same value would keep every other assertion here green while making the two
+    // situations unreadable again — the same guard shape 0.2.44 stage C's terminal split
+    // and 0.2.46 stage A's transport caption use.
+    setLocale('en');
+    const en = locale().settings.nativeCatalog;
+    setLocale('zh');
+    const zh = locale().settings.nativeCatalog;
+    setLocale('en');
+    expect(en.unauthorized).not.toBe(en.unavailable);
+    expect(zh.unauthorized).not.toBe(zh.unavailable);
+    expect(en.unauthorized).not.toBe(en.routeUnavailable);
+    expect(zh.unauthorized).not.toBe(zh.routeUnavailable);
+  });
+
   it('does not pass diagnostics as a complete roster when a route is unavailable', async () => {
     setLocale('en');
     vi.mocked(detectOpencodeNativeCatalog).mockResolvedValueOnce({ status: 'observed', models: [{ modelId: 'p/a', name: 'Alpha', context: undefined }], commands: [], agents: [],

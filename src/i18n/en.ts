@@ -540,6 +540,8 @@ const en = {
       running: 'Reading the native catalog…',
       notLoaded: 'Not loaded — press "Load catalog" to ask the native install what it lists.',
       unavailable: 'Could not read the native catalog — `opencode serve` did not answer',
+      unauthorized: 'The native server refused this read — it requires authentication this client could not present. The install may be healthy; the catalog was not observed.',
+      routeUnauthorized: 'Refused — the server requires authentication',
       empty: 'The native catalog answered but listed no models, commands, or agents',
       modelsHeading: 'Models',
       commandsHeading: 'Commands',

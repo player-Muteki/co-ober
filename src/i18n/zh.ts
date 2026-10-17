@@ -542,6 +542,8 @@ const zh: Locale = {
       running: '正在读取原生目录…',
       notLoaded: '尚未加载 — 按下“加载目录”来询问原生安装列出了什么。',
       unavailable: '无法读取原生目录 — `opencode serve` 未应答',
+      unauthorized: '原生服务器拒绝本次读取 — 它要求本客户端未能提供的认证。安装本身可能是正常的；目录并未被观察到。',
+      routeUnauthorized: '已拒绝 — 服务器要求认证',
       empty: '原生目录已应答，但未列出任何模型、命令或 Agent',
       modelsHeading: '模型',
       commandsHeading: '命令',
