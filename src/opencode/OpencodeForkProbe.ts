@@ -1,7 +1,7 @@
 import { spawn, type SpawnOptions, type ChildProcess } from 'child_process';
 import { getSpawnInfo } from '../utils/commandResolution';
 import { parseOpencodeServerUrl } from './OpencodeCatalog';
-import { newOpencodeServePassword, opencodeServeAuthHeaders, opencodeServeEnvironment } from './OpencodeServeAuth';
+import { newOpencodeServePassword, opencodeServeAuthHeaders, opencodeServeEnvironment, OpencodeServeHttpError, isOpencodeServeProtocolRefusal } from './OpencodeServeAuth';
 
 /**
  * Measure whether the native `opencode serve` kernel can fork a session at a
@@ -34,7 +34,7 @@ const STARTUP_OUTPUT_MAX_CHARS = 8_000;
 const PROBE_TEXT_A = 'Reply with exactly the word ONE and nothing else.';
 const PROBE_TEXT_B = 'Reply with exactly the word TWO and nothing else.';
 
-export type OpencodeForkStatus = 'anchored' | 'copied-whole' | 'child-empty' | 'unexpected' | 'unavailable';
+export type OpencodeForkStatus = 'anchored' | 'copied-whole' | 'child-empty' | 'unexpected' | 'unsupported' | 'unavailable';
 
 export type OpencodeForkRouteShape = 'json' | 'html' | 'error';
 
@@ -60,6 +60,13 @@ export interface OpencodeForkDeps {
 }
 
 const DEFAULT_FORK: OpencodeForkObservation = { status: 'unavailable', parentRows: 0, childRows: 0, apiForkRoute: 'error' };
+/**
+ * The kernel answered and refused the request *shape*. On 2.0.32 both fork routes this
+ * probe uses are gone — the legacy `POST /session/{id}/fork?directory=…` answers 405 and
+ * `/api/session/{id}/fork` answers a JSON 404 — so "could not fork" and "this kernel has
+ * no such route" are different findings pointing at different places.
+ */
+const UNSUPPORTED_FORK: OpencodeForkObservation = { status: 'unsupported', parentRows: 0, childRows: 0, apiForkRoute: 'error' };
 
 export interface ForkRow {
   id: string;
@@ -149,7 +156,7 @@ async function defaultRequest(
     headers: { 'content-type': 'application/json', ...opencodeServeAuthHeaders(password) },
     signal,
   });
-  if (!response.ok) throw new Error(`OpenCode serve responded ${response.status}`);
+  if (!response.ok) throw new OpencodeServeHttpError(response.status, `OpenCode serve responded ${response.status}`);
   return response.json();
 }
 
@@ -259,18 +266,23 @@ export async function detectOpencodeNativeCheckpointFork(
     // is what separates an anchored copy from a whole one. Neither answer is
     // needed, so no turn is ever waited for.
     const firstId = `msg_${randomProbeId()}`;
-    const admittedA = await requestFn(
-      `${origin}/api/session/${encoded}/prompt`,
-      { method: 'POST', body: { id: firstId, prompt: { text: PROBE_TEXT_A } } },
-      controller.signal,
-    );
-    if (!isAdmitted(admittedA)) return DEFAULT_FORK;
-    const admittedB = await requestFn(
-      `${origin}/api/session/${encoded}/prompt`,
-      { method: 'POST', body: { id: `msg_${randomProbeId()}`, prompt: { text: PROBE_TEXT_B } } },
-      controller.signal,
-    );
-    if (!isAdmitted(admittedB)) return DEFAULT_FORK;
+    try {
+      const admittedA = await requestFn(
+        `${origin}/api/session/${encoded}/prompt`,
+        { method: 'POST', body: { id: firstId, prompt: { text: PROBE_TEXT_A } } },
+        controller.signal,
+      );
+      if (!isAdmitted(admittedA)) return DEFAULT_FORK;
+      const admittedB = await requestFn(
+        `${origin}/api/session/${encoded}/prompt`,
+        { method: 'POST', body: { id: `msg_${randomProbeId()}`, prompt: { text: PROBE_TEXT_B } } },
+        controller.signal,
+      );
+      if (!isAdmitted(admittedB)) return DEFAULT_FORK;
+    } catch (error) {
+      if (isOpencodeServeProtocolRefusal(error)) return UNSUPPORTED_FORK;
+      throw error;
+    }
 
     let parent: ForkRow[] = [];
     let anchorId = firstId;

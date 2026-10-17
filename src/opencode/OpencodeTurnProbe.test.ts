@@ -6,6 +6,7 @@ import {
   detectOpencodeNativeTurnExecution,
   type OpencodeTurnObservation,
 } from './OpencodeTurnProbe';
+import { OpencodeServeHttpError } from './OpencodeServeAuth';
 
 /** A serve child that prints its readiness line and stays alive until killed. */
 function fakeServeChild(stdoutLine: string) {
@@ -154,6 +155,37 @@ describe('detectOpencodeNativeTurnExecution', () => {
     });
     const createCall = request.mock.calls.find(([url]) => String(url).endsWith('/api/session'));
     expect(createCall?.[1]).toMatchObject({ method: 'POST', body: { location: { directory: '/a vault/dir' } } });
+  });
+
+  it('names a refused request shape as unsupported, not as a kernel that did not answer', async () => {
+    // Measured on 2.0.32: the 1.x nested `{id, prompt:{text}}` body is answered
+    // 400 InvalidRequestError "Missing key at [\"text\"]". The kernel is alive and said why;
+    // calling that "did not answer" points the reader at the wrong thing entirely.
+    const child = fakeServeChild(READY);
+    const request = vi.fn(async (url: string) => {
+      if (String(url).includes('/prompt')) throw new OpencodeServeHttpError(400, 'responded 400');
+      if (String(url).includes('/interrupt')) return {};
+      return { data: { id: 'ses_1' } };
+    });
+    const reading = await detectOpencodeNativeTurnExecution('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), request: request as never, platform: 'linux', env: {}, pollMs: 0, pollAttempts: 2,
+    });
+    expect(reading.status).toBe('unsupported');
+  });
+
+  it('still calls an unreachable kernel unavailable, not unsupported', async () => {
+    // The fix must not turn every failure into "wrong dialect": a socket that died
+    // observed no refusal at all, and that sentence must stay the one that fits.
+    const child = fakeServeChild(READY);
+    const request = vi.fn(async (url: string) => {
+      if (String(url).includes('/prompt')) throw new Error('socket hang up');
+      if (String(url).includes('/interrupt')) return {};
+      return { data: { id: 'ses_1' } };
+    });
+    const reading = await detectOpencodeNativeTurnExecution('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), request: request as never, platform: 'linux', env: {}, pollMs: 0, pollAttempts: 2,
+    });
+    expect(reading.status).toBe('unavailable');
   });
 
   it('does not spawn a server for a reader who already cancelled', async () => {

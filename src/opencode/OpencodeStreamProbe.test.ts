@@ -7,6 +7,7 @@ import {
   detectOpencodeNativeTurnStream,
   type OpencodeStreamObservation,
 } from './OpencodeStreamProbe';
+import { OpencodeServeHttpError } from './OpencodeServeAuth';
 
 /** A serve child that prints its readiness line and stays alive until killed. */
 function fakeServeChild(stdoutLine: string) {
@@ -254,6 +255,20 @@ describe('detectOpencodeNativeTurnStream', () => {
     expect(streamUrl).toContain('/api/event?location%5Bdirectory%5D=%2Fa%20vault%2Fdir');
     const createCall = request.mock.calls.find(([url]) => String(url).endsWith('/api/session'));
     expect(createCall?.[1]).toMatchObject({ method: 'POST', body: { location: { directory: '/a vault/dir' } } });
+  });
+
+  it('names a refused request shape as unsupported, not as a stream that did not answer', async () => {
+    const child = fakeServeChild(READY);
+    const request = vi.fn(async (url: string) => {
+      if (String(url).includes('/prompt')) throw new OpencodeServeHttpError(400, 'responded 400');
+      if (String(url).includes('/interrupt')) return {};
+      return { data: { id: 'ses_1' } };
+    });
+    const reading = await detectOpencodeNativeTurnStream('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), request: request as never, platform: 'linux', env: {},
+      openEventStream: vi.fn(async () => eventStream([])) as never,
+    });
+    expect(reading.status).toBe('unsupported');
   });
 
   it('does not spawn a server for a reader who already cancelled', async () => {

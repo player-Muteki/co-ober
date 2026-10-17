@@ -66,3 +66,14 @@ export class OpencodeServeHttpError extends Error {
 export function isOpencodeServeAuthenticationFailure(error: unknown): boolean {
   return error instanceof OpencodeServeHttpError && (error.status === 401 || error.status === 403);
 }
+
+/**
+ * True for a refusal about the *shape* of the request rather than the reader's right to
+ * make it. On 2.0.32 the 1.x nested prompt body is refused with
+ * `400 {"_tag":"InvalidRequestError","message":"Missing key at [\"text\"]"}`, the 1.x
+ * delete answers 405, and the 1.x fork route answers 405/404 — a live, healthy kernel
+ * saying "that is not a route I have" rather than "I did not answer".
+ */
+export function isOpencodeServeProtocolRefusal(error: unknown): boolean {
+  return error instanceof OpencodeServeHttpError && (error.status === 400 || error.status === 404 || error.status === 405 || error.status === 422);
+}

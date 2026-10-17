@@ -50,7 +50,7 @@ vi.mock('./opencode/OpencodeCatalog', () => ({
 // The native turn probe runs one throwaway `opencode serve` turn; a settings test
 // must never spawn a real CLI or burn a model call. It is faked to the reading each
 // test chooses, defaulting to `unavailable` so an unset test sees the failure branch.
-let fakeTurn: { status: 'executed' | 'admitted' | 'unavailable'; modelId: string | undefined; finish: string | undefined; outputTokens: number | undefined } | null = null;
+let fakeTurn: { status: 'executed' | 'admitted' | 'unsupported' | 'unavailable'; modelId: string | undefined; finish: string | undefined; outputTokens: number | undefined } | null = null;
 vi.mock('./opencode/OpencodeTurnProbe', () => ({
   detectOpencodeNativeTurnExecution: vi.fn(async () =>
     fakeTurn ?? { status: 'unavailable', modelId: undefined, finish: undefined, outputTokens: undefined }),
@@ -59,7 +59,7 @@ vi.mock('./opencode/OpencodeTurnProbe', () => ({
 // The native stream probe runs one throwaway turn and rebuilds its answer from the
 // live event stream; a settings test must never spawn a real CLI or burn a model call.
 // Faked to the reading each test chooses, defaulting to `unavailable`.
-let fakeStream: { status: 'streamed' | 'admitted' | 'unavailable'; textDeltas: number; reasoningDeltas: number; answer: string | undefined; confirmed: boolean } | null = null;
+let fakeStream: { status: 'streamed' | 'admitted' | 'unsupported' | 'unavailable'; textDeltas: number; reasoningDeltas: number; answer: string | undefined; confirmed: boolean } | null = null;
 vi.mock('./opencode/OpencodeStreamProbe', () => ({
   detectOpencodeNativeTurnStream: vi.fn(async () =>
     fakeStream ?? { status: 'unavailable', textDeltas: 0, reasoningDeltas: 0, answer: undefined, confirmed: false }),
@@ -68,10 +68,18 @@ vi.mock('./opencode/OpencodeStreamProbe', () => ({
 // The native fork probe forks one throwaway session and reads back the child; a
 // settings test must never spawn a real CLI or fork real sessions. Faked to the
 // reading each test chooses, defaulting to `unavailable`.
-let fakeFork: { status: 'anchored' | 'copied-whole' | 'child-empty' | 'unexpected' | 'unavailable'; parentRows: number; childRows: number; apiForkRoute: 'json' | 'html' | 'error' } | null = null;
+let fakeFork: { status: 'anchored' | 'copied-whole' | 'child-empty' | 'unexpected' | 'unsupported' | 'unavailable'; parentRows: number; childRows: number; apiForkRoute: 'json' | 'html' | 'error' } | null = null;
 vi.mock('./opencode/OpencodeForkProbe', () => ({
   detectOpencodeNativeCheckpointFork: vi.fn(async () =>
     fakeFork ?? { status: 'unavailable', parentRows: 0, childRows: 0, apiForkRoute: 'error' }),
+}));
+
+// The execution-slice probe drives one throwaway native session on the current kernel
+// generation; a settings test must never spawn a real CLI or burn a model call.
+let fakeSlice: { status: 'answered' | 'admitted' | 'unavailable'; enqueued: boolean; delivered: boolean; started: boolean; answer: string | undefined; modelId: string | undefined; leftover: boolean } | null = null;
+vi.mock('./opencode/OpencodeV2SliceProbe', () => ({
+  detectOpencodeV2ExecutionSlice: vi.fn(async () =>
+    fakeSlice ?? { status: 'unavailable', enqueued: false, delivered: false, started: false, answer: undefined, modelId: undefined, leftover: false }),
 }));
 
 describe('CoOberSettingsTab locale refresh', () => {
@@ -1397,6 +1405,97 @@ describe('CoOberSettingsTab locale refresh', () => {
     } finally {
       fakeStream = null;
     }
+  });
+
+  it('names a refused dialect instead of claiming the kernel could not be reached', async () => {
+    // A live 2.0.32 kernel answers the 1.x prompt body with 400 and a reason. The row
+    // must not tell the reader their install is unreachable.
+    setLocale('en');
+    fakeTurn = { status: 'unsupported', modelId: undefined, finish: undefined, outputTokens: undefined };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Probe a turn') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+      expect(tab.containerEl.textContent).toContain('refused this probe’s request shape');
+      expect(tab.containerEl.textContent).not.toContain('did not answer');
+      expect(tab.containerEl.textContent).not.toContain('executed a throwaway turn');
+    } finally {
+      fakeTurn = null;
+    }
+  });
+
+  it('leaves the execution-slice probe un-run until its own button is pressed', async () => {
+    setLocale('en');
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
+      tab.display();
+      // Nothing may be claimed about a probe that was never asked.
+      expect(tab.containerEl.textContent).toContain('Probe the slice');
+      expect(tab.containerEl.textContent).toContain('Not run');
+      expect(tab.containerEl.textContent).not.toContain('began executing');
+    } finally {
+      fakeSlice = null;
+    }
+  });
+
+  it('reports the execution legs it observed individually, never one merged claim', async () => {
+    setLocale('en');
+    fakeSlice = { status: 'admitted', enqueued: true, delivered: false, started: true, answer: undefined, modelId: undefined, leftover: false };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Probe the slice') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+      expect(tab.containerEl.textContent).toContain('began executing');
+      // "Enqueued" and "delivered" are different facts: a steer that only reached the
+      // queue has not been consumed by the run, and the row must not collapse them.
+      expect(tab.containerEl.textContent).toContain('prompt queued: yes · delivered to the run: no · execution started: yes');
+      expect(tab.containerEl.textContent).not.toContain('delivered to the run: yes');
+    } finally {
+      fakeSlice = null;
+    }
+  });
+
+  it('says so when teardown could not delete the throwaway session', async () => {
+    setLocale('en');
+    fakeSlice = { status: 'admitted', enqueued: true, delivered: true, started: true, answer: undefined, modelId: undefined, leftover: true };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Probe the slice') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+      // A silent leftover would leave the reader believing the measurement cleaned up.
+      expect(tab.containerEl.textContent).toContain('could not delete the throwaway session');
+    } finally {
+      fakeSlice = null;
+    }
+  });
+
+  it('speaks three different sentences for refused, unreachable, and not-run', async () => {
+    // The anti-remerge guard across the whole vocabulary: a refused dialect, an
+    // unreachable kernel, and a probe nobody ran are three different situations, and a
+    // future locale edit that quietly merged two would keep every other assertion green.
+    setLocale('en');
+    const en = locale().settings.nativeCatalog;
+    setLocale('zh');
+    const zh = locale().settings.nativeCatalog;
+    setLocale('en');
+    expect(en.turnUnsupported).not.toBe(en.turnUnavailable);
+    expect(en.turnUnsupported).not.toBe(en.turnNotRun);
+    expect(en.streamUnsupported).not.toBe(en.streamUnavailable);
+    expect(en.forkUnsupported).not.toBe(en.forkUnavailable);
+    expect(zh.turnUnsupported).not.toBe(zh.turnUnavailable);
+    expect(zh.forkUnsupported).not.toBe(zh.forkUnavailable);
   });
 
   it('fails the sync folder row for a shape the writer itself rejects (0.2.46 stage C)', async () => {

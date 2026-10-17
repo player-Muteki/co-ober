@@ -8,6 +8,7 @@ import {
   type ForkRow,
   type OpencodeForkObservation,
 } from './OpencodeForkProbe';
+import { OpencodeServeHttpError } from './OpencodeServeAuth';
 
 /** A serve child that prints its readiness line and stays alive until killed. */
 function fakeServeChild(stdoutLine: string) {
@@ -229,6 +230,23 @@ describe('detectOpencodeNativeCheckpointFork', () => {
       spawn: vi.fn(() => child) as never, request: request as never, platform: 'linux', env: {}, pollMs: 0, pollAttempts: 2,
     });
     expect(reading.status).toBe('unavailable');
+  });
+
+  it('names a kernel with no fork route as unsupported, not as "could not fork"', async () => {
+    // Measured on 2.0.32: the legacy `POST /session/{id}/fork?directory=…` answers 405
+    // and `/api/session/{id}/fork` answers a JSON 404. Both routes this probe speaks are
+    // gone, which is a different finding from a kernel that could not be reached — and it
+    // says nothing at all about whether checkpoint fork is buildable.
+    const child = fakeServeChild(READY);
+    const request = vi.fn(async (url: string) => {
+      if (String(url).includes('/prompt')) throw new OpencodeServeHttpError(400, 'responded 400');
+      if (String(url).includes('/interrupt')) return {};
+      return { data: { id: 'ses_1' } };
+    });
+    const reading = await detectOpencodeNativeCheckpointFork('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), request: request as never, platform: 'linux', env: {}, pollMs: 0, pollAttempts: 2,
+    });
+    expect(reading.status).toBe('unsupported');
   });
 
   it('does not spawn a server for a reader who already cancelled', async () => {

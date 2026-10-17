@@ -17,6 +17,7 @@ import { OpencodeDiagnosticsService, type DiagnosticResult, type OpencodeDiagnos
 import { detectOpencodeNativeTurnExecution } from './opencode/OpencodeTurnProbe';
 import { detectOpencodeNativeTurnStream } from './opencode/OpencodeStreamProbe';
 import { detectOpencodeNativeCheckpointFork } from './opencode/OpencodeForkProbe';
+import { detectOpencodeV2ExecutionSlice } from './opencode/OpencodeV2SliceProbe';
 import { OpencodeProbeService } from './opencode/OpencodeProbeService';
 import { sanitizeVaultPath } from './sync/templates';
 import { MIN_OPEN_TABS, MAX_OPEN_TABS, DEFAULT_OPEN_TABS } from './constants';
@@ -97,6 +98,10 @@ export class CoOberSettingsTab extends PluginSettingTab {
   private readonly turnProbe = new OpencodeProbeService(detectOpencodeNativeTurnExecution);
   private readonly streamProbe = new OpencodeProbeService(detectOpencodeNativeTurnStream);
   private readonly forkProbe = new OpencodeProbeService(detectOpencodeNativeCheckpointFork);
+  // The execution slice on the kernel generation this install actually runs. The three
+  // probes above encode the 1.x wire and are kept as the record of what that wire did;
+  // this one speaks what 2.0.32 was measured speaking.
+  private readonly sliceProbe = new OpencodeProbeService(detectOpencodeV2ExecutionSlice);
   // Permission-tier dropdown held on the tab so a chat-view bar click can
   // push its new tier into the same field here. The dropdown's own `.setValue`
   // runs once at build time; a bar chip that writes `settings.permissionMode`
@@ -123,6 +128,7 @@ export class CoOberSettingsTab extends PluginSettingTab {
     this.turnProbe.cancel();
     this.streamProbe.cancel();
     this.forkProbe.cancel();
+    this.sliceProbe.cancel();
   }
 
   private catalogSource() {
@@ -175,6 +181,7 @@ export class CoOberSettingsTab extends PluginSettingTab {
             this.turnProbe.setSource(this.catalogSource());
             this.streamProbe.setSource(this.catalogSource());
             this.forkProbe.setSource(this.catalogSource());
+            this.sliceProbe.setSource(this.catalogSource());
             this.redrawDiagnostics();
             this.redrawNativeCatalog();
             await this.save();
@@ -809,6 +816,62 @@ export class CoOberSettingsTab extends PluginSettingTab {
     this.renderNativeTurnProbe(containerEl, labels);
     this.renderNativeStreamProbe(containerEl, labels);
     this.renderNativeForkProbe(containerEl, labels);
+    this.renderNativeSliceProbe(containerEl, labels);
+  }
+
+  private renderNativeSliceProbe(containerEl: HTMLElement, labels: ReturnType<typeof locale>['settings']['nativeCatalog']): void {
+    const state = this.sliceProbe.getSnapshot();
+    new Setting(containerEl)
+      .setName(labels.sliceHeading)
+      .setDesc(labels.sliceDescription)
+      .addButton((button) => {
+        button.setButtonText(state.running ? labels.sliceRunning : state.reading ? labels.sliceRerun : labels.sliceRun);
+        button.buttonEl.disabled = state.running;
+        button.onClick(async () => {
+          await this.runNativeSliceProbe();
+        });
+      });
+
+    if (state.running) {
+      new Setting(containerEl).setName(labels.sliceRunningDetail);
+      this.addProbeCancel(containerEl, labels.sliceCancel, this.sliceProbe);
+      return;
+    }
+    const reading = state.reading;
+    if (!reading) {
+      new Setting(containerEl).setName(labels.sliceNotRun);
+      return;
+    }
+    if (state.stale) new Setting(containerEl).setName(labels.probeStale);
+    if (reading.status === 'unavailable') {
+      new Setting(containerEl).setName(labels.sliceUnavailable);
+      return;
+    }
+    if (reading.leftover) new Setting(containerEl).setName(labels.sliceLeftover);
+    if (reading.status === 'admitted') {
+      // The kernel took the prompt and began executing, but no answer was read back. The
+      // lifecycle legs are reported individually because "started" and "delivered" are
+      // different facts, and a steer that was only enqueued has not reached the run.
+      new Setting(containerEl)
+        .setName(labels.sliceAdmitted)
+        .setDesc(labels.sliceLegs
+          .replace('{enqueued}', labels.sliceYes(reading.enqueued))
+          .replace('{delivered}', labels.sliceYes(reading.delivered))
+          .replace('{started}', labels.sliceYes(reading.started)));
+      return;
+    }
+    new Setting(containerEl)
+      .setName(labels.sliceAnswered.replace('{answer}', reading.answer ?? ''))
+      .setDesc(labels.sliceAnsweredDetail
+        .replace('{model}', reading.modelId ?? labels.turnUnknownModel)
+        .replace('{delivered}', labels.sliceYes(reading.delivered)));
+  }
+
+  private async runNativeSliceProbe(): Promise<void> {
+    const pending = this.sliceProbe.run(this.catalogSource());
+    this.redrawNativeCatalog();
+    await pending;
+    this.redrawNativeCatalog();
   }
 
   private renderNativeCatalogBody(containerEl: HTMLElement, labels: ReturnType<typeof locale>['settings']['nativeCatalog']): void {
@@ -884,6 +947,10 @@ export class CoOberSettingsTab extends PluginSettingTab {
       return;
     }
     if (state.stale) new Setting(containerEl).setName(labels.probeStale);
+    if (reading.status === 'unsupported') {
+      new Setting(containerEl).setName(labels.turnUnsupported);
+      return;
+    }
     if (reading.status === 'unavailable') {
       new Setting(containerEl).setName(labels.turnUnavailable);
       return;
@@ -935,6 +1002,10 @@ export class CoOberSettingsTab extends PluginSettingTab {
       return;
     }
     if (state.stale) new Setting(containerEl).setName(labels.probeStale);
+    if (reading.status === 'unsupported') {
+      new Setting(containerEl).setName(labels.streamUnsupported);
+      return;
+    }
     if (reading.status === 'unavailable') {
       new Setting(containerEl).setName(labels.streamUnavailable);
       return;
@@ -987,6 +1058,10 @@ export class CoOberSettingsTab extends PluginSettingTab {
       return;
     }
     if (state.stale) new Setting(containerEl).setName(labels.probeStale);
+    if (reading.status === 'unsupported') {
+      new Setting(containerEl).setName(labels.forkUnsupported);
+      return;
+    }
     if (reading.status === 'unavailable') {
       new Setting(containerEl).setName(labels.forkUnavailable);
       return;

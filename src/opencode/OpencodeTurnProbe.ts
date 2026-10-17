@@ -1,7 +1,7 @@
 import { spawn, type SpawnOptions, type ChildProcess } from 'child_process';
 import { getSpawnInfo } from '../utils/commandResolution';
 import { parseOpencodeServerUrl } from './OpencodeCatalog';
-import { newOpencodeServePassword, opencodeServeAuthHeaders, opencodeServeEnvironment } from './OpencodeServeAuth';
+import { newOpencodeServePassword, opencodeServeAuthHeaders, opencodeServeEnvironment, OpencodeServeHttpError, isOpencodeServeProtocolRefusal } from './OpencodeServeAuth';
 
 /**
  * Verify that the native OpenCode install can actually execute a turn over its
@@ -22,7 +22,7 @@ const PROBE_TIMEOUT_MS = 20_000;
 const PROBE_OUTPUT_MAX_CHARS = 8_000;
 const PROBE_TEXT = 'Reply with exactly the word OK and nothing else.';
 
-export type OpencodeTurnStatus = 'executed' | 'admitted' | 'unavailable';
+export type OpencodeTurnStatus = 'executed' | 'admitted' | 'unsupported' | 'unavailable';
 
 export interface OpencodeTurnObservation {
   status: OpencodeTurnStatus;
@@ -45,6 +45,14 @@ export interface OpencodeTurnDeps {
 }
 
 const DEFAULT_OBSERVATION: OpencodeTurnObservation = { status: 'unavailable', modelId: undefined, finish: undefined, outputTokens: undefined };
+/**
+ * The kernel answered and refused the request *shape*. On 2.0.32 the 1.x nested
+ * `{id, prompt:{text}}` body is answered with
+ * `400 {"_tag":"InvalidRequestError","message":"Missing key at [\"text\"]"}` — a live
+ * kernel saying "that is not a body I take", which is not the same finding as a kernel
+ * that never answered, and points the reader at a different place entirely.
+ */
+const UNSUPPORTED_TURN: OpencodeTurnObservation = { status: 'unsupported', modelId: undefined, finish: undefined, outputTokens: undefined };
 
 /**
  * An assistant message counts as execution only when it carries a text part with
@@ -95,7 +103,7 @@ async function defaultRequest(
     headers: { 'content-type': 'application/json', ...opencodeServeAuthHeaders(password) },
     signal,
   });
-  if (!response.ok) throw new Error(`OpenCode serve responded ${response.status}`);
+  if (!response.ok) throw new OpencodeServeHttpError(response.status, `OpenCode serve responded ${response.status}`);
   return response.json();
 }
 
@@ -186,11 +194,17 @@ export async function detectOpencodeNativeTurnExecution(
     // Admission is the server taking the prompt into the session; it is observed
     // from the POST response, so a channel that admits but never answers still
     // reports the honest middle state rather than collapsing to unavailable.
-    const admitted = await requestFn(
-      `${origin}/api/session/${encodeURIComponent(sessionId)}/prompt`,
-      { method: 'POST', body: { id: `msg_${randomProbeId()}`, prompt: { text: PROBE_TEXT } } },
-      controller.signal,
-    );
+    let admitted: unknown;
+    try {
+      admitted = await requestFn(
+        `${origin}/api/session/${encodeURIComponent(sessionId)}/prompt`,
+        { method: 'POST', body: { id: `msg_${randomProbeId()}`, prompt: { text: PROBE_TEXT } } },
+        controller.signal,
+      );
+    } catch (error) {
+      if (isOpencodeServeProtocolRefusal(error)) return UNSUPPORTED_TURN;
+      throw error;
+    }
     if (!isAdmitted(admitted)) return DEFAULT_OBSERVATION;
 
     for (let attempt = 0; attempt < pollAttempts; attempt++) {

@@ -1,7 +1,7 @@
 import { spawn, type SpawnOptions, type ChildProcess } from 'child_process';
 import { getSpawnInfo } from '../utils/commandResolution';
 import { parseOpencodeServerUrl } from './OpencodeCatalog';
-import { newOpencodeServePassword, opencodeServeAuthHeaders, opencodeServeEnvironment } from './OpencodeServeAuth';
+import { newOpencodeServePassword, opencodeServeAuthHeaders, opencodeServeEnvironment, OpencodeServeHttpError, isOpencodeServeProtocolRefusal } from './OpencodeServeAuth';
 
 /**
  * Observe whether the native `opencode serve` kernel STREAMS a turn's answer over
@@ -24,7 +24,7 @@ const STREAM_READ_MAX_CHARS = 200_000;
 const STREAM_TIMEOUT_MS = 30_000;
 const PROBE_TEXT = 'Reply with exactly the word OK and nothing else.';
 
-export type OpencodeStreamStatus = 'streamed' | 'admitted' | 'unavailable';
+export type OpencodeStreamStatus = 'streamed' | 'admitted' | 'unsupported' | 'unavailable';
 
 export interface OpencodeStreamObservation {
   status: OpencodeStreamStatus;
@@ -47,6 +47,11 @@ export interface OpencodeStreamDeps {
 }
 
 const DEFAULT_STREAM: OpencodeStreamObservation = { status: 'unavailable', textDeltas: 0, reasoningDeltas: 0, answer: undefined, confirmed: false };
+/**
+ * The kernel answered and refused the request *shape* — the 1.x nested prompt body is
+ * answered 400 on 2.0.32 — which is a different finding from a kernel that never answered.
+ */
+const UNSUPPORTED_STREAM: OpencodeStreamObservation = { status: 'unsupported', textDeltas: 0, reasoningDeltas: 0, answer: undefined, confirmed: false };
 
 /**
  * Split a raw SSE buffer into the JSON payloads of its `data:` frames. Frames are
@@ -153,7 +158,7 @@ async function defaultRequest(
     headers: { 'content-type': 'application/json', ...opencodeServeAuthHeaders(password) },
     signal,
   });
-  if (!response.ok) throw new Error(`OpenCode serve responded ${response.status}`);
+  if (!response.ok) throw new OpencodeServeHttpError(response.status, `OpenCode serve responded ${response.status}`);
   return response.json();
 }
 
@@ -272,11 +277,17 @@ export async function detectOpencodeNativeTurnStream(
     const scopedEvents = `${origin}/api/event?location%5Bdirectory%5D=${encodeURIComponent(cwd)}`;
     const stream = await openStream(scopedEvents, controller.signal);
 
-    const admitted = await requestFn(
-      `${origin}/api/session/${encodeURIComponent(sessionId)}/prompt`,
-      { method: 'POST', body: { id: `msg_${randomProbeId()}`, prompt: { text: PROBE_TEXT } } },
-      controller.signal,
-    );
+    let admitted: unknown;
+    try {
+      admitted = await requestFn(
+        `${origin}/api/session/${encodeURIComponent(sessionId)}/prompt`,
+        { method: 'POST', body: { id: `msg_${randomProbeId()}`, prompt: { text: PROBE_TEXT } } },
+        controller.signal,
+      );
+    } catch (error) {
+      if (isOpencodeServeProtocolRefusal(error)) return UNSUPPORTED_STREAM;
+      throw error;
+    }
     if (!isAdmitted(admitted)) return DEFAULT_STREAM;
 
     let raw = '';
