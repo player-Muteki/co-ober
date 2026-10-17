@@ -2,6 +2,7 @@ import { spawn, type SpawnOptions, type ChildProcess } from 'child_process';
 import { getSpawnInfo } from '../utils/commandResolution';
 import { parseOpencodeServerUrl } from './OpencodeCatalog';
 import { newOpencodeServePassword, opencodeServeAuthHeaders, opencodeServeEnvironment, OpencodeServeHttpError, isOpencodeServeProtocolRefusal } from './OpencodeServeAuth';
+import { deleteOpencodeServeSession } from './OpencodeServeSession';
 
 /**
  * Measure whether the native `opencode serve` kernel can fork a session at a
@@ -363,18 +364,7 @@ export async function detectOpencodeNativeCheckpointFork(
     const ids = [forkedId, sessionId].filter((id): id is string => !!id);
     let remaining = false;
     for (const id of ids) {
-      const encoded = encodeURIComponent(id);
-      const query = `directory=${encodeURIComponent(cwd)}`;
-      const routes = [`/api/session/${encoded}?${query}`, `/session/${encoded}?${query}`];
-      let removed = false;
-      for (const route of routes) {
-        try {
-          await requestFn(`${origin}${route}`, { method: 'DELETE' });
-          removed = true;
-          break;
-        } catch { /* try the route this generation actually has */ }
-      }
-      if (!removed) remaining = true;
+      if (!(await deleteOpencodeServeSession(requestFn, origin, cwd, id))) remaining = true;
     }
     return { ...reading, leftover: remaining };
   };

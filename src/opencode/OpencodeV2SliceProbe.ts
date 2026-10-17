@@ -199,6 +199,10 @@ export function reduceV2SliceEvents(events: unknown[], sessionId: string): Nativ
         if (type.startsWith('session.execution.') && seen.terminal === undefined) {
           seen.terminal = type;
           if (typeof data.reason === 'string') seen.reason = data.reason;
+          // Measured: `session.execution.failed` carries the error inline, where
+          // `session.execution.interrupted` carries a reason instead. Reading whichever
+          // one is present is what lets the reading name a terminal failure at all.
+          rememberError(data.error);
         }
         break;
     }

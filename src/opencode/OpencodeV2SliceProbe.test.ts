@@ -156,6 +156,18 @@ describe('reduceV2SliceEvents', () => {
     ], 'ses_1').terminal).toBe('session.execution.something-new');
   });
 
+  it('reads the error a failed terminal carries inline', () => {
+    // Measured: after 10 retries the kernel emits `session.execution.failed` carrying the
+    // error itself, where `session.execution.interrupted` carries a `reason` instead.
+    // Reading whichever one is present is what lets a terminal failure be named at all.
+    const seen = reduceV2SliceEvents([
+      { type: 'session.execution.failed', data: { sessionID: 'ses_1', error: { type: 'provider.internal', message: 'always refused', status: 500 } } },
+    ], 'ses_1');
+    expect(seen.terminal).toBe('session.execution.failed');
+    expect(seen.errorType).toBe('provider.internal');
+    expect(seen.errorMessage).toBe('always refused');
+  });
+
   it('reads the model and step facts the terminal frame carries', () => {
     const seen = reduceV2SliceEvents([
       { type: 'session.step.started', data: { sessionID: 'ses_1', model: { id: 'alpha', providerID: 'p' } } },

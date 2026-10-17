@@ -76,7 +76,7 @@ describe('detectOpencodeNativeTurnExecution', () => {
     const reading = await detectOpencodeNativeTurnExecution('opencode', '/vault', {
       spawn: spawn as never, request: request as never, platform: 'linux', env: {}, pollMs: 0, pollAttempts: 3,
     });
-    expect(reading).toEqual({ status: 'executed', modelId: 'opencode/alpha', finish: 'stop', outputTokens: 7 });
+    expect(reading).toEqual({ status: 'executed', modelId: 'opencode/alpha', finish: 'stop', outputTokens: 7, leftover: false });
     expect(child.kill).toHaveBeenCalledWith('SIGKILL');
   });
 
@@ -86,7 +86,7 @@ describe('detectOpencodeNativeTurnExecution', () => {
     const reading = await detectOpencodeNativeTurnExecution('opencode', '/vault', {
       spawn: vi.fn(() => child) as never, request: request as never, platform: 'linux', env: {}, pollMs: 0, pollAttempts: 3,
     });
-    expect(reading).toEqual({ status: 'admitted', modelId: undefined, finish: undefined, outputTokens: undefined });
+    expect(reading).toEqual({ status: 'admitted', modelId: undefined, finish: undefined, outputTokens: undefined, leftover: false });
   });
 
   it('does not count a reasoning-only assistant row as an executed answer', async () => {
@@ -186,6 +186,46 @@ describe('detectOpencodeNativeTurnExecution', () => {
       spawn: vi.fn(() => child as never), request: request as never, platform: 'linux', env: {}, pollMs: 0, pollAttempts: 2,
     });
     expect(reading.status).toBe('unavailable');
+  });
+
+  it('deletes its throwaway session instead of leaving it in the kernel history', async () => {
+    // This probe used to interrupt and stop there. Every single run left its session
+    // behind, with nothing on the panel to say so.
+    const child = fakeServeChild(READY);
+    const deleted: string[] = [];
+    const request = vi.fn(async (url: string, init?: { method?: string }) => {
+      if (init?.method === 'DELETE') { deleted.push(String(url)); return {}; }
+      return requestRouter({
+        '/message': { data: [{ type: 'assistant', model: { id: 'a', providerID: 'p' }, content: [{ type: 'text', text: 'OK' }] }] },
+        '/prompt': { data: { id: 'msg_a', admittedSeq: 1 } },
+        '/interrupt': {},
+        '/api/session': { data: { id: 'ses_1' } },
+      })(url, init);
+    });
+    const reading = await detectOpencodeNativeTurnExecution('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), request: request as never, platform: 'linux', env: {}, pollMs: 0, pollAttempts: 3,
+    });
+    expect(deleted).toHaveLength(1);
+    expect(deleted[0]).toContain('/api/session/ses_1?directory=');
+    expect(reading.leftover).toBe(false);
+  });
+
+  it('reports a leftover session rather than assuming its cleanup worked', async () => {
+    const child = fakeServeChild(READY);
+    const request = vi.fn(async (url: string, init?: { method?: string }) => {
+      if (init?.method === 'DELETE') throw new Error('no route');
+      return requestRouter({
+        '/message': { data: [{ type: 'assistant', model: { id: 'a', providerID: 'p' }, content: [{ type: 'text', text: 'OK' }] }] },
+        '/prompt': { data: { id: 'msg_a', admittedSeq: 1 } },
+        '/interrupt': {},
+        '/api/session': { data: { id: 'ses_1' } },
+      })(url, init);
+    });
+    const reading = await detectOpencodeNativeTurnExecution('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), request: request as never, platform: 'linux', env: {}, pollMs: 0, pollAttempts: 3,
+    });
+    expect(reading.status).toBe('executed');
+    expect(reading.leftover).toBe(true);
   });
 
   it('does not spawn a server for a reader who already cancelled', async () => {

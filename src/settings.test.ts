@@ -50,7 +50,7 @@ vi.mock('./opencode/OpencodeCatalog', () => ({
 // The native turn probe runs one throwaway `opencode serve` turn; a settings test
 // must never spawn a real CLI or burn a model call. It is faked to the reading each
 // test chooses, defaulting to `unavailable` so an unset test sees the failure branch.
-let fakeTurn: { status: 'executed' | 'admitted' | 'unsupported' | 'unavailable'; modelId: string | undefined; finish: string | undefined; outputTokens: number | undefined } | null = null;
+let fakeTurn: { status: 'executed' | 'admitted' | 'unsupported' | 'unavailable'; modelId: string | undefined; finish: string | undefined; outputTokens: number | undefined; leftover: boolean } | null = null;
 vi.mock('./opencode/OpencodeTurnProbe', () => ({
   detectOpencodeNativeTurnExecution: vi.fn(async () =>
     fakeTurn ?? { status: 'unavailable', modelId: undefined, finish: undefined, outputTokens: undefined }),
@@ -1043,7 +1043,7 @@ describe('CoOberSettingsTab locale refresh', () => {
 
   it('reports the native turn executed only with the model it read back', async () => {
     setLocale('en');
-    fakeTurn = { status: 'executed', modelId: 'p/a', finish: 'stop', outputTokens: 7 };
+    fakeTurn = { status: 'executed', modelId: 'p/a', finish: 'stop', outputTokens: 7 , leftover: false };
     try {
       const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
         availableModes: [{ id: 'build', name: 'Build' }],
@@ -1064,7 +1064,7 @@ describe('CoOberSettingsTab locale refresh', () => {
 
   it('separates an admitted-but-unanswered turn from an executed one', async () => {
     setLocale('en');
-    fakeTurn = { status: 'admitted', modelId: undefined, finish: undefined, outputTokens: undefined };
+    fakeTurn = { status: 'admitted', modelId: undefined, finish: undefined, outputTokens: undefined , leftover: false };
     try {
       const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
         availableModes: [{ id: 'build', name: 'Build' }],
@@ -1089,7 +1089,7 @@ describe('CoOberSettingsTab locale refresh', () => {
 
   it('names an unreachable native turn as failed, not as admitted or executed', async () => {
     setLocale('en');
-    fakeTurn = { status: 'unavailable', modelId: undefined, finish: undefined, outputTokens: undefined };
+    fakeTurn = { status: 'unavailable', modelId: undefined, finish: undefined, outputTokens: undefined , leftover: false };
     try {
       const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }, {
         availableModes: [{ id: 'build', name: 'Build' }],
@@ -1306,7 +1306,7 @@ describe('CoOberSettingsTab locale refresh', () => {
     let resolve!: (value: OpencodeTurnObservation) => void;
     const read = vi.mocked(detectOpencodeNativeTurnExecution);
     read.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
-    fakeTurn = { status: 'executed', modelId: 'p/a', finish: 'stop', outputTokens: 7 };
+    fakeTurn = { status: 'executed', modelId: 'p/a', finish: 'stop', outputTokens: 7 , leftover: false };
     try {
       const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
       tab.display();
@@ -1338,7 +1338,7 @@ describe('CoOberSettingsTab locale refresh', () => {
     let resolve!: (value: OpencodeTurnObservation) => void;
     const read = vi.mocked(detectOpencodeNativeTurnExecution);
     read.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
-    fakeTurn = { status: 'executed', modelId: 'p/a', finish: 'stop', outputTokens: 7 };
+    fakeTurn = { status: 'executed', modelId: 'p/a', finish: 'stop', outputTokens: 7 , leftover: false };
     try {
       const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
       tab.display();
@@ -1370,7 +1370,7 @@ describe('CoOberSettingsTab locale refresh', () => {
     // The probe measured the binary that was configured when it ran. Once the path moves,
     // that reading answers a question about an install no longer on screen.
     setLocale('en');
-    fakeTurn = { status: 'executed', modelId: 'p/a', finish: 'stop', outputTokens: 7 };
+    fakeTurn = { status: 'executed', modelId: 'p/a', finish: 'stop', outputTokens: 7 , leftover: false };
     try {
       const plugin = createPlugin({ refreshLocale: vi.fn() });
       const tab = new CoOberSettingsTab(plugin);
@@ -1427,7 +1427,7 @@ describe('CoOberSettingsTab locale refresh', () => {
     // A live 2.0.32 kernel answers the 1.x prompt body with 400 and a reason. The row
     // must not tell the reader their install is unreachable.
     setLocale('en');
-    fakeTurn = { status: 'unsupported', modelId: undefined, finish: undefined, outputTokens: undefined };
+    fakeTurn = { status: 'unsupported', modelId: undefined, finish: undefined, outputTokens: undefined , leftover: false };
     try {
       const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
       tab.display();

@@ -972,6 +972,7 @@ export class CoOberSettingsTab extends PluginSettingTab {
       return;
     }
     if (state.stale) new Setting(containerEl).setName(labels.probeStale);
+    if (reading.leftover) new Setting(containerEl).setName(labels.turnLeftover);
     if (reading.status === 'unsupported') {
       new Setting(containerEl).setName(labels.turnUnsupported);
       return;
@@ -1027,6 +1028,7 @@ export class CoOberSettingsTab extends PluginSettingTab {
       return;
     }
     if (state.stale) new Setting(containerEl).setName(labels.probeStale);
+    if (reading.leftover) new Setting(containerEl).setName(labels.streamLeftover);
     if (reading.status === 'unsupported') {
       new Setting(containerEl).setName(labels.streamUnsupported);
       return;

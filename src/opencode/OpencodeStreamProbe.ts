@@ -2,6 +2,7 @@ import { spawn, type SpawnOptions, type ChildProcess } from 'child_process';
 import { getSpawnInfo } from '../utils/commandResolution';
 import { parseOpencodeServerUrl } from './OpencodeCatalog';
 import { newOpencodeServePassword, opencodeServeAuthHeaders, opencodeServeEnvironment, OpencodeServeHttpError, isOpencodeServeProtocolRefusal } from './OpencodeServeAuth';
+import { deleteOpencodeServeSession } from './OpencodeServeSession';
 
 /**
  * Observe whether the native `opencode serve` kernel STREAMS a turn's answer over
@@ -32,6 +33,11 @@ export interface OpencodeStreamObservation {
   reasoningDeltas: number;
   answer: string | undefined;
   confirmed: boolean;
+  /**
+   * True when the throwaway session could not be removed. This probe used to interrupt
+   * and stop there, so every run left its session in the kernel's history in silence.
+   */
+  leftover: boolean;
 }
 
 export interface OpencodeStreamDeps {
@@ -46,12 +52,12 @@ export interface OpencodeStreamDeps {
   signal?: AbortSignal;
 }
 
-const DEFAULT_STREAM: OpencodeStreamObservation = { status: 'unavailable', textDeltas: 0, reasoningDeltas: 0, answer: undefined, confirmed: false };
+const DEFAULT_STREAM: OpencodeStreamObservation = { status: 'unavailable', textDeltas: 0, reasoningDeltas: 0, answer: undefined, confirmed: false, leftover: false };
 /**
  * The kernel answered and refused the request *shape* — the 1.x nested prompt body is
  * answered 400 on 2.0.32 — which is a different finding from a kernel that never answered.
  */
-const UNSUPPORTED_STREAM: OpencodeStreamObservation = { status: 'unsupported', textDeltas: 0, reasoningDeltas: 0, answer: undefined, confirmed: false };
+const UNSUPPORTED_STREAM: OpencodeStreamObservation = { status: 'unsupported', textDeltas: 0, reasoningDeltas: 0, answer: undefined, confirmed: false, leftover: false };
 
 /**
  * Split a raw SSE buffer into the JSON payloads of its `data:` frames. Frames are
@@ -305,32 +311,38 @@ export async function detectOpencodeNativeTurnStream(
         reasoningDeltas: reading.reasoningDeltas,
         answer: reading.answer,
         confirmed: reading.confirmed,
+        leftover: false,
       };
     }
     if (reading.admitted) {
-      return { status: 'admitted', textDeltas: reading.textDeltas, reasoningDeltas: reading.reasoningDeltas, answer: undefined, confirmed: false };
+      return { status: 'admitted', textDeltas: reading.textDeltas, reasoningDeltas: reading.reasoningDeltas, answer: undefined, confirmed: false, leftover: false };
     }
     return DEFAULT_STREAM;
+  };
+
+  /**
+   * Stop the throwaway turn and remove the throwaway session, then fold the outcome into
+   * the reading before it is returned — a leftover flag computed after the fact could
+   * never reach anyone.
+   */
+  const teardown = async (reading: OpencodeStreamObservation): Promise<OpencodeStreamObservation> => {
+    if (!sessionId || !origin) return reading;
+    try {
+      await requestFn(`${origin}/api/session/${encodeURIComponent(sessionId)}/interrupt?resume=false`, { method: 'POST' });
+    } catch { /* teardown must never mask or replace the streaming reading */ }
+    const removed = await deleteOpencodeServeSession(requestFn, origin, cwd, sessionId);
+    return { ...reading, leftover: !removed };
   };
 
   try {
     // The cancel arm settles even if the request helper ignores the signal it was given,
     // so a reader that walks away is never held hostage by a collector that will not stop.
-    return await Promise.race([cancelled, run()]);
+    return await teardown(await Promise.race([cancelled, run()]));
   } catch {
     return DEFAULT_STREAM;
   } finally {
     clearTimeout(timer);
     deps.signal?.removeEventListener('abort', onCancel);
-    if (sessionId && origin) {
-      // Stop the throwaway turn so it does not keep generating; a 204 interrupt has no
-      // JSON body and may throw in the request helper, which is the expected shape and
-      // is swallowed — teardown must never mask or replace the streaming reading. This
-      // is an attempt, not a proof: after a cancel the turn may already have finished.
-      try {
-        await requestFn(`${origin}/api/session/${encodeURIComponent(sessionId)}/interrupt?resume=false`, { method: 'POST' });
-      } catch { /* ignore interrupt outcome */ }
-    }
     controller.abort();
     killChild();
   }

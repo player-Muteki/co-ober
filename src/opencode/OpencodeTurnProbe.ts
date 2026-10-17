@@ -2,6 +2,7 @@ import { spawn, type SpawnOptions, type ChildProcess } from 'child_process';
 import { getSpawnInfo } from '../utils/commandResolution';
 import { parseOpencodeServerUrl } from './OpencodeCatalog';
 import { newOpencodeServePassword, opencodeServeAuthHeaders, opencodeServeEnvironment, OpencodeServeHttpError, isOpencodeServeProtocolRefusal } from './OpencodeServeAuth';
+import { deleteOpencodeServeSession } from './OpencodeServeSession';
 
 /**
  * Verify that the native OpenCode install can actually execute a turn over its
@@ -29,6 +30,13 @@ export interface OpencodeTurnObservation {
   modelId: string | undefined;
   finish: string | undefined;
   outputTokens: number | undefined;
+  /**
+   * True when the throwaway session could not be removed. Measured: 2.0.32 moved the
+   * delete from `DELETE /session/{id}?directory=` (now **405**) to
+   * `DELETE /api/session/{id}?directory=…` (204). This probe used to interrupt and stop
+   * there, so every run left its session in the kernel's history in silence.
+   */
+  leftover: boolean;
 }
 
 export interface OpencodeTurnDeps {
@@ -44,7 +52,7 @@ export interface OpencodeTurnDeps {
   signal?: AbortSignal;
 }
 
-const DEFAULT_OBSERVATION: OpencodeTurnObservation = { status: 'unavailable', modelId: undefined, finish: undefined, outputTokens: undefined };
+const DEFAULT_OBSERVATION: OpencodeTurnObservation = { status: 'unavailable', modelId: undefined, finish: undefined, outputTokens: undefined, leftover: false };
 /**
  * The kernel answered and refused the request *shape*. On 2.0.32 the 1.x nested
  * `{id, prompt:{text}}` body is answered with
@@ -52,7 +60,7 @@ const DEFAULT_OBSERVATION: OpencodeTurnObservation = { status: 'unavailable', mo
  * kernel saying "that is not a body I take", which is not the same finding as a kernel
  * that never answered, and points the reader at a different place entirely.
  */
-const UNSUPPORTED_TURN: OpencodeTurnObservation = { status: 'unsupported', modelId: undefined, finish: undefined, outputTokens: undefined };
+const UNSUPPORTED_TURN: OpencodeTurnObservation = { status: 'unsupported', modelId: undefined, finish: undefined, outputTokens: undefined, leftover: false };
 
 /**
  * An assistant message counts as execution only when it carries a text part with
@@ -223,33 +231,41 @@ export async function detectOpencodeNativeTurnExecution(
           modelId: assistantModelId(assistant),
           finish: typeof assistant.finish === 'string' ? assistant.finish : undefined,
           outputTokens: assistantTokens(assistant),
+          leftover: false,
         };
       }
     }
     // Admitted, but no assistant answer observed within the window: the channel is
     // live, the turn is not confirmed. Report that rather than a completion.
-    return { status: 'admitted', modelId: undefined, finish: undefined, outputTokens: undefined };
+    return { status: 'admitted', modelId: undefined, finish: undefined, outputTokens: undefined, leftover: false };
+  };
+
+  /**
+   * Stop the throwaway turn and remove the throwaway session. Interrupting alone was not
+   * enough: the session stayed in the kernel's history on every single run, with nothing
+   * on the panel to say so. The outcome is folded into the reading before it is returned —
+   * a flag computed after the fact could never reach anyone.
+   */
+  const teardown = async (reading: OpencodeTurnObservation): Promise<OpencodeTurnObservation> => {
+    if (!sessionId || !origin) return reading;
+    // Best-effort stop, then removal on whichever delete route this generation has. Both
+    // are attempts, not proofs: after a cancel the turn may already have finished.
+    try {
+      await requestFn(`${origin}/api/session/${encodeURIComponent(sessionId)}/interrupt?resume=false`, { method: 'POST' });
+    } catch { /* teardown must not mask the reading */ }
+    const removed = await deleteOpencodeServeSession(requestFn, origin, cwd, sessionId);
+    return { ...reading, leftover: !removed };
   };
 
   try {
     // The cancel arm settles even if the request helper ignores the signal it was given,
     // so a reader that walks away is never held hostage by a collector that will not stop.
-    return await Promise.race([cancelled, run()]);
+    return await teardown(await Promise.race([cancelled, run()]));
   } catch {
     return DEFAULT_OBSERVATION;
   } finally {
     clearTimeout(timer);
     deps.signal?.removeEventListener('abort', onCancel);
-    if (sessionId && origin) {
-      // Best-effort: stop the throwaway turn so it does not keep generating, and
-      // swallow any interrupt error — teardown must not mask the reading. A 204
-      // answer carries no JSON body, so the request helper may throw; that is the
-      // expected success shape and is ignored here. This is an attempt, not a proof:
-      // after a cancel the turn may already have finished on the machine.
-      try {
-        await requestFn(`${origin}/api/session/${encodeURIComponent(sessionId)}/interrupt?resume=false`, { method: 'POST' });
-      } catch { /* ignore interrupt outcome */ }
-    }
     controller.abort();
     killChild();
   }

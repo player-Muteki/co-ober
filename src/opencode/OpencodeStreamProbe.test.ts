@@ -145,7 +145,7 @@ describe('detectOpencodeNativeTurnStream', () => {
     const reading = await detectOpencodeNativeTurnStream('opencode', '/vault', {
       spawn: vi.fn(() => child) as never, request: request as never, openEventStream: openEventStream as never, platform: 'linux', env: {},
     });
-    expect(reading).toEqual({ status: 'streamed', textDeltas: 2, reasoningDeltas: 0, answer: 'OK', confirmed: true });
+    expect(reading).toEqual({ status: 'streamed', textDeltas: 2, reasoningDeltas: 0, answer: 'OK', confirmed: true, leftover: false });
     expect(child.kill).toHaveBeenCalledWith('SIGKILL');
   });
 
@@ -158,7 +158,7 @@ describe('detectOpencodeNativeTurnStream', () => {
     const reading = await detectOpencodeNativeTurnStream('opencode', '/vault', {
       spawn: vi.fn(() => child) as never, request: request as never, openEventStream: openEventStream as never, platform: 'linux', env: {},
     });
-    expect(reading).toEqual({ status: 'streamed', textDeltas: 1, reasoningDeltas: 0, answer: 'OK', confirmed: false });
+    expect(reading).toEqual({ status: 'streamed', textDeltas: 1, reasoningDeltas: 0, answer: 'OK', confirmed: false, leftover: false });
   });
 
   it('keeps a turn that streamed no answer as admitted, not streamed', async () => {
@@ -171,7 +171,7 @@ describe('detectOpencodeNativeTurnStream', () => {
     const reading = await detectOpencodeNativeTurnStream('opencode', '/vault', {
       spawn: vi.fn(() => child) as never, request: request as never, openEventStream: openEventStream as never, platform: 'linux', env: {},
     });
-    expect(reading).toEqual({ status: 'admitted', textDeltas: 0, reasoningDeltas: 0, answer: undefined, confirmed: false });
+    expect(reading).toEqual({ status: 'admitted', textDeltas: 0, reasoningDeltas: 0, answer: undefined, confirmed: false, leftover: false });
   });
 
   it('ignores deltas that belong to a different session', async () => {
@@ -269,6 +269,26 @@ describe('detectOpencodeNativeTurnStream', () => {
       openEventStream: vi.fn(async () => eventStream([])) as never,
     });
     expect(reading.status).toBe('unsupported');
+  });
+
+  it('deletes its throwaway session instead of leaving it in the kernel history', async () => {
+    // Like the turn probe, this one used to interrupt and stop there — so every run left
+    // its session in OpenCode's history with nothing on the panel to say so.
+    const child = fakeServeChild(READY);
+    const deleted: string[] = [];
+    const request = vi.fn(async (url: string, init?: { method?: string }) => {
+      if (init?.method === 'DELETE') { deleted.push(String(url)); return {}; }
+      return turnRequest()(url, init);
+    });
+    const reading = await detectOpencodeNativeTurnStream('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), request: request as never, platform: 'linux', env: {},
+      openEventStream: vi.fn(async () => eventStream([
+        frame({ type: 'session.next.text.ended', data: { sessionID: 'ses_1', text: 'OK' } }),
+      ])) as never,
+    });
+    expect(deleted).toHaveLength(1);
+    expect(deleted[0]).toContain('/api/session/ses_1?directory=');
+    expect(reading.leftover).toBe(false);
   });
 
   it('does not spawn a server for a reader who already cancelled', async () => {

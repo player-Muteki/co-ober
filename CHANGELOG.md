@@ -1,3 +1,24 @@
+## 0.2.67 - 2026-10-17
+
+No new capabilities; the chat backend is unchanged. This release completes the terminal vocabulary 0.2.66 recorded as still unmeasured, and fixes a session leak two rounds of cleanup had missed.
+
+### Added
+
+- **The last unmeasured terminal name is now measured.** 0.2.66 stated plainly that `session.execution.failed` had never been observed, because a failing provider retries and no terminal arrived inside the probe window. Reading the kernel's own source first (`packages/core/src/session/runner/retry.ts`) showed the budget is **hardcoded** — exponential from 2s capped at 10s per gap, 10 retries, about 84s of waiting (67–101s with jitter) — so it cannot be configured shorter, only waited out. A single 170-second measurement run therefore closes it: after 10 retries the kernel emits `session.step.failed` and then **`session.execution.failed {sessionID, error}`**, and the transcript's `idle` row carries `outcome: "failed"` with the error inline. The terminal vocabulary is now complete — `session.execution.succeeded {sessionID}`, `session.execution.failed {error}`, `session.execution.interrupted {reason}` — and, usefully, the three carry **different** payloads. The reducer now reads whichever of `reason` / `error` is present instead of assuming one shape, which is what lets a terminal failure be named at all.
+- **Verified against the real kernel that a failure is reported without waiting out the retry budget.** With a stub provider that always refuses, the probe reports `{"status":"failed", …, "errorType":"provider.internal","errorMessage":"always refused","retries":3,"leftover":false}` inside a **6-second** window. That is the design 0.2.66 argued for and had not yet seen confirmed end to end.
+
+### Fixed
+
+- **The turn and stream probes were leaking a session on every single run — and two rounds of cleanup missed it.** 0.2.64 and 0.2.65 each recorded "the fork probe's teardown hits a 405 route" as the outstanding item, and 0.2.66 fixed exactly that one. Checking the other probes showed they were worse: they **interrupted and stopped**, never deleting at all, so each run left its throwaway session in OpenCode's history with nothing on the panel to say so. All three now delete on whichever route the generation has and carry a `leftover` flag, with Settings text for each. Rather than paste the same route-fallback logic a third time, it lives in `OpencodeServeSession.deleteOpencodeServeSession`: the 2.x route first, the 1.x route as fallback, **404/405 treated as "this route does not exist"** and the search continues, while a 5xx or a dead socket is **not** walked past as a missing route — "the server refused to delete this" and "this server has no such route" send the reader to different places.
+
+### Validation
+
+- 85 test files / 2,494 tests passed, with TypeScript and ESLint (baseline 2,485/84). Five new boundaries in a new `OpencodeServeSession.test.ts` for route preference, 405 fallback, 500 refusal, dead-socket handling and directory encoding; two per probe for the delete and the leftover; one reducer boundary for the inline error on a failed terminal. Eight existing assertions (turn, stream, fork) were widened by `leftover: false` rather than loosened — they still pin the whole object. Reference baseline: Claudian unchanged at `31dd256b` (2.3.22). **No real credential was used and no billed model turn was spent**; the 170-second terminal measurement ran against a loopback stub.
+
+### Still a constraint, and now on the record
+
+The retry budget is **hardcoded** in the kernel (`retry.ts`: 10 retries, ~84–101s) with no configuration knob, so a *failing* run cannot complete inside a settings probe's window. That is precisely why `failed` is claimed the moment the kernel names the failure rather than on a terminal event — and if this ever becomes a product execution path rather than a measurement, that latency is a real constraint to design around. The chat backend is still ACP.
+
 ## 0.2.66 - 2026-10-17
 
 No new capabilities; the chat backend is unchanged. This release drives the two paths 0.2.65 left undriven — a failing provider and an interrupt — and fixes the throwaway-session leak that made the fork probe's cleanup a silent no-op on this kernel generation.
