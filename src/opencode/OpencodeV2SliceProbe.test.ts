@@ -3,6 +3,7 @@ import { EventEmitter } from 'events';
 import { PassThrough } from 'stream';
 import {
   detectOpencodeV2ExecutionSlice,
+  ownFrameChars,
   parseOpencodeServeBody,
   reduceV2SliceEvents,
   v2AssistantAnswer,
@@ -10,6 +11,7 @@ import {
   sliceStatus,
   type OpencodeV2SliceReading,
 } from './OpencodeV2SliceProbe';
+import { parseSseDataFrames, reduceNativeStream } from './OpencodeStreamProbe';
 
 const READY = 'server listening on http://127.0.0.1:4096';
 
@@ -71,6 +73,105 @@ describe('sliceStatus', () => {
     expect(sliceStatus({ ...base, outcome: 'succeeded' })).toBe('admitted');
     expect(sliceStatus({ ...base })).toBe('admitted');
     expect(sliceStatus({ ...base, started: false })).toBe('unavailable');
+  });
+});
+
+describe('ownFrameChars', () => {
+  it('charges only this session\'s frames against its read budget', () => {
+    // Measured: `GET /api/event?location[directory]=…` is multiplexed. Two concurrent
+    // sessions on one server both stream down the same connection, so a budget counted
+    // per connection lets a neighbour's traffic truncate this session's own answer.
+    const mine = frame({ type: 'session.text.delta', data: { sessionID: 'ses_1', ordinal: 0, delta: 'O' } });
+    const theirs = frame({ type: 'session.text.delta', data: { sessionID: 'ses_2', ordinal: 0, delta: 'K' } });
+    expect(ownFrameChars(mine, 'ses_1')).toBeGreaterThan(0);
+    expect(ownFrameChars(theirs, 'ses_1')).toBe(0);
+    expect(ownFrameChars(`${mine}${theirs}${mine}`, 'ses_1')).toBe(2 * ownFrameChars(mine, 'ses_1'));
+  });
+
+  it('charges nothing for frames that name no session', () => {
+    // The directory-scoped stream's hydration noise carries no sessionID at all.
+    expect(ownFrameChars(frame({ type: 'provider.updated', data: { id: 'p' } }), 'ses_1')).toBe(0);
+    expect(ownFrameChars(': heartbeat\n\n', 'ses_1')).toBe(0);
+  });
+});
+
+describe('multiplexed stream', () => {
+  it('keeps two concurrent sessions apart on one shared connection', () => {
+    // The gap analysis' acceptance criterion "多个标签不串流", measured rather than
+    // asserted: this is the frame layout the running kernel produced with two sessions
+    // prompted at once against a single directory-scoped stream.
+    const interleaved = [
+      frame({ type: 'session.inbox.enqueued', data: { sessionID: 'ses_A' } }),
+      frame({ type: 'session.inbox.enqueued', data: { sessionID: 'ses_B' } }),
+      frame({ type: 'session.execution.started', data: { sessionID: 'ses_A' } }),
+      frame({ type: 'session.text.delta', data: { sessionID: 'ses_A', ordinal: 0, delta: 'MA' } }),
+      frame({ type: 'session.execution.started', data: { sessionID: 'ses_B' } }),
+      frame({ type: 'session.text.delta', data: { sessionID: 'ses_B', ordinal: 0, delta: 'OT' } }),
+      frame({ type: 'session.text.delta', data: { sessionID: 'ses_A', ordinal: 0, delta: 'RKER' } }),
+      frame({ type: 'session.text.delta', data: { sessionID: 'ses_B', ordinal: 0, delta: 'HER' } }),
+      frame({ type: 'session.text.ended', data: { sessionID: 'ses_A', ordinal: 0, text: 'MARKER' } }),
+      frame({ type: 'session.text.ended', data: { sessionID: 'ses_B', ordinal: 0, text: 'OTHER' } }),
+      frame({ type: 'session.execution.succeeded', data: { sessionID: 'ses_A' } }),
+      frame({ type: 'session.execution.succeeded', data: { sessionID: 'ses_B' } }),
+    ].join('');
+    const events = parseSseDataFrames(interleaved);
+    const a = reduceV2SliceEvents(events, 'ses_A');
+    const b = reduceV2SliceEvents(events, 'ses_B');
+    // Neither session's answer may contain the other's words.
+    expect(a.assembled).toBe('MARKER');
+    expect(b.assembled).toBe('OTHER');
+    expect(a.assembled).not.toContain('OTHER');
+    expect(b.assembled).not.toContain('MARKER');
+    // And the lifecycle each one reported is its own: A was enqueued but never saw a
+    // delivery frame, while B did — a neighbour's delivery must not be read as this one's.
+    expect(a.enqueued).toBe(true);
+    expect(a.delivered).toBe(false);
+    expect(b.enqueued).toBe(true);
+    expect(b.started).toBe(true);
+    expect(a.terminal).toBe('session.execution.succeeded');
+  });
+
+  it('is not truncated by a neighbouring session flooding the shared connection', async () => {
+    // The defect the multiplexed measurement exposed. `GET /api/event` is directory-scoped,
+    // so a busy conversation elsewhere in the same vault shares the connection. Counting
+    // its bytes against this probe's read budget let a neighbour exhaust the cap first and
+    // cut this session's own answer in half — a reading that silently lost its evidence.
+    const neighbour = Array.from({ length: 5000 }, (_, i) =>
+      frame({ type: 'session.text.delta', data: { sessionID: 'ses_other', ordinal: 0, delta: `noise-${i} `.repeat(24) } }));
+    const mine = [
+      frame({ type: 'session.execution.started', data: { sessionID: 'ses_1' } }),
+      frame({ type: 'session.text.delta', data: { sessionID: 'ses_1', ordinal: 0, delta: 'SUR' } }),
+      frame({ type: 'session.text.delta', data: { sessionID: 'ses_1', ordinal: 0, delta: 'VIVED' } }),
+      frame({ type: 'session.text.ended', data: { sessionID: 'ses_1', ordinal: 0, text: 'SURVIVED' } }),
+    ].join('');
+    const child = fakeServeChild(READY);
+    const reading = await detectOpencodeV2ExecutionSlice('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), platform: 'linux', env: {}, settleMs: 40,
+      request: requestRouter([
+        [/\/message/u, { data: [] }],
+        [/\/prompt/u, { data: { id: 'msg_1', admittedSeq: 1 } }],
+        [/\?directory=/u, {}],
+        [/\/interrupt/u, {}],
+        [/\/api\/session$/u, { data: { id: 'ses_1' } }],
+      ]) as never,
+      openEventStream: vi.fn(async () => eventStream([...neighbour, mine])) as never,
+    });
+    expect(reading.streamed).toBe(true);
+    expect(reading.answer).toBe('SURVIVED');
+  });
+
+  it('gives the same guarantee on the 1.x reducer, whose stream is shared the same way', () => {
+    // The older stream probe reads the same directory-scoped endpoint, so its filter is
+    // the same guarantee and needs the same pin.
+    const interleaved = [
+      `data: ${JSON.stringify({ type: 'session.next.text.delta', data: { sessionID: 'ses_A', delta: 'ALPHA' } })}\n\n`,
+      `data: ${JSON.stringify({ type: 'session.next.text.delta', data: { sessionID: 'ses_B', delta: 'BRAVO' } })}\n\n`,
+      `data: ${JSON.stringify({ type: 'session.next.text.ended', data: { sessionID: 'ses_A', text: 'ALPHA' } })}\n\n`,
+      `data: ${JSON.stringify({ type: 'session.next.text.ended', data: { sessionID: 'ses_B', text: 'BRAVO' } })}\n\n`,
+    ].join('');
+    const events = parseSseDataFrames(interleaved);
+    expect(reduceNativeStream(events, 'ses_A')).toMatchObject({ answer: 'ALPHA', confirmed: true });
+    expect(reduceNativeStream(events, 'ses_B')).toMatchObject({ answer: 'BRAVO', confirmed: true });
   });
 });
 

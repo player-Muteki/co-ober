@@ -340,6 +340,30 @@ async function defaultOpenEventStream(url: string, password: string, signal?: Ab
   };
 }
 
+/**
+ * Bytes of a raw SSE chunk that belong to `sessionId`. Frames carrying another session —
+ * or none at all, as the directory-scoped stream's hydration noise does — cost nothing
+ * against this session's read budget.
+ */
+export function ownFrameChars(chunk: string, sessionId: string): number {
+  let chars = 0;
+  for (const frame of parseSseDataFrames(chunk)) {
+    if (frame === null || typeof frame !== 'object' || Array.isArray(frame)) continue;
+    const d = (frame as Record<string, unknown>).data;
+    if (d === null || typeof d !== 'object' || Array.isArray(d)) continue;
+    if ((d as Record<string, unknown>).sessionID !== sessionId) continue;
+    chars += 1;
+  }
+  return chars * FRAME_CHAR_ESTIMATE;
+}
+
+/**
+ * A per-frame cost estimate, used only to bound the read. It is deliberately approximate:
+ * the budget exists to stop an endless stream, and an estimate that is slightly off
+ * changes when the watcher gives up rather than what it concluded.
+ */
+const FRAME_CHAR_ESTIMATE = 256;
+
 function sleep(ms: number): Promise<void> {
   return ms > 0 ? new Promise(resolve => setTimeout(resolve, ms)) : Promise.resolve();
 }
@@ -426,11 +450,19 @@ export async function detectOpencodeV2ExecutionSlice(
     // reader was told the probe had looked.
     const stream = await openStream(`${origin}/api/event?location%5Bdirectory%5D=${encodeURIComponent(cwd)}`, controller.signal);
     const collected: string[] = [];
+    // Measured: this endpoint is directory-scoped and genuinely multiplexed — two
+    // concurrent sessions on one server both stream their frames down the same
+    // connection. So the read budget is spent per session, not per connection: counting
+    // every frame would let a busy neighbouring conversation exhaust this probe's cap
+    // and truncate its own answer, turning another session's traffic into a reading that
+    // silently lost half its evidence.
+    let ownChars = 0;
     const watch = (async () => {
       try {
         for await (const chunk of stream) {
           collected.push(chunk);
-          if (collected.join('').length > SLICE_READ_MAX_CHARS) break;
+          ownChars += ownFrameChars(chunk, sessionId);
+          if (ownChars > SLICE_READ_MAX_CHARS) break;
         }
       } catch {
         // A stream that died mid-read is not evidence about the run; the transcript is.

@@ -1,3 +1,27 @@
+## 0.2.69 - 2026-10-18
+
+No new capabilities; the chat backend is unchanged. This release discharges the first of the gap analysis' four stage-3 acceptance criteria — "多个标签不串流" — by measuring it, and fixes a defect the measurement exposed.
+
+### Added
+
+- **The native event stream is multiplexed, and multi-tab isolation is therefore a client responsibility.** One `opencode serve`, two sessions, both prompted on the **same** directory-scoped `GET /api/event` connection: both prompts' markers appeared on that one stream, their frames arrived interleaved, and each session's filtered assembly contained none of the other's words. The endpoint multiplexes by directory and does not separate channels per session — so "多个标签不串流" holds only because the client filters on `sessionID`. Both reducers already did (`OpencodeStreamProbe.reduceNativeStream`, `OpencodeV2SliceProbe.reduceV2SliceEvents`), so the criterion was already satisfied; what was missing was any test pinning it. Two boundaries now hold it, one per reducer, built from the frame layout the running kernel actually produced — delete either filter and both fail.
+
+### Fixed
+
+- **A neighbouring session could truncate this one's answer.** The slice probe's event watcher bounded itself with `collected.join('').length > SLICE_READ_MAX_CHARS` — a budget counted **per connection**. Since the stream is shared, a busy conversation elsewhere in the same vault could exhaust the budget first, `break` the watcher before this session's own answer was read, and leave a reading that silently lost its evidence while the panel showed no answer at all. The budget is now spent per session: `ownFrameChars` charges only frames whose `sessionID` matches, so another session's traffic and the directory-scoped hydration noise (which carries no `sessionID` at all) cost nothing. The per-frame cost is an estimate on purpose — the budget exists to stop an endless stream, and being slightly off changes when the watcher gives up, not what it concluded. Confirmed against the old shape: reverting the call site makes the boundary fail with `streamed: false`, i.e. the answer really was squeezed out.
+
+### Validation
+
+- 86 test files / 2,510 tests passed, with TypeScript and ESLint (baseline 2,505/86). New boundaries: `ownFrameChars` unit coverage for own/foreign/sessionless frames, the multiplexed interleaving case for both reducers, and the flooding case that reproduces the truncation. Reference baseline: Claudian unchanged at `1e432bef` (2.3.24), read through a mirror because github.com HTTPS remains unreliable here.
+
+### Note on a mistake worth recording
+
+The flooding boundary was wrong twice before it was right: 1,200 frames is only ~144k characters and never reached the 400k cap, so the test passed against the *broken* implementation too. It only began discriminating at 5,000 frames. The rule this restates is the one the release process keeps restating — a boundary that passes against the behaviour it exists to reject is not a boundary. The same round also reproduced a footgun fixed one release earlier: asserting `toEqual({ __proto__: 'kept' })` sets a prototype rather than naming a key, so that assertion now uses `Object.hasOwn`.
+
+### Still open
+
+Three of the four stage-3 acceptance criteria remain unmeasured: disconnection must not be disguised as normal completion, an interrupt must leave no background work, and a submitted request must not execute twice through a fallback. The chat backend is still ACP.
+
 ## 0.2.68 - 2026-10-18
 
 No new capabilities. This release transfers a defect fix found by reading the reference repository's newest code, and corrects one of its own claims after measuring.
