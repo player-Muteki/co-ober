@@ -1,3 +1,21 @@
+## 0.2.70 - 2026-10-18
+
+No new capabilities; the chat backend is unchanged. This release takes the second of the gap analysis' stage-3 acceptance criteria — 失联不伪装正常完成 — and closes a defect that made a lost connection indistinguishable from a kernel that never ran.
+
+### Fixed
+
+- **A run that lost the connection mid-flight no longer reports as one that never began.** The slice probe's transcript poll called `requestFn` unguarded, so when the server stopped answering the exception escaped `run()` and the caller substituted `DEFAULT_SLICE` — `unavailable`, with `enqueued`, `delivered` and `started` all false. A run that had been enqueued, delivered and started was therefore reported as a setup that never completed, **and the three facts it had already proven were erased with it**. The panel sentence said the kernel "did not complete setup", which is false and points at the wrong thing: setup completed, execution began, and the link dropped. That is the same class 0.2.63 retired on the catalog, where a stated 401 was folded into "did not answer" — a nameable observation crushed into a bucket the reader cannot act on differently. `sliceStatus` gains `disconnected`, ordered after `failed` (a failure the kernel itself named is still `failed`) and before `admitted`. The poll now catches a connection-level failure locally; an **HTTP status does not count as a disconnect**, because the server is still there and answered. Whatever legs were already observed stay on the reading, because a dropped link does not un-earn them, and Settings shows them alongside the new sentence.
+
+### Validation
+
+- 86 test files / 2,512 tests passed, with TypeScript and ESLint (baseline 2,510/86). Two boundaries, pinned in both directions: a mid-run disconnect reports `disconnected` with all three legs still true, and a kernel that never came up still reports `unavailable` with `started` false — so the fix cannot turn every failure into "the link dropped". Reverting the guard makes the first fail with `unavailable`. Reference baseline: Claudian unchanged at `1e432bef` (2.3.24).
+
+### What was *not* measured, stated plainly
+
+The live measurement for this criterion was attempted — a stub provider holding its response for 20 seconds with the server killed at 3 seconds — and the harness did not produce a clean result. So **the mid-run disconnect has not been reproduced against a real kernel**; what this release establishes is the defect and its fix on the code path, which is deterministic and does not need a live server. The research doc says the same rather than implying a measurement that did not happen. The next round should close it with a working rig.
+
+Two acceptance criteria remain unmeasured: an interrupt must leave no background work, and a submitted request must not execute twice through a fallback. The chat backend is still ACP.
+
 ## 0.2.69 - 2026-10-18
 
 No new capabilities; the chat backend is unchanged. This release discharges the first of the gap analysis' four stage-3 acceptance criteria — "多个标签不串流" — by measuring it, and fixes a defect the measurement exposed.

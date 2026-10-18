@@ -620,6 +620,7 @@ const zh: Locale = {
       sliceInterrupted: '本轮运行被中断（{reason}）— 没有丢失内容，但也没有产生回答',
       sliceUnknownReason: '未报告原因',
       sliceUnknownOutcome: '未命名的结果',
+      sliceDisconnected: '内核已接收提示词并开始执行，随后停止应答 — 运行途中连接中断，这与"内核跑不起来"不是一回事',
       sliceLegs: '提示词已入队：{enqueued} · 已投递到本轮：{delivered} · 执行已开始：{started}',
       sliceYes: (value: boolean): string => (value ? '是' : '否'),
       sliceLeftover: '清理未能删除该一次性会话 — 它可能仍存在于 OpenCode 的历史中',

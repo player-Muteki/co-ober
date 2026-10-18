@@ -618,6 +618,7 @@ const en = {
       sliceInterrupted: 'The run was interrupted ({reason}) — nothing was lost, but no answer was produced',
       sliceUnknownReason: 'reason unreported',
       sliceUnknownOutcome: 'an unnamed outcome',
+      sliceDisconnected: 'The kernel took the prompt and began executing, then stopped answering — the connection dropped mid-run, which is not the same as an install that cannot run',
       sliceLegs: 'prompt queued: {enqueued} · delivered to the run: {delivered} · execution started: {started}',
       sliceYes: (value: boolean): string => (value ? 'yes' : 'no'),
       sliceLeftover: 'Teardown could not delete the throwaway session — it may still exist in OpenCode’s history',

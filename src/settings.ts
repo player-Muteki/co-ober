@@ -856,6 +856,18 @@ export class CoOberSettingsTab extends PluginSettingTab {
         .setName(labels.sliceInterrupted.replace('{reason}', reading.reason ?? labels.sliceUnknownReason));
       return;
     }
+    if (reading.status === 'disconnected') {
+      // The kernel took the prompt and began executing, and then stopped being reachable.
+      // That is not the same finding as a setup that never completed, and the reader's
+      // next move differs: this one is about the link, not the install.
+      new Setting(containerEl)
+        .setName(labels.sliceDisconnected)
+        .setDesc(labels.sliceLegs
+          .replace('{enqueued}', labels.sliceYes(reading.enqueued))
+          .replace('{delivered}', labels.sliceYes(reading.delivered))
+          .replace('{started}', labels.sliceYes(reading.started)));
+      return;
+    }
     if (reading.status === 'failed') {
       // A terminal the kernel itself recorded, named verbatim. The remedy for a named
       // provider failure is not the same as the one for an unreachable kernel, so this

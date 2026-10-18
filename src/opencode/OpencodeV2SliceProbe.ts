@@ -6,6 +6,7 @@ import {
   newOpencodeServePassword,
   opencodeServeAuthHeaders,
   opencodeServeEnvironment,
+  OpencodeServeHttpError,
 } from './OpencodeServeAuth';
 
 /**
@@ -50,7 +51,7 @@ const POLL_MS = 250;
 /** How long the event stream is given to deliver frames emitted alongside the answer. */
 const FRAME_DRAIN_MS = 250;
 
-export type OpencodeV2SliceStatus = 'answered' | 'interrupted' | 'failed' | 'admitted' | 'unavailable';
+export type OpencodeV2SliceStatus = 'answered' | 'interrupted' | 'failed' | 'disconnected' | 'admitted' | 'unavailable';
 
 export interface OpencodeV2SliceReading {
   status: OpencodeV2SliceStatus;
@@ -227,11 +228,16 @@ export function sliceStatus(input: {
   outcome: string | undefined;
   started: boolean;
   errorType: string | undefined;
+  disconnected?: boolean;
 }): OpencodeV2SliceStatus {
   if (input.answer) return 'answered';
   if (input.outcome === 'interrupted') return 'interrupted';
   if (input.errorType !== undefined) return 'failed';
   if (input.outcome !== undefined && input.outcome !== 'succeeded') return 'failed';
+  // A run that lost the connection mid-flight is not one that never began, and saying
+  // `unavailable` would point the reader at their install instead of at the link that
+  // dropped. The legs already observed stay on the reading either way.
+  if (input.disconnected) return 'disconnected';
   if (input.started) return 'admitted';
   return 'unavailable';
 }
@@ -484,13 +490,28 @@ export async function detectOpencodeV2ExecutionSlice(
     // honest `admitted` middle state rather than a fabricated completion.
     let answerCell: { text: string; modelId?: string } | undefined;
     let rows: Record<string, unknown>[] = [];
+    // Set when the server stops answering mid-run. That is a different finding from a
+    // setup that never completed: the kernel accepted the prompt and began executing,
+    // and then stopped being reachable. Letting that throw out of `run()` would replace
+    // the whole reading with the never-started default — erasing the legs this run had
+    // already proven and leaving the panel claiming nothing ever began.
+    let disconnected = false;
     const deadline = Date.now() + settleMs;
     for (;;) {
-      const page = await requestFn(
-        `${origin}/api/session/${encoded}/message?order=desc&limit=10`,
-        undefined,
-        controller.signal,
-      ) as { data?: unknown[] } | undefined;
+      let page: { data?: unknown[] } | undefined;
+      try {
+        page = await requestFn(
+          `${origin}/api/session/${encoded}/message?order=desc&limit=10`,
+          undefined,
+          controller.signal,
+        ) as { data?: unknown[] } | undefined;
+      } catch (error) {
+        // An HTTP status means the server is still there and answered; anything else is
+        // the connection itself failing.
+        if (error instanceof OpencodeServeHttpError) throw error;
+        disconnected = true;
+        break;
+      }
       rows = Array.isArray(page?.data)
         ? page.data.filter((r): r is Record<string, unknown> => !!r && typeof r === 'object' && !Array.isArray(r))
         : [];
@@ -517,7 +538,7 @@ export async function detectOpencodeV2ExecutionSlice(
 
     const outcome = rows.map(v2TerminalOutcome).find((o) => o !== undefined);
     return {
-      status: sliceStatus({ answer, outcome, started: events.started, errorType: events.errorType }),
+      status: sliceStatus({ answer, outcome, started: events.started, errorType: events.errorType, disconnected }),
       enqueued: events.enqueued,
       delivered: events.delivered,
       started: events.started,

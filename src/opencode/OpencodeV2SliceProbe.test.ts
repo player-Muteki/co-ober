@@ -377,6 +377,55 @@ describe('detectOpencodeV2ExecutionSlice', () => {
     expect(reading.answer).toBeUndefined();
   });
 
+  it('reports a mid-run disconnect without discarding the legs it had already proven', async () => {
+    // The run was enqueued, delivered and started; then the server stopped answering.
+    // Before this, that throw escaped `run()` and the whole reading was replaced with the
+    // never-started default — so the panel claimed setup never completed, and the three
+    // legs this run had already proven disappeared with it.
+    const child = fakeServeChild(READY);
+    let reads = 0;
+    const request = vi.fn(async (url: string) => {
+      if (String(url).includes('/message')) {
+        reads++;
+        if (reads > 1) throw new Error('socket hang up');
+        return { data: [] };
+      }
+      return requestRouter([
+        [/\/prompt/u, { data: { id: 'msg_1', admittedSeq: 1 } }],
+        [/\?directory=/u, {}],
+        [/\/interrupt/u, {}],
+        [/\/api\/session$/u, { data: { id: 'ses_1' } }],
+      ])(url);
+    });
+    const reading = await detectOpencodeV2ExecutionSlice('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), platform: 'linux', env: {}, settleMs: 40,
+      request: request as never,
+      openEventStream: vi.fn(async () => eventStream([
+        frame({ type: 'session.inbox.enqueued', data: { sessionID: 'ses_1' } }),
+        frame({ type: 'session.inbox.delivered', data: { sessionID: 'ses_1', inboxID: 'i1' } }),
+        frame({ type: 'session.execution.started', data: { sessionID: 'ses_1' } }),
+      ])) as never,
+    });
+    expect(reading.status).toBe('disconnected');
+    // The legs observed before the drop are facts; a lost connection does not un-earn them.
+    expect(reading.enqueued).toBe(true);
+    expect(reading.delivered).toBe(true);
+    expect(reading.started).toBe(true);
+  });
+
+  it('still reports an unreachable kernel as unavailable, never as disconnected', async () => {
+    // The fix must not turn every failure into "the link dropped": a server that never
+    // came up observed no run at all, and that sentence must stay the one that fits.
+    const child = fakeServeChild(READY);
+    const reading = await detectOpencodeV2ExecutionSlice('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), platform: 'linux', env: {}, settleMs: 40,
+      request: vi.fn(async () => { throw new Error('socket hang up'); }) as never,
+      openEventStream: vi.fn(async () => eventStream([])) as never,
+    });
+    expect(reading.status).toBe('unavailable');
+    expect(reading.started).toBe(false);
+  });
+
   it('reports interrupted when the kernel ended the run and said who asked', async () => {
     // Measured on 2.0.32: an interrupt inside a run yields
     // `session.execution.interrupted {reason:"user"}`, a `session.step.failed` carrying
