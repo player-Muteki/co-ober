@@ -18,6 +18,7 @@ import { REQUEST_DEFAULT_TIMEOUT_MS, REQUEST_DEFAULT_MAX_OUTPUT_BYTES, UNREADABL
 import { ACP_SERVER_REQUEST_ALIASES } from './AcpMethodNames';
 import { AcpInvalidParamsError, AcpMethodNotFoundError, AcpResourceNotFoundError } from './AcpErrors';
 import { zToolKind, zRawJson } from './acpSchemas';
+import { readOwnKey, writeOwnKey } from '../utils/ownKeys';
 
 // One dropped option is survivable; losing the whole request because a
 // single field is malformed means the user never sees a prompt that was
@@ -464,10 +465,18 @@ export class AcpRequestHandler {
         if (answer.action !== 'accept') return answer;
         // Echo only keys the agent actually asked for, so a caller that hands
         // back more than the schema requested cannot inject answers.
+        //
+        // Both halves have to be own-key operations for that promise to hold. A plain
+        // `answer.content[field.key]` read is satisfied by an inherited member when the
+        // agent names a field `toString` or `constructor`, so the "not requested" check
+        // would pass and send a prototype function to the agent as the reader's answer.
+        // A plain `content[field.key] = value` write for a field named `__proto__` goes
+        // through the prototype setter, is silently discarded for a primitive value, and
+        // would answer `accept` over an answer that vanished.
         const content: Record<string, string | number | boolean> = {};
         for (const field of fields) {
-          const value = answer.content[field.key];
-          if (value !== undefined) content[field.key] = value;
+          const value = readOwnKey(answer.content, field.key);
+          if (value !== undefined) writeOwnKey(content, field.key, value as string | number | boolean);
         }
         return { action: 'accept', content };
       })

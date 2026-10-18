@@ -2,6 +2,7 @@ import type { ElicitationAnswer, ElicitationField, ElicitationRequest, Permissio
 import { t, onLocaleChange, lookupLocaleString } from '../i18n/index';
 import { isImeComposing } from '../utils/ime';
 import { PERMISSION_MAX_LOCATIONS, PERMISSION_SUMMARY_MAX_KEYS, PERMISSION_TRUNCATE_LENGTH } from '../constants';
+import { writeOwnKey } from '../utils/ownKeys';
 
 /** Points the banner at the tab that produced the request (multi-tab sessions). */
 export interface PermissionOrigin {
@@ -280,7 +281,10 @@ export class PermissionBanner {
           if (field.required) missing = true;
           continue;
         }
-        content[field.key] = value as string | number | boolean;
+        // Own-key assignment: a field the agent names `__proto__` would otherwise go
+        // through the prototype setter, be silently discarded for a primitive value, and
+        // leave the elicitation answering "accept" over an answer that never landed.
+        writeOwnKey(content, field.key, value as string | number | boolean);
       }
       // Required fields left blank are the user's choice to keep editing, not
       // an answer to send: the banner stays and says what is still missing.

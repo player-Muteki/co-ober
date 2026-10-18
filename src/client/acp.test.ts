@@ -1256,6 +1256,53 @@ describe('AcpRequestHandler elicitation handling', () => {
     handler.dispose();
   });
 
+  it('does not satisfy an un-answered field from the prototype chain', async () => {
+    // The sibling of the test above, for the keys it could not cover. `content[key]` walks
+    // the prototype chain, so an agent naming a field `toString` — which has no own entry
+    // in the answer — would have the inherited function pass the `!== undefined` check and
+    // reach the agent as though the reader had typed it. This key does survive the schema
+    // parse, so the read really is reachable.
+    const answer = vi.fn().mockResolvedValue({ action: 'accept', content: { target: 'prod' } });
+    const { handler, registrations } = handlerWithTransport(undefined, undefined, answer);
+
+    const result = await ask(registrations, {
+      sessionId: 's1',
+      message: 'Confirm',
+      requestedSchema: { properties: { target: { type: 'string' }, toString: { type: 'string' } } },
+    });
+
+    const content = (result as { content: Record<string, unknown> }).content;
+    // The reader answered `target` and nothing else, so nothing else is sent. Asserted as
+    // own-key absence: every object inherits a `toString`, so the value itself proves
+    // nothing either way.
+    expect(Object.keys(content)).toEqual(['target']);
+    expect(Object.hasOwn(content, 'toString')).toBe(false);
+    handler.dispose();
+  });
+
+  it('produces no answer at all for a schema key the parser drops, rather than a phantom one', async () => {
+    // Measured: z.record() drops `__proto__` while parsing, so that key never becomes a
+    // form field. The reachable requirement is therefore not "carry it" but "invent
+    // nothing for it" — the old read would have satisfied it from the prototype chain, and
+    // the old write would have swallowed a real value through the setter. Either way the
+    // agent must not receive an answer nobody gave.
+    const answer = vi.fn().mockResolvedValue({ action: 'accept', content: JSON.parse('{"__proto__":"reader typed this","target":"prod"}') });
+    const { handler, registrations } = handlerWithTransport(undefined, undefined, answer);
+
+    const result = await ask(registrations, {
+      sessionId: 's1',
+      message: 'Confirm',
+      requestedSchema: { properties: JSON.parse('{"__proto__":{"type":"string"},"target":{"type":"string"}}') },
+    });
+
+    const content = (result as { content: Record<string, unknown> }).content;
+    expect(Object.hasOwn(content, '__proto__')).toBe(false);
+    // The field the reader really did answer still goes through untouched.
+    expect(content.target).toBe('prod');
+    expect(Object.getPrototypeOf(content)).toBe(Object.prototype);
+    handler.dispose();
+  });
+
   it('passes a decline or cancel back to the agent untouched', async () => {
     const { handler, registrations } = handlerWithTransport(undefined, undefined, vi.fn().mockResolvedValue({ action: 'decline' }));
     expect(await ask(registrations, { sessionId: 's1', message: 'ok?', requestedSchema: { properties: { a: { type: 'string' } } } }))

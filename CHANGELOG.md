@@ -1,3 +1,27 @@
+## 0.2.68 - 2026-10-18
+
+No new capabilities. This release transfers a defect fix found by reading the reference repository's newest code, and corrects one of its own claims after measuring.
+
+### Fixed
+
+- **An un-answered elicitation field can no longer be satisfied from the prototype chain.** Claudian moved 18 commits to `1e432bef` (2.3.24) and its OpenCode provider changed for the first time in three rounds — in its form-answer path, swapping a plain read for `Object.hasOwn` and a plain assignment for `Object.defineProperty`. The same shape was live in `AcpRequestHandler.ts`, under a comment promising otherwise: "Echo only keys the agent actually asked for, so a caller that hands back more than the schema requested cannot inject answers." That promise did not hold. `answer.content[field.key]` walks the prototype chain, so an agent naming a field `toString` — which the reader never answered — matched the **inherited function**, passed the `value !== undefined` guard, and was sent to the agent as something the reader had typed. That key survives the schema parse, so the path is genuinely reachable. Both halves now go through `src/utils/ownKeys.ts`: `readOwnKey` decides reads with `Object.hasOwn`, `writeOwnKey` assigns with `Object.defineProperty` as an own, enumerable property so the key survives `__proto__` and still serialises. The banner's own `content[field.key] = value` had the same write shape and now shares the helper. Confirmed against the pre-fix code: reverting the two lines makes the boundary fail with `['target', 'toString']` — a prototype function returned to the agent as the reader's answer.
+
+### Corrected, not claimed
+
+- **This is a key-handling bug, not a prototype-pollution vulnerability — and measuring said so before the fix was written.** The obvious guess is pollution. Testing the path first showed `z.record()` **drops the `__proto__` key while parsing**, so it never becomes an own key, and the parser does not touch `Object.prototype` either. So the reachable half is the read inheritance (fixed); the write half is unreachable through this path and is kept as cheap defence in depth; and no pollution was possible at all. Writing this up as a security hole would have overstated it by an order of magnitude, so the release note, the code comment and the research doc all say what was measured.
+
+### Validation
+
+- 86 test files / 2,505 tests passed, with TypeScript and ESLint (baseline 2,494/85). Nine boundaries in a new `ownKeys.test.ts`, and two in `acp.test.ts` placed beside the existing "echoes only the keys the schema asked for" test they qualify. One of those asserted own-key absence rather than value, because every object inherits a `toString` and the value itself proves nothing either way; another asserts that a schema key the parser drops yields **no answer at all** rather than a phantom one, with the field the reader really did answer still passing through. Reference baseline: Claudian `1e432bef` (2.3.24), reached through a read-only mirror because github.com was repeatedly unreachable.
+
+### Note on method
+
+github.com failed this round with repeated TLS resets, and a naive `git fetch` failure would have been indistinguishable from "the reference has not moved". Fetching through a mirror immediately returned a HEAD this machine had never seen. Absence of evidence was not evidence of absence, and the release is built on a 18-commit delta rather than on a failed fetch.
+
+### Still open
+
+A schema key dropped by `z.record()` is invisible to the reader: `__proto__` ends up in neither `fields` nor `omitted`, so nobody is told an item was skipped. Fixing that means preserving own keys at the schema layer, which is separate work — this round only guarantees no answer is invented for such a key.
+
 ## 0.2.67 - 2026-10-17
 
 No new capabilities; the chat backend is unchanged. This release completes the terminal vocabulary 0.2.66 recorded as still unmeasured, and fixes a session leak two rounds of cleanup had missed.
