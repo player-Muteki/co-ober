@@ -196,6 +196,10 @@ const zh: Locale = {
     unknown: '出现未知错误',
     retry: '重试',
     restart: '重启并重试',
+    alreadySubmitted:
+      '这一轮在 agent 停下之前就已经提交过了，因此没有再次发送 — 跑两遍会把它的编辑和命令重复执行。请先看记录。',
+    submitUnknown:
+      '无法从记录里判断这一轮是否已经到达 agent，因此没有再次发送。请先重新加载对话看看 agent 那边有什么，再决定怎么做。',
   },
 
   rewind: {

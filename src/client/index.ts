@@ -69,6 +69,13 @@ export interface OpencodeClient {
 
   setMode(sessionId: SessionId, modeId: string): Promise<void>;
   setModel(sessionId: SessionId, modelId: string): Promise<void>;
+  /**
+   * Whether the session already received a prompt containing this text — measured
+   * against the running kernel, which records an accepted prompt durably even when
+   * the turn never answers. `'unknown'` means the transcript could not be read and
+   * is deliberately not `'no'`.
+   */
+  hasSubmittedPrompt?(sessionId: SessionId, text: string): Promise<'yes' | 'no' | 'unknown'>;
   setConfigOption(sessionId: SessionId, configId: string, value: string | boolean): Promise<SessionConfigOption[]>;
 
   sendMessage(sessionId: SessionId, parts: PromptPart[], onChunk: (chunk: NormalizedUpdate) => void): Promise<AcpResponse>;

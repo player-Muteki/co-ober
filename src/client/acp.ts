@@ -71,7 +71,7 @@ import { z } from 'zod';
 // lost piece of the conversation.
 const UNPLACED_UPDATE_KINDS = new Set(['message_chunk', 'tool_call_snapshot', 'plan', 'notice', 'compaction']);
 
-export const CLIENT_VERSION = '0.2.72';
+export const CLIENT_VERSION = '0.2.73';
 
 /** Tail length of the agent stderr snapshot attached to a close error. */
 const STDERR_SNAPSHOT_CHARS = 800;
@@ -877,8 +877,45 @@ export class AcpClient implements OpencodeClient {
     }
   }
 
-  async listSessions(cwd?: string): Promise<SessionMeta[]> {
-    // session/list is cursor-paginated: agents with more than one page of
+  /**
+   * Has this session already been handed a prompt containing `text`?
+   *
+   * Measured (0.2.72): submit a prompt, SIGKILL the agent mid-turn, start a fresh
+   * one, and `session/load` the same id — the prompt is in the transcript. The agent
+   * records a submission durably, whether or not the turn ever answered. So after a
+   * connection dies, "the reader saw no answer" and "the agent never got the prompt"
+   * are different claims, and only the transcript separates them. Nothing on the live
+   * stream can: the kill landed before any `user_message_chunk` arrived, so the client
+   * watching the turn saw exactly as little as the reader did.
+   *
+   * Re-sending on the strength of a dead connection runs the agent's turn a *second*
+   * time — a second set of edits, commands and commits, against the same instruction.
+   *
+   * Matching is by containment, not equality: what goes on the wire is the reader's
+   * text plus any expanded context refs. That can false-positive when an earlier turn
+   * quotes the same words, and it fails closed — a refused retry costs one click,
+   * whereas a double execution costs the reader their work. A transcript that cannot
+   * be read is `unknown`, never `no`: nothing read is not evidence of absence.
+   */
+  async hasSubmittedPrompt(id: string, text: string): Promise<'yes' | 'no' | 'unknown'> {
+    const want = text.trim();
+    if (!want) return 'unknown';
+    const seen = new Map<string, string>();
+    try {
+      await this.loadSession(id, undefined, [], (u) => {
+        if (u.kind !== 'message_chunk' || u.role !== 'user') return;
+        seen.set(u.messageId, (seen.get(u.messageId) ?? '') + (u.chunkText ?? ''));
+      });
+    } catch {
+      return 'unknown';
+    }
+    for (const body of seen.values()) {
+      if (body.includes(want)) return 'yes';
+    }
+    return 'no';
+  }
+
+  async listSessions(cwd?: string): Promise<SessionMeta[]> {    // session/list is cursor-paginated: agents with more than one page of
     // history would otherwise hide everything past the first limit.
     const collected: SessionMeta[] = [];
     let cursor: string | undefined;

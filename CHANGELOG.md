@@ -1,3 +1,21 @@
+## 0.2.73 - 2026-10-18
+
+Takes the third of the gap analysis' stage-3 acceptance criteria — 已提交请求不因 fallback 重复执行 — and closes a path where the agent could run the same instruction twice. This is the first criterion in the set whose failure is destructive rather than merely misleading.
+
+### Fixed
+
+- **A failed turn's retry could run the instruction a second time.** The error chip offered "Restart and retry" on a process exit, and "retry" otherwise; both re-sent the same text with no question of whether the agent had already run it. Measured: submit a prompt, SIGKILL the agent mid-turn, start a fresh one and `session/load` the same id — **the prompt is in the transcript**. The agent records an accepted submission durably whether or not the turn ever answers. Meanwhile the kill landed before any `user_message_chunk` reached the client, so the turn being watched saw exactly as little as the reader did. "No answer came back" was never evidence that "nothing ran", and re-sending on it meant a second pass at the same edits, commands and commits. The restart path — the one that already reconnects, and so already holds the reloaded transcript — now asks first, via a new `AcpClient.hasSubmittedPrompt` that scans replayed `user_message_chunk` frames through the existing `loadSession` replay seam. If the session already holds the prompt, nothing is re-sent and the reader is told why. Two deliberate choices: matching is by **containment**, because what goes on the wire is the reader's text plus any expanded context refs, and that can over-report — the direction it fails in is a refused retry, not a repeated edit; and a transcript that cannot be read returns **`unknown`, never `no`**, because nothing read is not evidence of absence, and reading it as `no` would rebuild the very double execution this removes.
+
+### Validation
+
+- 86 test files / 2,517 tests passed, with TypeScript and ESLint (baseline 2,515/86). Both boundaries confirmed to discriminate: without per-`messageId` chunk accumulation the already-submitted probe reports `no` for a prompt that arrived split across two frames — a long turn arrives in pieces, and looking only at the last one misses it; and returning `no` for an unreadable transcript fails the second. Reference baseline: Claudian unchanged at `8a7de7c6` (2.3.24).
+
+### What is still open, stated plainly
+
+The guard covers only the `AcpProcessExitError` path, because that is the one that reconnects and therefore the only one holding a reloaded transcript. The timeout and rejection paths still offer an unverified re-send chip — on those the connection is alive and there is no cheap "was it accepted" signal. That is the largest gap left by this round and the next one should close it.
+
+The `'unknown'` branch refuses to resend, which is the safe side of the trade and costs the reader one extra click.
+
 ## 0.2.72 - 2026-10-18
 
 Fixes a reported bug: changing the model from the toolbar failed with `"Method not found": setSessionModel`, and reverted. Measured against the running kernel — the method the plugin was calling does not exist.

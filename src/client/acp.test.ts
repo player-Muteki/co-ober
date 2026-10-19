@@ -812,6 +812,42 @@ describe('a config answer that is a real value (0.2.6 stage 2)', () => {
     });
   });
 
+  it('reports a prompt the agent already holds, so a dead connection cannot re-run it', async () => {
+    // Measured (0.2.72): submit a prompt, SIGKILL the agent mid-turn, start a fresh
+    // one, session/load the same id — the prompt is in the transcript. The kill landed
+    // before any user_message_chunk reached the client, so the watching turn saw
+    // exactly as little as the reader. Re-sending on "no answer came back" would run
+    // the turn twice: twice the edits, twice the commits.
+    const client = new AcpClient('opencode');
+    const loaded: NormalizedUpdate[] = [
+      { kind: 'message_chunk', role: 'agent', messageId: 'a1', chunkText: 'earlier answer', accumulatedText: 'earlier answer' },
+      { kind: 'message_chunk', role: 'user', messageId: 'u1', chunkText: 'first question', accumulatedText: 'first question' },
+      // The submitted prompt, split across chunks the way a long turn arrives.
+      { kind: 'message_chunk', role: 'user', messageId: 'u2', chunkText: 'DELETE-', accumulatedText: 'DELETE-' },
+      { kind: 'message_chunk', role: 'user', messageId: 'u2', chunkText: 'EVERYTHING-MARKER', accumulatedText: 'DELETE-EVERYTHING-MARKER' },
+    ];
+    Reflect.set(client, 'loadSession', vi.fn(async (_id: string, _cwd?: string, _mcp?: unknown, onReplay?: (u: NormalizedUpdate) => void) => {
+      for (const u of loaded) onReplay?.(u);
+    }));
+
+    expect(await client.hasSubmittedPrompt('s1', 'DELETE-EVERYTHING-MARKER')).toBe('yes');
+    // Containment, because what goes on the wire is the reader's text plus any
+    // expanded context refs.
+    expect(await client.hasSubmittedPrompt('s1', 'EVERYTHING-MARKER')).toBe('yes');
+    expect(await client.hasSubmittedPrompt('s1', 'a question never asked')).toBe('no');
+  });
+
+  it('reports unknown — never "no" — when the transcript cannot be read', async () => {
+    // Nothing read is not evidence of absence. Reading it as "safe to send again"
+    // is exactly the double execution the probe exists to prevent.
+    const client = new AcpClient('opencode');
+    Reflect.set(client, 'loadSession', vi.fn().mockRejectedValue(new Error('session missing')));
+    expect(await client.hasSubmittedPrompt('s1', 'anything')).toBe('unknown');
+    const blank = new AcpClient('opencode');
+    Reflect.set(blank, 'loadSession', vi.fn().mockResolvedValue(undefined));
+    expect(await blank.hasSubmittedPrompt('s1', '   ')).toBe('unknown');
+  });
+
   it('returns the config list it read, not the frame it was sent', async () => {
     // The answer to set_config_option carries the whole option set again. Handing
     // it over verbatim meant the toolbar walked a grouped or option-less entry

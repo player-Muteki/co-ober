@@ -2171,6 +2171,24 @@ export class CoOberViewController {
    * finally so a retry that gets enqueued (a new turn started meanwhile)
    * never leaves stale images behind.
    */
+  /**
+   * Did the session already receive this prompt? `'unknown'` when the transcript
+   * could not be read — which is not the same as `'no'`, and is treated as such by
+   * the caller rather than quietly read as "safe to send again".
+   */
+  private async submittedAlready(rt: SessionRuntime, text: string): Promise<'yes' | 'no' | 'unknown'> {
+    const sessionId = rt.state.sessionId;
+    if (!sessionId) return 'unknown';
+    const client = this.deps.runtime.getClient();
+    if (!client?.hasSubmittedPrompt) return 'unknown';
+    try {
+      return await client.hasSubmittedPrompt(sessionId, text);
+    } catch (e) {
+      console.error('[co-ober] submitted-prompt probe:', e);
+      return 'unknown';
+    }
+  }
+
   private async retryTurn(
     config: AgentCallConfig,
     text: string,
@@ -2361,6 +2379,18 @@ export class CoOberViewController {
         } else if (e instanceof AcpProcessExitError) {
           rt.renderer.addError(humanizeError(e), t().error.restart, async () => {
             await this.reconnect();
+            // Measured: a prompt the agent accepted before it died is still in the
+            // transcript afterwards, so "no answer came back" never meant "nothing
+            // ran". Re-sending on that basis executes the turn twice — twice the
+            // edits, twice the commits. Ask what actually landed, and refuse the
+            // re-send when the transcript says the prompt is already there.
+            const landed = await this.submittedAlready(rt, text);
+            if (landed !== 'no') {
+              rt.renderer.addSystemMessage(
+                landed === 'yes' ? t().error.alreadySubmitted : t().error.submitUnknown,
+              );
+              return;
+            }
             await this.retryTurn(config, text, refs, imageParts, rt);
           }, undefined, 'error.restart');
         } else if (retryAction) {

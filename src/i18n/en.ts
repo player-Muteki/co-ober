@@ -194,6 +194,10 @@ const en = {
     unknown: 'Something went wrong',
     retry: 'Retry',
     restart: 'Restart and retry',
+    alreadySubmitted:
+      'This turn was already submitted before the agent stopped, so it has not been sent again — running it twice would repeat its edits and commands. Check the transcript first.',
+    submitUnknown:
+      'Whether this turn reached the agent could not be read from the transcript, so it has not been sent again. Reload the conversation to see what the agent has, then decide.',
   },
 
   rewind: {
