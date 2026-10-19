@@ -71,7 +71,7 @@ import { z } from 'zod';
 // lost piece of the conversation.
 const UNPLACED_UPDATE_KINDS = new Set(['message_chunk', 'tool_call_snapshot', 'plan', 'notice', 'compaction']);
 
-export const CLIENT_VERSION = '0.2.71';
+export const CLIENT_VERSION = '0.2.72';
 
 /** Tail length of the agent stderr snapshot attached to a close error. */
 const STDERR_SNAPSHOT_CHARS = 800;
@@ -944,9 +944,27 @@ export class AcpClient implements OpencodeClient {
     await this.requestWithFallback('setMode', { sessionId: id, modeId }).then(() => {});
   }
 
+  /**
+   * Measured against the running kernel (OpenCode 2.0.32, `opencode acp`): there is no
+   * "set the model" method to call. Both `session/set_model` and `setSessionModel`
+   * answer `-32601 "Method not found"` — so every model change from the toolbar or the
+   * `/model` command failed with that raw code and reverted.
+   *
+   * The agent advertises the model the way it advertises effort and mode: as a *config
+   * option*. `session/new` returns `{id:"model", category:"model", type:"select",
+   * currentValue, options:[…]}`, and `config_option_update` pushes the same shape when
+   * it changes. Changing it means writing that option —
+   * `session/set_config_option {sessionId, configId:"model", value}` — which returns
+   * the option list with `currentValue` already set to the new model.
+   *
+   * Routing through `setConfigOption` also settles who writes the current model: that
+   * method parses the returned options and hands them to `applyConfigOptions`, so the
+   * id on screen is the one the agent reported, not the one we asked for. That keeps the
+   * 0.2.44 A "accepted ≠ landed" discipline intact — and enforces it more strictly than
+   * a bare RPC result would, because the agent's own readback is what lands.
+   */
   async setModel(id: string, modelId: string): Promise<void> {
-    // Same refusal as setMode above; the chunk path is the only writer.
-    await this.requestWithFallback('setModel', { sessionId: id, modelId }).then(() => {});
+    await this.setConfigOption(id, 'model', modelId);
   }
 
   // The spec's value is `anyOf`: a value id for a select, a real boolean for a
@@ -962,8 +980,14 @@ export class AcpClient implements OpencodeClient {
     // `z.array(z.any())` handed the raw frame straight to the toolbar, which
     // walks option lists: the same grouped or toggle-shaped element a
     // notification would have flattened arrived here unparsed.
-    const configOptions = parseConfigOptions((r as { configOptions?: unknown } | undefined)?.configOptions) as SessionConfigOption[];
-    this.applyConfigOptions(configOptions, id);
+    const raw = (r as { configOptions?: unknown } | undefined)?.configOptions;
+    const configOptions = parseConfigOptions(raw) as SessionConfigOption[];
+    // An absent `configOptions` is not an empty list. `parseConfigOptions` maps
+    // both to `[]`, so a reply that simply omitted the field was read as "this
+    // session has no options now" and wiped the model off the selector — the
+    // agent had said nothing of the kind. This matters more now that the model
+    // itself travels this way.
+    if (Array.isArray(raw)) this.applyConfigOptions(configOptions, id);
     return configOptions;
   }
 

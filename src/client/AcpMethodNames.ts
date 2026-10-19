@@ -10,8 +10,7 @@ export type AcpLogicalMethod =
   | 'setConfigOption'
   | 'closeSession'
   | 'forkSession'
-  | 'resumeSession'
-  | 'setModel';
+  | 'resumeSession';
 
 const ACP_METHOD_CANDIDATES: Record<AcpLogicalMethod, readonly string[]> = {
   initialize: ['initialize'],
@@ -26,7 +25,14 @@ const ACP_METHOD_CANDIDATES: Record<AcpLogicalMethod, readonly string[]> = {
   closeSession: ['session/close', 'closeSession'],
   forkSession: ['session/fork', 'session/unstable_fork', 'forkSession'],
   resumeSession: ['session/resume', 'resumeSession'],
-  setModel: ['session/set_model', 'setSessionModel'],
+  // No `setModel` entry, and that absence is a measurement rather than an oversight.
+  // Probed against the running kernel: `session/set_model` and `setSessionModel` both
+  // answer `-32601 "Method not found"`, while `session/set_mode` and
+  // `session/set_config_option` both work. The agent has no model method because the
+  // model is a config option (`{id:"model", category:"model"}`), not a separate verb.
+  // Keeping the entry would have kept advertising two method names no agent implements,
+  // which is how model changes came to fail with a raw protocol code. `AcpClient.setModel`
+  // now writes the config option instead — see its doc comment.
 } as const;
 
 export const ACP_SERVER_NOTIFICATION_ALIASES = {

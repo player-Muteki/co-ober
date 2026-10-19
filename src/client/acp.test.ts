@@ -867,14 +867,49 @@ describe('a mode/model RPC that resolves without a chunk keeps the reported id (
     });
     expect(client.getSessionSnapshotFor('s1').currentModelId).toBe('claude-old');
 
-    Reflect.set(client, 'requestWithFallback', vi.fn().mockResolvedValue({}));
+    const requestWithFallback = vi.fn().mockResolvedValue({});
+    Reflect.set(client, 'requestWithFallback', requestWithFallback);
     await client.setModel('s1', 'gpt-new');
 
-    // Accepted, not landed: the RPC returned but the agent never said it
-    // switched, so the reader is entitled to the last id the agent actually
-    // reported. Painting 'gpt-new' here would be the assertion 0.2.44 A
-    // refuses.
+    // Where the request goes is the measured part. Probed against the running
+    // kernel: `session/set_model` and `setSessionModel` both answer `-32601
+    // "Method not found"`, so the model is written as the config option the
+    // agent advertises instead — `session/set_config_option` with
+    // `configId:"model"`.
+    expect(requestWithFallback).toHaveBeenCalledWith('setConfigOption', {
+      sessionId: 's1',
+      configId: 'model',
+      value: 'gpt-new',
+    });
+    // Accepted, not landed: the reply carried no option list at all, so the
+    // agent never said it switched and the reader keeps the last id it
+    // actually reported. Painting 'gpt-new' here would be the assertion
+    // 0.2.44 A refuses — and an absent list is not an empty one.
     expect(client.getSessionSnapshotFor('s1').currentModelId).toBe('claude-old');
+  });
+
+  it('adopts the model the agent echoes back, rather than the one it was sent', async () => {
+    // The landed half of the same boundary. The measured agent answers
+    // set_config_option with the whole option set and `currentValue` already
+    // set to the new model — its own statement, not our request echoed. That is
+    // the only thing allowed to write the current model id.
+    const { client } = clientWithStream('s1');
+    Reflect.set(client, 'requestWithFallback', vi.fn().mockResolvedValue({
+      configOptions: [
+        {
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          type: 'select',
+          currentValue: 'opencode/space-bunny-free',
+          options: [{ value: 'opencode/space-bunny-free', name: 'Space Bunny Free' }],
+        },
+      ],
+    }));
+
+    await client.setModel('s1', 'opencode/space-bunny-free');
+
+    expect(client.getSessionSnapshotFor('s1').currentModelId).toBe('opencode/space-bunny-free');
   });
 
   it('repaints currentModelId once the chunk the agent reports arrives', async () => {

@@ -1,3 +1,21 @@
+## 0.2.72 - 2026-10-18
+
+Fixes a reported bug: changing the model from the toolbar failed with `"Method not found": setSessionModel`, and reverted. Measured against the running kernel — the method the plugin was calling does not exist.
+
+### Fixed
+
+- **Model changes called a method no ACP agent implements.** `setModel` tried `session/set_model`, then `setSessionModel`; the fallback surfaced the last error, so the reported name was the second one — meaning both had already been tried and both were absent. Probed directly against `opencode acp` (2.0.32): `session/set_model` → `-32601 "Method not found"`, `setSessionModel` → `-32601 "Method not found"`, while `session/set_mode` → `{}` and `session/set_config_option` → success. The model is not a verb in ACP at all: the agent advertises it the same way it advertises effort and mode, as a config option — `session/new` returns `{id:"model", category:"model", type:"select", currentValue, options}`, and `config_option_update` pushes the same shape. The agent's own error named the field (`configId`, not the `optionId` the plugin was sending). `setConfigOption` with `{configId:"model", value}` succeeds and comes back with `currentValue` already set to the new model. `AcpClient.setModel` now writes that option, and the `setModel` entry is gone from the alias table rather than left advertising two names that were measured absent. Model switching against OpenCode had never worked; this is the first version where it does.
+
+- **A reply that omitted `configOptions` blanked the model.** `setConfigOption` applied its parse result unconditionally, and `parseConfigOptions(undefined)` returns `[]` — so "said nothing" was read as "this session has no options now" and wiped the current model id (observed: `null`). The agent never said that. It now applies only when the wire actually carried an array. This matters more now that the model travels this way: an agent that applied the change but did not echo the list back would have emptied the selector.
+
+### Validation
+
+- 86 test files / 2,515 tests passed, with TypeScript and ESLint (baseline 2,514/86). Both new boundaries confirmed to discriminate: restoring the old `setModel` fails the routing assertion, and removing the `Array.isArray` guard fails with `null` instead of the last id the agent reported. The landed case is pinned too — when the agent echoes a `currentValue`, the snapshot adopts the agent's id, not the one requested, which keeps the 0.2.44 A "accepted ≠ landed" rule and enforces it more strictly than a bare RPC result would. A controller comment that reasoned about this call is corrected: the concern it described could not have occurred, because the method did not exist.
+
+### Still open
+
+Measured only against OpenCode 2.0.32's ACP surface. If another agent does implement a dedicated `session/set_model`, this version no longer tries it — but keeping two measured-absent names is worse than dropping them. Any such agent should be re-added on evidence, not on guesswork.
+
 ## 0.2.71 - 2026-10-18
 
 No new capabilities; the chat backend is unchanged. This release pays the measurement debt 0.2.70 declared: the mid-run disconnect is now reproduced against a real kernel, and the rig that does it turned up a sentence in 0.2.70 that claimed more than the reading could support.

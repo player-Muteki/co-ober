@@ -925,17 +925,18 @@ export class CoOberViewController {
         }
         const c = client();
         if (!c || !rt.state.sessionId) return;
-        // The request wording is the honest one: `setModel` resolving says the
-        // RPC was accepted, not that the agent moved. The current-model id is
-        // written only by the agent's own config chunks (`streamController`),
-        // so a session that ignores or refuses the id leaves the toolbar
-        // naming the old model — and the transcript claiming a completed
-        // switch next to it would be the "two adjacent widgets, incompatible
-        // stories" shape the 0.2.42 attach-tooltip and 0.2.43 permission-chip
-        // fixes both refused. A rejection is also visible now: `await def.run`
-        // bubbles to the send path with no catch on this side, so before this
-        // an agent transport that died left the transcript silent after the
-        // reader typed `/model X`.
+        // The current-model id on screen is written only by the agent's own config
+        // options — from `config_option_update` chunks, or from the list the agent
+        // returns when `setModel` writes the `model` config option. So a session that
+        // ignores or refuses the id leaves the toolbar naming the old model, and the
+        // transcript claiming a completed switch next to it would be the "two adjacent
+        // widgets, incompatible stories" shape the 0.2.42 attach-tooltip and 0.2.43
+        // permission-chip fixes both refused. This is now weaker than it was: the call
+        // used to target a method the agent does not implement (`session/set_model`,
+        // measured `-32601`), so it could not have reached this branch at all.
+        // A rejection is also visible now: `await def.run` bubbles to the send path with
+        // no catch on this side, so before this an agent transport that died left the
+        // transcript silent after the reader typed `/model X`.
         try {
           await c.setModel(rt.state.sessionId, modelId);
           rt.renderer.addSystemMessage(`${t().slash.modelSwitched} \`${modelId}\``);
