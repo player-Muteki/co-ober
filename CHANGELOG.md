@@ -1,3 +1,23 @@
+## 0.2.74 - 2026-10-18
+
+Takes the last of the gap analysis' stage-3 acceptance criteria — 中断不留后台工作 — and finds it does not hold on this kernel. The kernel has no cancellation at all, and the plugin had been reporting a stop it never observed.
+
+### Fixed
+
+- **Stop reported a stop nothing confirmed.** `AcpClient.cancel()` dropped the local stream, fired the cancel into the void as a JSON-RPC *notification*, and returned `Promise.resolve()` unconditionally — so the turn looked stopped in the UI while the kernel carried on. The reason the old shape could never learn otherwise is structural: a notification carries no answer back. Measured against `opencode acp` (2.0.32), the agent implements **no cancellation method whatsoever** — `session/cancel`, `cancel`, `session/abort`, `abort`, `session/interrupt`, `interrupt`, `session/stop`, `stop` and `session/cancel_notification` each answer `-32601 "Method not found"`, while `session/set_mode` on the same connection at the same moment answers normally, which is what separates "the agent said no such method" from "the pipe was dead". A submitted prompt is still in the transcript after Stop, and the turn is still running. So the fourth acceptance criterion is measured as **not holding**: pressing Stop does not leave the kernel idle. The cancel now goes out as a *request* with a 2s deadline — Stop still returns promptly, and the result is finally observable — and `cancel` returns what was seen: `stopped` only when the agent acknowledged, `unsupported` when every candidate answered "no such method", `unknown` otherwise. Stop is silent only on `stopped`; the other two say plainly that the turn may still be running inside the agent. Stopping *watching* and stopping *the kernel* are now two claims, and only one of them is free.
+
+### This also explains last release's open risk
+
+0.2.73 flagged that the timeout path still offered an unverified re-send. It now has an explanation: a "timed out" turn is not a dead one. It is alive in the kernel and, per this release's measurement, **cannot be stopped**. A re-send there does not risk duplicating work by chance — it stacks a second instruction on a live turn. Guarding that path is now a matter of time; actually fixing it depends on the agent gaining a cancel.
+
+### Validation
+
+- 86 test files / 2,519 tests passed, with TypeScript and ESLint (baseline 2,517/86). Three boundaries, all confirmed to discriminate: an acknowledged cancel reports `stopped` and carries `ACP_CANCEL_TIMEOUT_MS` so Stop cannot hang; `-32601` reports `unsupported` after both aliases were tried; and any other failure reports `unknown` — **never `stopped`** — which is the half that stops the plugin crying wolf. Reverting to the old notify-and-always-resolve shape fails the first two. Three older tests asserted the previous behaviour, including `resolves.toBeUndefined()` and that the cancel travelled as a notification; they encoded the lie, and are rewritten against the new contract. Reference baseline: Claudian unchanged at `8a7de7c6` (2.3.24).
+
+### Still open
+
+Only the Stop button reports the outcome honestly. Tab close, view close and the side-chat path still discard it silently — that is this round's remaining gap. The 0.2.73 retry guard on the timeout path is also still not added. Measured against OpenCode 2.0.32 only; an agent that *does* implement cancel now works as before and reports `stopped`, which the old notification shape could never have known either way.
+
 ## 0.2.73 - 2026-10-18
 
 Takes the third of the gap analysis' stage-3 acceptance criteria — 已提交请求不因 fallback 重复执行 — and closes a path where the agent could run the same instruction twice. This is the first criterion in the set whose failure is destructive rather than merely misleading.

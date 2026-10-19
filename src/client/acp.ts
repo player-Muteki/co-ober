@@ -1,6 +1,6 @@
 import { resolveOpencodeDatabasePath } from '../opencode/OpencodePaths';
 import { isNativeDatabasePath } from '../opencode/NativeDatabaseBinding';
-import { ACP_LIST_SESSIONS_LIMIT, ACP_LIST_SESSIONS_MAX_PAGES, ACP_RECONNECT_BACKOFF_BASE_MS, ACP_LOAD_SESSION_IDLE_TIMEOUT_MS, MAX_CONCURRENT_STREAMS, MAX_SESSION_NORMALIZERS } from '../constants';
+import { ACP_LIST_SESSIONS_LIMIT, ACP_LIST_SESSIONS_MAX_PAGES, ACP_RECONNECT_BACKOFF_BASE_MS, ACP_LOAD_SESSION_IDLE_TIMEOUT_MS, ACP_CANCEL_TIMEOUT_MS, MAX_CONCURRENT_STREAMS, MAX_SESSION_NORMALIZERS } from '../constants';
 import { getSpawnInfo } from '../utils/commandResolution';
 import { AcpSubprocess, type AcpSubprocessLaunchSpec } from './AcpSubprocess';
 
@@ -71,7 +71,7 @@ import { z } from 'zod';
 // lost piece of the conversation.
 const UNPLACED_UPDATE_KINDS = new Set(['message_chunk', 'tool_call_snapshot', 'plan', 'notice', 'compaction']);
 
-export const CLIENT_VERSION = '0.2.73';
+export const CLIENT_VERSION = '0.2.74';
 
 /** Tail length of the agent stderr snapshot attached to a close error. */
 const STDERR_SNAPSHOT_CHARS = 800;
@@ -1148,27 +1148,49 @@ export class AcpClient implements OpencodeClient {
       });
   }
 
-  cancel(id: string): Promise<void> {
+  /**
+   * Stop a turn, and report what was actually observed.
+   *
+   * This used to be `Promise<void>` that always resolved. It dropped the local
+   * stream, fired the cancel into the void as a JSON-RPC *notification*, and
+   * returned — so the UI reported a stop that nothing had confirmed.
+   *
+   * Measured against the running kernel (OpenCode 2.0.32, `opencode acp`): the
+   * agent implements **no cancellation method at all**. `session/cancel`, `cancel`,
+   * `session/abort`, `abort`, `session/interrupt`, `interrupt`, `session/stop`,
+   * `stop` and `session/cancel_notification` each answer `-32601 "Method not
+   * found"`, while `session/set_mode` on the same connection answers normally — so
+   * the agent was answering, not the transport. After Stop, the turn keeps running
+   * and its prompt stays in the transcript.
+   *
+   * A notification cannot carry that answer back, which is exactly why the old
+   * shape could never learn it. So the cancel goes out as a *request* with a short
+   * deadline: Stop still returns quickly, and now the result is observable.
+   *
+   * - `stopped` — the agent acknowledged the cancel.
+   * - `unsupported` — every candidate answered "no such method". The turn is
+   *   still running in the kernel and the reader must be told that, because it is
+   *   the difference between "I stopped it" and "I stopped watching it".
+   * - `unknown` — the connection died or nothing answered. Not evidence of a stop.
+   */
+  async cancel(id: string): Promise<'stopped' | 'unsupported' | 'unknown'> {
     // Abort the in-flight prompt for THIS session first so its sendMessage()
     // rejects immediately; other sessions' streams keep running.
     const stream = this.activeStreams.get(id);
     this.activeStreams.delete(id);
     stream?.abort.abort();
 
-    // session/cancel is a notification in ACP: awaiting a response held the
-    // Stop button for the full timeout against agents that never answer it.
-    // Unknown notification methods are ignorable per JSON-RPC, so both wire
-    // aliases are sent — the agent acts on the one it knows.
-    const transport = this.transport;
-    if (!transport) return Promise.resolve();
+    if (!this.transport) return 'unknown';
     try {
-      for (const candidate of getAcpMethodCandidates('cancel')) {
-        transport.notify(candidate, { sessionId: id });
-      }
+      await this.requestWithFallback('cancel', { sessionId: id }, ACP_CANCEL_TIMEOUT_MS);
+      return 'stopped';
     } catch (e) {
-      console.warn('[co-ober] cancel notification failed:', e);
+      // Every candidate came back "no such method" — the agent has no cancel.
+      if (e instanceof AcpProtocolError && e.code === -32601) return 'unsupported';
+      if (e instanceof AcpProtocolError && e.message.includes('Method not found')) return 'unsupported';
+      console.warn('[co-ober] cancel failed:', e);
+      return 'unknown';
     }
-    return Promise.resolve();
   }
 
   getAvailableAgents(): Promise<ModeOption[]> {

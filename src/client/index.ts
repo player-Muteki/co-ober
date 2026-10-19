@@ -79,7 +79,13 @@ export interface OpencodeClient {
   setConfigOption(sessionId: SessionId, configId: string, value: string | boolean): Promise<SessionConfigOption[]>;
 
   sendMessage(sessionId: SessionId, parts: PromptPart[], onChunk: (chunk: NormalizedUpdate) => void): Promise<AcpResponse>;
-  cancel(sessionId: SessionId): Promise<void>;
+  /**
+   * Stop a turn and report what was observed. `'stopped'` only when the agent
+   * acknowledged; `'unsupported'` when every candidate answered "no such method"
+   * (measured: OpenCode's ACP agent has no cancel at all, so the turn keeps
+   * running); `'unknown'` when nothing answered, which is not a confirmed stop.
+   */
+  cancel(sessionId: SessionId): Promise<'stopped' | 'unsupported' | 'unknown'>;
   abort(): void;
 
   requestPermission?(req: PermissionRequest): Promise<string>;

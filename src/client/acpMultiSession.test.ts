@@ -48,6 +48,10 @@ const mocks = vi.hoisted(() => {
       let reject!: (e: unknown) => void;
       const promise = new Promise<unknown>((res, rej) => { resolve = res; reject = rej; });
       this.requests.push({ method, params, resolve, reject });
+      // Cancel is a request now, so that its answer can be observed (measured: the
+      // OpenCode agent has no cancel method at all). Settle it here rather than
+      // leaving the capacity test waiting on a turn this fake never answers.
+      if (method.includes('cancel')) queueMicrotask(() => resolve({}));
       return promise;
     }
 

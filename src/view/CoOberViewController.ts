@@ -2957,7 +2957,19 @@ export class CoOberViewController {
       try {
         // Cancel the backend RPC before resetting local state,
         // so the in-flight handler stops processing chunks immediately.
-        await c.cancel(sessionId);
+        const outcome = await c.cancel(sessionId);
+        // Stop only ever stops *this view*. Saying so unconditionally is what made
+        // the bar read as a guarantee: the local stream is dropped either way, but
+        // whether the kernel stopped is a separate fact, and it is now one we can
+        // actually observe. Measured against the running kernel, OpenCode's ACP
+        // agent implements no cancellation method at all — every spelling answers
+        // `-32601` — so the turn this reader believes they stopped keeps running,
+        // and a prompt sent after it lands on top of a live turn.
+        if (outcome !== 'stopped') {
+          rt.renderer.addSystemMessage(
+            outcome === 'unsupported' ? t().error.cancelUnsupported : t().error.cancelUnknown,
+          );
+        }
       } catch (e) {
         console.error('[co-ober] cancel:', e);
       }

@@ -43,6 +43,8 @@ const mocks = vi.hoisted(() => {
     serverRequests = new Map<string, (params: unknown) => Promise<unknown>>();
     disposed = false;
     disposeError: Error | null = null;
+    /** Set after connect so a single call can be answered with a protocol error. */
+    requestFail: Error | null = null;
     deferred!: { promise: Promise<unknown>; resolve: (v: unknown) => void; reject: (e: unknown) => void };
 
     constructor(_opts: unknown) {
@@ -68,6 +70,7 @@ const mocks = vi.hoisted(() => {
 
     request(method: string, params?: unknown, timeoutMs?: number, signal?: AbortSignal): Promise<unknown> {
       this.requests.push({ method, params, timeoutMs, signal });
+      if (this.requestFail) return Promise.reject(this.requestFail);
       return this.deferred.promise;
     }
 
@@ -97,8 +100,8 @@ vi.mock('./AcpSubprocess', () => ({ AcpSubprocess: mocks.FakeSubprocess }));
 vi.mock('./AcpJsonRpcTransport', () => ({ AcpJsonRpcTransport: mocks.FakeTransport }));
 
 import { AcpClient } from './acp';
-import { AcpTimeoutError } from './AcpErrors';
-import { ACP_LOAD_SESSION_IDLE_TIMEOUT_MS } from '../constants';
+import { AcpTimeoutError, AcpProtocolError } from './AcpErrors';
+import { ACP_LOAD_SESSION_IDLE_TIMEOUT_MS, ACP_CANCEL_TIMEOUT_MS } from '../constants';
 import type { NormalizedUpdate } from '../types';
 
 const { FakeSubprocess, FakeTransport } = mocks;
@@ -548,19 +551,43 @@ describe('0.1.40 stage 2 protocol pack', () => {
     return { client, transport };
   }
 
-  it('sends session/cancel as notifications and resolves without a response', async () => {
+  it('sends the cancel as a request and reports what the agent answered', async () => {
+    // This used to go out as a notification and resolve to `undefined` no matter
+    // what — so the UI reported a stop nothing had confirmed. Measured against the
+    // running kernel: OpenCode's ACP agent answers `-32601` to every cancel spelling,
+    // and a notification cannot carry that answer back, which is why the old shape
+    // could never learn the turn was still running. As a request it can.
     const { client, transport } = await connectedPendingClient();
-    const requestsBefore = transport.requests.length;
+    transport.deferred.resolve({});
 
-    await expect(client.cancel('ses_1')).resolves.toBeUndefined();
+    expect(await client.cancel('ses_1')).toBe('stopped');
 
-    const methods = transport.sentNotifications.map((n) => n.method);
-    expect(methods).toContain('session/cancel');
-    expect(methods).toContain('cancel');
-    const frame = transport.sentNotifications.find((n) => n.method === 'session/cancel');
+    expect(transport.requests.map((r) => r.method)).toContain('session/cancel');
+    const frame = transport.requests.find((r) => r.method === 'session/cancel');
     expect(frame?.params).toEqual({ sessionId: 'ses_1' });
-    // Nothing awaited a response, so no request went out for the cancel.
-    expect(transport.requests).toHaveLength(requestsBefore);
+    // Bounded, so pressing Stop never hangs on an agent that does not answer.
+    expect(frame?.timeoutMs).toBe(ACP_CANCEL_TIMEOUT_MS);
+  });
+
+  it('reports the cancel as unsupported when the agent has no such method', async () => {
+    const { client, transport } = await connectedPendingClient();
+    // What OpenCode 2.0.32 actually answers, for every candidate spelling.
+    transport.requestFail = new AcpProtocolError('"Method not found": session/cancel', 'session/cancel', -32601);
+
+    expect(await client.cancel('ses_1')).toBe('unsupported');
+    // Both aliases were tried, and the last error is not what is reported.
+    expect(transport.requests.map((r) => r.method)).toEqual(
+      expect.arrayContaining(['session/cancel', 'cancel']),
+    );
+  });
+
+  it('never reports a stop the agent did not acknowledge', async () => {
+    // The other half of the same contract, and the one that stops the plugin crying
+    // wolf: a cancel that fails for any other reason is `unknown`, not `stopped`.
+    const { client, transport } = await connectedPendingClient();
+    transport.requestFail = new Error('socket hang up');
+
+    expect(await client.cancel('ses_1')).toBe('unknown');
   });
 
   it('cancel still aborts the local prompt stream and clears its slot', async () => {
@@ -570,6 +597,10 @@ describe('0.1.40 stage 2 protocol pack', () => {
     const streams = Reflect.get(client, 'activeStreams') as Map<string, unknown>;
     expect(streams.has('ses_1')).toBe(true);
 
+    // The cancel is a request now, so give this fake an answer to give. The local
+    // slot is released regardless of what the agent says — that is the part this
+    // test is about.
+    transport.requestFail = new Error('socket hang up');
     await client.cancel('ses_1');
     expect(streams.has('ses_1')).toBe(false);
 

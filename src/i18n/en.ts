@@ -198,6 +198,10 @@ const en = {
       'This turn was already submitted before the agent stopped, so it has not been sent again — running it twice would repeat its edits and commands. Check the transcript first.',
     submitUnknown:
       'Whether this turn reached the agent could not be read from the transcript, so it has not been sent again. Reload the conversation to see what the agent has, then decide.',
+    cancelUnsupported:
+      'Stopped here, but this agent has no cancel method — the turn may still be running inside it. Anything you send next will land on top of it.',
+    cancelUnknown:
+      'Stopped here, but the agent did not confirm that it stopped. The turn may still be running inside it.',
   },
 
   rewind: {
