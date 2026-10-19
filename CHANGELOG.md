@@ -1,3 +1,25 @@
+## 0.2.71 - 2026-10-18
+
+No new capabilities; the chat backend is unchanged. This release pays the measurement debt 0.2.70 declared: the mid-run disconnect is now reproduced against a real kernel, and the rig that does it turned up a sentence in 0.2.70 that claimed more than the reading could support.
+
+### Added
+
+- **The live disconnect rig works, and it confirms the 0.2.70 fix on the real kernel.** The previous attempt proved nothing for a specific reason worth recording: the probe spawns its *own* `opencode serve`, so the old rig killed a separately-started server that the probe was never talking to. Wrapping the probe's existing `deps.spawn` seam to capture that child — then SIGKILLing it — reproduces the situation properly. Stub provider holding its response for 25 seconds, server killed at 5 seconds: the fixed probe reports `disconnected` with `enqueued`, `delivered` and `started` all true. Reverting the guard and running the identical rig reports `unavailable` with all three false. So the lie was real — a run that had been enqueued, delivered and started was reported as a setup that never completed, with its own proven facts erased — and it is now a measurement rather than an assertion.
+
+- **The `leftover` flag survives a disconnect honestly.** Worth checking rather than assuming, since a dead server makes "could not delete the session" look like a generalisation. It is not: `OPENCODE_DB` is SQLite, and after the server was killed `session_v2` still held the row (and `session_message` still held the turn). A later `opencode serve` over that database finds the abandoned session, so `leftover=true` names something that is genuinely still there.
+
+### Fixed
+
+- **A disconnect no longer claims execution began when it did not.** A disconnect can land after the prompt is admitted but before any `session.execution.started` frame arrives — reachable on the measured path, and the rig exercises it. `started` is then false while the status is still `disconnected`. The title 0.2.70 wrote for that row said the kernel "took the prompt **and began executing**, then stopped answering", and the three legs it prints directly beneath that title then read `execution started: no`. The row contradicted itself, in its own headline, about the one fact it had not observed. The title now says only what `disconnected` itself means — the prompt was taken, then the server stopped answering — and whether execution started is left to the leg that reports it truthfully. No new status: the kernel does not distinguish these cases and the reader's next move is the same either way, so a new bucket would have invented a distinction that is not there.
+
+### Validation
+
+- 86 test files / 2,514 tests passed, with TypeScript and ESLint (baseline 2,512/86). Two boundaries, both confirmed to discriminate: at the probe level a disconnect landing before `execution.started` reports `disconnected` with `started` still false; at the Settings level that reading renders without `began executing` and with `execution started: no` — restoring the old sentence makes the second fail. One latent test-harness gap closed alongside: `fakeSlice`'s status union in `settings.test.ts` was missing `disconnected`, so the test environment could not even construct this row's reading. Reference baseline: Claudian at `8a7de7c6` (still 2.3.24), with `src/providers/opencode` untouched in source and `AGENTS.md` — no new constraints to carry.
+
+### Still open
+
+Two acceptance criteria remain unmeasured: an interrupt must leave no background work, and a submitted request must not execute twice through a fallback. The chat backend is still ACP.
+
 ## 0.2.70 - 2026-10-18
 
 No new capabilities; the chat backend is unchanged. This release takes the second of the gap analysis' stage-3 acceptance criteria — 失联不伪装正常完成 — and closes a defect that made a lost connection indistinguishable from a kernel that never ran.

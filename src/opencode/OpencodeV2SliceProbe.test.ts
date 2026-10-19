@@ -413,6 +413,37 @@ describe('detectOpencodeV2ExecutionSlice', () => {
     expect(reading.started).toBe(true);
   });
 
+  it('reports a disconnect that landed before execution started, without inventing a start', async () => {
+    // Measured against the running kernel: the server can go away after admitting the
+    // prompt but before `session.execution.started` ever arrives. `started` must stay
+    // false — the Settings row reads that leg out loud directly beneath its headline, so
+    // a start invented here would be visible as a contradiction.
+    const child = fakeServeChild(READY);
+    let reads = 0;
+    const reading = await detectOpencodeV2ExecutionSlice('opencode', '/vault', {
+      spawn: vi.fn(() => child as never), platform: 'linux', env: {}, settleMs: 40,
+      request: vi.fn(async (url: string) => {
+        if (String(url).includes('/message')) {
+          reads++;
+          if (reads > 1) throw new Error('socket hang up');
+          return { data: [] };
+        }
+        return requestRouter([
+          [/\/prompt/u, { data: { id: 'msg_1', admittedSeq: 1 } }],
+          [/\?directory=/u, {}],
+          [/\/interrupt/u, {}],
+          [/\/api\/session$/u, { data: { id: 'ses_1' } }],
+        ])(url);
+      }) as never,
+      openEventStream: vi.fn(async () => eventStream([
+        frame({ type: 'session.inbox.enqueued', data: { sessionID: 'ses_1' } }),
+      ])) as never,
+    });
+    expect(reading.status).toBe('disconnected');
+    expect(reading.enqueued).toBe(true);
+    expect(reading.started).toBe(false);
+  });
+
   it('still reports an unreachable kernel as unavailable, never as disconnected', async () => {
     // The fix must not turn every failure into "the link dropped": a server that never
     // came up observed no run at all, and that sentence must stay the one that fits.

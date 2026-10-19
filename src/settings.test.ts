@@ -86,7 +86,7 @@ const sliceDefaults = {
   outputTokens: undefined as number | undefined, leftover: false,
 };
 
-let fakeSlice: { status: 'answered' | 'interrupted' | 'failed' | 'admitted' | 'unavailable'; enqueued: boolean; delivered: boolean; started: boolean; streamed: boolean; confirmed: boolean; answer: string | undefined; modelId: string | undefined; outcome: string | undefined; terminal: string | undefined; reason: string | undefined; errorType: string | undefined; errorMessage: string | undefined; retries: number; finish: string | undefined; cost: number | undefined; outputTokens: number | undefined; leftover: boolean } | null = null;
+let fakeSlice: { status: 'answered' | 'interrupted' | 'failed' | 'disconnected' | 'admitted' | 'unavailable'; enqueued: boolean; delivered: boolean; started: boolean; streamed: boolean; confirmed: boolean; answer: string | undefined; modelId: string | undefined; outcome: string | undefined; terminal: string | undefined; reason: string | undefined; errorType: string | undefined; errorMessage: string | undefined; retries: number; finish: string | undefined; cost: number | undefined; outputTokens: number | undefined; leftover: boolean } | null = null;
 vi.mock('./opencode/OpencodeV2SliceProbe', () => ({
   detectOpencodeV2ExecutionSlice: vi.fn(async () =>
     fakeSlice ?? {
@@ -1474,6 +1474,31 @@ describe('CoOberSettingsTab locale refresh', () => {
       // queue has not been consumed by the run, and the row must not collapse them.
       expect(tab.containerEl.textContent).toContain('prompt queued: yes · delivered to the run: no · execution started: yes');
       expect(tab.containerEl.textContent).not.toContain('delivered to the run: yes');
+    } finally {
+      fakeSlice = null;
+    }
+  });
+
+  it('does not claim execution began on a disconnect that landed before it did', async () => {
+    setLocale('en');
+    // Measured against the running kernel: the server can vanish after admitting the
+    // prompt but before any `session.execution.started` frame arrives. The status is
+    // still `disconnected`, and the started leg then reads "no" — directly beneath a
+    // headline. A title that said "began executing" there would contradict its own
+    // detail line, which is the over-claim this row is built to avoid.
+    fakeSlice = { ...sliceDefaults, status: 'disconnected', enqueued: true, delivered: false, started: false };
+    try {
+      const tab = new CoOberSettingsTab(createPlugin({ refreshLocale: vi.fn() }));
+      tab.display();
+      (
+        [...tab.containerEl.querySelectorAll('button')].find((b) => b.textContent === 'Probe the slice') as HTMLButtonElement
+      ).click();
+      await flushPromises();
+      await flushPromises();
+      expect(tab.containerEl.textContent).toContain('stopped answering');
+      expect(tab.containerEl.textContent).not.toContain('began executing');
+      // And the leg that does the claiming is reported truthfully instead.
+      expect(tab.containerEl.textContent).toContain('prompt queued: yes · delivered to the run: no · execution started: no');
     } finally {
       fakeSlice = null;
     }
