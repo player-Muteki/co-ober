@@ -1996,6 +1996,7 @@ function createPlugin(
     isConnected: vi.fn().mockReturnValue(initClientResult),
     createSession: vi.fn().mockResolvedValue('settings-session'),
     closeSession: vi.fn().mockResolvedValue(undefined),
+    deleteSession: vi.fn().mockResolvedValue(true),
     getAvailableAgents: vi.fn().mockResolvedValue(runtimeOptions.availableModes ?? []),
     getAvailableModels: vi.fn().mockResolvedValue(runtimeOptions.availableModels ?? []),
     getAvailableCommands: vi.fn().mockResolvedValue(runtimeOptions.availableCommands ?? []),

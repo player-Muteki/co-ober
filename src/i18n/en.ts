@@ -224,6 +224,8 @@ const en = {
       'The side chat was closed while its turn was running, but this agent has no cancel method — that turn may still be running inside the agent.',
     sideChatClosedUnknown:
       'The side chat was closed while its turn was running, but the agent did not confirm that it stopped — that turn may still be running inside the agent.',
+    sessionDeleteUnconfirmed:
+      'The session was removed from this vault, but the agent did not confirm the delete — its history may still be kept inside it.',
   },
 
   rewind: {

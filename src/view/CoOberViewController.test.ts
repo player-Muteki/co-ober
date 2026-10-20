@@ -212,6 +212,7 @@ function createMockClient(overrides: Record<string, unknown> = {}) {
     cancel: vi.fn().mockResolvedValue('stopped'),
     abort: vi.fn(),
     closeSession: vi.fn().mockResolvedValue(undefined),
+    deleteSession: vi.fn().mockResolvedValue(true),
     forkSession: vi.fn().mockResolvedValue('forked-session'),
     resumeSession: vi.fn().mockResolvedValue(undefined),
     getSessionSnapshot: vi.fn(() => ({
@@ -2583,6 +2584,52 @@ describe('CoOberViewController', () => {
 
       expect(deps.sessionStore.remove).toHaveBeenCalledWith('active-session');
       expect(client.createSession).toHaveBeenCalled();
+    });
+
+    it('asks the kernel to forget a session it can forget', async () => {
+      // Measured on 2.0.28: close releases the session from the connection,
+      // but it stays listed, loadable and back after a restart. Only an
+      // accepted session/delete takes the row out. A delete the agent
+      // advertises is the difference between "deleted" and "hidden".
+      const client = createMockClient({
+        getAgentCapabilities: vi.fn(() => ({ sessionCapabilities: { delete: true } })),
+        deleteSession: vi.fn().mockResolvedValue(true),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      await controller.deleteSession('other-session');
+
+      expect(client.deleteSession).toHaveBeenCalledWith('other-session');
+      expect(deps.sessionStore.remove).toHaveBeenCalledWith('other-session');
+      const spoken = (deps.renderer.addSystemMessage as ReturnType<typeof vi.fn>).mock.calls.flat();
+      expect(spoken).not.toContain(t().error.sessionDeleteUnconfirmed);
+    });
+
+    it('says so when a kernel that promised to forget did not', async () => {
+      const client = createMockClient({
+        getAgentCapabilities: vi.fn(() => ({ sessionCapabilities: { delete: true } })),
+        deleteSession: vi.fn().mockResolvedValue(false),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      await controller.deleteSession('other-session');
+
+      // The local removal stands — the reader asked for it — but a session
+      // that returns to the history list after being deleted must not be
+      // presented as a done deal.
+      expect(deps.sessionStore.remove).toHaveBeenCalledWith('other-session');
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().error.sessionDeleteUnconfirmed);
+    });
+
+    it('does not ask an agent without the delete capability, and does not claim it failed', async () => {
+      const client = createMockClient({ deleteSession: vi.fn().mockResolvedValue(true) });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+      await controller.deleteSession('other-session');
+
+      expect(client.deleteSession).not.toHaveBeenCalled();
+      const spoken = (deps.renderer.addSystemMessage as ReturnType<typeof vi.fn>).mock.calls.flat();
+      expect(spoken).not.toContain(t().error.sessionDeleteUnconfirmed);
     });
   });
 

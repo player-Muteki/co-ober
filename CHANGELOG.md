@@ -1,3 +1,20 @@
+## 0.2.82 - 2026-10-20
+
+0.2.81 found that a closed session stays in the list, loadable, back after a restart. That fact indicts the delete button: a user deleting a session was getting a `close` plus a local mirror removal — the kernel's row was never asked to forget. A new live rig measured what `session/delete` actually does, and the two `{}` acks turned out to mean completely different things.
+
+### Fixed
+
+- **Deleting a session now asks the kernel to forget it, and says so when the promise fails.** Measured on the installed `opencode v2.0.28`: `initialize` advertises `sessionCapabilities.delete`; `session/delete` answers `{}` and the session vanishes from `session/list`, later prompts and loads against the id answer `-32602 session not found`, and the id is still gone after a reconnect — while a control session closed instead of deleted remains listed and loads with full `configOptions`. A second rig confirmed a previously-closed session is still addressable for delete (`close` releases, it does not unaddress). `deleteSession` was doing neither: it closed the tab (stop, 0.2.81), removed the local mirror and said nothing about the row left behind — history that returns after a restart is a fact the reader needs. The view now gates the ask on three things the measurement backs — the agent advertises `delete`, the client implements the call, the id is addressable (0.2.78) — and awaits the answer. An accepted delete is silent, because it is simply done; a delete the promised agent failed confirms nothing, and the transcript says the session left this vault while its history may still be kept inside the agent; an agent that never advertised a delete is not accused of lacking one — silence, exactly as before. Client-layer plumbing: the `deleteSession` logical method maps to `session/delete`, `AcpClient.deleteSession` returns whether the agent acknowledged and clears its local metadata either way, `AgentCapabilities.sessionCapabilities` gained `delete`.
+
+### Validation
+
+- 86 test files / 2,567 tests (2,562 baseline plus five new). The 19 pre-existing, platform-bound failures in `NativeSessionReader.test.ts` and `commandResolution.test.ts` are unchanged; TypeScript and ESLint are clean. Boundaries, each confirmed to discriminate: an acked `session/delete` returns `true`, clears session metadata and puts `session/delete` + `{ sessionId }` on the wire; the client wrapper delegates; an advertised-and-addressable session gets the forget ask and the mirror removal; a delete answering `false` speaks `sessionDeleteUnconfirmed`; an agent without the capability is never asked and never blamed. The discrimination was run at both layers at once — gating the view off and neutering the client call fails exactly the three move-carrying tests and nothing else.
+- Both rigs were re-run at release time and reproduced the first session's readouts line for line; the research doc records the reruns. The forget claim is measured on 2.0.28 alone and gated on the capability advertisement — the same extrapolation boundary 0.2.81 recorded, now for delete.
+
+### Still open
+
+What `session/delete` removes beyond the ACP-visible state (files, logs, storage outside the row the list reads) is unmeasured; the claim is limited to what the protocol shows. `NativeSessionReader` reads the same database and should stop seeing a deleted session, but that cross-check was not rigged. Side-chat forks still only get closed, never deleted — whether a spent side chat should be forgotten is a product decision awaiting measurement of what users can recover. And any real agent implementing `session/cancel` — `stopped` on evidence — remains unobserved through three releases.
+
 ## 0.2.81 - 2026-10-20
 
 0.2.80 closed with a promise: the next round would measure, not route — specifically what `session/close` does to a live turn. A new live rig against the installed `opencode v2.0.28` answered, and the answer indicts the other kind of dishonesty: a pessimistic claim with no evidence behind it.

@@ -1940,8 +1940,24 @@ export class CoOberViewController {
     // Teardown needs the saved source to decide whether this kernel can address the id.
     // Removing the mirror first would turn a known mismatch into an unbound session.
     if (rt) await this.closeTab(rt.tabId);
+    // Closing releases the session from this connection; on the measured kernel
+    // it stays in the database — listed, loadable, back after a restart. Only
+    // an accepted `session/delete` forgets it. A delete asked of an agent that
+    // does not advertise one answers nothing, so the attempt is gated; an
+    // advertised delete that fails is said, because a session that returns to
+    // the history list after being deleted is a fact the reader needs.
+    const client = this.deps.runtime.getClient();
+    const deletable =
+      !!client?.getAgentCapabilities?.()?.sessionCapabilities?.delete &&
+      !!client &&
+      typeof client.deleteSession === 'function' &&
+      this.canAddressSession(sessionId, client);
+    const deleted = deletable ? await client.deleteSession(sessionId) : false;
     this.deps.sessionStore.remove(sessionId);
     await this.deps.sessionStore.save();
+    if (deletable && !deleted && !this.disposed) {
+      this.activeRuntime.renderer.addSystemMessage(t().error.sessionDeleteUnconfirmed);
+    }
     if (!rt) return;
     // Losing the shown conversation must land the user on a fresh session,
     // exactly like before tabs existed.

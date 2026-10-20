@@ -71,7 +71,7 @@ import { z } from 'zod';
 // lost piece of the conversation.
 const UNPLACED_UPDATE_KINDS = new Set(['message_chunk', 'tool_call_snapshot', 'plan', 'notice', 'compaction']);
 
-export const CLIENT_VERSION = '0.2.81';
+export const CLIENT_VERSION = '0.2.82';
 
 /** Tail length of the agent stderr snapshot attached to a close error. */
 const STDERR_SNAPSHOT_CHARS = 800;
@@ -977,6 +977,27 @@ export class AcpClient implements OpencodeClient {
       return true;
     } catch (e) {
       console.warn(`[co-ober] failed to close session ${id}:`, e);
+      return false;
+    }
+  }
+
+  /**
+   * Ask the agent to forget a session outright, and report whether it
+   * acknowledged. Measured on 2.0.28, where `sessionCapabilities.delete` is
+   * advertised: an accepted `session/delete` takes the id out of
+   * `session/list`, later prompts and loads answer `-32602`, and a fresh
+   * process lists without it — the database row is gone, not just the
+   * connection's hold. `session/close` answers `{}` for a session that
+   * remains listed, loadable and persistent; it releases, it does not forget.
+   */
+  async deleteSession(id: string): Promise<boolean> {
+    this.loadedSessionIds.delete(id);
+    this.sessionMeta.delete(id);
+    try {
+      await this.requestWithFallback('deleteSession', { sessionId: id });
+      return true;
+    } catch (e) {
+      console.warn(`[co-ober] failed to delete session ${id}:`, e);
       return false;
     }
   }

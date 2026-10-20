@@ -9,6 +9,7 @@ export type AcpLogicalMethod =
   | 'setMode'
   | 'setConfigOption'
   | 'closeSession'
+  | 'deleteSession'
   | 'forkSession'
   | 'resumeSession';
 
@@ -23,6 +24,7 @@ const ACP_METHOD_CANDIDATES: Record<AcpLogicalMethod, readonly string[]> = {
   setMode: ['session/set_mode', 'setSessionMode'],
   setConfigOption: ['session/set_config_option', 'setSessionConfigOption'],
   closeSession: ['session/close', 'closeSession'],
+  deleteSession: ['session/delete', 'deleteSession'],
   forkSession: ['session/fork', 'session/unstable_fork', 'forkSession'],
   resumeSession: ['session/resume', 'resumeSession'],
   // No `setModel` entry, and that absence is a measurement rather than an oversight.

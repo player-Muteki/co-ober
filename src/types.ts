@@ -82,6 +82,7 @@ export interface AgentCapabilities {
   loadSession?: boolean;
   sessionCapabilities?: {
     close?: boolean;
+    delete?: boolean;
     fork?: boolean;
     list?: boolean;
     resume?: boolean;

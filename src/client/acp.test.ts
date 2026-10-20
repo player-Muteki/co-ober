@@ -1712,6 +1712,31 @@ describe('sendMessage flow', () => {
     await expect(broken.closeSession('s2')).resolves.toBe(false);
   });
 
+  it('forgets a session the agent accepted for deletion', async () => {
+    const client = new AcpClient('opencode');
+    const request = vi.fn().mockResolvedValue({});
+    Reflect.set(client, 'transport', { request });
+    Reflect.set(client, 'sessionId_', 's1');
+    client.sendMessage('s1', [], vi.fn()).catch(() => {});
+
+    dispatch(client, {
+      sessionId: 's1',
+      update: { sessionUpdate: 'current_model_update', currentModelId: 'gone-model', availableModels: [] },
+    });
+    expect(client.getSessionSnapshotFor('s1').currentModelId).toBe('gone-model');
+
+    await expect(client.deleteSession('s1')).resolves.toBe(true);
+    // Measured on 2.0.28: an accepted delete takes the id out of the
+    // database — list, load and prompt all lose it. Anything the agent last
+    // reported for that id is now true of nothing, exactly as with a close.
+    expect(client.getSessionSnapshotFor('s1').currentModelId).toBeNull();
+    expect(request).toHaveBeenCalledWith('session/delete', { sessionId: 's1' }, undefined, undefined);
+
+    const failing = new AcpClient('opencode');
+    Reflect.set(failing, 'transport', { request: vi.fn().mockRejectedValue(new Error('no delete here')) });
+    await expect(failing.deleteSession('s2')).resolves.toBe(false);
+  });
+
   it('clears per-session metadata when the connection goes away', async () => {
     const client = new AcpClient('opencode');
     Reflect.set(client, 'transport', { request: vi.fn().mockResolvedValue({}), dispose: vi.fn() });
