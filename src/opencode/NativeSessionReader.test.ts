@@ -1154,11 +1154,13 @@ describe('fork evidence against a kernel without data_migration (0.2.89)', () =>
 		});
 	});
 
-	// The rows below copy the shapes measured in the user's own 2.0.28 registry
-	// (0.2.90): clicking New session writes the registry row and its
-	// `agent-switched` event immediately, so an abandoned tab leaves a row whose
-	// newest timestamp outranks every real conversation; a session whose turn
-	// died on a provider error keeps the question and simply never gets a title.
+	// The rows below copy shapes measured on 2.0.28 (0.2.90). A rig `session/new`
+	// writes the registry row with zero events — no title, no agent — and the
+	// one abandoned row in the user's own database carries a single
+	// `agent-switched` event on top of that, so both are reproduced here. The
+	// fixture gives it the newest timestamp, which is how an empty shell lands
+	// near the top of a time-ordered list. A session whose turn died on a
+	// provider error keeps the question and simply never gets a title.
 	const SHELL = "insert into session_v2 (id, parent_id, fork_session_id, directory, title, time_archived, time_updated, summary_additions, summary_deletions, summary_files) values ('ses_shell', null, null, '/vault', null, null, 600, 0, 0, 0)";
 	const SHELL_AGENT_EVENT = `insert into session_message values ('m2', 'ses_shell', 'agent-switched', 1, 600, 600, '{"agent":"build"}')`;
 	const ERRORED = "insert into session_v2 (id, parent_id, fork_session_id, directory, title, time_archived, time_updated, summary_additions, summary_deletions, summary_files) values ('ses_errored', null, null, '/vault', null, null, 450, 0, 0, 0)";
@@ -1202,6 +1204,24 @@ describe('fork evidence against a kernel without data_migration (0.2.89)', () =>
 			const file = writeFixture('shell-search', [SESSION_V2, SESSION_MESSAGE, ERRORED, ERRORED_USER_EVENT, SHELL, SHELL_AGENT_EVENT]);
 			const found = await searchNativeSessions('/vault', '范式', { databasePath: file });
 			expect(found.map((s) => s.sessionId)).toEqual(['ses_errored']);
+			warn.mockRestore();
+		});
+
+		it('hides the bare row a rig session/new actually leaves behind', async () => {
+			const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			// Measured live (0.2.90 rig): `session/new` writes the registry row and
+			// no `session_message` event at all, so this is the shape without even
+			// the agent write the abandoned row in the user's database had.
+			const file = writeFixture('bare-shell', [
+				SESSION_V2,
+				SESSION_MESSAGE,
+				CURRENT,
+				USER_EVENT,
+				"insert into session_v2 (id, parent_id, fork_session_id, directory, title, time_archived, time_updated, summary_additions, summary_deletions, summary_files) values ('ses_bare', null, null, '/vault', null, null, 800, 0, 0, 0)",
+			]);
+			expect(await probeNativeSchema(file, { databasePath: file })).toBe('forked');
+			expect((await listNativeSessions('/vault', { databasePath: file })).map((s) => s.sessionId)).toEqual(['ses_now']);
+			expect(await readNativeSessionTranscript('ses_bare', { databasePath: file })).toEqual([]);
 			warn.mockRestore();
 		});
 	});

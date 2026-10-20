@@ -326,14 +326,16 @@ const V2_TIME_UPDATED_EXPR = [
  * same way `parent_id` children already do. The legacy `session` table has no
  * `fork_session_id` column at all (the schema probe counts six), so the
  * filter can only apply when the registry was read from `session_v2`.
- * The same gate also hides a registry row nobody ever spoke into. Measured on
- * the user's own 2.0.28 database: clicking New session writes the row and its
- * `agent-switched` event immediately, so abandoning the tab leaves a session
- * with zero user events, no title, and an empty transcript — the history
- * dropdown then labelled it with the raw `ses_…` id and restoring it opened a
- * pane with nothing in it. A row with at least one `user` event stays even when
- * the turn failed: two such rows here hold the prompt the user actually typed
- * and only lack a title because the kernel never titles an errored session.
+ * The same gate also hides a registry row nobody ever spoke into. Rig-measured
+ * on 2.0.28: `session/new` writes the row and nothing else — no title, no
+ * agent, no model, and zero `session_message` events — so an abandoned tab
+ * leaves a session the history dropdown labels with the raw `ses_…` id and
+ * restoring opens an empty pane. (The one such row in the user's own database
+ * additionally carries an `agent-switched` event, so something wrote its agent
+ * after creation; a bare new session does not even have that.) A row with at
+ * least one `user` event stays even when the turn failed: two such rows here
+ * hold the prompt the user actually typed and only lack a title because the
+ * kernel never titles an errored session.
  */
 function v2RegistryWhere(registry: NativeSessionRegistry): string {
 	if (registry !== 'session_v2') return 'where s.parent_id is null and s.time_archived is null';
