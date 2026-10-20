@@ -1004,10 +1004,16 @@ describe('native history hides forked scratch sessions (0.2.85)', () => {
 	it('filters fork_session_id only when the registry is session_v2', () => {
 		expect(buildNativeSessionsSqlV2('/vault', 50, 'session_v2')).toContain('s.fork_session_id is null');
 		expect(buildNativeSessionSearchSqlV2('/vault', 'needle', 20, 'session_v2')).toContain('s.fork_session_id is null');
+		// 0.2.90: the same gate also drops a registry row with no user event.
+		expect(buildNativeSessionsSqlV2('/vault', 50, 'session_v2')).toContain(`sm.session_id = s.id and sm.type = 'user'`);
 		// The shared-registry default keeps its byte-identical shape: the
 		// column does not exist there and naming it would break every read.
 		expect(buildNativeSessionsSqlV2('/vault')).not.toContain('fork_session_id');
 		expect(buildNativeSessionSearchSqlV2('/vault', 'needle')).not.toContain('fork_session_id');
+		// Nor may the user-event filter ride the legacy registry: a database
+		// whose registry is `session` is not promised a `session_message` table.
+		expect(buildNativeSessionsSqlV2('/vault')).not.toContain("sm.type = 'user'");
+		expect(buildNativeSessionsSqlV2('/vault', 50, 'session')).not.toContain("sm.type = 'user'");
 		expect(buildNativeSessionsSql('/vault')).not.toContain('fork_session_id');
 		expect(buildNativeSessionSearchSql('/vault', 'needle')).not.toContain('fork_session_id');
 	});
@@ -1144,6 +1150,58 @@ describe('fork evidence against a kernel without data_migration (0.2.89)', () =>
 			const file = writeFixture('neither', ['create table kv (key text primary key, value text)']);
 			expect(await probeNativeSchema(file, { databasePath: file })).toBe('incompatible');
 			await expect(listNativeSessions('/vault', { databasePath: file })).rejects.toThrow(/unrecognized|unavailable/);
+			warn.mockRestore();
+		});
+	});
+
+	// The rows below copy the shapes measured in the user's own 2.0.28 registry
+	// (0.2.90): clicking New session writes the registry row and its
+	// `agent-switched` event immediately, so an abandoned tab leaves a row whose
+	// newest timestamp outranks every real conversation; a session whose turn
+	// died on a provider error keeps the question and simply never gets a title.
+	const SHELL = "insert into session_v2 (id, parent_id, fork_session_id, directory, title, time_archived, time_updated, summary_additions, summary_deletions, summary_files) values ('ses_shell', null, null, '/vault', null, null, 600, 0, 0, 0)";
+	const SHELL_AGENT_EVENT = `insert into session_message values ('m2', 'ses_shell', 'agent-switched', 1, 600, 600, '{"agent":"build"}')`;
+	const ERRORED = "insert into session_v2 (id, parent_id, fork_session_id, directory, title, time_archived, time_updated, summary_additions, summary_deletions, summary_files) values ('ses_errored', null, null, '/vault', null, null, 450, 0, 0, 0)";
+	const ERRORED_USER_EVENT = `insert into session_message values ('m3', 'ses_errored', 'user', 5, 455, 455, '{"text":"按照前面的范式重写2.9.1"}')`;
+	const ERRORED_IDLE_EVENT = `insert into session_message values ('m4', 'ses_errored', 'idle', 8, 460, 460, '{"outcome":"failed"}')`;
+
+	maybe('a registry row nobody ever spoke into (0.2.90)', () => {
+		it('hides the abandoned shell and keeps the errored conversation', async () => {
+			const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			const file = writeFixture('shell', [
+				LEGACY_SESSION,
+				SESSION_V2,
+				SESSION_MESSAGE,
+				FOSSIL,
+				CURRENT,
+				SCRATCH,
+				USER_EVENT,
+				SHELL,
+				SHELL_AGENT_EVENT,
+				ERRORED,
+				ERRORED_USER_EVENT,
+				ERRORED_IDLE_EVENT,
+			]);
+			expect(await probeNativeSchema(file, { databasePath: file })).toBe('forked');
+			// `ses_shell` is the newest row in the registry, so a listing that
+			// read it would put it first; what is left is in time order.
+			const sessions = await listNativeSessions('/vault', { databasePath: file });
+			expect(sessions.map((s) => s.sessionId)).toEqual(['ses_now', 'ses_errored']);
+			// The premise for hiding it: there was nothing to restore.
+			expect(await readNativeSessionTranscript('ses_shell', { databasePath: file })).toEqual([]);
+			// The premise for keeping the other: the question outlived its failed
+			// turn, and the kernel never titled the session.
+			const restored = await readNativeSessionTranscript('ses_errored', { databasePath: file });
+			expect(restored.map((m) => m.role)).toEqual(['user']);
+			expect(sessions.find((s) => s.sessionId === 'ses_errored')?.title).toBe('ses_errored');
+			warn.mockRestore();
+		});
+
+		it('keeps a titled-less session searchable by its question', async () => {
+			const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			const file = writeFixture('shell-search', [SESSION_V2, SESSION_MESSAGE, ERRORED, ERRORED_USER_EVENT, SHELL, SHELL_AGENT_EVENT]);
+			const found = await searchNativeSessions('/vault', '范式', { databasePath: file });
+			expect(found.map((s) => s.sessionId)).toEqual(['ses_errored']);
 			warn.mockRestore();
 		});
 	});

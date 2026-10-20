@@ -288,8 +288,13 @@ export function buildNativeSessionsSql(cwd: string, limit: number = NATIVE_SESSI
 	const prefix = escapeSqlLiteral(escapeLikePattern(needle)) + '/%';
 	const safeLimit = Math.max(1, Math.min(500, Math.floor(limit) || NATIVE_SESSION_LIMIT));
 	return [
-		// `agent`/`model` exist on the v1 session table; the v2 variant omits
-		// them because forked databases do not guarantee the columns.
+		// `agent`/`model` are selected here because the legacy registry has always
+		// carried them. The v2 listing omits the two columns: measured on 2.0.28,
+		// `session_v2` does have both (22/22 rows with an agent, 18/22 with a model,
+		// `model` holding a JSON object rather than an id) and nothing in co-ober
+		// reads `SessionMeta.agent`/`.model`, so the asymmetry is invisible — the
+		// honest fix for the mismatch is to name the consumer first, not to add
+		// columns no one asks for.
 		'select id, title, directory, time_updated, summary_additions, summary_deletions, summary_files, agent, model from session',
 		`where parent_id is null and time_archived is null`,
 		`and (directory = '${exact}' or directory like '${prefix}' escape '\\')`,
@@ -321,11 +326,21 @@ const V2_TIME_UPDATED_EXPR = [
  * same way `parent_id` children already do. The legacy `session` table has no
  * `fork_session_id` column at all (the schema probe counts six), so the
  * filter can only apply when the registry was read from `session_v2`.
+ * The same gate also hides a registry row nobody ever spoke into. Measured on
+ * the user's own 2.0.28 database: clicking New session writes the row and its
+ * `agent-switched` event immediately, so abandoning the tab leaves a session
+ * with zero user events, no title, and an empty transcript — the history
+ * dropdown then labelled it with the raw `ses_…` id and restoring it opened a
+ * pane with nothing in it. A row with at least one `user` event stays even when
+ * the turn failed: two such rows here hold the prompt the user actually typed
+ * and only lack a title because the kernel never titles an errored session.
  */
 function v2RegistryWhere(registry: NativeSessionRegistry): string {
-	return registry === 'session_v2'
-		? 'where s.parent_id is null and s.fork_session_id is null and s.time_archived is null'
-		: 'where s.parent_id is null and s.time_archived is null';
+	if (registry !== 'session_v2') return 'where s.parent_id is null and s.time_archived is null';
+	return [
+		'where s.parent_id is null and s.fork_session_id is null and s.time_archived is null',
+		`and exists (select 1 from session_message sm where sm.session_id = s.id and sm.type = 'user')`,
+	].join(' ');
 }
 
 export function buildNativeSessionsSqlV2(cwd: string, limit: number = NATIVE_SESSION_LIMIT, registry: NativeSessionRegistry = 'session'): string {
