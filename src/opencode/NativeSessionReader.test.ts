@@ -3,6 +3,7 @@ import type { SqliteRow } from './SqliteReader';
 import {
 	escapeSqlLiteral,
 	escapeLikePattern,
+	normalizeNativeDirectory,
 	buildNativeSessionsSql,
 	buildNativeSessionsSqlV2,
 	listNativeSessions,
@@ -896,6 +897,76 @@ describe('native session registry follows the current table (0.2.83)', () => {
 		expect(buildNativeSessionsSqlV2('/vault')).toContain('from session s');
 		expect(buildNativeSessionSearchSqlV2('/vault', 'needle', 20, 'session_v2')).toContain('from session_v2 s');
 		expect(buildNativeSessionSearchSqlV2('/vault', 'needle')).toContain('from session s');
+	});
+});
+
+// 0.2.84: measured on opencode 2.0.28 with a live rig — `session/new` handed
+// the Windows shape `D:\vault` stores the row as `directory = 'D:/vault'`,
+// while the listing filter built from the raw backslash shape matches zero
+// rows in the real database (0 vs 1 for the same session). Every directory
+// filter therefore compares in the slash shape the kernel writes.
+describe('native directory filter matches the stored shape (0.2.84)', () => {
+	it('normalizes a Windows cwd to the slash shape the kernel stores', () => {
+		expect(normalizeNativeDirectory('D:\\vault')).toBe('D:/vault');
+		expect(normalizeNativeDirectory('D:/vault')).toBe('D:/vault');
+		expect(normalizeNativeDirectory('/vault')).toBe('/vault');
+	});
+
+	it('builds every directory predicate in the normalized shape', () => {
+		for (const sql of [
+			buildNativeSessionsSql('D:\\vault'),
+			buildNativeSessionsSqlV2('D:\\vault', 50, 'session_v2'),
+			buildNativeSessionSearchSql('D:\\vault', 'needle'),
+			buildNativeSessionSearchSqlV2('D:\\vault', 'needle', 20, 'session_v2'),
+		]) {
+			expect(sql).toContain(`= 'D:/vault'`);
+			expect(sql).toContain(`like 'D:/vault/%'`);
+			expect(sql).not.toContain("'D:\\\\vault'");
+		}
+	});
+
+	// A fake database that answers only the stored shape: reverting the
+	// normalization makes the executed predicate carry backslashes, this
+	// database answers nothing, and both reads come back empty.
+	function slashStoreSqlite() {
+		const seen: string[] = [];
+		const storedRow = [{ id: 'ses_real', title: 'Vault session', directory: 'D:/vault', time_updated: 500 }];
+		const probeRow = { session_table: 1, session_columns: 6, v2_tables: 3 };
+		return {
+			seen,
+			deps: {
+				requireSqliteModule: () => ({
+					DatabaseSync: class {
+						constructor() {}
+						close() {}
+						prepare(sql: string) {
+							seen.push(sql);
+							if (sql.includes('sqlite_master')) return { all: () => [probeRow] };
+							if (sql.includes('data_migration')) return { all: () => [{ migrated: 0, v2_rows: 1591, registry_v2_rows: 25 }] };
+							if (sql.includes('from session_v2 s') && sql.includes(`= 'D:/vault'`)) return { all: () => storedRow };
+							return { all: () => [] };
+						}
+					},
+				}),
+			},
+		} as const;
+	}
+
+	it('lists the vault session when the caller hands a backslash cwd', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const { seen, deps } = slashStoreSqlite();
+		const sessions = await listNativeSessions('D:\\vault', { databasePath: dbPath, sqlite: deps as never });
+		expect(sessions.map((s) => s.sessionId)).toEqual(['ses_real']);
+		expect(seen.some((sql) => sql.includes('from session_v2 s') && sql.includes(`= 'D:/vault'`))).toBe(true);
+		warn.mockRestore();
+	});
+
+	it('finds the vault session by content search with a backslash cwd', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const { deps } = slashStoreSqlite();
+		const found = await searchNativeSessions('D:\\vault', 'needle', { databasePath: dbPath, sqlite: deps as never });
+		expect(found.map((s) => s.sessionId)).toEqual(['ses_real']);
+		warn.mockRestore();
 	});
 });
 

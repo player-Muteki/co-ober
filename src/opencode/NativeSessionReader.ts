@@ -197,9 +197,22 @@ export function escapeLikePattern(value: string): string {
 		.split('_').join('\\_');
 }
 
+/**
+ * The kernel rewrites a Windows cwd to forward slashes before storing it —
+ * measured on 2.0.28: `session/new` with cwd `D:\vault` writes the row
+ * `directory = 'D:/vault'`, and the listing filter built from the raw
+ * backslash shape matches zero rows. Every directory filter goes through
+ * this normalization so the comparison happens in the shape the database
+ * actually holds. Inputs already slash-shaped pass through unchanged.
+ */
+export function normalizeNativeDirectory(cwd: string): string {
+	return cwd.split('\\').join('/');
+}
+
 export function buildNativeSessionsSql(cwd: string, limit: number = NATIVE_SESSION_LIMIT): string {
-	const exact = escapeSqlLiteral(cwd);
-	const prefix = escapeSqlLiteral(escapeLikePattern(cwd)) + '/%';
+	const needle = normalizeNativeDirectory(cwd);
+	const exact = escapeSqlLiteral(needle);
+	const prefix = escapeSqlLiteral(escapeLikePattern(needle)) + '/%';
 	const safeLimit = Math.max(1, Math.min(500, Math.floor(limit) || NATIVE_SESSION_LIMIT));
 	return [
 		// `agent`/`model` exist on the v1 session table; the v2 variant omits
@@ -228,8 +241,9 @@ const V2_TIME_UPDATED_EXPR = [
 ].join(' ');
 
 export function buildNativeSessionsSqlV2(cwd: string, limit: number = NATIVE_SESSION_LIMIT, registry: NativeSessionRegistry = 'session'): string {
-	const exact = escapeSqlLiteral(cwd);
-	const prefix = escapeSqlLiteral(escapeLikePattern(cwd)) + '/%';
+	const needle = normalizeNativeDirectory(cwd);
+	const exact = escapeSqlLiteral(needle);
+	const prefix = escapeSqlLiteral(escapeLikePattern(needle)) + '/%';
 	const safeLimit = Math.max(1, Math.min(500, Math.floor(limit) || NATIVE_SESSION_LIMIT));
 	return [
 		`select s.id, s.title, s.directory, ${V2_TIME_UPDATED_EXPR},`,
@@ -256,8 +270,9 @@ function v2MessageTextSelects(sessionIdExpr: string, query: string): string[] {
 }
 
 export function buildNativeSessionSearchSqlV2(cwd: string, query: string, limit: number = NATIVE_SESSION_SEARCH_LIMIT, registry: NativeSessionRegistry = 'session'): string {
-	const exact = escapeSqlLiteral(cwd);
-	const prefix = escapeSqlLiteral(escapeLikePattern(cwd)) + '/%';
+	const needle = normalizeNativeDirectory(cwd);
+	const exact = escapeSqlLiteral(needle);
+	const prefix = escapeSqlLiteral(escapeLikePattern(needle)) + '/%';
 	const term = escapeSqlLiteral(query);
 	const safeLimit = Math.max(1, Math.min(200, Math.floor(limit) || NATIVE_SESSION_SEARCH_LIMIT));
 	const textSelects = v2MessageTextSelects('s.id', query);
@@ -868,8 +883,9 @@ export async function listNativeSessions(cwd: string, deps: NativeSessionReaderD
  * extracts 100 characters around the first text-part match.
  */
 export function buildNativeSessionSearchSql(cwd: string, query: string, limit: number = NATIVE_SESSION_SEARCH_LIMIT): string {
-	const exact = escapeSqlLiteral(cwd);
-	const prefix = escapeSqlLiteral(escapeLikePattern(cwd)) + '/%';
+	const needle = normalizeNativeDirectory(cwd);
+	const exact = escapeSqlLiteral(needle);
+	const prefix = escapeSqlLiteral(escapeLikePattern(needle)) + '/%';
 	const term = escapeSqlLiteral(query);
 	const like = `'${escapeSqlLiteral(`%${escapeLikePattern(query)}%`)}'`;
 	const safeLimit = Math.max(1, Math.min(200, Math.floor(limit) || NATIVE_SESSION_SEARCH_LIMIT));
