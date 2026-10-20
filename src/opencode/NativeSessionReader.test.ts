@@ -542,11 +542,18 @@ describe('v2 (forked database) SQL builders', () => {
 		expect(buildSessionUsageSqlV2('ses_a', 'session')).toContain("from session s where s.id = 'ses_a'");
 	});
 
-	it('orders message stats by seq', () => {
+	it('reads each message its own cost and token parts, in seq order', () => {
 		const sql = buildMessageStatsSqlV2('ses_a');
 		expect(sql).toContain("sm.type = 'assistant'");
-		expect(sql).toContain("json_extract(j.value, '$.type') = 'step-finish'");
+		expect(sql).toContain("json_extract(sm.data, '$.cost')");
+		expect(sql).toContain("json_extract(sm.data, '$.tokens.cache.read')");
 		expect(sql).toContain('order by sm.seq asc');
+		// The two shapes v2 does not write must stay out of the v2 builder: the
+		// step-finish part belongs to the legacy `part` table (12 of 12 rows there)
+		// and appears in 0 of the 1,389 session_message assistant events.
+		expect(sql).not.toContain('step-finish');
+		expect(sql).not.toContain('json_each');
+		expect(sql).not.toContain('$.tokens.total');
 	});
 
 	it('reads tool errors from inlined content parts', () => {
@@ -673,11 +680,14 @@ describe('v2 SQL against a real SQLite engine', () => {
 				"('m_user', 'ses_a', 'user', 1, 200, 200, '{\"text\":\"hello needle here\"}'), " +
 				"('m_ctrl', 'ses_a', 'session.updated', 2, 300, 300, '{}'), " +
 				"('m_asst', 'ses_a', 'assistant', 3, 400, 400, " +
-					"'{\"time\":{\"created\":400,\"completed\":6400},\"finish\":\"stop\"," +
-					"\"tokens\":{\"input\":10,\"output\":5,\"reasoning\":2,\"total\":17,\"cache\":{\"read\":90,\"write\":3}}," +
-					"\"content\":[{\"type\":\"step-finish\",\"cost\":0.5,\"tokens\":{\"input\":10,\"output\":5,\"total\":15}}," +
-					"{\"type\":\"text\",\"text\":\"reply about needle here\"}," +
-					"{\"type\":\"tool\",\"callID\":\"call_1\",\"state\":{\"error\":\"boom\"}}]}')",
+					// The shape measured on the real 2.0.28 event log: cost and the
+					// token parts are properties of the assistant row itself, and
+					// `content` holds text/tool/reasoning parts only — never a
+					// step-finish (0 of 1,389 events) and never `tokens.total`.
+					"'{\"time\":{\"created\":400,\"completed\":6400},\"finish\":\"stop\",\"cost\":0.5," +
+						"\"tokens\":{\"input\":10,\"output\":5,\"reasoning\":2,\"cache\":{\"read\":90,\"write\":3}}," +
+						"\"content\":[{\"type\":\"text\",\"text\":\"reply about needle here\"}," +
+						"{\"type\":\"tool\",\"callID\":\"call_1\",\"state\":{\"error\":\"boom\"}}]}')",
 		);
 		// The two rows below are the shape measured on the real `opencode v2.0.28`
 		// database, where 0 of 1,389 assistant events carry a step-finish part or a
@@ -699,6 +709,10 @@ describe('v2 SQL against a real SQLite engine', () => {
 			'insert into session_message values ' +
 				"('m_fork_1', 'ses_fork', 'assistant', 1, 800, 800, '{\"finish\":\"tool-calls\",\"cost\":0,\"tokens\":{\"input\":11527,\"output\":4,\"reasoning\":0,\"cache\":{\"read\":256,\"write\":0}},\"content\":[{\"type\":\"text\",\"text\":\"copied from the parent\"}]}'), " +
 				"('m_fork_2', 'ses_fork', 'assistant', 2, 810, 810, '{\"finish\":\"stop\",\"cost\":0,\"tokens\":{\"input\":2467,\"output\":4,\"reasoning\":0,\"cache\":{\"read\":11520,\"write\":0}},\"content\":[{\"type\":\"text\",\"text\":\"the thread said one word\"}]}')",
+		);
+		exec("insert into session_v2 values ('ses_sparse', null, null, '/vault', 'Sparse', null, 900, 0, 0, 0, 0, 5, 1, 0, 0, 0)");
+		exec(
+			`insert into session_message values ('m_sparse', 'ses_sparse', 'assistant', 1, 900, 900, '{"finish":"stop","cost":0,"content":[{"type":"text","text":"a turn that reported nothing"}]}')`,
 		);
 		db = real;
 	} catch {
@@ -735,7 +749,7 @@ describe('v2 SQL against a real SQLite engine', () => {
 			});
 
 			const stats = db!.prepare(buildMessageStatsSqlV2('ses_a')).all();
-			expect(stats).toEqual([{ message_id: 'm_asst', cost: 0.5, input_tokens: 10, output_tokens: 5, total_tokens: 17 }]);
+			expect(stats).toEqual([{ message_id: 'm_asst', cost: 0.5, input_tokens: 10, output_tokens: 5, total_tokens: 107 }]);
 
 			const errors = db!.prepare(buildToolErrorsSqlV2('ses_a')).all();
 			expect(errors).toEqual([{ call_id: 'call_1', error: 'boom' }]);
@@ -786,11 +800,24 @@ describe('v2 SQL against a real SQLite engine', () => {
 		});
 
 		it('leaves context unreported when no assistant turn gave tokens', () => {
-			db!.prepare("insert into session_v2 values ('ses_sparse', null, null, '/vault', 'Sparse', null, 900, 0, 0, 0, 0, 5, 1, 0, 0, 0)").run();
-			db!.prepare(`insert into session_message values ('m_sparse', 'ses_sparse', 'assistant', 1, 900, 900, '{"finish":"stop","cost":0,"content":[{"type":"text","text":"a turn that reported nothing"}]}')`).run();
 			const row = db!.prepare(buildSessionUsageSqlV2('ses_sparse', 'session_v2')).all()[0];
 			expect(row.tokens_input).toBe(5);
 			expect(row.context_tokens).toBeNull();
+		});
+
+		it('reads each message its own cost and keeps a silent one in the list', () => {
+			// ses_live's two events carry no step-finish part and no tokens.total —
+			// the only cost they hold is the row's own, and their totals are the
+			// parts added up the way the kernel adds them up itself.
+			expect(db!.prepare(buildMessageStatsSqlV2('ses_live')).all()).toEqual([
+				{ message_id: 'm_live_1', cost: 0, input_tokens: 11527, output_tokens: 4, total_tokens: 11787 },
+				{ message_id: 'm_live_2', cost: 0, input_tokens: 421, output_tokens: 5, total_tokens: 13995 },
+			]);
+			// A message that reported no tokens at all stays in the positional list
+			// with zeros rather than vanishing and shifting every later pairing.
+			expect(db!.prepare(buildMessageStatsSqlV2('ses_sparse')).all()).toEqual([
+				{ message_id: 'm_sparse', cost: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+			]);
 		});
 	});
 });

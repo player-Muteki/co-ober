@@ -606,15 +606,37 @@ export function buildMessageStatsSql(sessionId: string): string {
 	].join(' ');
 }
 
+/**
+ * Per-message cost and tokens for the v2 event log: the assistant row carries
+ * its own top-level `cost` and a `tokens` object, and the message total is the
+ * sum of the token parts.
+ *
+ * The step-finish walk this replaced was copied from the v1 builder, where it
+ * is right — measured on the real database, all 12 legacy `part` rows of type
+ * `step-finish` carry a `cost` and a `tokens.total`. In `session_message` that
+ * part type does not exist: 0 of 1,389 assistant events contain one, and their
+ * `content` holds only `tool` (1,371), `reasoning` (779) and `text` (438)
+ * parts, so cost came back 0 and `tokens.total` (also absent from every event)
+ * came back 0 for every message. The top-level `cost` key is present on 1,383
+ * of those events — the same 6 that carry no `tokens` object at all.
+ *
+ * On this host every one of those costs is 0 because the models in use are
+ * free, so the change is proved on shape, not on value: no per-message number
+ * a reader can see moves. A message with no `tokens` object keeps answering 0
+ * rather than dropping out of the list, because a replayed transcript is
+ * matched to these rows positionally when it carries no native message ids.
+ */
 export function buildMessageStatsSqlV2(sessionId: string): string {
 	const id = escapeSqlLiteral(sessionId);
 	return [
 		'select sm.id as message_id,',
-		"(select coalesce(sum(cast(json_extract(j.value, '$.cost') as real)), 0)",
-		`from json_each(sm.data, '$.content') j where json_extract(j.value, '$.type') = 'step-finish') as cost,`,
+		"coalesce(cast(json_extract(sm.data, '$.cost') as real), 0) as cost,",
 		"coalesce(cast(json_extract(sm.data, '$.tokens.input') as integer), 0) as input_tokens,",
 		"coalesce(cast(json_extract(sm.data, '$.tokens.output') as integer), 0) as output_tokens,",
-		"coalesce(cast(json_extract(sm.data, '$.tokens.total') as integer), 0) as total_tokens",
+		"(coalesce(cast(json_extract(sm.data, '$.tokens.input') as integer), 0)",
+		"+ coalesce(cast(json_extract(sm.data, '$.tokens.output') as integer), 0)",
+		"+ coalesce(cast(json_extract(sm.data, '$.tokens.reasoning') as integer), 0)",
+		"+ coalesce(cast(json_extract(sm.data, '$.tokens.cache.read') as integer), 0)) as total_tokens",
 		'from session_message sm',
 		`where sm.session_id = '${id}' and sm.type = 'assistant' and json_valid(sm.data)`,
 		'order by sm.seq asc',
