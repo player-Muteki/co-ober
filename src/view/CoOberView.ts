@@ -1301,6 +1301,7 @@ export class CoOberView extends ItemView {
     this.lastMeterUsage = usage;
     const R = 18;
     const ARC_LEN = Math.PI * R;
+    const fmt = (n: number) => (n >= K_FORMAT_THRESHOLD ? `${(n / K_FORMAT_THRESHOLD).toFixed(1)}k` : String(n));
 
     // The dash means "the agent has not told us", which is not the same fact as
     // "the window is empty": a session whose very first tokens are counted reads
@@ -1308,16 +1309,29 @@ export class CoOberView extends ItemView {
     // fresh conversation from one whose numbers never arrived.
     const pct = usage ? contextPercentage(usage) : null;
     if (!usage || pct === null) {
-      this.meterEl.addClass('empty');
       this.meterEl.removeClass('warning', 'critical');
-      this.meterPctEl.setText('—');
-      // A screen reader hears this value, and "0" said the window was empty on
-      // the same reading that put a dash — "not reported" — on screen. The meter
-      // goes value-less and names the state instead.
-      this.meterEl.removeAttribute('aria-valuenow');
-      this.meterEl.setAttribute('aria-valuetext', t().usage.notReported);
       this.meterArcFill.setAttribute('stroke-dasharray', `0 ${ARC_LEN}`);
-      this.meterEl.removeAttribute('data-tooltip');
+      this.meterEl.removeAttribute('aria-valuenow');
+      const used = usage?.contextTokens;
+      if (used === undefined) {
+        this.meterEl.addClass('empty');
+        this.meterPctEl.setText('—');
+        // A screen reader hears this value, and "0" said the window was empty on
+        // the same reading that put a dash — "not reported" — on screen. The meter
+        // goes value-less and names the state instead.
+        this.meterEl.setAttribute('aria-valuetext', t().usage.notReported);
+        this.meterEl.removeAttribute('data-tooltip');
+        return;
+      }
+      // Nothing was divided here, so no percentage is claimed — but the context
+      // size itself did arrive: the native reader has been answering it from the
+      // kernel's own registry since 0.2.91, while the window only ever comes off
+      // a live usage frame. One dash covered both states, so a restored tab that
+      // knew how full the conversation was still showed the reader nothing.
+      this.meterEl.removeClass('empty');
+      this.meterPctEl.setText(fmt(used));
+      this.meterEl.setAttribute('aria-valuetext', t().usage.contextUsedOnly.replace('{used}', fmt(used)));
+      this.meterEl.setAttribute('data-tooltip', `${t().usage.context}: ${fmt(used)} / — ${t().usage.tokensUnit}`);
       return;
     }
 
@@ -1340,7 +1354,6 @@ export class CoOberView extends ItemView {
       this.meterEl.addClass('warning');
     }
 
-    const fmt = (n: number) => (n >= K_FORMAT_THRESHOLD ? `${(n / K_FORMAT_THRESHOLD).toFixed(1)}k` : String(n));
     const tooltip = [
       `${t().usage.context}: ${fmt(used)} / ${fmt(contextWindow)} ${t().usage.tokensUnit}`,
       // The meter reaches here on a context reading alone; an agent that

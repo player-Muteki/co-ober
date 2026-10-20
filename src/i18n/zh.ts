@@ -474,6 +474,7 @@ const zh: Locale = {
     context: '上下文',
     contextMeterAria: '上下文用量',
     notReported: '未报告',
+    contextUsedOnly: '上下文已用 {used}；窗口未报告',
     tokensUnit: 'tokens',
     approachingLimit: '⚠ 接近上限——请运行 /compact',
   },

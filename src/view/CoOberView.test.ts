@@ -1333,6 +1333,42 @@ describe('the context meter', () => {
     expect(meterOf(view).classList.contains('empty')).toBe(true);
   });
 
+  it('shows the context the kernel reported when no window ever arrived', async () => {
+    const view = await openMeterView();
+    // Since 0.2.91 a restored session answers its context size from the kernel's
+    // own registry, while the window only ever comes off a live usage frame — a
+    // session measured but never re-run had a numerator and got the dash that
+    // claims nothing was reported.
+    view.updateContextMeter({ totalTokens: 0, inputTokens: 0, outputTokens: 0, contextTokens: 472253 });
+    expect(pctOf(view)).toBe('472.3k');
+    expect(meterOf(view).classList.contains('empty')).toBe(false);
+    // No denominator means no ratio: the meter shows a count, never a percentage,
+    // and drops its numeric value for a screen reader rather than inventing one.
+    expect(pctOf(view)).not.toContain('%');
+    expect(meterOf(view).hasAttribute('aria-valuenow')).toBe(false);
+    expect(meterOf(view).getAttribute('aria-valuetext')).toBe(t().usage.contextUsedOnly.replace('{used}', '472.3k'));
+    expect(meterOf(view).getAttribute('data-tooltip')).toContain('472.3k / —');
+  });
+
+  it('keeps the dash for the state where neither side was reported', async () => {
+    const view = await openMeterView();
+    view.updateContextMeter({ totalTokens: 40, inputTokens: 40, outputTokens: 0 });
+    expect(pctOf(view)).toBe('—');
+    expect(meterOf(view).classList.contains('empty')).toBe(true);
+    expect(meterOf(view).getAttribute('aria-valuetext')).toBe(t().usage.notReported);
+    expect(meterOf(view).hasAttribute('data-tooltip')).toBe(false);
+  });
+
+  it('re-speaks a window-free reading when the language changes', async () => {
+    const view = await openMeterView();
+    view.updateContextMeter({ totalTokens: 0, inputTokens: 0, outputTokens: 0, contextTokens: 472253 });
+    setLocale('zh');
+    view.refreshLocale();
+    expect(meterOf(view).getAttribute('data-tooltip')).toContain(`${t().usage.context}: 472.3k / —`);
+    expect(meterOf(view).getAttribute('aria-valuetext')).toBe(t().usage.contextUsedOnly.replace('{used}', '472.3k'));
+    setLocale('en');
+  });
+
   it('says the limit is near on the same reading that turns the arc orange', async () => {
     const view = await openMeterView();
     view.updateContextMeter(usageAt(CONTEXT_METER_WARNING_PCT));

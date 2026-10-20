@@ -473,6 +473,7 @@ const en = {
     context: 'Context',
     contextMeterAria: 'Context window usage',
     notReported: 'not reported',
+    contextUsedOnly: 'Context {used} used; window not reported',
     tokensUnit: 'tokens',
     approachingLimit: '⚠ Approaching limit — run /compact',
   },
