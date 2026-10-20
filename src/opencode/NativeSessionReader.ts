@@ -38,9 +38,12 @@ export type NativeSchemaKind = 'v1' | 'forked' | 'incompatible' | 'unknown';
 // v1.18 also keeps the legacy v1 tables while new writes land in v2
 // (`session_message` events, `data_migration` completion markers), so a v1
 // shape alone no longer proves the rows are current — a fork must be
-// detected too. `session_message` foreign-keys to `session`, so the session
-// registry stays shared across the fork and only the message/part tables go
-// stale; forked databases read content through the v2 tables instead.
+// detected too. Later kernels (measured on 2.0.28) go further and move the
+// session registry itself into `session_v2`: the legacy `session` rows then
+// fossilize at their migration-time values while every new session lives only
+// in `session_v2`. Forked databases therefore read content through the v2
+// event tables and, when `session_v2` carries rows, the session registry
+// there too.
 const SCHEMA_PROBE_SQL = [
 	'select',
 	"(select count(*) from sqlite_master where type = 'table' and name = 'session') as session_table,",
@@ -51,12 +54,29 @@ const SCHEMA_PROBE_SQL = [
 const SCHEMA_FORK_SQL = [
 	'select',
 	'(select count(*) from data_migration) as migrated,',
-	'(select count(*) from session_message) as v2_rows',
+	'(select count(*) from session_message) as v2_rows,',
+	"(select count(*) from pragma_table_info('session_v2')) as registry_v2_rows",
 ].join(' ');
 
-const schemaProbeCache = new Map<string, NativeSchemaKind>();
+const schemaProbeCache = new Map<string, NativeSchemaProbe>();
 const warnedDegraded = new Set<string>();
 const SCHEMA_CACHE_LIMIT = 16;
+
+/**
+ * The schema class plus which table currently holds the session registry.
+ * Measured on `opencode v2.0.28`: the legacy `session` table keeps only the
+ * rows written before the storage migration — new sessions land in
+ * `session_v2` alone. A forked database with `session_v2` rows reads the
+ * registry there; an older fork that shares the `session` registry (or a
+ * failed evidence read, where reading `session_v2` could only invent rows)
+ * keeps reading `session`.
+ */
+interface NativeSchemaProbe {
+	kind: NativeSchemaKind;
+	registry: NativeSessionRegistry;
+}
+
+export type NativeSessionRegistry = 'session' | 'session_v2';
 
 /** True when native reads must be degraded for this schema classification. */
 export function isDegradedNativeSchema(kind: NativeSchemaKind): boolean {
@@ -66,19 +86,11 @@ export function isDegradedNativeSchema(kind: NativeSchemaKind): boolean {
 /** Which message tables carry current data for a readable database. */
 export type NativeReadFormat = 'v1' | 'v2';
 
-/**
- * Resolve the message storage a readable database currently uses.
+/** Which message storage a readable database currently uses, and where its session registry lives.
  * Null means the schema is incompatible and native reads must be skipped;
  * 'unknown' probes stay on v1 so existing behavior is unchanged.
  */
-async function resolveNativeReadFormat(databasePath: string, deps: NativeSessionReaderDeps): Promise<NativeReadFormat | null> {
-	const kind = await probeNativeSchema(databasePath, deps);
-	if (kind === 'incompatible') return null;
-	return kind === 'forked' ? 'v2' : 'v1';
-}
-
-/** Classify an OpenCode database against the v1 schema; the result is cached per path. */
-export async function probeNativeSchema(databasePath: string, deps: NativeSessionReaderDeps = {}): Promise<NativeSchemaKind> {
+async function resolveNativeSchemaProbe(databasePath: string, deps: NativeSessionReaderDeps): Promise<NativeSchemaProbe> {
 	const cached = schemaProbeCache.get(databasePath);
 	if (cached) return cached;
 	let rows: SqliteRow[];
@@ -88,22 +100,26 @@ export async function probeNativeSchema(databasePath: string, deps: NativeSessio
 		// The probe fails exactly when the database itself is unreadable; leave
 		// it unknown (uncached) and let the real query degrade on its own.
 		console.warn('[co-ober] native OpenCode schema probe unavailable:', error);
-		return 'unknown';
+		return { kind: 'unknown', registry: 'session' };
 	}
 	const row: SqliteRow | undefined = rows[0];
 	const sessionTable = typeof row?.session_table === 'number' ? row.session_table : 0;
 	const sessionColumns = typeof row?.session_columns === 'number' ? row.session_columns : 0;
 	const v2Tables = typeof row?.v2_tables === 'number' ? row.v2_tables : 0;
 	let kind: NativeSchemaKind;
+	let registry: NativeSessionRegistry = 'session';
 	if (sessionTable < 1 || sessionColumns < 6) {
 		kind = 'incompatible';
 	} else if (v2Tables > 0) {
-		kind = (await hasV2DataDiverged(databasePath, deps)) ? 'forked' : 'v1';
+		const evidence = await readForkEvidence(databasePath, deps);
+		kind = evidence.diverged ? 'forked' : 'v1';
+		registry = evidence.registry;
 	} else {
 		kind = 'v1';
 	}
+	const probe: NativeSchemaProbe = { kind, registry };
 	if (schemaProbeCache.size >= SCHEMA_CACHE_LIMIT) schemaProbeCache.clear();
-	schemaProbeCache.set(databasePath, kind);
+	schemaProbeCache.set(databasePath, probe);
 	if ((kind === 'forked' || kind === 'incompatible') && !warnedDegraded.has(databasePath)) {
 		warnedDegraded.add(databasePath);
 		console.warn(
@@ -112,23 +128,50 @@ export async function probeNativeSchema(databasePath: string, deps: NativeSessio
 				: `[co-ober] OpenCode database "${databasePath}" does not match the v1 schema co-ober reads (newer v2 layout?). Native session listing, search and usage are disabled until co-ober supports it.`,
 		);
 	}
-	return kind;
+	return probe;
+}
+
+async function resolveNativeReadFormat(databasePath: string, deps: NativeSessionReaderDeps): Promise<NativeReadFormat | null> {
+	const { kind } = await resolveNativeSchemaProbe(databasePath, deps);
+	if (kind === 'incompatible') return null;
+	return kind === 'forked' ? 'v2' : 'v1';
+}
+
+/** Classify an OpenCode database against the v1 schema; the result is cached per path. */
+export async function probeNativeSchema(databasePath: string, deps: NativeSessionReaderDeps = {}): Promise<NativeSchemaKind> {
+	return (await resolveNativeSchemaProbe(databasePath, deps)).kind;
 }
 
 /**
- * True when the v2 tables actually carry data. A failed count is treated as
- * diverged: existence plus an unreadable table can only come from a v2-era
- * database, and silently reading a stale v1 mirror is the worse error.
+ * The table holding current session rows for a readable database. Measured on
+ * 2.0.28, a forked kernel writes `session_v2` and lets the legacy `session`
+ * table fossilize; an older fork keeps the shared `session` registry and a
+ * failed evidence read defaults to it — reading an absent or empty
+ * `session_v2` would answer "no sessions" to a database full of them.
  */
-async function hasV2DataDiverged(databasePath: string, deps: NativeSessionReaderDeps): Promise<boolean> {
+async function resolveNativeSessionRegistry(databasePath: string, deps: NativeSessionReaderDeps): Promise<NativeSessionRegistry> {
+	return (await resolveNativeSchemaProbe(databasePath, deps)).registry;
+}
+
+/**
+ * The v2 tables that actually carry current data, and which registry holds
+ * session rows. A failed count is treated as diverged: existence plus an
+ * unreadable table can only come from a v2-era database, and silently reading
+ * a stale v1 mirror is the worse error — but the registry choice still falls
+ * back to `session`, because a registry read that could not run is an
+ * absence of evidence, not evidence of `session_v2`.
+ */
+async function readForkEvidence(databasePath: string, deps: NativeSessionReaderDeps): Promise<{ diverged: boolean; registry: NativeSessionRegistry }> {
 	try {
 		const rows = await querySqliteJson(databasePath, SCHEMA_FORK_SQL, deps.sqlite);
 		const row: SqliteRow | undefined = rows[0];
 		const migrated = typeof row?.migrated === 'number' ? row.migrated : 0;
 		const v2Rows = typeof row?.v2_rows === 'number' ? row.v2_rows : 0;
-		return migrated > 0 || v2Rows > 0;
+		const registryRows = typeof row?.registry_v2_rows === 'number' ? row.registry_v2_rows : 0;
+		const diverged = migrated > 0 || v2Rows > 0;
+		return { diverged, registry: diverged && registryRows > 0 ? 'session_v2' : 'session' };
 	} catch {
-		return true;
+		return { diverged: true, registry: 'session' };
 	}
 }
 
@@ -170,10 +213,12 @@ export function buildNativeSessionsSql(cwd: string, limit: number = NATIVE_SESSI
 }
 
 // ── v2 (forked database) read variants ──
-// After a fork, `session` rows stay current (session_message foreign-keys to
-// them) but message content moves to `session_message`: one row per message,
-// ordered by `seq`, with the payload in `data` JSON. Assistant `data.content`
-// inlines the v1 part rows as a JSON array. All queries below alias their
+// After the storage migration, message content moves to `session_message`:
+// one row per message, ordered by `seq`, with the payload in `data` JSON.
+// Assistant `data.content` inlines the v1 part rows as a JSON array. The
+// session registry lives in `session` on an older fork and in `session_v2`
+// on a newer kernel (measured 2.0.28) — `resolveNativeSessionRegistry`
+// picks the table that carries current rows. All queries below alias their
 // columns onto the v1 shapes so row mapping stays shared.
 
 /** Newest activity: the session row's update time or its latest event row. */
@@ -182,14 +227,14 @@ const V2_TIME_UPDATED_EXPR = [
 	'coalesce((select max(sm0.time_updated) from session_message sm0 where sm0.session_id = s.id), s.time_updated)) as time_updated',
 ].join(' ');
 
-export function buildNativeSessionsSqlV2(cwd: string, limit: number = NATIVE_SESSION_LIMIT): string {
+export function buildNativeSessionsSqlV2(cwd: string, limit: number = NATIVE_SESSION_LIMIT, registry: NativeSessionRegistry = 'session'): string {
 	const exact = escapeSqlLiteral(cwd);
 	const prefix = escapeSqlLiteral(escapeLikePattern(cwd)) + '/%';
 	const safeLimit = Math.max(1, Math.min(500, Math.floor(limit) || NATIVE_SESSION_LIMIT));
 	return [
 		`select s.id, s.title, s.directory, ${V2_TIME_UPDATED_EXPR},`,
 		's.summary_additions, s.summary_deletions, s.summary_files',
-		'from session s',
+		`from ${registry} s`,
 		'where s.parent_id is null and s.time_archived is null',
 		`and (s.directory = '${exact}' or s.directory like '${prefix}' escape '\\')`,
 		'order by time_updated desc',
@@ -210,7 +255,7 @@ function v2MessageTextSelects(sessionIdExpr: string, query: string): string[] {
 	];
 }
 
-export function buildNativeSessionSearchSqlV2(cwd: string, query: string, limit: number = NATIVE_SESSION_SEARCH_LIMIT): string {
+export function buildNativeSessionSearchSqlV2(cwd: string, query: string, limit: number = NATIVE_SESSION_SEARCH_LIMIT, registry: NativeSessionRegistry = 'session'): string {
 	const exact = escapeSqlLiteral(cwd);
 	const prefix = escapeSqlLiteral(escapeLikePattern(cwd)) + '/%';
 	const term = escapeSqlLiteral(query);
@@ -224,7 +269,7 @@ export function buildNativeSessionSearchSqlV2(cwd: string, query: string, limit:
 		'from (',
 		...textSelects,
 		') t) as snippet',
-		'from session s',
+		`from ${registry} s`,
 		'where s.parent_id is null and s.time_archived is null',
 		`and (s.directory = '${exact}' or s.directory like '${prefix}' escape '\\')`,
 		`and (s.title like '${escapeSqlLiteral(`%${escapeLikePattern(query)}%`)}' escape '\\' or exists (`,
@@ -787,7 +832,10 @@ export async function listNativeSessions(cwd: string, deps: NativeSessionReaderD
 	// function swallowed every failure into []. Returning [] let the panel answer
 	// "No sessions found" to a database it never opened: the same lie the content
 	// search was fixed for, on the list read whose caller can tell the difference.
-	const sql = format === 'v2' ? buildNativeSessionsSqlV2(cwd) : buildNativeSessionsSql(cwd);
+	const sql =
+		format === 'v2'
+			? buildNativeSessionsSqlV2(cwd, NATIVE_SESSION_LIMIT, await resolveNativeSessionRegistry(databasePath, deps))
+			: buildNativeSessionsSql(cwd);
 	const rows = await querySqliteJson(databasePath, sql, deps.sqlite);
 
 	const sessions: SessionMeta[] = [];
@@ -863,7 +911,10 @@ export async function searchNativeSessions(cwd: string, query: string, deps: Nat
 	// Swallowing the failure here made that line unreachable: a broken read came
 	// back as an empty list, so the panel reported no matches for a question it
 	// never got to ask.
-	const sql = format === 'v2' ? buildNativeSessionSearchSqlV2(cwd, trimmed) : buildNativeSessionSearchSql(cwd, trimmed);
+	const sql =
+		format === 'v2'
+			? buildNativeSessionSearchSqlV2(cwd, trimmed, NATIVE_SESSION_SEARCH_LIMIT, await resolveNativeSessionRegistry(databasePath, deps))
+			: buildNativeSessionSearchSql(cwd, trimmed);
 	const rows = await querySqliteJson(databasePath, sql, deps.sqlite);
 
 	const sessions: SessionMeta[] = [];

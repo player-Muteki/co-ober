@@ -831,6 +831,74 @@ describe('native schema probe (v2 defense)', () => {
 	});
 });
 
+// 0.2.83: measured on opencode 2.0.28, the legacy `session` table fossilizes
+// at migration time — every new session row lands in `session_v2` only. The
+// listing and search must read the registry that carries current rows, and
+// must keep reading `session` for an older fork whose registry never moved.
+describe('native session registry follows the current table (0.2.83)', () => {
+	const FORK_V2_PROBE_ROW = { session_table: 1, session_columns: 6, v2_tables: 3 };
+	const CURRENT_ROW = { id: 'ses_new', title: 'Current', directory: '/vault', time_updated: 500 };
+	const FOSSIL_ROW = { id: 'ses_fossil', title: 'Stale', directory: '/vault', time_updated: 100 };
+
+	function registrySqlite(forkRow: unknown, registryRows: unknown[], legacyRows: unknown[]) {
+		const seen: string[] = [];
+		return {
+			seen,
+			deps: {
+				requireSqliteModule: () => ({
+					DatabaseSync: class {
+						constructor() {}
+						close() {}
+						prepare(sql: string) {
+							seen.push(sql);
+							if (sql.includes('sqlite_master')) return { all: () => [FORK_V2_PROBE_ROW] };
+							if (sql.includes('data_migration')) return { all: () => [forkRow] };
+							if (sql.includes('from session_v2 s')) return { all: () => registryRows };
+							return { all: () => legacyRows };
+						}
+					},
+				}),
+			},
+		} as const;
+	}
+	// Explicit databasePath skips host-dependent path discovery — this suite's
+	// path-resolution failures are the platform-bound ones, and the registry
+	// decision must be discriminable everywhere.
+	const base = { databasePath: dbPath };
+
+	it('lists sessions from session_v2 when the kernel writes the registry there', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const { deps } = registrySqlite({ migrated: 0, v2_rows: 1591, registry_v2_rows: 25 }, [CURRENT_ROW], [FOSSIL_ROW]);
+		const sessions = await listNativeSessions('/vault', { ...base, sqlite: deps as never });
+		expect(sessions.map((s) => s.sessionId)).toEqual(['ses_new']);
+		warn.mockRestore();
+	});
+
+	it('searches session_v2 when the registry lives there', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const { seen, deps } = registrySqlite({ migrated: 0, v2_rows: 1591, registry_v2_rows: 25 }, [CURRENT_ROW], [FOSSIL_ROW]);
+		const found = await searchNativeSessions('/vault', 'needle', { ...base, sqlite: deps as never });
+		expect(found.map((s) => s.sessionId)).toEqual(['ses_new']);
+		expect(seen.some((sql) => sql.includes('from session_v2 s') && sql.includes('like'))).toBe(true);
+		warn.mockRestore();
+	});
+
+	it('keeps reading the shared session registry for an older fork without session_v2 rows', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const { deps } = registrySqlite({ migrated: 1, v2_rows: 8 }, [{ id: 'ses_wrong', title: 'Wrong', directory: '/vault', time_updated: 900 }], [FOSSIL_ROW]);
+		const sessions = await listNativeSessions('/vault', { ...base, sqlite: deps as never });
+		expect(sessions.map((s) => s.sessionId)).toEqual(['ses_fossil']);
+		warn.mockRestore();
+	});
+
+	it('builds registry-scoped listing and search SQL on request', () => {
+		expect(buildNativeSessionsSqlV2('/vault', 50, 'session_v2')).toContain('from session_v2 s');
+		expect(buildNativeSessionsSqlV2('/vault')).toContain('from session s');
+		expect(buildNativeSessionSearchSqlV2('/vault', 'needle', 20, 'session_v2')).toContain('from session_v2 s');
+		expect(buildNativeSessionSearchSqlV2('/vault', 'needle')).toContain('from session s');
+	});
+});
+
 // 0.2.50 stage B: reconstruct a native session's conversation from OpenCode's
 // own SQLite, in the exact replay-message shape, so the restore path can fill
 // the pane when the agent streamed back nothing.
