@@ -216,6 +216,10 @@ const en = {
       'A tab was closed while its turn was running, but this agent has no cancel method — that turn may still be running inside the agent, with no tab left to show what it does.',
     tabClosedUnknown:
       'A tab was closed while its turn was running, but the agent did not confirm that it stopped — that turn may still be running inside the agent, with no tab left to show what it does.',
+    panelClosedUnsupported:
+      'The panel closed while {count} turn(s) were running. This agent has no cancel method, so they may still be running inside it.',
+    panelClosedUnknown:
+      'The panel closed while {count} turn(s) were running, but the agent did not confirm that they stopped — they may still be running inside it.',
   },
 
   rewind: {

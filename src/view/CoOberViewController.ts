@@ -687,6 +687,8 @@ export class CoOberViewController {
   /** Cancel every in-flight stream (view close); tabs' queues are not restored. */
   async cancelAllStreams(): Promise<void> {
     const client = this.deps.runtime.getClient();
+    let unconfirmed = 0;
+    let sawUnknown = false;
     for (const rt of this.runtimes.values()) {
       if (!rt.busy) continue;
       ++rt.genId;
@@ -695,14 +697,26 @@ export class CoOberViewController {
       rt.streamCtrl.finalizeBufferedToolCalls();
       if (client && rt.sessionId && this.canAddressSession(rt.sessionId, client)) {
         try {
-          await client.cancel(rt.sessionId);
+          const outcome = await client.cancel(rt.sessionId);
+          if (outcome === 'stopped') continue;
+          unconfirmed++;
+          if (outcome === 'unknown') sawUnknown = true;
         } catch (e) {
           console.error('[co-ober] cancel on close:', e);
+          // A cancel that threw observed nothing, so it cannot count as a stop.
+          unconfirmed++;
+          sawUnknown = true;
         }
       }
     }
     this.deps.input.setStreaming(false);
     this.deps.toolbar.setSending(false);
+    // The view is going away, so no tab survives to carry this. A Notice
+    // outlives the panel and is the only surface left that can say it.
+    if (unconfirmed > 0) {
+      const key = sawUnknown ? t().error.panelClosedUnknown : t().error.panelClosedUnsupported;
+      new Notice(key.replace('{count}', String(unconfirmed)));
+    }
   }
 
   /**

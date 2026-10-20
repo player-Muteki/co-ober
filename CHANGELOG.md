@@ -1,3 +1,20 @@
+## 0.2.79 - 2026-10-20
+
+Takes the view-close path of the 0.2.74 gap. Closing the panel cancels every running turn, and the panel — every surface the plugin owns — is destroyed in the same act, so the cancel results had nowhere to go and went nowhere.
+
+### Fixed
+
+- **Closing the view discarded every cancel result, then removed the only screen that could have shown one.** `cancelAllStreams` awaited each `cancel()` inside a `try` whose only consumer was `console.error`. On the installed `opencode v2.0.28` cancel is unimplemented (0.2.74 measured all nine spellings answering `-32601`; 0.2.76 measured the round trip at 545 ms and the live stream count at zero afterwards), so a panel closed mid-turn was telling the reader, by closing, that its turns had stopped — while the client had just been told it could not stop them. It now counts the outcomes it was discarding: every `unsupported` or `unknown`, and every cancel that throws, is one unconfirmed turn; `stopped` is not. If any remain, one Obsidian `Notice` outlives the panel and says how many may still be running. The wording picks the weaker claim: if any turn's stop went unconfirmed, the toast says exactly that rather than asserting the agent has no cancel method, because that stronger statement is not what every answer supports. A close in which every cancel was acknowledged stays silent.
+
+### Validation
+
+- 86 test files / 2,547 tests (2,543 baseline plus four new). The 19 pre-existing, platform-bound failures in `NativeSessionReader.test.ts` and `commandResolution.test.ts` are unchanged; TypeScript and ESLint are clean. Four boundaries, each confirmed to discriminate: one `unsupported` and one `stopped` produces a count of 1 with the unsupported line; one `unsupported` and one `unknown` produces a count of 2 with only the weaker "not confirmed" line (asserting the unsupported line is absent); a cancel that throws counts as one unconfirmed turn; two confirmed stops produce no toast at all. Reverting to a discarded await fails the first three; reporting on `stopped` fails the fourth; counting throws as stops fails the third; claiming "no cancel method" in the mixed case fails the second.
+- The kernel facts routed here are the ones measured on 2.0.28 in 0.2.74 and 0.2.76; this release changes where the answer is said, not what the agent does with the cancel, so the boundaries are UI-level and no new live rig was needed. The `stopped` branch is exercised against the mock contract, not against an agent that implements cancel.
+
+### Still open
+
+The side-chat path (`abortSideChat`, reached both by closing the side panel and by `endSideChat` during tab close and view teardown) still discards its outcome. It has two different destinations to choose between: when only the side panel closes, the parent tab survives and could carry the note; when the parent tab or view closes too, it cannot. That distinction is the next release. The `stopped` branch and the question of whether `session/close` terminates a running turn remain measured only by mocks and only on 2.0.28.
+
 ## 0.2.78 - 2026-10-20
 
 Takes the next of the cancel paths 0.2.74 left silently discarded: closing a tab mid-turn. The tab was the only surface that could have said what the cancel answered, and it was removed before anyone could read it.

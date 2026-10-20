@@ -217,6 +217,10 @@ const zh: Locale = {
       '标签页在运行中关闭，但这个 agent 没有提供取消的方法 —— 那一轮可能仍在 agent 内部继续，而已经没有标签页能显示它做了什么。',
     tabClosedUnknown:
       '标签页在运行中关闭，但 agent 没有确认那一轮已经停下 —— 它可能仍在 agent 内部继续，而已经没有标签页能显示它做了什么。',
+    panelClosedUnsupported:
+      '面板关闭时还有 {count} 轮在运行。这个 agent 没有提供取消的方法，它们可能仍在 agent 内部继续。',
+    panelClosedUnknown:
+      '面板关闭时还有 {count} 轮在运行，但 agent 没有确认它们已经停下 —— 它们可能仍在 agent 内部继续。',
   },
 
   rewind: {

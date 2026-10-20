@@ -510,6 +510,62 @@ describe('CoOberViewController — multi-tab runtimes (0.2.0 stage 2)', () => {
       for (const tabId of h.controller.listTabIds()) expect(rtOf(h, tabId).busy).toBe(false);
     });
 
+    /** Two busy tabs, with the answer the agent gives to each cancel. */
+    async function openBusyPair(answers: Record<string, string | Error>) {
+      const client = createMockClient({
+        sendMessage: vi.fn().mockImplementation(() => new Promise<AcpResponse>(() => {})),
+        cancel: vi.fn((sid: string) => {
+          const answer = answers[sid];
+          return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer);
+        }),
+      });
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      h.controller.state.sessionId = 'ses-a';
+      void h.controller.send('question A', []);
+      await tick();
+      await h.controller.switchSession('ses-b');
+      void h.controller.send('question B', []);
+      await tick();
+      Notice.messages.length = 0;
+      return client;
+    }
+
+    it('says how many turns the closing panel could not confirm stopped', async () => {
+      await openBusyPair({ 'ses-a': 'unsupported', 'ses-b': 'stopped' });
+
+      await h.controller.cancelAllStreams();
+
+      // The view is gone after this call, so the surviving surface is the toast.
+      expect(Notice.messages).toContain(t().error.panelClosedUnsupported.replace('{count}', '1'));
+    });
+
+    it('prefers the weaker claim when any stop went unconfirmed', async () => {
+      await openBusyPair({ 'ses-a': 'unsupported', 'ses-b': 'unknown' });
+
+      await h.controller.cancelAllStreams();
+
+      // "No cancel method" would be a stronger claim than the unknown answer
+      // supports; both turns are covered by "not confirmed".
+      expect(Notice.messages).toContain(t().error.panelClosedUnknown.replace('{count}', '2'));
+      expect(Notice.messages).not.toContain(t().error.panelClosedUnsupported.replace('{count}', '2'));
+    });
+
+    it('counts a cancel that threw as unconfirmed', async () => {
+      await openBusyPair({ 'ses-a': 'stopped', 'ses-b': new Error('cancel broke') });
+
+      await h.controller.cancelAllStreams();
+
+      expect(Notice.messages).toContain(t().error.panelClosedUnknown.replace('{count}', '1'));
+    });
+
+    it('stays quiet when every stop was confirmed', async () => {
+      await openBusyPair({ 'ses-a': 'stopped', 'ses-b': 'stopped' });
+
+      await h.controller.cancelAllStreams();
+
+      expect(Notice.messages).toEqual([]);
+    });
+
     it('closeTab cancels only that tab and disposes only its panel', async () => {
       const client = createMockClient({
         sendMessage: vi.fn().mockImplementation(() => new Promise<AcpResponse>(() => {})),
