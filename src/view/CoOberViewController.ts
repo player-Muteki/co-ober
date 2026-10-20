@@ -52,6 +52,7 @@ import {
   AcpSessionMissingError,
   AcpStreamCapacityError,
   type AcpCancelOutcome,
+  type AcpStopEvidence,
 } from '../client/AcpErrors';
 import {
   readNativeMessageStats,
@@ -399,16 +400,19 @@ export class CoOberViewController {
 
   /**
    * Tell the agent it can drop a session this client has no screen for. Gated
-   * on the capability and fired without awaiting: an agent that never
-   * implemented `session/close` must not turn closing a tab into an error, and
-   * a dropped conversation is not a failure the reader can act on.
+   * on the capability and fired without awaiting by cleanup callers: an agent
+   * that never implemented `session/close` must not turn closing a tab into an
+   * error, and a dropped conversation is not a failure the reader can act on.
+   * The answer it resolves to — whether the agent acknowledged the close — is
+   * for the one caller that owns a stop report (closeTab): on the measured
+   * kernel, a close taken while a turn is live ends that turn.
    */
-  private releaseAgentSession(sessionId: string | null | undefined): void {
-    if (!sessionId) return;
+  private releaseAgentSession(sessionId: string | null | undefined): Promise<boolean> {
+    if (!sessionId) return Promise.resolve(false);
     const client = this.deps.runtime.getClient();
-    if (!client?.getAgentCapabilities?.()?.sessionCapabilities?.close) return;
-    if (!this.canAddressSession(sessionId, client)) return;
-    void client.closeSession(sessionId).catch((e) => console.error('[co-ober] release agent session:', e));
+    if (!client?.getAgentCapabilities?.()?.sessionCapabilities?.close) return Promise.resolve(false);
+    if (!this.canAddressSession(sessionId, client)) return Promise.resolve(false);
+    return client.closeSession(sessionId);
   }
 
   /**
@@ -465,8 +469,13 @@ export class CoOberViewController {
     // to leave its agent session running: it kept its context, its commands and
     // any terminal it started, for a transcript the user can only reach again
     // through the history list. Only once this tab is off the strip, so a
-    // sibling that was handed the same session keeps it.
-    if (!this.findRuntimeBySession(rt.state.sessionId)) this.releaseAgentSession(rt.state.sessionId);
+    // sibling that was handed the same session keeps it. The answer is awaited
+    // because this tab owns a stop report: a close the agent acknowledged ends
+    // the turn it was running (measured on 2.0.28), and an unconfirmed stop
+    // must not be claimed when closing just confirmed one.
+    const sessionReleased = this.findRuntimeBySession(rt.state.sessionId)
+      ? false
+      : await this.releaseAgentSession(rt.state.sessionId);
     this.deps.disposeTabPanel?.(tabId);
     await rt.streamCtrl.dispose();
     if (wasActive) {
@@ -510,7 +519,13 @@ export class CoOberViewController {
     // The closed tab can no longer show anything, so an unconfirmed stop is
     // said where the reader now is: whichever conversation inherited the slot.
     // A confirmed stop stays quiet — closing the tab already said what it did.
-    if (!this.disposed && (cancelOutcome === 'unsupported' || cancelOutcome === 'unknown')) {
+    // So does one the session close confirmed after the fact: the agent that
+    // answered `session/close` is the same agent that ended the turn with it.
+    if (
+      !this.disposed &&
+      !sessionReleased &&
+      (cancelOutcome === 'unsupported' || cancelOutcome === 'unknown')
+    ) {
       this.activeRuntime.renderer.addSystemMessage(
         cancelOutcome === 'unsupported' ? t().error.tabClosedUnsupported : t().error.tabClosedUnknown,
       );
@@ -707,7 +722,7 @@ export class CoOberViewController {
       // A side thread is a turn too: the view closing takes its panel with it,
       // and its cancel answer used to die in dispose with no one to carry it.
       const sideOutcome = await this.endSideChat(rt, 'none');
-      if (sideOutcome && sideOutcome !== 'stopped') {
+      if (sideOutcome && sideOutcome !== 'stopped' && sideOutcome !== 'closed') {
         unconfirmed++;
         if (sideOutcome === 'unknown') sawUnknown = true;
       }
@@ -1678,7 +1693,7 @@ export class CoOberViewController {
         // The tab was closed while the agent was making the session: its
         // transcript would be stored under an id no tab points at, so the
         // conversation goes back to the agent instead of being registered.
-        this.releaseAgentSession(rt.state.sessionId);
+        void this.releaseAgentSession(rt.state.sessionId);
         return;
       }
       if (rt.state.sessionId) {
@@ -1793,7 +1808,7 @@ export class CoOberViewController {
       });
       this.reportMissedDefaults(rt, missedDefaults);
       if (!this.stillOpen(rt)) {
-        this.releaseAgentSession(rt.state.sessionId);
+        void this.releaseAgentSession(rt.state.sessionId);
         return null;
       }
       if (rt.state.sessionId) {
@@ -1904,7 +1919,7 @@ export class CoOberViewController {
       // stays in the store, but no screen shows it, so the session the agent
       // just loaded is handed back instead of held for a tab that never
       // returns — and nothing is painted over whoever inherited the slot.
-      this.releaseAgentSession(sessionId);
+      void this.releaseAgentSession(sessionId);
       return;
     }
     await this.restoreSession(rt);
@@ -1951,7 +1966,7 @@ export class CoOberViewController {
         // The screen went away while the agent was branching the conversation.
         // Opening its tab now would register a transcript nobody can see and
         // leave a live session no tab owns, so the branch is given back.
-        this.releaseAgentSession(forkedId);
+        void this.releaseAgentSession(forkedId);
         return;
       }
       // A fork is a conversation branch: it opens as its own tab so the
@@ -2016,7 +2031,7 @@ export class CoOberViewController {
         // The tab was closed while the agent forked. Its panel is gone, so the
         // scratch thread has nothing left to answer: give it back rather than
         // opening a side chat for a tab that is no longer on the strip.
-        this.releaseAgentSession(rt.sideChatSessionId);
+        void this.releaseAgentSession(rt.sideChatSessionId);
         return;
       }
       this.callbacks.onOpenSideChat?.(this.buildSideChatAsk(rt), question, rt.tabId);
@@ -2038,37 +2053,46 @@ export class CoOberViewController {
 
   /**
    * Close and release one tab's side session; the panel's onClose hook calls this.
-   * The in-flight turn is cancelled before the id is let go, and the answer is
-   * returned so the caller can say what the agent confirmed. With `report`
-   * left on, the tab that owns the thread carries that line itself; closeTab
-   * passes `'none'` because its report lands in the tab that survives.
+   * The in-flight turn is cancelled before the id is let go, and the session is
+   * closed while the cancel is still on its way. Either answer can confirm the
+   * stop: the agent that says `stopped` to the cancel, or the agent that accepts
+   * the close (on the measured kernel, a close taken mid-turn ends the turn).
+   * The combined evidence is returned so the caller can say what was confirmed.
+   * With `report` left on, the tab that owns the thread carries that line itself;
+   * closeTab passes `'none'` because its report lands in the tab that survives.
    */
   endSideChat(
     rt: SessionRuntime = this.activeRuntime,
     report: 'tab' | 'none' = 'tab',
-  ): Promise<AcpCancelOutcome | null> {
+  ): Promise<AcpStopEvidence | null> {
     const sideId = rt.sideChatSessionId;
     rt.sideChatSessionId = null;
     if (!sideId) return Promise.resolve(null);
     const cancel = this.cancelSideChat(sideId, rt);
     const client = this.deps.runtime.getClient();
-    if (client && !(rt.state.sessionId && !this.canAddressSession(rt.state.sessionId, client))) {
-      if (client.getAgentCapabilities?.()?.sessionCapabilities?.close) {
-        void client.closeSession(sideId).catch((e) => console.error('[co-ober] close side session:', e));
-      }
-    }
-    if (report === 'none') return cancel;
-    return cancel.then((outcome) => {
+    // The old gate, unchanged: the parent tab must still be addressable on this
+    // client and the agent must advertise close. A close that fails or is
+    // refused answers nothing — it must not swallow the cancel's answer either.
+    const closing =
+      client &&
+      !(rt.state.sessionId && !this.canAddressSession(rt.state.sessionId, client)) &&
+      client.getAgentCapabilities?.()?.sessionCapabilities?.close
+        ? client.closeSession(sideId).catch(() => false)
+        : Promise.resolve(false);
+    return Promise.all([cancel, closing]).then(([outcome, closed]) => {
+      const evidence: AcpStopEvidence | null =
+        outcome && outcome !== 'stopped' && closed ? 'closed' : outcome;
+      if (report === 'none') return evidence;
       // The panel itself is gone either way, so the tab that asked for the
       // thread is the only surface left that can say it may still be answering.
-      if (outcome && outcome !== 'stopped' && this.stillOpen(rt)) {
+      if (evidence && evidence !== 'stopped' && evidence !== 'closed' && this.stillOpen(rt)) {
         rt.renderer.addSystemMessage(
-          outcome === 'unsupported'
+          evidence === 'unsupported'
             ? t().error.sideChatClosedUnsupported
             : t().error.sideChatClosedUnknown,
         );
       }
-      return outcome;
+      return evidence;
     });
   }
 
@@ -2134,7 +2158,7 @@ export class CoOberViewController {
       rt.renderer.addError(humanizeError(e));
     }
     if (!this.stillOpen(rt)) {
-      this.releaseAgentSession(sessionId);
+      void this.releaseAgentSession(sessionId);
       return;
     }
     await this.restoreSession(rt);
@@ -2214,7 +2238,7 @@ export class CoOberViewController {
       // already carried over to the new session whole, and dropping its tail
       // now would answer a regenerate nobody can see the result of; the fresh
       // session goes back, and the conversation stays in the history list.
-      this.releaseAgentSession(renewed);
+      void this.releaseAgentSession(renewed);
       return;
     }
     session.messages.splice(idx);

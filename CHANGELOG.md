@@ -1,3 +1,20 @@
+## 0.2.81 - 2026-10-20
+
+0.2.80 closed with a promise: the next round would measure, not route — specifically what `session/close` does to a live turn. A new live rig against the installed `opencode v2.0.28` answered, and the answer indicts the other kind of dishonesty: a pessimistic claim with no evidence behind it.
+
+### Fixed
+
+- **A close the agent accepted is stop evidence, and the unconfirmed-stop reports now treat it that way.** Measured: `initialize` advertises `sessionCapabilities.close`; a `session/close` sent while a turn is verifiably live (chunks still arriving in the half-second before the gesture — a first run whose turn had ended on its own was discarded as non-discriminating, not reinterpreted) answers `{}` in 39 ms, resolves the live prompt `stopReason: "cancelled"` in the same millisecond, emits zero updates after, and kills the id (`-32602 session not found` for a later prompt, while a control `session/new` on the same connection succeeds). This kernel has no cancel method (0.2.74) — close is how it stops turns. Yet `closeSession` swallowed its ack, `closeTab` and `endSideChat` fired it without awaiting, and the reader was still told the turn "may still be running in the kernel" seconds after the agent had confirmed the opposite. `closeSession` now returns whether the agent acknowledged; `endSideChat` combines the two answers into a new evidence value `'closed'` (cancel confirmed nothing, close did); `closeTab` awaits the release it already performs, and stays silent when it is confirmed; `cancelAllStreams` does not count a `'closed'` side turn. A close that fails, is refused or throws confirms nothing — the unconfirmed claim survives it, and the two are separated by discriminating tests in both directions.
+
+### Validation
+
+- 86 test files / 2,562 tests (2,554 baseline plus eight new). The 19 pre-existing, platform-bound failures in `NativeSessionReader.test.ts` and `commandResolution.test.ts` are unchanged; TypeScript and ESLint are clean. Boundaries: an acked close returns `true` and a failed one returns `false` without throwing; a side close accepted after an `unsupported` cancel returns `'closed'` and says neither side-chat line (the old code discarded the ack and still spoke — reverting fails this); a close answering `false` keeps the claim (guards against suppressing on mere attempt); a close that throws cannot swallow the cancel's answer; closing a busy tab whose session-close was accepted leaves the survivor silent, while an unaccepted close still reports; a main-plus-side close confirms both lines away; a view close over a running side chat cancels, closes and produces no notice. The suppression's discrimination was verified by removing `!sessionReleased` and watching the test fail.
+- The rig run that produced §3 of the research doc is this release's kernel evidence. `stopped` remains exercised only against the mock contract; the close-as-stop inference is measured on 2.0.28 alone, which the research doc states as an open boundary rather than a universal claim.
+
+### Still open
+
+`session/cancel` implemented by any real agent is still unobserved; an agent that advertises `close` without ending live turns would inherit this inference wrongly — the capability gate is the only shield. View close still cannot confirm main turns, because it deliberately does not close their sessions.
+
 ## 0.2.80 - 2026-10-20
 
 Closes the last of the cancel paths 0.2.74 listed: the side chat. Closing a busy side panel did not merely forget the answer — it asked twice, from two different callers, and forgot both.

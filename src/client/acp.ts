@@ -71,7 +71,7 @@ import { z } from 'zod';
 // lost piece of the conversation.
 const UNPLACED_UPDATE_KINDS = new Set(['message_chunk', 'tool_call_snapshot', 'plan', 'notice', 'compaction']);
 
-export const CLIENT_VERSION = '0.2.80';
+export const CLIENT_VERSION = '0.2.81';
 
 /** Tail length of the agent stderr snapshot attached to a close error. */
 const STDERR_SNAPSHOT_CHARS = 800;
@@ -961,15 +961,23 @@ export class AcpClient implements OpencodeClient {
     );
   }
 
-  async closeSession(id: string): Promise<void> {
+  /**
+   * Ask the agent to drop a session, and report whether it acknowledged. The
+   * answer matters beyond cleanup: measured on 2.0.28, a close while a turn is
+   * live resolves the live prompt `cancelled`. So `true` is stop evidence even
+   * where `cancel` answered nothing.
+   */
+  async closeSession(id: string): Promise<boolean> {
     this.loadedSessionIds.delete(id);
     // The agent has dropped this session, so the commands, models and config
     // options it last reported for it are no longer true of anything.
     this.sessionMeta.delete(id);
     try {
       await this.requestWithFallback('closeSession', { sessionId: id });
+      return true;
     } catch (e) {
       console.warn(`[co-ober] failed to close session ${id}:`, e);
+      return false;
     }
   }
 

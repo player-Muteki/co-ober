@@ -4686,6 +4686,55 @@ describe('CoOberViewController — side chat (/btw)', () => {
     expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().error.sideChatClosedUnsupported);
   });
 
+  it('lets the close stand in for a stop the cancel could not confirm', async () => {
+    // Measured on 2.0.28: cancel answers -32601 while a close taken mid-turn
+    // resolves the live prompt `cancelled`. An agent that accepted the close
+    // did confirm the stop — saying "may still be running" is then the wrong
+    // kind of wrong, a pessimistic claim without evidence behind it.
+    forkClient({
+      cancel: vi.fn().mockResolvedValue('unsupported'),
+      closeSession: vi.fn().mockResolvedValue(true),
+    });
+    controller.state.sessionId = 'local-1';
+    await controller.startSideChat('hi');
+
+    const ended = await controller.endSideChat();
+
+    expect(ended).toBe('closed');
+    const spoken = (deps.renderer.addSystemMessage as ReturnType<typeof vi.fn>).mock.calls.flat();
+    expect(spoken).not.toContain(t().error.sideChatClosedUnsupported);
+    expect(spoken).not.toContain(t().error.sideChatClosedUnknown);
+  });
+
+  it('keeps the unconfirmed claim when the close confirms nothing', async () => {
+    forkClient({
+      cancel: vi.fn().mockResolvedValue('unsupported'),
+      closeSession: vi.fn().mockResolvedValue(false),
+    });
+    controller.state.sessionId = 'local-1';
+    await controller.startSideChat('hi');
+
+    const ended = await controller.endSideChat();
+
+    expect(ended).toBe('unsupported');
+    expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().error.sideChatClosedUnsupported);
+  });
+
+  it('a close that broke cannot swallow the cancel’s answer', async () => {
+    forkClient({
+      cancel: vi.fn().mockResolvedValue('unknown'),
+      closeSession: vi.fn().mockRejectedValue(new Error('close threw')),
+    });
+    controller.state.sessionId = 'local-1';
+    await controller.startSideChat('hi');
+
+    // endSideChat must not reject on the close's failure: its callers await it
+    // inside closeTab and cancelAllStreams, where a broken cleanup would
+    // strand the tab teardown.
+    await expect(controller.endSideChat()).resolves.toBe('unknown');
+    expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().error.sideChatClosedUnknown);
+  });
+
   it('tears the panel down from resetConversationView', async () => {
     const client = forkClient();
     controller.state.sessionId = 'local-1';

@@ -20,6 +20,15 @@ export class AcpProtocolError extends Error {
 /** What the agent confirmed about a cancelled turn; `unknown` never means "still running". */
 export type AcpCancelOutcome = 'stopped' | 'unsupported' | 'unknown';
 
+/**
+ * What was observed about stopping a turn. `'closed'` — the cancel asked for nothing,
+ * but the agent accepted `session/close` for the session holding the turn. Measured on
+ * `opencode acp` 2.0.28: a close taken while a turn is live answers `{}`, and the live
+ * prompt resolves `stopReason: "cancelled"` in the same millisecond, with no updates
+ * after. A stop the agent answered is evidence; a stop nobody answered is not.
+ */
+export type AcpStopEvidence = AcpCancelOutcome | 'closed';
+
 export class AcpTimeoutError extends AcpTransportError {
   constructor(
     public readonly method: string,

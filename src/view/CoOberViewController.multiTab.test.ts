@@ -1245,6 +1245,87 @@ describe('CoOberViewController — one tab’s teardown stays inside that tab (0
       );
     });
 
+    /** A pair of busy tabs on a client that answers cancels and accepts closes. */
+    async function openBusyPairWithClose(cancelAnswer: string, closeAnswer: boolean) {
+      const client = createMockClient({
+        sendMessage: vi.fn().mockImplementation(() => new Promise<AcpResponse>(() => {})),
+        cancel: vi.fn().mockResolvedValue(cancelAnswer),
+        getAgentCapabilities: vi.fn(() => ({ sessionCapabilities: { close: {} } })),
+        closeSession: vi.fn().mockResolvedValue(closeAnswer),
+      });
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      h.controller.state.sessionId = 'ses-a';
+      const tabA = h.controller.activeTabId();
+      void h.controller.send('question A', []);
+      await tick();
+      await h.controller.switchSession('ses-b');
+      const tabB = h.controller.activeTabId();
+      void h.controller.send('question B', []);
+      await tick();
+      return { client, tabA, tabB };
+    }
+
+    it('does not claim a closed tab’s turn may still run once its close was accepted', async () => {
+      // Measured on 2.0.28: the session close that follows an unsupported cancel
+      // ends the live turn itself. The turn's unconfirmed cancel is no longer a
+      // fact the survivor should be told — the close confirmed the stop.
+      const { tabA, tabB } = await openBusyPairWithClose('unsupported', true);
+
+      await h.controller.closeTab(tabB);
+
+      const spoken = (
+        rtOf(h, tabA).renderer.addSystemMessage as ReturnType<typeof vi.fn>
+      ).mock.calls.flat();
+      expect(spoken).not.toContain(t().error.tabClosedUnsupported);
+    });
+
+    it('keeps the claim when the agent never confirms the close', async () => {
+      // The withdrawal above is only licensed by an ack. A close that fails or
+      // is refused observes nothing, and "may still be running" must survive it.
+      const { tabA, tabB } = await openBusyPairWithClose('unsupported', false);
+
+      await h.controller.closeTab(tabB);
+
+      expect(rtOf(h, tabA).renderer.addSystemMessage).toHaveBeenCalledWith(
+        t().error.tabClosedUnsupported,
+      );
+    });
+
+    it('confirms a side thread’s stop through its close as well', async () => {
+      const { tabA, tabB } = await openBusyPairWithClose('unsupported', true);
+      rtOf(h, tabB).sideChatSessionId = 'fork-b';
+
+      await h.controller.closeTab(tabB);
+
+      // One close answered both turns: the tab's own session and its scratch
+      // thread were each dropped with an ack, so the survivor says nothing —
+      // where the old code told the reader two turns might still be running.
+      const spoken = (
+        rtOf(h, tabA).renderer.addSystemMessage as ReturnType<typeof vi.fn>
+      ).mock.calls.flat();
+      expect(spoken).not.toContain(t().error.tabClosedUnsupported);
+      expect(spoken).not.toContain(t().error.sideChatClosedUnsupported);
+    });
+
+    it('does not count a side stop the closing view confirmed by closing', async () => {
+      const client = createMockClient({
+        cancel: vi.fn().mockResolvedValue('unsupported'),
+        getAgentCapabilities: vi.fn(() => ({ sessionCapabilities: { close: {} } })),
+        closeSession: vi.fn().mockResolvedValue(true),
+      });
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      rtOf(h, h.controller.activeTabId()).sideChatSessionId = 'fork-a';
+      Notice.messages.length = 0;
+
+      await h.controller.cancelAllStreams();
+
+      // The turn the view stopped watching is the turn the agent's accepted
+      // close ended. Counting it in the toast would report a stop that wasn't.
+      expect(client.cancel).toHaveBeenCalledWith('fork-a');
+      expect(client.closeSession).toHaveBeenCalledWith('fork-a');
+      expect(Notice.messages).toEqual([]);
+    });
+
     it('withdraws the closed tab’s model, agent and command lists from the shared bar', async () => {
       // Closing the last tab re-projects the composer, the send button and the
       // context arc onto the fresh welcome screen, but the bar's model/agent/effort

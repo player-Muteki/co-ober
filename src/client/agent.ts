@@ -39,7 +39,7 @@ export class AgentRuntime implements OpencodeClient {
   loadSession(id: string, cwd?: string, mcpServers?: McpServerConfig[], onReplayUpdate?: (u: NormalizedUpdate) => void): Promise<void> { return this.acp.loadSession(id, cwd, mcpServers, onReplayUpdate); }
   hasSubmittedPrompt(id: string, text: string): Promise<'yes' | 'no' | 'unknown'> { return this.acp.hasSubmittedPrompt(id, text); }
   listSessions(cwd?: string): Promise<SessionMeta[]> { return this.acp.listSessions(cwd); }
-  closeSession(id: string): Promise<void> { return this.acp.closeSession(id); }
+  closeSession(id: string): Promise<boolean> { return this.acp.closeSession(id); }
   forkSession(id: string, cwd?: string): Promise<string> { return this.acp.forkSession(id, cwd); }
   resumeSession(id: string, cwd?: string, onReplayUpdate?: (u: NormalizedUpdate) => void): Promise<void> { return this.acp.resumeSession(id, cwd, onReplayUpdate); }
   setMode(id: string, mode: string): Promise<void> { return this.acp.setMode(id, mode); }

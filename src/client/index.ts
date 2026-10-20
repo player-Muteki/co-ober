@@ -63,7 +63,7 @@ export interface OpencodeClient {
   createSession(cwd?: string, mcpServers?: McpServerConfig[]): Promise<SessionId>;
   loadSession(sessionId: SessionId, cwd?: string, mcpServers?: McpServerConfig[], onReplayUpdate?: (chunk: NormalizedUpdate) => void): Promise<void>;
   listSessions(cwd?: string): Promise<SessionMeta[]>;
-  closeSession(sessionId: SessionId): Promise<void>;
+  closeSession(sessionId: SessionId): Promise<boolean>;
   forkSession(sessionId: SessionId, cwd?: string): Promise<SessionId>;
   resumeSession(sessionId: SessionId, cwd?: string, onReplayUpdate?: (chunk: NormalizedUpdate) => void): Promise<void>;
 

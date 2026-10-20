@@ -1695,6 +1695,23 @@ describe('sendMessage flow', () => {
     expect(client.getSessionSnapshotFor('s1').availableModes).toEqual([]);
   });
 
+  it('reports whether the agent acknowledged a session close', async () => {
+    const client = new AcpClient('opencode');
+    const request = vi.fn().mockResolvedValue({});
+    Reflect.set(client, 'transport', { request });
+
+    // Measured on 2.0.28: a close taken while a turn is live answers `{}` and
+    // resolves that prompt `cancelled` in the same millisecond. The ack is the
+    // stop evidence the view layer keys on, so it has to come back intact.
+    await expect(client.closeSession('s1')).resolves.toBe(true);
+
+    const broken = new AcpClient('opencode');
+    Reflect.set(broken, 'transport', { request: vi.fn().mockRejectedValue(new Error('no close here')) });
+    // A close nobody answered confirms nothing — and must not throw at the
+    // cleanup callers that fire it without awaiting.
+    await expect(broken.closeSession('s2')).resolves.toBe(false);
+  });
+
   it('clears per-session metadata when the connection goes away', async () => {
     const client = new AcpClient('opencode');
     Reflect.set(client, 'transport', { request: vi.fn().mockResolvedValue({}), dispose: vi.fn() });
