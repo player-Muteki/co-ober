@@ -970,6 +970,60 @@ describe('native directory filter matches the stored shape (0.2.84)', () => {
 	});
 });
 
+// 0.2.85: a live rig fork on 2.0.28 showed `session/fork` records parentage
+// in `fork_session_id` (the fork row carried its parent's id there while
+// `parent_id` stayed null) — correcting 0.2.83's zero-sample generalization
+// that the kernel records no lineage. Side-chat scratch threads are
+// therefore identifiable, and the history listing hides them the way it
+// already hides `parent_id` children. The legacy `session` table has no such
+// column, so the filter may only ride the session_v2 registry.
+describe('native history hides forked scratch sessions (0.2.85)', () => {
+	it('filters fork_session_id only when the registry is session_v2', () => {
+		expect(buildNativeSessionsSqlV2('/vault', 50, 'session_v2')).toContain('s.fork_session_id is null');
+		expect(buildNativeSessionSearchSqlV2('/vault', 'needle', 20, 'session_v2')).toContain('s.fork_session_id is null');
+		// The shared-registry default keeps its byte-identical shape: the
+		// column does not exist there and naming it would break every read.
+		expect(buildNativeSessionsSqlV2('/vault')).not.toContain('fork_session_id');
+		expect(buildNativeSessionSearchSqlV2('/vault', 'needle')).not.toContain('fork_session_id');
+		expect(buildNativeSessionsSql('/vault')).not.toContain('fork_session_id');
+		expect(buildNativeSessionSearchSql('/vault', 'needle')).not.toContain('fork_session_id');
+	});
+
+	it('lists and searches through the lineage-filtered session_v2 query', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const seen: string[] = [];
+		const probeRow = { session_table: 1, session_columns: 6, v2_tables: 3 };
+		const forkRow = { migrated: 0, v2_rows: 1591, registry_v2_rows: 25 };
+		const row = [{ id: 'ses_top', title: 'Top', directory: '/vault', time_updated: 500 }];
+		const deps = {
+			requireSqliteModule: () => ({
+				DatabaseSync: class {
+					constructor() {}
+					close() {}
+					prepare(sql: string) {
+						seen.push(sql);
+						if (sql.includes('sqlite_master')) return { all: () => [probeRow] };
+						if (sql.includes('data_migration')) return { all: () => [forkRow] };
+						return { all: () => row };
+					}
+				},
+			}),
+		};
+		await listNativeSessions('/vault', { databasePath: dbPath, sqlite: deps as never });
+		expect(seen.some((sql) => sql.includes('from session_v2 s') && sql.includes('s.fork_session_id is null'))).toBe(true);
+		await searchNativeSessions('/vault', 'needle', { databasePath: dbPath, sqlite: deps as never });
+		expect(
+			seen.some(
+				(sql) =>
+					sql.includes('from session_v2 s') &&
+					sql.includes('s.fork_session_id is null') &&
+					sql.includes('like'),
+			),
+		).toBe(true);
+		warn.mockRestore();
+	});
+});
+
 // 0.2.50 stage B: reconstruct a native session's conversation from OpenCode's
 // own SQLite, in the exact replay-message shape, so the restore path can fill
 // the pane when the agent streamed back nothing.

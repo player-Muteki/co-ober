@@ -240,6 +240,21 @@ const V2_TIME_UPDATED_EXPR = [
 	'coalesce((select max(sm0.time_updated) from session_message sm0 where sm0.session_id = s.id), s.time_updated)) as time_updated',
 ].join(' ');
 
+/**
+ * Top-level filter for the registry read. Measured on 2.0.28, `session/fork`
+ * records parentage in `fork_session_id` (a rig fork row carried its parent's
+ * id there while `parent_id` stayed null), so a side-chat scratch thread is
+ * distinguishable in `session_v2` and belongs out of the history listing the
+ * same way `parent_id` children already do. The legacy `session` table has no
+ * `fork_session_id` column at all (the schema probe counts six), so the
+ * filter can only apply when the registry was read from `session_v2`.
+ */
+function v2RegistryWhere(registry: NativeSessionRegistry): string {
+	return registry === 'session_v2'
+		? 'where s.parent_id is null and s.fork_session_id is null and s.time_archived is null'
+		: 'where s.parent_id is null and s.time_archived is null';
+}
+
 export function buildNativeSessionsSqlV2(cwd: string, limit: number = NATIVE_SESSION_LIMIT, registry: NativeSessionRegistry = 'session'): string {
 	const needle = normalizeNativeDirectory(cwd);
 	const exact = escapeSqlLiteral(needle);
@@ -249,7 +264,7 @@ export function buildNativeSessionsSqlV2(cwd: string, limit: number = NATIVE_SES
 		`select s.id, s.title, s.directory, ${V2_TIME_UPDATED_EXPR},`,
 		's.summary_additions, s.summary_deletions, s.summary_files',
 		`from ${registry} s`,
-		'where s.parent_id is null and s.time_archived is null',
+		v2RegistryWhere(registry),
 		`and (s.directory = '${exact}' or s.directory like '${prefix}' escape '\\')`,
 		'order by time_updated desc',
 		`limit ${safeLimit}`,
@@ -285,7 +300,7 @@ export function buildNativeSessionSearchSqlV2(cwd: string, query: string, limit:
 		...textSelects,
 		') t) as snippet',
 		`from ${registry} s`,
-		'where s.parent_id is null and s.time_archived is null',
+		v2RegistryWhere(registry),
 		`and (s.directory = '${exact}' or s.directory like '${prefix}' escape '\\')`,
 		`and (s.title like '${escapeSqlLiteral(`%${escapeLikePattern(query)}%`)}' escape '\\' or exists (`,
 		...textSelects,

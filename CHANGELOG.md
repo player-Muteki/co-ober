@@ -1,3 +1,20 @@
+## 0.2.85 - 2026-10-20
+
+0.2.83 §7.1 handed forward a finding: `session/fork` records no parentage, so a side-chat ghost is an ordinary session and the history cannot tell it apart. A full-lifecycle rig this round ran the fork's row column by column and found the claim was wrong — and wrong in the direction that makes the honest fix available.
+
+### Fixed
+
+- **The native history listing and search now hide forked sessions, using the column the kernel actually writes.** Measured: a rig `session/fork` on 2.0.28 stores its parent's id in `fork_session_id` while `parent_id` stays null. The 0.2.83 "NULL across the entire database" readout was a zero-sample generalization — the surviving 21 rows contained no fork at all (rig rows were deleted on use, and side chat had never been exercised on a real conversation); re-checking the same database reproduced the all-null counts and explains why the error looked true. The listing has intended "top-level sessions only" ever since it wrote `parent_id is null`; the lineage filter now reads `parent_id is null and fork_session_id is null` — but only when the registry is `session_v2`, because the legacy `session` table has no such column and naming it there would break every read on a shared-registry fork. The side-chat ghost goes back into being what the design says it is: a scratch thread, not untitled litter wearing a `ses_…` name in the history dropdown. Deliberately not delete-on-close: the same rig showed the ghost's transcript is fully readable from `session_message` and its id stays addressable after an idle close (load and even prompt answered `ok`) — silently deleting the archive would burn the last window before the product decision is made with user evidence. The two facts refine 0.2.81's record too: close interrupts and kills a live turn, close of an idle session only releases.
+
+### Validation
+
+- 86 test files / 2,577 tests (2,575 baseline plus two new). The 19 pre-existing, platform-bound failures in `NativeSessionReader.test.ts` and `commandResolution.test.ts` are unchanged; TypeScript and ESLint are clean. Boundaries: both v2 builders carry `s.fork_session_id is null` exactly when the registry is named `session_v2` and never otherwise — defaults and v1 output stay byte-identical; a fake database with the forked-registry evidence shows the executed listing and search queries both carry the filter. Revert-check: collapsing `v2RegistryWhere` back to the unbranched where fails exactly the two new tests (20 = 18 + 2). Live proof on the real database: with a ghost present the old listing returned 18 rows including it, the filtered listing returned 17 without it and kept the parent; `fork_session_id` equalled the parent's id. Both rig rows were `session/delete`d in the same run.
+- The 0.2.83 research doc carries an inline correction note at the wrong claim (its §3.2.2 and §7.1), so the record shows what was measured, what was over-generalized, and what fixed it.
+
+### Still open
+
+Ghosts are hidden, not gone: the data stays in the kernel, and a recovered side chat would need an entry point that remembers the fork id, because the listing no longer shows it — the delete/keep decision waits for user evidence, not another rig. A registry in `session_v2` without a `fork_session_id` column would make the filtered query throw, and the reader would honestly report "unavailable" — an unmeasured shape. The close live-vs-idle boundary's middle case (close racing a turn's natural end by milliseconds) was not probed. Parent-delete cascade for forks remains unmeasured — this round's rigs deleted child-then-parent. And four existing rows carry null title and null update time (shell sessions from never-used `session/new`s, no lineage); whether history should hide zero-message shells waits on knowing what creates them.
+
 ## 0.2.84 - 2026-10-20
 
 0.2.83 §7.5 left one question open: the kernel stores forward slashes, and nobody had positive evidence that the cwd the plugin hands its own directory filter matches that shape. On this Windows host the answer was no — and it silently undid half of last release's fix.
