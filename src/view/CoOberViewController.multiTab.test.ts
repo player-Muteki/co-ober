@@ -563,6 +563,8 @@ describe('CoOberViewController — multi-tab runtimes (0.2.0 stage 2)', () => {
       const client = createMockClient({ cancel: vi.fn().mockResolvedValue('unsupported') });
       (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
       rtOf(h, h.controller.activeTabId()).sideChatSessionId = 'fork-a';
+      // The scratch thread is mid-answer — the witness the ask wrapper raises.
+      rtOf(h, h.controller.activeTabId()).sideChatBusy = true;
       Notice.messages.length = 0;
 
       await h.controller.cancelAllStreams();
@@ -571,6 +573,22 @@ describe('CoOberViewController — multi-tab runtimes (0.2.0 stage 2)', () => {
       // scratch thread, and it belongs in the same count.
       expect(client.cancel).toHaveBeenCalledWith('fork-a');
       expect(Notice.messages).toContain(t().error.panelClosedUnsupported.replace('{count}', '1'));
+    });
+
+    it('does not count an idle side thread in the unconfirmed-stop toast', async () => {
+      // A scratch thread parked between answers has no turn to stop. Counting
+      // its release in the toast would announce a stop the view never watched —
+      // and on 2.0.28, where cancel is unimplemented, every such ask answers
+      // "unknown", so the idle thread would inflate the count with nothing.
+      const client = createMockClient({ cancel: vi.fn().mockResolvedValue('unsupported') });
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      rtOf(h, h.controller.activeTabId()).sideChatSessionId = 'fork-a';
+      Notice.messages.length = 0;
+
+      await h.controller.cancelAllStreams();
+
+      expect(client.cancel).not.toHaveBeenCalled();
+      expect(Notice.messages).toEqual([]);
     });
 
     it('stays quiet when every stop was confirmed', async () => {
@@ -1210,6 +1228,7 @@ describe('CoOberViewController — one tab’s teardown stays inside that tab (0
         vi.fn((sid: string) => Promise.resolve(sid === 'fork-b' ? 'unknown' : 'unsupported')),
       );
       rtOf(h, tabB).sideChatSessionId = 'fork-b';
+      rtOf(h, tabB).sideChatBusy = true;
 
       await h.controller.closeTab(tabB);
 
@@ -1232,6 +1251,7 @@ describe('CoOberViewController — one tab’s teardown stays inside that tab (0
       const tabB = h.controller.activeTabId();
       expect(tabB).not.toBe(tabA);
       rtOf(h, tabB).sideChatSessionId = 'fork-b';
+      rtOf(h, tabB).sideChatBusy = true;
 
       await h.controller.closeTab(tabB);
 
@@ -1295,6 +1315,7 @@ describe('CoOberViewController — one tab’s teardown stays inside that tab (0
     it('confirms a side thread’s stop through its close as well', async () => {
       const { tabA, tabB } = await openBusyPairWithClose('unsupported', true);
       rtOf(h, tabB).sideChatSessionId = 'fork-b';
+      rtOf(h, tabB).sideChatBusy = true;
 
       await h.controller.closeTab(tabB);
 
@@ -1316,6 +1337,7 @@ describe('CoOberViewController — one tab’s teardown stays inside that tab (0
       });
       (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
       rtOf(h, h.controller.activeTabId()).sideChatSessionId = 'fork-a';
+      rtOf(h, h.controller.activeTabId()).sideChatBusy = true;
       Notice.messages.length = 0;
 
       await h.controller.cancelAllStreams();
@@ -2504,6 +2526,7 @@ describe('CoOberViewController — closed means closed (0.2.6 stage 3)', () => {
       const client = clientFor();
       const rt = rtOf(h, tabA);
       rt.sideChatSessionId = 'side-1';
+      rt.sideChatBusy = true;
 
       h.controller.endSideChat(rt);
 
@@ -2515,6 +2538,7 @@ describe('CoOberViewController — closed means closed (0.2.6 stage 3)', () => {
       const [, tabB] = twoTabs();
       const client = clientFor();
       rtOf(h, tabB).sideChatSessionId = 'side-b';
+      rtOf(h, tabB).sideChatBusy = true;
 
       await h.controller.dispose();
 

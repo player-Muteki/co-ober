@@ -4689,6 +4689,10 @@ describe('CoOberViewController — side chat (/btw)', () => {
     forkClient({ cancel: vi.fn().mockResolvedValue('unsupported') });
     controller.state.sessionId = 'local-1';
     await controller.startSideChat('hi');
+    // The stop claims below are about a turn that is answering. The mocked
+    // panel never runs the ask, so the witness the controller reads — the
+    // sideChatBusy flag the ask wrapper raises — is marked here directly.
+    activeRt(controller).sideChatBusy = true;
 
     await controller.endSideChat();
 
@@ -4699,6 +4703,7 @@ describe('CoOberViewController — side chat (/btw)', () => {
     forkClient({ cancel: vi.fn().mockRejectedValue(new Error('cancel broke')) });
     controller.state.sessionId = 'local-1';
     await controller.startSideChat('hi');
+    activeRt(controller).sideChatBusy = true;
 
     await controller.endSideChat();
 
@@ -4709,6 +4714,7 @@ describe('CoOberViewController — side chat (/btw)', () => {
     forkClient();
     controller.state.sessionId = 'local-1';
     await controller.startSideChat('hi');
+    activeRt(controller).sideChatBusy = true;
 
     await controller.endSideChat();
 
@@ -4721,6 +4727,7 @@ describe('CoOberViewController — side chat (/btw)', () => {
     const client = forkClient({ cancel: vi.fn().mockResolvedValue('unsupported') });
     controller.state.sessionId = 'local-1';
     await controller.startSideChat('hi');
+    activeRt(controller).sideChatBusy = true;
 
     // SideChatPanel.close() aborts a busy turn, then its onClose hook calls
     // endSideChat. The same gesture must not become two cancel requests.
@@ -4744,6 +4751,7 @@ describe('CoOberViewController — side chat (/btw)', () => {
     });
     controller.state.sessionId = 'local-1';
     await controller.startSideChat('hi');
+    activeRt(controller).sideChatBusy = true;
 
     const ended = await controller.endSideChat();
 
@@ -4760,6 +4768,7 @@ describe('CoOberViewController — side chat (/btw)', () => {
     });
     controller.state.sessionId = 'local-1';
     await controller.startSideChat('hi');
+    activeRt(controller).sideChatBusy = true;
 
     const ended = await controller.endSideChat();
 
@@ -4774,12 +4783,76 @@ describe('CoOberViewController — side chat (/btw)', () => {
     });
     controller.state.sessionId = 'local-1';
     await controller.startSideChat('hi');
+    activeRt(controller).sideChatBusy = true;
 
     // endSideChat must not reject on the close's failure: its callers await it
     // inside closeTab and cancelAllStreams, where a broken cleanup would
     // strand the tab teardown.
     await expect(controller.endSideChat()).resolves.toBe('unknown');
     expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().error.sideChatClosedUnknown);
+  });
+
+  it('releases an idle side thread without asking it to stop', async () => {
+    // A panel closed between answers holds a session that is not answering.
+    // On 2.0.28 cancel is unimplemented (-32601, measured 0.2.74), so every
+    // such ask answers "unknown", and an idle close whose release was skipped
+    // would tell the reader a turn may still be running when none ever
+    // started. The close that releases the session still fires — measured
+    // 0.2.85: closing an idle session is what releases its id.
+    const client = forkClient({
+      cancel: vi.fn().mockResolvedValue('unsupported'),
+      closeSession: vi.fn().mockResolvedValue(true),
+    });
+    controller.state.sessionId = 'local-1';
+    await controller.startSideChat('hi');
+
+    const ended = await controller.endSideChat();
+
+    expect(client.cancel).not.toHaveBeenCalled();
+    expect(client.closeSession).toHaveBeenCalledWith('forked-session');
+    expect(ended).toBeNull();
+    const spoken = (deps.renderer.addSystemMessage as ReturnType<typeof vi.fn>).mock.calls.flat();
+    expect(spoken).not.toContain(t().error.sideChatClosedUnsupported);
+    expect(spoken).not.toContain(t().error.sideChatClosedUnknown);
+  });
+
+  it('raises the busy witness only while a side turn is actually answering', async () => {
+    let settle!: (r: AcpResponse) => void;
+    forkClient({
+      sendMessage: vi.fn(() => new Promise<AcpResponse>((res) => (settle = res))),
+    });
+    controller.state.sessionId = 'local-1';
+    await controller.startSideChat('hi');
+    const ask = (callbacks.onOpenSideChat as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as (
+      text: string,
+      onChunk: (u: NormalizedUpdate) => void,
+    ) => Promise<AcpResponse>;
+    const rt = activeRt(controller);
+    expect(rt.sideChatBusy).toBe(false);
+
+    const inflight = ask('follow up', () => {});
+    // Set before the send's promise is even awaited: a close landing in this
+    // window must find the witness already raised.
+    expect(rt.sideChatBusy).toBe(true);
+
+    settle({ stopReason: 'end_turn' });
+    await inflight;
+    expect(rt.sideChatBusy).toBe(false);
+  });
+
+  it('clears the busy witness when the side turn breaks', async () => {
+    forkClient({ sendMessage: vi.fn().mockRejectedValue(new Error('send broke')) });
+    controller.state.sessionId = 'local-1';
+    await controller.startSideChat('hi');
+    const ask = (callbacks.onOpenSideChat as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as (
+      text: string,
+      onChunk: (u: NormalizedUpdate) => void,
+    ) => Promise<AcpResponse>;
+    const rt = activeRt(controller);
+
+    await expect(ask('follow up', () => {})).rejects.toThrow('send broke');
+
+    expect(rt.sideChatBusy).toBe(false);
   });
 
   it('tears the panel down from resetConversationView', async () => {

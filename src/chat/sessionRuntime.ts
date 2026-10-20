@@ -71,6 +71,14 @@ export class SessionRuntime {
    * for it leaks a live session on the agent side.
    */
   sideChatSessionId: string | null = null;
+  /**
+   * A side-chat turn this tab started is still answering. Raised by the ask
+   * wrapper when the send begins, cleared when it settles — the controller's
+   * own witness that a closed panel had a turn to stop. A cancel asked of an
+   * idle thread, and any stop claim built from its answer, would be a claim
+   * about a turn that never existed.
+   */
+  sideChatBusy = false;
 
   constructor(
     readonly tabId: string,

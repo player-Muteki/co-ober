@@ -2063,28 +2063,44 @@ export class CoOberViewController {
       const sideId = rt.sideChatSessionId;
       if (!client || !sideId) throw new Error(t().sideChat.notConnected);
       if (rt.state.sessionId) this.assertSessionDatabase(rt.state.sessionId, client);
-      return client.sendMessage(sideId, [{ type: 'text', text }], onChunk);
+      // The controller's own witness that a turn of this thread is live. The
+      // panel guards its input the same way, but the panel is gone by the
+      // time endSideChat asks whether anything needed stopping.
+      rt.sideChatBusy = true;
+      try {
+        return await client.sendMessage(sideId, [{ type: 'text', text }], onChunk);
+      } finally {
+        rt.sideChatBusy = false;
+      }
     };
   }
 
   /**
    * Close and release one tab's side session; the panel's onClose hook calls this.
-   * The in-flight turn is cancelled before the id is let go, and the session is
-   * closed while the cancel is still on its way. Either answer can confirm the
-   * stop: the agent that says `stopped` to the cancel, or the agent that accepts
-   * the close (on the measured kernel, a close taken mid-turn ends the turn).
-   * The combined evidence is returned so the caller can say what was confirmed.
-   * With `report` left on, the tab that owns the thread carries that line itself;
-   * closeTab passes `'none'` because its report lands in the tab that survives.
+   * Only a thread with a turn actually in flight is asked to stop: every
+   * answer this path weighs (0.2.74's cancel refusal, 0.2.81's close-ends-a-
+   * live-turn, 0.2.85's idle-close-that-only-releases) is an answer about a
+   * running turn, and an `unsupported` collected from a thread that was never
+   * asked anything is a claim about a turn that never existed. An idle close
+   * still releases the session — it just reports nothing, because it stopped
+   * nothing.
+   * For a live turn: the cancel goes out before the id is let go, and the
+   * session is closed while the cancel is still on its way. Either answer can
+   * confirm the stop: the agent that says `stopped` to the cancel, or the
+   * agent that accepts the close (on the measured kernel, a close taken
+   * mid-turn ends the turn). The combined evidence is returned so the caller
+   * can say what was confirmed. With `report` left on, the tab that owns the
+   * thread carries that line itself; closeTab passes `'none'` because its
+   * report lands in the tab that survives.
    */
   endSideChat(
     rt: SessionRuntime = this.activeRuntime,
     report: 'tab' | 'none' = 'tab',
   ): Promise<AcpStopEvidence | null> {
     const sideId = rt.sideChatSessionId;
+    const wasBusy = rt.sideChatBusy;
     rt.sideChatSessionId = null;
     if (!sideId) return Promise.resolve(null);
-    const cancel = this.cancelSideChat(sideId, rt);
     const client = this.deps.runtime.getClient();
     // The old gate, unchanged: the parent tab must still be addressable on this
     // client and the agent must advertise close. A close that fails or is
@@ -2095,6 +2111,8 @@ export class CoOberViewController {
       client.getAgentCapabilities?.()?.sessionCapabilities?.close
         ? client.closeSession(sideId).catch(() => false)
         : Promise.resolve(false);
+    if (!wasBusy) return Promise.resolve(null);
+    const cancel = this.cancelSideChat(sideId, rt);
     return Promise.all([cancel, closing]).then(([outcome, closed]) => {
       const evidence: AcpStopEvidence | null =
         outcome && outcome !== 'stopped' && closed ? 'closed' : outcome;
