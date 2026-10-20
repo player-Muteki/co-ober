@@ -226,6 +226,8 @@ const en = {
       'The side chat was closed while its turn was running, but the agent did not confirm that it stopped — that turn may still be running inside the agent.',
     sessionDeleteUnconfirmed:
       'The session was removed from this vault, but the agent did not confirm the delete — its history may still be kept inside it.',
+    sideChatDeleteUnconfirmed:
+      'The conversation was removed, but the agent did not confirm the delete of its side chat — that thread may still be kept inside it, invisible in the history.',
   },
 
   rewind: {

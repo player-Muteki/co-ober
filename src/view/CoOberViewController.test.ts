@@ -2631,6 +2631,64 @@ describe('CoOberViewController', () => {
       const spoken = (deps.renderer.addSystemMessage as ReturnType<typeof vi.fn>).mock.calls.flat();
       expect(spoken).not.toContain(t().error.sessionDeleteUnconfirmed);
     });
+
+    it('forgets the side chat with the conversation that forked it', async () => {
+      // Measured on 2.0.28: session/delete does not cascade — the fork keeps
+      // its rows and transcript, still wearing a fork_session_id that names
+      // the deleted parent, which 0.2.85's lineage filter hides from every
+      // listing. Releasing the thread at close was never forgetting it; this
+      // delete is the last gesture that can reach the id.
+      const client = createMockClient({
+        getAgentCapabilities: vi.fn(() => ({ sessionCapabilities: { delete: true } })),
+        deleteSession: vi.fn().mockResolvedValue(true),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      controller.state.sessionId = 'active-session';
+      activeRt(controller).sideChatSessionId = 'fork-a';
+
+      await controller.deleteSession('active-session');
+
+      // The id must be read before closeTab's release clears it — a delete
+      // that asks after teardown would silently miss every thread.
+      expect(client.deleteSession).toHaveBeenCalledWith('active-session');
+      expect(client.deleteSession).toHaveBeenCalledWith('fork-a');
+      const spoken = (deps.renderer.addSystemMessage as ReturnType<typeof vi.fn>).mock.calls.flat();
+      expect(spoken).not.toContain(t().error.sideChatDeleteUnconfirmed);
+    });
+
+    it('says when the agent forgot the conversation but not its side chat', async () => {
+      const client = createMockClient({
+        getAgentCapabilities: vi.fn(() => ({ sessionCapabilities: { delete: true } })),
+        deleteSession: vi.fn((id: string) => Promise.resolve(id !== 'fork-a')),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      controller.state.sessionId = 'active-session';
+      activeRt(controller).sideChatSessionId = 'fork-a';
+
+      await controller.deleteSession('active-session');
+
+      // The parent landed — its line is not due. The thread that did not is
+      // invisible in the history and unreachable by every other gesture, so
+      // the one report that can name it is this one.
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().error.sideChatDeleteUnconfirmed);
+      const spoken = (deps.renderer.addSystemMessage as ReturnType<typeof vi.fn>).mock.calls.flat();
+      expect(spoken).not.toContain(t().error.sessionDeleteUnconfirmed);
+    });
+
+    it('claims nothing about the side chat when delete was never on the table', async () => {
+      const client = createMockClient({ deleteSession: vi.fn().mockResolvedValue(true) });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      controller.state.sessionId = 'active-session';
+      activeRt(controller).sideChatSessionId = 'fork-a';
+
+      await controller.deleteSession('active-session');
+
+      // No capability, no ask, no claim — the same silence the parent keeps
+      // toward an agent that never advertised a delete.
+      expect(client.deleteSession).not.toHaveBeenCalled();
+      const spoken = (deps.renderer.addSystemMessage as ReturnType<typeof vi.fn>).mock.calls.flat();
+      expect(spoken).not.toContain(t().error.sideChatDeleteUnconfirmed);
+    });
   });
 
   describe('forkSession', () => {

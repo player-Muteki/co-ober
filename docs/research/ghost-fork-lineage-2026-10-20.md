@@ -73,4 +73,5 @@ rig 两行用完即 `session/delete`，库中无残留。
 2. **`fork_session_id` 列的存在性外推**：判定仍以探测缓存里的注册表为准；一个"注册表在 `session_v2` 但没有 `fork_session_id` 列"的怪内核会让 SQL 抛错、被 `listNativeSessions` 的 reject 语义如实报成"不可用"（不会谎报空列表），但那是没测过的形态。
 3. **close 的确切生死语义**：0.2.81（直播合被 close → 杀）与本轮（idle 被 close → 不杀）都有实测，中间态（close 时回合恰好在同一毫秒自然结束）没测过。
 4. **父删子级联**：本轮 rig 是先删子再删父，级联仍未测——幽灵被列表隐藏后，这个问题对产品行为的影响变小，但对内核行为的认识仍是空白。
+   > 0.2.87 已闭合：`fork-cascade` rig 先删父测得级联不发生——子行与其转录完好保留，`fork_session_id` 仍指向已消失的父，`session/load`、`session/prompt`、ACP `session/list` 对孤儿子照常应答（内核看得见，0.2.85 的过滤让它们对插件历史永久隐形）。据此插件删除一段会话时必须显式带走它的侧边线程。详见 docs/research/fork-parent-delete-cascade-2026-10-20.md。
 5. **4 行 title 与 time_updated 双 null 的现存会话**：不是 fork（无族谱），像 `session/new` 后从未使用的空壳；列表会把它们以 id 为标题端出来。是否该过滤"零消息会话"未实测其成因，不动。

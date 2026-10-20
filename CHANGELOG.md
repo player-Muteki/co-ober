@@ -1,3 +1,20 @@
+## 0.2.87 - 2026-10-20
+
+0.2.85 hid forked rows from the native history with the lineage filter and left one question unmeasured: what happens to a fork when its parent is deleted? A full-lifecycle rig deleted the parent first this time, and the answer turned the product question "keep or delete ghosts?" into a leak the plugin is now responsible for.
+
+### Fixed
+
+- **Deleting a conversation now forgets its side chat with it.** Measured: `session/delete` does not cascade — after the parent's row and transcript are taken, each fork survives with its messages intact, still wearing a `fork_session_id` that names the row no longer there, and the kernel keeps serving it: `session/load` and `session/prompt` answered the orphans normally (even the one closed earlier), and ACP `session/list` still showed them. The plugin's own lineage filter (0.2.85) hides those rows from every listing, a `/btw` fork was never in the session mirror, and the id lived only in `rt.sideChatSessionId` — which the teardown clears. If the delete gesture does not take the thread, no gesture ever can. `deleteSession` now captures the tab's side id **before** `closeTab` releases it, and after the parent's confirmed delete asks the kernel to forget the thread through the same gate (capability advertised, session addressable). Parent confirmed but thread unconfirmed says so on the new line (`error.sideChatDeleteUnconfirmed`, en+zh); no delete capability means no ask and no claim, the same silence the parent keeps. Deleting child-first or parent-first both work — the earlier rigs deleted child-then-parent and this one parent-then-child; the code keeps parent-first so the headline fact lands before the annex.
+
+### Validation
+
+- 86 test files / 2,584 tests (2,581 baseline plus three new). The 19 pre-existing, platform-bound failures in `NativeSessionReader.test.ts` and `commandResolution.test.ts` are unchanged; TypeScript (`tsc --noEmit`) and ESLint are clean. Boundaries: both ids reach `client.deleteSession` exactly once (and the thread's id must survive being read before teardown — a late read would silently miss every thread); a confirmed parent with an unconfirmed thread speaks only the new line; an agent without the delete capability is asked for neither and hears no claim; the 0.2.82 delete semantics and the 0.2.86 idle-release behavior regress unchanged. Revert-check: restoring the controller to its committed state fails exactly the two discriminating tests (21 = 19 baseline + 2); the third test is an over-claim guard, green on both sides by design. The rig deleted all of its own rows in the same run: the final read showed every id null and every message count zero.
+- The 0.2.85 research doc's open item 4 (parent-delete cascade) is annotated as closed with the measured answer.
+
+### Still open
+
+The crash/restart path still leaks: `sideChatSessionId` lives only in memory, so after an Obsidian restart the plugin cannot remember a living fork's id and `deleteSession` cannot take it — plugging that needs persisting the id, a separate single point. Orphans created outside the plugin remain unreachable by definition. And the user-facing branch fork (`forkSession` to a new tab) carries the same `fork_session_id` the 0.2.85 filter hides, so branch tabs vanish from the native section of the history (they stay findable in the plugin's own mirror) — whether they should be visible natively is a product decision, untouched this round.
+
 ## 0.2.86 - 2026-10-20
 
 0.2.80 gave the side chat's stop answer an owner, and along the way wrote the doctrine that an unconfirmed stop must be spoken. But every answer that path weighs is an answer about a *running* turn, and 0.2.80 had no way to know whether a thread had a turn at all. This round adds that witness.

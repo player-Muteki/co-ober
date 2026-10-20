@@ -1939,6 +1939,9 @@ export class CoOberViewController {
     const rt = this.findRuntimeBySession(sessionId);
     // Teardown needs the saved source to decide whether this kernel can address the id.
     // Removing the mirror first would turn a known mismatch into an unbound session.
+    // The tab's scratch thread is captured here too: closeTab's release clears it,
+    // and after that nothing else knows the id exists.
+    const sideId = rt?.sideChatSessionId ?? null;
     if (rt) await this.closeTab(rt.tabId);
     // Closing releases the session from this connection; on the measured kernel
     // it stays in the database — listed, loadable, back after a restart. Only
@@ -1947,16 +1950,24 @@ export class CoOberViewController {
     // advertised delete that fails is said, because a session that returns to
     // the history list after being deleted is a fact the reader needs.
     const client = this.deps.runtime.getClient();
-    const deletable =
-      !!client?.getAgentCapabilities?.()?.sessionCapabilities?.delete &&
-      !!client &&
-      typeof client.deleteSession === 'function' &&
-      this.canAddressSession(sessionId, client);
-    const deleted = deletable ? await client.deleteSession(sessionId) : false;
+    const advertisesDelete =
+      !!client?.getAgentCapabilities?.()?.sessionCapabilities?.delete && typeof client?.deleteSession === 'function';
+    const forgettable = !!client && advertisesDelete && this.canAddressSession(sessionId, client);
+    const deleted = forgettable && !!client ? await client.deleteSession(sessionId) : false;
+    // Measured on 2.0.28: forgetting a session does not cascade — its forks
+    // survive with their transcripts intact, still wearing a `fork_session_id`
+    // that names the row no longer there. The 0.2.85 lineage filter hides such
+    // rows from every listing, and no tab, panel or dropdown can name the
+    // thread any more: if this delete does not take it, nothing ever will.
+    const sideDeletable = !!client && !!sideId && advertisesDelete && this.canAddressSession(sideId, client);
+    const sideDeleted = sideDeletable && !!client && !!sideId ? await client.deleteSession(sideId) : false;
     this.deps.sessionStore.remove(sessionId);
     await this.deps.sessionStore.save();
-    if (deletable && !deleted && !this.disposed) {
+    if (forgettable && !deleted && !this.disposed) {
       this.activeRuntime.renderer.addSystemMessage(t().error.sessionDeleteUnconfirmed);
+    }
+    if (sideDeletable && !sideDeleted && !this.disposed) {
+      this.activeRuntime.renderer.addSystemMessage(t().error.sideChatDeleteUnconfirmed);
     }
     if (!rt) return;
     // Losing the shown conversation must land the user on a fresh session,

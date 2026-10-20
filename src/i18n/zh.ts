@@ -227,6 +227,8 @@ const zh: Locale = {
       '侧边聊天在运行中关闭，但 agent 没有确认那一轮已经停下 —— 它可能仍在 agent 内部继续。',
     sessionDeleteUnconfirmed:
       '该会话已从本 vault 移除，但 agent 没有确认删除 —— 它的历史可能仍留在它内部。',
+    sideChatDeleteUnconfirmed:
+      '该会话已移除，但 agent 没有确认删除它的侧边聊天 —— 那条线程可能仍留在它内部，在历史里看不见。',
   },
 
   rewind: {
