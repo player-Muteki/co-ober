@@ -201,6 +201,12 @@ export class CoOberViewController {
    * over instead.
    */
   private placeholderRuntime: SessionRuntime | null = null;
+  /**
+   * One cancel per side session, shared by everyone who asks for it. Closing a
+   * busy side panel aborts from the panel and then again from `endSideChat`;
+   * before this map that was two cancel requests and two forgotten answers.
+   */
+  private sideCancels = new Map<string, Promise<AcpCancelOutcome | null>>();
   private tabSeq = 0;
   private persistFailed = false;
   private disposed = false;
@@ -450,8 +456,9 @@ export class CoOberViewController {
     // Prompts waiting in a closed tab are gone; say so like every other drop.
     this.dropQueuedPrompts(rt);
     // Its scratch thread goes with it: a fork nobody can reach again would
-    // stay open on the agent side for the rest of the session.
-    this.endSideChat(rt);
+    // stay open on the agent side for the rest of the session. Its cancel
+    // answer is carried out of here with the tab's own.
+    const sideOutcome = await this.endSideChat(rt, 'none');
     this.callbacks.onCloseSideChat?.(tabId);
     this.runtimes.delete(tabId);
     // The same reason applies to the conversation itself. Closing a tab used
@@ -506,6 +513,13 @@ export class CoOberViewController {
     if (!this.disposed && (cancelOutcome === 'unsupported' || cancelOutcome === 'unknown')) {
       this.activeRuntime.renderer.addSystemMessage(
         cancelOutcome === 'unsupported' ? t().error.tabClosedUnsupported : t().error.tabClosedUnknown,
+      );
+    }
+    if (!this.disposed && (sideOutcome === 'unsupported' || sideOutcome === 'unknown')) {
+      this.activeRuntime.renderer.addSystemMessage(
+        sideOutcome === 'unsupported'
+          ? t().error.sideChatClosedUnsupported
+          : t().error.sideChatClosedUnknown,
       );
     }
   }
@@ -690,6 +704,13 @@ export class CoOberViewController {
     let unconfirmed = 0;
     let sawUnknown = false;
     for (const rt of this.runtimes.values()) {
+      // A side thread is a turn too: the view closing takes its panel with it,
+      // and its cancel answer used to die in dispose with no one to carry it.
+      const sideOutcome = await this.endSideChat(rt, 'none');
+      if (sideOutcome && sideOutcome !== 'stopped') {
+        unconfirmed++;
+        if (sideOutcome === 'unknown') sawUnknown = true;
+      }
       if (!rt.busy) continue;
       ++rt.genId;
       rt.busy = false;
@@ -1044,7 +1065,7 @@ export class CoOberViewController {
     // and a banner whose container is gone.
     this.deps.runtime.getClient()?.setClientHandlers({});
     for (const rt of this.runtimes.values()) this.dropQueuedPrompts(rt);
-    for (const rt of this.runtimes.values()) this.endSideChat(rt);
+    for (const rt of this.runtimes.values()) void this.endSideChat(rt);
     for (const rt of this.runtimes.values()) await rt.streamCtrl.dispose();
     // The off-strip placeholder is not in `runtimes`; its stream teardown has
     // to run too, or a view closed over an unclaimed placeholder leaks it.
@@ -2017,31 +2038,67 @@ export class CoOberViewController {
 
   /**
    * Close and release one tab's side session; the panel's onClose hook calls this.
-   * The in-flight turn is cancelled before the id is let go: a fork dropped
-   * silently kept answering to a panel that was already removed, and view close
-   * reaches this before the panel itself gets a chance to abort.
+   * The in-flight turn is cancelled before the id is let go, and the answer is
+   * returned so the caller can say what the agent confirmed. With `report`
+   * left on, the tab that owns the thread carries that line itself; closeTab
+   * passes `'none'` because its report lands in the tab that survives.
    */
-  endSideChat(rt: SessionRuntime = this.activeRuntime): void {
+  endSideChat(
+    rt: SessionRuntime = this.activeRuntime,
+    report: 'tab' | 'none' = 'tab',
+  ): Promise<AcpCancelOutcome | null> {
     const sideId = rt.sideChatSessionId;
-    if (sideId) this.abortSideChat(rt.tabId);
     rt.sideChatSessionId = null;
-    if (!sideId) return;
+    if (!sideId) return Promise.resolve(null);
+    const cancel = this.cancelSideChat(sideId, rt);
     const client = this.deps.runtime.getClient();
-    if (client && rt.state.sessionId && !this.canAddressSession(rt.state.sessionId, client)) return;
-    if (client?.getAgentCapabilities?.()?.sessionCapabilities?.close) {
-      void client.closeSession(sideId).catch((e) => console.error('[co-ober] close side session:', e));
+    if (client && !(rt.state.sessionId && !this.canAddressSession(rt.state.sessionId, client))) {
+      if (client.getAgentCapabilities?.()?.sessionCapabilities?.close) {
+        void client.closeSession(sideId).catch((e) => console.error('[co-ober] close side session:', e));
+      }
     }
+    if (report === 'none') return cancel;
+    return cancel.then((outcome) => {
+      // The panel itself is gone either way, so the tab that asked for the
+      // thread is the only surface left that can say it may still be answering.
+      if (outcome && outcome !== 'stopped' && this.stillOpen(rt)) {
+        rt.renderer.addSystemMessage(
+          outcome === 'unsupported'
+            ? t().error.sideChatClosedUnsupported
+            : t().error.sideChatClosedUnknown,
+        );
+      }
+      return outcome;
+    });
   }
 
   /** Cancel a still-streaming side-chat turn; the panel calls this when closed mid-answer. */
-  abortSideChat(tabId?: string): void {
+  abortSideChat(tabId?: string): Promise<AcpCancelOutcome | null> {
     const rt = tabId ? this.runtimes.get(tabId) : this.activeRuntime;
     const sideId = rt?.sideChatSessionId;
-    if (!sideId) return;
+    if (!rt || !sideId) return Promise.resolve(null);
+    return this.cancelSideChat(sideId, rt);
+  }
+
+  /** Ask once: the panel's abort and endSideChat's are the same gesture. */
+  private cancelSideChat(sideId: string, rt: SessionRuntime): Promise<AcpCancelOutcome | null> {
     const client = this.deps.runtime.getClient();
-    if (!client) return;
-    if (rt?.state.sessionId && !this.canAddressSession(rt.state.sessionId, client)) return;
-    void client.cancel(sideId).catch((e) => console.warn('[co-ober] side chat cancel:', e));
+    if (!client) return Promise.resolve(null);
+    // A session this client cannot address was never asked about; say nothing.
+    if (rt.state.sessionId && !this.canAddressSession(rt.state.sessionId, client)) {
+      return Promise.resolve(null);
+    }
+    const pending = this.sideCancels.get(sideId);
+    if (pending) return pending;
+    const cancel = client
+      .cancel(sideId)
+      .catch((e): AcpCancelOutcome => {
+        console.warn('[co-ober] side chat cancel:', e);
+        return 'unknown';
+      })
+      .finally(() => this.sideCancels.delete(sideId));
+    this.sideCancels.set(sideId, cancel);
+    return cancel;
   }
 
   async resumeSession(sessionId: string, homeTab?: SessionRuntime): Promise<void> {
@@ -3527,7 +3584,7 @@ export class CoOberViewController {
     const sessions = this.sessionsOf(rt);
     // The scratch thread was forked from this tab's conversation, so it is
     // this tab's to release — whether or not it is the one on screen.
-    this.endSideChat(rt);
+    void this.endSideChat(rt);
     this.callbacks.onCloseSideChat?.(rt.tabId);
     this.deps.permissionBanner.dismiss(sessions);
     if (active) {

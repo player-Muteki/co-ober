@@ -558,6 +558,20 @@ describe('CoOberViewController — multi-tab runtimes (0.2.0 stage 2)', () => {
       expect(Notice.messages).toContain(t().error.panelClosedUnknown.replace('{count}', '1'));
     });
 
+    it('counts a side-chat stop the closing view could not confirm', async () => {
+      const client = createMockClient({ cancel: vi.fn().mockResolvedValue('unsupported') });
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      rtOf(h, h.controller.activeTabId()).sideChatSessionId = 'fork-a';
+      Notice.messages.length = 0;
+
+      await h.controller.cancelAllStreams();
+
+      // The main turn was idle; the only turn the view stopped watching is the
+      // scratch thread, and it belongs in the same count.
+      expect(client.cancel).toHaveBeenCalledWith('fork-a');
+      expect(Notice.messages).toContain(t().error.panelClosedUnsupported.replace('{count}', '1'));
+    });
+
     it('stays quiet when every stop was confirmed', async () => {
       await openBusyPair({ 'ses-a': 'stopped', 'ses-b': 'stopped' });
 
@@ -1187,6 +1201,47 @@ describe('CoOberViewController — one tab’s teardown stays inside that tab (0
       expect(h.controller.runtimeForTab(tabB)).toBeUndefined();
       expect(rtOf(h, tabA).renderer.addSystemMessage).toHaveBeenCalledWith(
         t().error.tabClosedUnknown,
+      );
+    });
+
+    it('reports the closed tab’s side-chat stop separately from its main turn', async () => {
+      const { tabA, tabB } = await openHangingPair(
+        vi.fn((sid: string) => Promise.resolve(sid === 'fork-b' ? 'unknown' : 'unsupported')),
+      );
+      rtOf(h, tabB).sideChatSessionId = 'fork-b';
+
+      await h.controller.closeTab(tabB);
+
+      // Two different turns were stopped watching by one close, and the agent
+      // answered differently about each: the survivor carries both facts.
+      expect(rtOf(h, tabA).renderer.addSystemMessage).toHaveBeenCalledWith(
+        t().error.tabClosedUnsupported,
+      );
+      expect(rtOf(h, tabA).renderer.addSystemMessage).toHaveBeenCalledWith(
+        t().error.sideChatClosedUnknown,
+      );
+    });
+
+    it('carries a side-chat-only close into the survivor', async () => {
+      const client = createMockClient({ cancel: vi.fn().mockResolvedValue('unsupported') });
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      h.controller.state.sessionId = 'ses-a';
+      const tabA = h.controller.activeTabId();
+      await h.controller.newSession(true);
+      const tabB = h.controller.activeTabId();
+      expect(tabB).not.toBe(tabA);
+      rtOf(h, tabB).sideChatSessionId = 'fork-b';
+
+      await h.controller.closeTab(tabB);
+
+      // The main turn was idle, so the only unconfirmed stop is the side one.
+      expect(client.cancel).toHaveBeenCalledTimes(1);
+      expect(client.cancel).toHaveBeenCalledWith('fork-b');
+      expect(rtOf(h, tabA).renderer.addSystemMessage).toHaveBeenCalledWith(
+        t().error.sideChatClosedUnsupported,
+      );
+      expect(rtOf(h, tabA).renderer.addSystemMessage).not.toHaveBeenCalledWith(
+        t().error.tabClosedUnsupported,
       );
     });
 

@@ -1,3 +1,21 @@
+## 0.2.80 - 2026-10-20
+
+Closes the last of the cancel paths 0.2.74 listed: the side chat. Closing a busy side panel did not merely forget the answer — it asked twice, from two different callers, and forgot both.
+
+### Fixed
+
+- **A closed side chat's stop result went nowhere, and its cancel went out twice.** `SideChatPanel.close()` calls `abort()` when the turn is in flight, then its `onClose` hook calls `endSideChat`, which called `abortSideChat` again — two `cancel()` requests for the same fork, each `.catch`-logged or dropped. The panel is then removed, so even the first answer had no surface left. On the installed `opencode v2.0.28` cancel is unimplemented (0.2.74 measured `-32601` for all nine spellings; 0.2.76 measured the round trip), so both asks were being told the turn could not be stopped and neither answer reached the reader. There is now one shared cancel per side session (`sideCancels`), the panel's abort and the close hook receive the same promise, and `endSideChat` returns the outcome: `unsupported` and `unknown` are written into the parent tab's transcript, `stopped` is silent, and a cancel that throws is `unknown` rather than a warning on the console. The report survives the panel because the tab does.
+- **The same result is carried through the two closes that remove the tab itself.** `closeTab` awaits the side outcome before deleting the runtime and writes an unconfirmed side stop into the tab that inherits the slot, alongside the tab's own turn — the two are reported separately because the agent can answer differently about each. `cancelAllStreams` now ends each runtime's side thread before it counts, so a view closed over a running side chat adds it to the same `Notice`; previously that cancel happened later in `dispose`, after the notice had already been decided, and was silent.
+
+### Validation
+
+- 86 test files / 2,554 tests (2,547 baseline plus seven new). The 19 pre-existing, platform-bound failures in `NativeSessionReader.test.ts` and `commandResolution.test.ts` are unchanged; TypeScript and ESLint are clean. Seven boundaries, each confirmed to discriminate: an `unsupported` side stop is said in the owning tab; a throwing side cancel is said as `unknown` (the old code warned and said nothing); a confirmed stop says neither line; the panel's abort followed by its close issues exactly one `cancel()` and still reports; closing a tab with a main `unsupported` and a side `unknown` puts both lines in the survivor; a tab whose only running turn is the side chat reports the side line and not the tab line; and a view close over an idle main tab with a running side chat counts that side turn in its notice. Reverting to the old two-call shape fails the first and fourth; dropping the catch-to-`unknown` fails the second; reporting on `stopped` fails the third; not awaiting the side outcome in `closeTab` fails the fifth and sixth; leaving side cancels in `dispose` fails the seventh.
+- The kernel facts routed here are the ones measured on 2.0.28 in 0.2.74 and 0.2.76; this release changes who asks and where the answer is said, not what the agent does with a cancel. No new live rig was needed, and the `stopped` branch remains exercised only against the mock contract.
+
+### Still open
+
+Every close surface now reports an unconfirmed stop: Stop, the idle watchdog, `/compact`, tab close, view close and the side chat. What remains is not another discard point but the measurement itself: `stopped` has never been observed on an agent that implements cancel, `session/close` is still unmeasured against a live turn, and every kernel fact here comes from 2.0.28. The note also waits in a background tab's transcript rather than pulling the reader to it, which is the same choice every other transcript message makes.
+
 ## 0.2.79 - 2026-10-20
 
 Takes the view-close path of the 0.2.74 gap. Closing the panel cancels every running turn, and the panel — every surface the plugin owns — is destroyed in the same act, so the cancel results had nowhere to go and went nowhere.

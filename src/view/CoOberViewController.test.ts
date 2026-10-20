@@ -4638,6 +4638,54 @@ describe('CoOberViewController — side chat (/btw)', () => {
     expect(client.cancel).not.toHaveBeenCalled();
   });
 
+  it('says in the tab that the side turn could not be stopped', async () => {
+    forkClient({ cancel: vi.fn().mockResolvedValue('unsupported') });
+    controller.state.sessionId = 'local-1';
+    await controller.startSideChat('hi');
+
+    await controller.endSideChat();
+
+    expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().error.sideChatClosedUnsupported);
+  });
+
+  it('turns a throwing side cancel into an unconfirmed stop', async () => {
+    forkClient({ cancel: vi.fn().mockRejectedValue(new Error('cancel broke')) });
+    controller.state.sessionId = 'local-1';
+    await controller.startSideChat('hi');
+
+    await controller.endSideChat();
+
+    expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().error.sideChatClosedUnknown);
+  });
+
+  it('stays quiet when the side stop was confirmed', async () => {
+    forkClient();
+    controller.state.sessionId = 'local-1';
+    await controller.startSideChat('hi');
+
+    await controller.endSideChat();
+
+    const spoken = (deps.renderer.addSystemMessage as ReturnType<typeof vi.fn>).mock.calls.flat();
+    expect(spoken).not.toContain(t().error.sideChatClosedUnsupported);
+    expect(spoken).not.toContain(t().error.sideChatClosedUnknown);
+  });
+
+  it('shares one cancel between the panel’s abort and its close', async () => {
+    const client = forkClient({ cancel: vi.fn().mockResolvedValue('unsupported') });
+    controller.state.sessionId = 'local-1';
+    await controller.startSideChat('hi');
+
+    // SideChatPanel.close() aborts a busy turn, then its onClose hook calls
+    // endSideChat. The same gesture must not become two cancel requests.
+    const aborted = controller.abortSideChat();
+    const ended = controller.endSideChat();
+    await Promise.all([aborted, ended]);
+
+    expect(client.cancel).toHaveBeenCalledTimes(1);
+    expect(client.cancel).toHaveBeenCalledWith('forked-session');
+    expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().error.sideChatClosedUnsupported);
+  });
+
   it('tears the panel down from resetConversationView', async () => {
     const client = forkClient();
     controller.state.sessionId = 'local-1';

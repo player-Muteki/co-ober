@@ -948,11 +948,11 @@ export class CoOberView extends ItemView {
         // "Main busy" is the tab this thread was forked from, not whichever
         // conversation happens to be on screen.
         isMainBusy: () => this.controller?.runtimeForTab(tabId)?.busy ?? false,
-        abort: () => this.controller?.abortSideChat(tabId),
+        abort: () => void this.controller?.abortSideChat(tabId),
         onClose: () => {
           this.sideChatPanels.delete(tabId);
           const rt = this.controller?.runtimeForTab(tabId);
-          if (rt) this.controller?.endSideChat(rt);
+          if (rt) void this.controller?.endSideChat(rt);
         },
       });
       this.sideChatPanels.set(tabId, panel);
