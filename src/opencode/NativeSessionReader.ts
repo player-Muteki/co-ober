@@ -419,7 +419,7 @@ export interface NativeSessionUsage {
 	reasoningTokens: number;
 	cacheReadTokens: number;
 	cacheWriteTokens: number;
-	/** Context size of the newest assistant turn (message tokens.total), if any. */
+	/** Context size of the newest assistant turn, if the database reported one. */
 	contextTokens?: number;
 }
 
@@ -439,36 +439,51 @@ export function buildSessionUsageSql(sessionId: string): string {
 	].join(' ');
 }
 
-function v2AssistantSum(sessionIdLiteral: string, path: string, alias: string, cast: 'real' | 'integer'): string {
-	return [
-		`(select coalesce(sum(cast(json_extract(sm.data, '$.${path}') as ${cast})), 0)`,
-		`from session_message sm where sm.session_id = '${sessionIdLiteral}'`,
-		`and sm.type = 'assistant' and json_valid(sm.data)) as ${alias}`,
-	].join(' ');
-}
-
 /**
- * v2 totals: the legacy `session` bookkeeping may lag the event log after a
- * fork, so aggregate cost from step-finish parts inside assistant `content`
- * and tokens from each assistant row's own `tokens` object.
+ * v2 totals: the registry row's own cost/token columns, the same six the v1 read
+ * already trusts, plus the context size of the newest assistant event.
+ *
+ * Measured on `opencode v2.0.28` against the real database, the aggregate over
+ * the event log this replaced was wrong in both directions and blind in one:
+ *
+ * - `session/fork` copies the ancestor's assistant events into the new thread,
+ *   so a side chat that had never spoken summed its parent's whole lifetime: a
+ *   rig fork read `tokens_input` 0 on its own row against 11,527 copied input
+ *   tokens in its events, and after its own turn the row read 2,467 while the
+ *   event sum read 13,994.
+ * - The kernel bills steps that never land in an assistant event. The same rig
+ *   saw a first turn move the registry by 452 input/5 output more than the
+ *   event log (one title-generation call is the likeliest author, unproven),
+ *   while the second turn moved both sources by the identical 420/5. Over 15 of
+ *   16 real sessions the sum understated lifetime tokens (19…4,136 input); the
+ *   one session with no such extra reported 21,235 from both sources — the
+ *   registry is not inflated, it is the fuller of two accounts.
+ * - Both derived clauses read a shape this kernel does not write: 0 of the
+ *   1,389 assistant events carry a `step-finish` part in `$.content` and 0
+ *   carry `tokens.total`, so cost came back 0 and context came back absent for
+ *   every session on the host.
+ *
+ * `total = input + output + reasoning + cache.read` is the kernel's own
+ * identity, satisfied by all 12 of its `message` rows that carry a total; every
+ * one of those has `cache.write` 0, so write stays out of the sum rather than
+ * being guessed in. An event with no `tokens` object at all is skipped instead
+ * of read as a zero context — the meter distinguishes "not reported" from an
+ * empty window.
  */
-export function buildSessionUsageSqlV2(sessionId: string): string {
+export function buildSessionUsageSqlV2(sessionId: string, registry: NativeSessionRegistry): string {
 	const id = escapeSqlLiteral(sessionId);
+	const registryTable = registry === 'session_v2' ? 'session_v2' : 'session';
 	return [
-		'select',
-		"(select coalesce(sum(cast(json_extract(j.value, '$.cost') as real)), 0)",
-		`from session_message sm, json_each(sm.data, '$.content') j`,
-		`where sm.session_id = '${id}' and sm.type = 'assistant' and json_valid(sm.data)`,
-		`and json_extract(j.value, '$.type') = 'step-finish') as cost,`,
-		v2AssistantSum(id, 'tokens.input', 'tokens_input', 'integer') + ',',
-		v2AssistantSum(id, 'tokens.output', 'tokens_output', 'integer') + ',',
-		v2AssistantSum(id, 'tokens.reasoning', 'tokens_reasoning', 'integer') + ',',
-		v2AssistantSum(id, 'tokens.cache.read', 'tokens_cache_read', 'integer') + ',',
-		v2AssistantSum(id, 'tokens.cache.write', 'tokens_cache_write', 'integer') + ',',
-		"(select cast(json_extract(sm.data, '$.tokens.total') as integer)",
-		`from session_message sm where sm.session_id = '${id}' and sm.type = 'assistant' and json_valid(sm.data)`,
-		`and json_extract(sm.data, '$.tokens.total') is not null`,
+		'select s.cost, s.tokens_input, s.tokens_output, s.tokens_reasoning,',
+		's.tokens_cache_read, s.tokens_cache_write,',
+		"(select coalesce(cast(json_extract(sm.data, '$.tokens.input') as integer), 0)",
+		"+ coalesce(cast(json_extract(sm.data, '$.tokens.output') as integer), 0)",
+		"+ coalesce(cast(json_extract(sm.data, '$.tokens.reasoning') as integer), 0)",
+		"+ coalesce(cast(json_extract(sm.data, '$.tokens.cache.read') as integer), 0)",
+		`from session_message sm where sm.session_id = s.id and sm.type = 'assistant'`,
+		`and json_valid(sm.data) and json_extract(sm.data, '$.tokens') is not null`,
 		'order by sm.seq desc limit 1) as context_tokens',
+		`from ${registryTable} s where s.id = '${id}'`,
 	].join(' ');
 }
 
@@ -505,10 +520,11 @@ export async function readNativeSessionUsage(sessionId: string, deps: NativeSess
 	if (!databasePath) return undefined;
 	const format = await resolveNativeReadFormat(databasePath, deps);
 	if (!format) return undefined;
+	const registry = await resolveNativeSessionRegistry(databasePath, deps);
 
 	let rows: SqliteRow[];
 	try {
-		const sql = format === 'v2' ? buildSessionUsageSqlV2(sessionId) : buildSessionUsageSql(sessionId);
+		const sql = format === 'v2' ? buildSessionUsageSqlV2(sessionId, registry) : buildSessionUsageSql(sessionId);
 		rows = await querySqliteJson(databasePath, sql, deps.sqlite);
 	} catch (error) {
 		console.warn('[co-ober] native session usage unavailable:', error);

@@ -525,15 +525,21 @@ describe('v2 (forked database) SQL builders', () => {
 		expect(sql).toContain('limit 20');
 	});
 
-	it('aggregates usage from event rows without touching stale message tables', () => {
-		const sql = buildSessionUsageSqlV2("ses_it's");
-		expect(sql).toContain("sm.session_id = 'ses_it''s'");
-		expect(sql).toContain("json_extract(j.value, '$.cost')");
-		expect(sql).toContain("json_extract(sm.data, '$.tokens.input')");
+	it('reads usage from the registry row and the newest event tokens', () => {
+		const sql = buildSessionUsageSqlV2("ses_it's", 'session_v2');
+		expect(sql).toContain("from session_v2 s where s.id = 'ses_it''s'");
+		expect(sql).toContain('s.cost');
+		expect(sql).toContain('s.tokens_cache_read');
+		expect(sql).toContain("sm.session_id = s.id and sm.type = 'assistant'");
 		expect(sql).toContain("json_extract(sm.data, '$.tokens.cache.read')");
 		expect(sql).toContain('order by sm.seq desc limit 1');
+		// Neither clause that read a shape `opencode v2.0.28` never writes survives:
+		// 0 of its 1,389 assistant events carry a step-finish part or tokens.total.
+		expect(sql).not.toContain('step-finish');
+		expect(sql).not.toContain('$.tokens.total');
 		expect(sql).not.toContain('from message m');
-		expect(sql).not.toContain('from session s');
+		// An older fork keeps the legacy registry table.
+		expect(buildSessionUsageSqlV2('ses_a', 'session')).toContain("from session s where s.id = 'ses_a'");
 	});
 
 	it('orders message stats by seq', () => {
@@ -653,12 +659,15 @@ describe('v2 SQL against a real SQLite engine', () => {
 		const real = new sqlite.DatabaseSync(':memory:');
 		const exec = (sql: string) => real.prepare(sql).run();
 		exec(
-			'create table session (id text primary key, parent_id text, directory text, title text, time_archived integer, time_updated integer, summary_additions integer, summary_deletions integer, summary_files integer)',
+			'create table session (id text primary key, parent_id text, directory text, title text, time_archived integer, time_updated integer, summary_additions integer, summary_deletions integer, summary_files integer, cost real, tokens_input integer, tokens_output integer, tokens_reasoning integer, tokens_cache_read integer, tokens_cache_write integer)',
 		);
 		exec(
 			'create table session_message (id text primary key, session_id text, type text, seq integer, time_created integer, time_updated integer, data text)',
 		);
-		exec("insert into session values ('ses_a', null, '/vault', 'Alpha', null, 100, 1, 0, 1)");
+		exec(
+			'create table session_v2 (id text primary key, parent_id text, fork_session_id text, directory text, title text, time_archived integer, time_updated integer, summary_additions integer, summary_deletions integer, summary_files integer, cost real, tokens_input integer, tokens_output integer, tokens_reasoning integer, tokens_cache_read integer, tokens_cache_write integer)',
+		);
+		exec("insert into session values ('ses_a', null, '/vault', 'Alpha', null, 100, 1, 0, 1, 0.42, 1000, 200, 50, 9000, 0)");
 		exec(
 			'insert into session_message values ' +
 				"('m_user', 'ses_a', 'user', 1, 200, 200, '{\"text\":\"hello needle here\"}'), " +
@@ -670,6 +679,27 @@ describe('v2 SQL against a real SQLite engine', () => {
 					"{\"type\":\"text\",\"text\":\"reply about needle here\"}," +
 					"{\"type\":\"tool\",\"callID\":\"call_1\",\"state\":{\"error\":\"boom\"}}]}')",
 		);
+		// The two rows below are the shape measured on the real `opencode v2.0.28`
+		// database, where 0 of 1,389 assistant events carry a step-finish part or a
+		// `tokens.total`, and where `session/fork` copies the ancestor's assistant
+		// events into the new thread while the new thread's own registry row starts
+		// at zero (rig: fork born with tokens_input 0 against 11,527 copied input
+		// tokens in its events).
+		exec(
+			"insert into session_v2 values ('ses_live', null, null, '/vault', 'Live', null, 700, 0, 0, 0, 0.75, 12000, 900, 40, 88000, 0)",
+		);
+		exec(
+			'insert into session_message values ' +
+				"('m_live_1', 'ses_live', 'assistant', 1, 700, 700, '{\"finish\":\"tool-calls\",\"cost\":0,\"tokens\":{\"input\":11527,\"output\":4,\"reasoning\":0,\"cache\":{\"read\":256,\"write\":0}},\"content\":[{\"type\":\"text\",\"text\":\"first reply\"}]}'), " +
+				"('m_live_2', 'ses_live', 'assistant', 2, 710, 710, '{\"finish\":\"stop\",\"cost\":0,\"tokens\":{\"input\":421,\"output\":5,\"reasoning\":1,\"cache\":{\"read\":13568,\"write\":0}},\"content\":[{\"type\":\"text\",\"text\":\"second reply\"}]}'), " +
+				"('m_live_ctrl', 'ses_live', 'model-switched', 3, 715, 715, '{\"model\":{\"id\":\"minimax-m3.1-flash-free\"}}')",
+		);
+		exec("insert into session_v2 values ('ses_fork', 'ses_live', 'ses_live', '/vault', null, null, 800, 0, 0, 0, 0, 0, 0, 0, 0, 0)");
+		exec(
+			'insert into session_message values ' +
+				"('m_fork_1', 'ses_fork', 'assistant', 1, 800, 800, '{\"finish\":\"tool-calls\",\"cost\":0,\"tokens\":{\"input\":11527,\"output\":4,\"reasoning\":0,\"cache\":{\"read\":256,\"write\":0}},\"content\":[{\"type\":\"text\",\"text\":\"copied from the parent\"}]}'), " +
+				"('m_fork_2', 'ses_fork', 'assistant', 2, 810, 810, '{\"finish\":\"stop\",\"cost\":0,\"tokens\":{\"input\":2467,\"output\":4,\"reasoning\":0,\"cache\":{\"read\":11520,\"write\":0}},\"content\":[{\"type\":\"text\",\"text\":\"the thread said one word\"}]}')",
+		);
 		db = real;
 	} catch {
 		db = null; // runtime without node:sqlite: skip this suite
@@ -680,7 +710,7 @@ describe('v2 SQL against a real SQLite engine', () => {
 		const queries: Array<[string, () => string]> = [
 			['listing', () => buildNativeSessionsSqlV2('/vault')],
 			['search', () => buildNativeSessionSearchSqlV2('/vault', 'needle')],
-			['usage', () => buildSessionUsageSqlV2('ses_a')],
+			['usage', () => buildSessionUsageSqlV2('ses_a', 'session')],
 			['stats', () => buildMessageStatsSqlV2('ses_a')],
 			['errors', () => buildToolErrorsSqlV2('ses_a')],
 			['turn stats', () => buildTurnStatsSqlV2('ses_a')],
@@ -698,10 +728,10 @@ describe('v2 SQL against a real SQLite engine', () => {
 			expect(String(found[0].snippet)).toContain('needle');
 			expect(db!.prepare(buildNativeSessionSearchSqlV2('/vault', 'zzz-absent')).all()).toHaveLength(0);
 
-			const usage = db!.prepare(buildSessionUsageSqlV2('ses_a')).all()[0];
+			const usage = db!.prepare(buildSessionUsageSqlV2('ses_a', 'session')).all()[0];
 			expect(usage).toMatchObject({
-				cost: 0.5, tokens_input: 10, tokens_output: 5, tokens_reasoning: 2,
-				tokens_cache_read: 90, tokens_cache_write: 3, context_tokens: 17,
+				cost: 0.42, tokens_input: 1000, tokens_output: 200, tokens_reasoning: 50,
+				tokens_cache_read: 9000, tokens_cache_write: 0, context_tokens: 107,
 			});
 
 			const stats = db!.prepare(buildMessageStatsSqlV2('ses_a')).all();
@@ -723,6 +753,44 @@ describe('v2 SQL against a real SQLite engine', () => {
 				reasoningTokens: typeof r.reasoning_tokens === 'number' ? r.reasoning_tokens : 0,
 			})));
 			expect(turnStats).toEqual([{ messageId: 'm_asst', outputTokens: 7, durationMs: 6200 }]);
+		});
+	});
+
+	maybe('usage takes the registry totals, not a sum over the event log', () => {
+		const sumEvents = (session: string): number => {
+			const rows = db!.prepare(`select coalesce(sum(json_extract(data, '$.tokens.input')), 0) as s from session_message where session_id = '${session}' and type = 'assistant'`).all();
+			return Number(rows[0].s);
+		};
+
+		it('reports what the kernel booked for the session rather than what its messages carried', () => {
+			const row = db!.prepare(buildSessionUsageSqlV2('ses_live', 'session_v2')).all()[0];
+			expect(row).toMatchObject({
+				cost: 0.75,
+				tokens_input: 12000,
+				tokens_output: 900,
+				tokens_reasoning: 40,
+				tokens_cache_read: 88000,
+				context_tokens: 13995,
+			});
+			// Same session, same database, the aggregate the old read produced: 52
+			// input tokens short, and a cost of 0 because no step-finish part exists.
+			expect(sumEvents('ses_live')).toBe(11948);
+		});
+
+		it('does not bill a side chat for the conversation it was forked from', () => {
+			const row = db!.prepare(buildSessionUsageSqlV2('ses_fork', 'session_v2')).all()[0];
+			expect(row).toMatchObject({ cost: 0, tokens_input: 0, tokens_output: 0, context_tokens: 13991 });
+			// The fork's own events are the copied ancestor turn plus its single
+			// reply: summing them charged the parent's whole lifetime to the thread.
+			expect(sumEvents('ses_fork')).toBe(13994);
+		});
+
+		it('leaves context unreported when no assistant turn gave tokens', () => {
+			db!.prepare("insert into session_v2 values ('ses_sparse', null, null, '/vault', 'Sparse', null, 900, 0, 0, 0, 0, 5, 1, 0, 0, 0)").run();
+			db!.prepare(`insert into session_message values ('m_sparse', 'ses_sparse', 'assistant', 1, 900, 900, '{"finish":"stop","cost":0,"content":[{"type":"text","text":"a turn that reported nothing"}]}')`).run();
+			const row = db!.prepare(buildSessionUsageSqlV2('ses_sparse', 'session_v2')).all()[0];
+			expect(row.tokens_input).toBe(5);
+			expect(row.context_tokens).toBeNull();
 		});
 	});
 });
