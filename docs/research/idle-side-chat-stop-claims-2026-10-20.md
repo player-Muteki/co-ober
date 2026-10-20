@@ -88,3 +88,10 @@ revert-check：把两个生产文件还原到提交前（门与见证消失）�
 - 见证是同步的，但面板真实的 `send()` 在 `open(question)` 里以 `void` 起跑——从"用户按下回车"到"ask 包装器抬旗"之间隔着面板的守卫判断。守卫拒绝（主聊天忙）时 ask 根本不会起跑，旗也不会抬，与本轮语义一致；没有窗口可让空闲关闭误认成在飞。此判断基于代码走读，未做面板级集成测量。
 - 内核若哪天实现了 cancel，`'unsupported'` 一条会消失，但"没有回合就不问停止"的门与答案内容无关，届时仍然正确。
 - `hasSubmittedPrompt` 一类"问内核要证据"的路径本轮未复查它们是否也对空闲态发过无意义的请求。
+  > 0.2.89 审计完成，结论：干净，无需修改。走读了全部向 kernel 发 cancel/证据请求的站点——
+  > ① `closeTab`（controller:445）与 `cancelAllStreams`（:737）都在 `rt.busy` 门后；
+  > ② `cancelActiveGeneration`（:1610）对非忙直接返回 `'idle'`，不发请求，`/compact` 因此照发且不作任何停止断言；
+  > ③ `stopGeneration`（:3169）门是 `!rt.busy && !rt.state.isStreaming`，而这两个旗在所有路径上成对升降（:446/447、:739/740、:1179/1180、:1410/1411、:2443/2444、:2454/2455、:2638/2639、:3218/3219、:3702/3703），不存在"isStreaming 残留为真、对空闲会话按 Stop 发出 -32601"的窗口；
+  > ④ `cancelSideChat` 只有两个入口：`endSideChat`（0.2.86 已按 `wasBusy` 门控）与 `abortSideChat`——后者的生产调用只有面板的 `close()`，而面板只在**自己** `busy` 时才调 abort；面板 `send()` 里 `busy=true` 到 `ask()` 同步抬 `rt.sideChatBusy` 之间没有任何 await，两面旗不会分叉；
+  > ⑤ `hasSubmittedPrompt`（`submittedAlready`，:2368）只在重试路径起跑——那里回合必然存在（0.2.75 的探针本意就是查它），读不到时返回 `'unknown'` 并拒绝重发，从不被当成"没跑过"。
+  > 结论是负结果：本族没有剩余的虚假来源。仍未做面板级集成测量（上面第 4 条仍是走读论证）。
