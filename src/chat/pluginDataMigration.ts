@@ -259,7 +259,9 @@ export function sanitizeLoadedSettings(raw: unknown, defaults: CoOberSettings): 
  * exists would open as an empty panel the user cannot explain. With no stored
  * tabs (or a pre-v2 file) the active session becomes the single tab. A shell's
  * draft travels with it: rebuilding the entry without the field the save path
- * wrote is how a typed-but-unsent paragraph disappears on restart.
+ * wrote is how a typed-but-unsent paragraph disappears on restart — the same
+ * reason the scratch thread's id rides through, or a restart silently adopts a
+ * fork nobody can delete any more.
  */
 export function migratePluginDataTabs(
   openTabs: unknown,
@@ -279,7 +281,14 @@ export function migratePluginDataTabs(
       if (typeof sessionId === 'string' && !survivingSessionIds.has(sessionId)) continue;
       seen.add(value.tabId);
       const draft = sanitizeDraft(value.draft);
-      list.push(draft ? { tabId: value.tabId, sessionId: sessionId ?? null, draft } : { tabId: value.tabId, sessionId: sessionId ?? null });
+      const side =
+        typeof value.sideChatSessionId === 'string' && value.sideChatSessionId.length > 0
+          ? value.sideChatSessionId
+          : undefined;
+      const shell: TabShell = { tabId: value.tabId, sessionId: sessionId ?? null };
+      if (draft) shell.draft = draft;
+      if (side) shell.sideChatSessionId = side;
+      list.push(shell);
     }
   } else if (fallbackActiveSessionId) {
     list.push({ tabId: 'tab-1', sessionId: fallbackActiveSessionId });

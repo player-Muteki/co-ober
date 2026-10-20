@@ -63,6 +63,7 @@ revert-check：把控制器还原到提交前，恰好 2 例判别测试失败�
 ## 7. 仍未闭合
 
 - **崩溃/重启路径仍会漏**：`sideChatSessionId` 只活在内存里。Obsidian 重启后，插件无法记起某个还活着的 fork id，删除会话便带不走它。堵住这条要把 fork id 持久化进标签页 shell 或 store——那是另一个单点，待有更直接的证据需求再做。
+  > 0.2.88 已闭合。`fork-restart` rig 实测：fork 行跨 kernel 进程死亡原样存活，新进程能 load 也能 delete 旧 id；且对已删与从未存在的 id，delete 都回答 `ok {}`——持久化的陈旧 id 永远不会谎报未确认。id 已进 `TabShell`，随生随灭，重启后的删除两条都带得走。见 `side-chat-id-across-restart-2026-10-20.md`。
 - **插件外部产生的孤儿**（用户在 opencode 自己的界面里 fork/删的）不归本修复管：插件不认识那些 id。0.2.85 遗留的"恢复侧边线程入口需要记住 fork id"与这条同源。
 - **分叉标签页的可见性顺带记录**：用户级的"分叉到新标签页"（`forkSession`）同样写 `fork_session_id`，因而 0.2.85 的过滤也会把它挡在**原生**历史之外；它活在插件自己的会话镜像里（`forkSession` 会 `getOrCreate`+save，代码走读结论），下拉的已存分区仍能找到——损失限于内核原生分区与镜像被清空之后。是否该让分支会话出现在原生历史，是产品决定，本轮不动过滤。
 - 被 `time_archived` 归档的会话与级联的交互、以及 delete 一个仍有**在飞回合**的子（本轮 rig 里子 A 是空闲的；插件路径是先 close 后 delete）未单独测。

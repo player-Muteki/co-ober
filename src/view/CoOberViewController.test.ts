@@ -11,6 +11,7 @@ import type {
   NormalizedUpdate,
   PromptPart,
   SerializedMessage,
+  TabShell,
 } from '../types';
 import { setLocale, t } from '../i18n/index';
 import zhLocale from '../i18n/zh';
@@ -2656,6 +2657,29 @@ describe('CoOberViewController', () => {
       expect(spoken).not.toContain(t().error.sideChatDeleteUnconfirmed);
     });
 
+    it('forgets the side chat that only the restored shell still names', async () => {
+      // The restart case the 0.2.87 rig left open: the fork row outlives the
+      // kernel process, the new process deletes it happily — if it is asked.
+      // The only thing that survived was the id in the tab shell.
+      const client = createMockClient({
+        getAgentCapabilities: vi.fn(() => ({ sessionCapabilities: { delete: true } })),
+        deleteSession: vi.fn().mockResolvedValue(true),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      controller.restoreTabShells(
+        [{ tabId: 'tab-1', sessionId: 'active-session', sideChatSessionId: 'fork-a' }],
+        'tab-1',
+      );
+
+      await controller.deleteSession('active-session');
+
+      expect(client.deleteSession).toHaveBeenCalledWith('active-session');
+      expect(client.deleteSession).toHaveBeenCalledWith('fork-a');
+      expect(client.deleteSession).toHaveBeenCalledTimes(2);
+      const spoken = (deps.renderer.addSystemMessage as ReturnType<typeof vi.fn>).mock.calls.flat();
+      expect(spoken).not.toContain(t().error.sideChatDeleteUnconfirmed);
+    });
+
     it('says when the agent forgot the conversation but not its side chat', async () => {
       const client = createMockClient({
         getAgentCapabilities: vi.fn(() => ({ sessionCapabilities: { delete: true } })),
@@ -4697,6 +4721,38 @@ describe('CoOberViewController — side chat (/btw)', () => {
     await controller.startSideChat('another question');
     expect(client.forkSession).toHaveBeenCalledTimes(1);
     expect(callbacks.onOpenSideChat).toHaveBeenCalledTimes(2);
+  });
+
+  it('writes the new thread id onto the tab shell the moment it exists', async () => {
+    // Measured on 2.0.28: fork rows survive the kernel dying, and a fresh
+    // process loads and deletes them fine — but only for whoever still knows
+    // the id. A quit before the next shell write used to be what orphaned it.
+    forkClient();
+    controller.state.sessionId = 'local-1';
+
+    await controller.startSideChat('hi');
+
+    const call = (deps.sessionStore.setTabShell as ReturnType<typeof vi.fn>).mock.calls.at(-1);
+    if (!call) throw new Error('setTabShell was never called');
+    const shells = call[0] as TabShell[];
+    expect(shells[0]?.sideChatSessionId).toBe('forked-session');
+  });
+
+  it('takes the thread id off the shell when the thread ends', async () => {
+    forkClient();
+    controller.state.sessionId = 'local-1';
+    await controller.startSideChat('hi');
+
+    const setShell = deps.sessionStore.setTabShell as ReturnType<typeof vi.fn>;
+    const named = (setShell.mock.calls.at(-1)?.[0] as TabShell[])[0]?.sideChatSessionId;
+    expect(named).toBe('forked-session');
+
+    controller.endSideChat();
+
+    // The session was just released; a shell still naming it would resurrect
+    // the id on next launch for a thread that is already gone.
+    const shells = (setShell.mock.calls.at(-1)?.[0] as TabShell[]) ?? [];
+    expect(shells[0]?.sideChatSessionId).toBeUndefined();
   });
 
   it('closes the side session on endSideChat and rejects later asks', async () => {

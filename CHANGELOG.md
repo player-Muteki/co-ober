@@ -1,3 +1,20 @@
+## 0.2.88 - 2026-10-20
+
+0.2.87 closed the delete path's leak while explicitly leaving the crash/restart path open: the side-chat id lived only in memory. A restart this round measured the two facts that make closing it both necessary and safe.
+
+### Fixed
+
+- **The tab shell now carries its `/btw` thread's id across restarts, so the delete path can still forget it.** Measured on 2.0.28 (`fork-restart` rig): a fork row survives the kernel process being killed — the between-processes database read showed both parent and fork intact — and a fresh process loads and deletes the old fork id normally. So the leak is not transient: every restart without the id strands another thread that no gesture can ever name (no parent-delete cascade, 0.2.87; the lineage filter hides the rows, 0.2.85). The same rig showed the fix is silent-safe: `session/delete` answers `ok {}` for an already-deleted id **and** for an id that never existed, so a persisted stale id can never produce a false `sideChatDeleteUnconfirmed`. `TabShell` gains an optional `sideChatSessionId`; `persistTabShell` writes it, `startSideChat` persists the shell the moment the fork exists, `endSideChat` persists again the moment the id is let go (a released thread must not come back as a name on disk), and `restoreTabShells` hands the id back to the runtime before the shell is rewritten. `migratePluginDataTabs` — which rebuilds shells field by field and would otherwise strip an unknown key — carries the field through, accepting only a non-empty string. Downstream needed no change: `deleteSession` already reads `rt.sideChatSessionId` (0.2.87), an idle restored close is the silent release (0.2.86), and a re-asked `/btw` reuses the thread (fork continuity).
+
+### Validation
+
+- 86 test files / 2,588 tests (2,584 baseline plus four new). The 19 pre-existing, platform-bound failures in `NativeSessionReader.test.ts` and `commandResolution.test.ts` are unchanged; TypeScript (`tsc --noEmit`) and ESLint are clean. Boundaries: the sanitizer carries the id and drops a number or empty string without dropping the tab; `startSideChat` lands the id on the shell; `endSideChat` takes it off (the test first asserts it was on, so it cannot pass unfixed); and the restart case — `restoreTabShells` handed only a shell carrying the id, then `deleteSession` — asks `client.deleteSession` for parent and thread, exactly two calls, claiming nothing. Revert-check: the three production files backed out fails exactly the four new tests (23 = 19 baseline + 4) and nothing else. No user-facing string changed, so no i18n keys were added.
+- The 0.2.87 research doc's open item naming the crash/restart leak is annotated as closed with the measured answer.
+
+### Still open
+
+Orphans created **before** this version cannot be retroactively adopted — their ids were never on disk, and the database rows they forked still await the cleanup entry point (0.2.87 §7) that no gesture owns yet. The restart brings the thread's identity back, not its panel: the user re-asks `/btw` to continue it, which is deliberate — a shell should not remember UI openness. A side thread still has no title or history entry of its own. And 0.2.86's idle-audit question (`hasSubmittedPrompt` firing meaningless requests against idle threads) remains unaudited.
+
 ## 0.2.87 - 2026-10-20
 
 0.2.85 hid forked rows from the native history with the lineage filter and left one question unmeasured: what happens to a fork when its parent is deleted? A full-lifecycle rig deleted the parent first this time, and the answer turned the product question "keep or delete ghosts?" into a leak the plugin is now responsible for.

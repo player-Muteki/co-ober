@@ -478,6 +478,12 @@ export interface TabShell {
   sessionId: string | null;
   /** Unsent composer state. Absent means the box was empty. */
   draft?: StoredDraft;
+  /**
+   * The tab's live /btw thread, when it has one. Without this a restart
+   * forgets the fork's id, and nothing — not the delete path, not the close
+   * path — can ever name that thread again.
+   */
+  sideChatSessionId?: string;
 }
 
 /**

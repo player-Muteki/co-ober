@@ -647,8 +647,12 @@ export class CoOberViewController {
     if (front !== adopted) this.activateRuntime(front);
     const drafts: Record<string, StoredDraft> = {};
     for (const shell of capped) {
-      const rt = shell.draft ? byShellTabId.get(shell.tabId) : undefined;
-      if (rt) drafts[rt.tabId] = shell.draft!;
+      const rt = byShellTabId.get(shell.tabId);
+      if (!rt) continue;
+      // The id goes back before persistTabShell rewrites the shells below, so
+      // a restored thread keeps its name on disk instead of dropping it.
+      if (shell.sideChatSessionId) rt.sideChatSessionId = shell.sideChatSessionId;
+      if (shell.draft) drafts[rt.tabId] = shell.draft;
     }
     if (Object.keys(drafts).length > 0) this.callbacks.onRestoreDrafts?.(drafts);
     this.notifyTabsChanged();
@@ -659,14 +663,18 @@ export class CoOberViewController {
     this.callbacks.onTabsChanged?.();
   }
 
-  /** Which conversations — and which half-typed messages — sit in which tabs. */
+  /** Which conversations — half-typed messages — and scratch threads sit in which tabs. */
   persistTabShell(): void {
     const drafts = this.callbacks.onCollectDrafts?.() ?? {};
     const shells: TabShell[] = this.listTabIds().map((tabId) => {
+      const rt = this.runtimes.get(tabId);
       const shell: TabShell = {
         tabId,
-        sessionId: this.runtimes.get(tabId)?.sessionId ?? null,
+        sessionId: rt?.sessionId ?? null,
       };
+      // Name the tab's scratch thread so a restart does not orphan it: the
+      // delete and release paths only know ids the shell carried back.
+      if (rt?.sideChatSessionId) shell.sideChatSessionId = rt.sideChatSessionId;
       const draft = drafts[tabId];
       if (draft) shell.draft = draft;
       return shell;
@@ -2062,6 +2070,9 @@ export class CoOberViewController {
         return;
       }
       this.callbacks.onOpenSideChat?.(this.buildSideChatAsk(rt), question, rt.tabId);
+      // The thread is only forgettable while someone knows its id; a quit
+      // before the next shell write must not be what loses it.
+      this.persistTabShell();
     } catch (e) {
       console.error('[co-ober] side chat fork:', e);
       rt.renderer.addError(t().sideChat.failed.replace('{error}', humanizeError(e)));
@@ -2112,6 +2123,9 @@ export class CoOberViewController {
     const wasBusy = rt.sideChatBusy;
     rt.sideChatSessionId = null;
     if (!sideId) return Promise.resolve(null);
+    // The panel closed the thread for good; the shell must stop naming it,
+    // or the next launch resurrects an id whose session was just released.
+    this.persistTabShell();
     const client = this.deps.runtime.getClient();
     // The old gate, unchanged: the parent tab must still be addressable on this
     // client and the agent must advertise close. A close that fails or is

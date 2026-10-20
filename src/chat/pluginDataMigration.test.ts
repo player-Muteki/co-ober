@@ -273,6 +273,28 @@ describe('migratePluginDataTabs', () => {
       { tabId: 'tab-4', sessionId: 's2', draft: { text: 'counts' } },
     ]);
   });
+
+  it('carries the side-chat thread id a shell was saved with', () => {
+    const state = migratePluginDataTabs(
+      [
+        { tabId: 'tab-1', sessionId: 's1', sideChatSessionId: 'fork-a' },
+        { tabId: 'tab-2', sessionId: 's2', sideChatSessionId: 7 },
+        { tabId: 'tab-3', sessionId: 's1', sideChatSessionId: '' },
+      ],
+      'tab-1',
+      surviving,
+      null,
+    );
+
+    // A restart that dropped the id adopts a fork no gesture can ever name:
+    // not the delete, not the release. A value the save path would never write
+    // is left off the shell rather than trusted.
+    expect(state.openTabs).toEqual([
+      { tabId: 'tab-1', sessionId: 's1', sideChatSessionId: 'fork-a' },
+      { tabId: 'tab-2', sessionId: 's2' },
+      { tabId: 'tab-3', sessionId: 's1' },
+    ]);
+  });
 });
 
 describe('sanitizeLoadedSettings', () => {
