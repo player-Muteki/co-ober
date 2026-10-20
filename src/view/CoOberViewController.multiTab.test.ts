@@ -1044,6 +1044,96 @@ describe('CoOberViewController — one tab’s teardown stays inside that tab (0
       expect(rtOf(h, tabA).busy).toBe(true);
     });
 
+    /** Two tabs mid-turn, with the answer the agent gives to a cancel. */
+    async function openHangingPair(cancel: ReturnType<typeof createMockClient>['cancel']) {
+      const client = hangingClient();
+      client.cancel = cancel;
+      h.controller.state.sessionId = 'ses-a';
+      const tabA = h.controller.activeTabId();
+      void h.controller.send('question A', []);
+      await tick();
+      await h.controller.switchSession('ses-b');
+      const tabB = h.controller.activeTabId();
+      void h.controller.send('question B', []);
+      await tick();
+      return { client, tabA, tabB };
+    }
+
+    it('says in the surviving tab that the closed turn could not be stopped', async () => {
+      const { tabA, tabB } = await openHangingPair(vi.fn().mockResolvedValue('unsupported'));
+
+      await h.controller.closeTab(tabB);
+
+      // The closed tab's surface is gone, so its unconfirmed stop is said in
+      // the conversation that inherited the slot.
+      expect(rtOf(h, tabA).renderer.addSystemMessage).toHaveBeenCalledWith(
+        t().error.tabClosedUnsupported,
+      );
+      expect(h.renderers.get(tabB)?.addSystemMessage).not.toHaveBeenCalled();
+    });
+
+    it('treats a cancel that threw as an unconfirmed stop, not as silence', async () => {
+      const { tabA, tabB } = await openHangingPair(
+        vi.fn().mockRejectedValue(new Error('cancel broke')),
+      );
+
+      await h.controller.closeTab(tabB);
+
+      expect(rtOf(h, tabA).renderer.addSystemMessage).toHaveBeenCalledWith(
+        t().error.tabClosedUnknown,
+      );
+    });
+
+    it('does not speak about a stop the agent confirmed', async () => {
+      const { tabA, tabB } = await openHangingPair(vi.fn().mockResolvedValue('stopped'));
+
+      await h.controller.closeTab(tabB);
+
+      const spoken = (
+        rtOf(h, tabA).renderer.addSystemMessage as ReturnType<typeof vi.fn>
+      ).mock.calls.flat();
+      expect(spoken).not.toContain(t().error.tabClosedUnsupported);
+      expect(spoken).not.toContain(t().error.tabClosedUnknown);
+    });
+
+    it('does not invent a stop claim for an idle tab', async () => {
+      const client = createMockClient({ cancel: vi.fn().mockResolvedValue('unsupported') });
+      (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      const tabA = h.controller.activeTabId();
+
+      await h.controller.closeTab(tabA);
+
+      const placeholder = h.renderers.get(h.controller.activeTabId()) as TabRenderer;
+      expect(client.cancel).not.toHaveBeenCalled();
+      expect(placeholder.addSystemMessage).not.toHaveBeenCalled();
+    });
+
+    it('reports into the placeholder when the last tab closes mid-turn', async () => {
+      const client = hangingClient();
+      client.cancel = vi.fn().mockResolvedValue('unsupported');
+      h.controller.state.sessionId = 'ses-a';
+      const tabA = h.controller.activeTabId();
+      void h.controller.send('question A', []);
+      await tick();
+
+      await h.controller.closeTab(tabA);
+
+      expect(h.controller.listTabIds()).toEqual([]);
+      const placeholder = h.renderers.get(h.controller.activeTabId()) as TabRenderer;
+      expect(placeholder.addSystemMessage).toHaveBeenCalledWith(t().error.tabClosedUnsupported);
+    });
+
+    it('carries the same report when the session is deleted mid-turn', async () => {
+      const { tabA, tabB } = await openHangingPair(vi.fn().mockResolvedValue('unknown'));
+
+      await h.controller.deleteSession('ses-b');
+
+      expect(h.controller.runtimeForTab(tabB)).toBeUndefined();
+      expect(rtOf(h, tabA).renderer.addSystemMessage).toHaveBeenCalledWith(
+        t().error.tabClosedUnknown,
+      );
+    });
+
     it('withdraws the closed tab’s model, agent and command lists from the shared bar', async () => {
       // Closing the last tab re-projects the composer, the send button and the
       // context arc onto the fresh welcome screen, but the bar's model/agent/effort

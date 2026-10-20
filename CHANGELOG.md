@@ -1,3 +1,20 @@
+## 0.2.78 - 2026-10-20
+
+Takes the next of the cancel paths 0.2.74 left silently discarded: closing a tab mid-turn. The tab was the only surface that could have said what the cancel answered, and it was removed before anyone could read it.
+
+### Fixed
+
+- **Closing a running tab swallowed the stop result, and with it the only surface that could report it.** `closeTab` awaited `cancel()`, logged a rejection to the console and dropped every outcome, then disposed the tab's panel. On the installed `opencode v2.0.28` this is not a confirmed stop: 0.2.74 measured all nine cancel spellings answering `-32601 "Method not found"` while the submitted prompt stayed in the transcript, and 0.2.76 measured the cancel round trip at 545 ms before it reported `unsupported`. So a tab closed mid-turn kept running inside the agent while the client — which had just asked and been told it could not stop it — said nothing anywhere. `closeTab` now keeps the tri-state, and when it is `unsupported` or `unknown` says so as a system message in whichever conversation inherited the slot: the next tab, or the off-strip placeholder when the last tab was closed. `stopped` stays quiet, because the close already did what it claimed. A cancel that throws is recorded as `unknown` rather than swallowed — nothing came back, and nothing read is not evidence of a stop. A tab closed while idle makes no claim at all, since no cancel was asked and a cancel would answer for a turn that does not exist. `deleteSession` closes through the same path and inherits the report.
+
+### Validation
+
+- 86 test files / 2,543 tests (2,537 baseline plus six new). The 19 pre-existing, platform-bound failures in `NativeSessionReader.test.ts` and `commandResolution.test.ts` are unchanged; TypeScript and ESLint are clean. Six boundaries, each confirmed to discriminate: `unsupported` on a closed background tab is said in the surviving tab and not in the disposed one; a throwing cancel is said as `unknown` (the old code logged and said nothing); `stopped` produces neither line; an idle close never calls cancel and never speaks; closing the last busy tab lands the line in the replacement placeholder; and `deleteSession` mid-turn carries the same line into the surviving tab. Reverting to a discarded await fails the first and second; folding a throw into `stopped` fails the second; reporting on every close fails the third; reporting without a cancel attempt fails the fourth; painting into the closed tab's renderer fails the first and fifth.
+- The kernel fact this release routes is the one already measured on 2.0.28: cancel is unimplemented and a live turn survives it. This release changes where that fact is said, not what the agent does with the cancel, so no new live rig was needed; the discriminating boundaries are UI-level and are covered above. The `stopped` branch is exercised against the mock contract from 0.2.76, not against an agent that implements cancel.
+
+### Still open
+
+View close (`cancelAllStreams`) and the side-chat close (`abortSideChat`, also reached by closing a tab that owns a side session) still discard the outcome. Their surfaces are removed by the same act — a view-close report has no surviving tab, and a tab close would dispose the panel a side-chat note was written into — so each needs a destination chosen before it can speak. That is the remaining piece of the 0.2.74 gap: the Stop button, `/compact` and tab close now report; these two paths still stop watching without establishing that the kernel stopped.
+
 ## 0.2.77 - 2026-10-20
 
 Takes the first of the cancel paths 0.2.74 left silently discarded — and the only one where the client itself would send the next prompt. `/compact` interrupted the running turn, threw away whether it stopped, and sent the compact prompt anyway.

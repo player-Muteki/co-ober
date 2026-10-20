@@ -212,6 +212,10 @@ const en = {
       'The running turn could not be stopped — this agent has no cancel method — so /compact was not sent. That prompt would reach a session that is still running the previous turn.',
     compactBlockedUnknown:
       'The running turn could not be confirmed stopped, so /compact was not sent. That prompt would reach a session that may still be running the previous turn.',
+    tabClosedUnsupported:
+      'A tab was closed while its turn was running, but this agent has no cancel method — that turn may still be running inside the agent, with no tab left to show what it does.',
+    tabClosedUnknown:
+      'A tab was closed while its turn was running, but the agent did not confirm that it stopped — that turn may still be running inside the agent, with no tab left to show what it does.',
   },
 
   rewind: {

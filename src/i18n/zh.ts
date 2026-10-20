@@ -213,6 +213,10 @@ const zh: Locale = {
       '正在运行的那一轮无法停止 —— 这个 agent 没有取消方法 —— 因此没有发送 /compact。它会进入一个仍在运行上一轮的会话。',
     compactBlockedUnknown:
       '无法确认正在运行的那一轮已经停下，因此没有发送 /compact。它会进入一个可能仍在运行上一轮的会话。',
+    tabClosedUnsupported:
+      '标签页在运行中关闭，但这个 agent 没有提供取消的方法 —— 那一轮可能仍在 agent 内部继续，而已经没有标签页能显示它做了什么。',
+    tabClosedUnknown:
+      '标签页在运行中关闭，但 agent 没有确认那一轮已经停下 —— 它可能仍在 agent 内部继续，而已经没有标签页能显示它做了什么。',
   },
 
   rewind: {

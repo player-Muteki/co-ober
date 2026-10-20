@@ -46,7 +46,13 @@ import { buildSystemPrompt } from '../context/injection';
 import { expandWikilinkRefs } from '../context/wikilinks';
 import { buildHistoryBlock } from '../context/historyRewind';
 import { buildTranscriptMarkdown, sanitizeNoteName } from '../chat/transcript';
-import { AcpProcessExitError, AcpAbortError, AcpSessionMissingError, AcpStreamCapacityError } from '../client/AcpErrors';
+import {
+  AcpProcessExitError,
+  AcpAbortError,
+  AcpSessionMissingError,
+  AcpStreamCapacityError,
+  type AcpCancelOutcome,
+} from '../client/AcpErrors';
 import {
   readNativeMessageStats,
   readNativeSessionTodos,
@@ -425,15 +431,18 @@ export class CoOberViewController {
     // created — is holding the same renderer, and its frames would still be
     // accepted by every `genId` check on screen for the next tab to inherit.
     ++rt.genId;
+    let cancelOutcome: AcpCancelOutcome | null = null;
     if (rt.busy) {
       rt.busy = false;
       rt.state.isStreaming = false;
       rt.streamCtrl.finalizeBufferedToolCalls();
       if (client && rt.sessionId && this.canAddressSession(rt.sessionId, client)) {
         try {
-          await client.cancel(rt.sessionId);
+          cancelOutcome = await client.cancel(rt.sessionId);
         } catch (e) {
           console.error('[co-ober] cancel closed tab:', e);
+          // Nothing came back, and nothing read is not evidence of a stop.
+          cancelOutcome = 'unknown';
         }
       }
     }
@@ -491,6 +500,14 @@ export class CoOberViewController {
     }
     this.notifyTabsChanged();
     this.persistTabShell();
+    // The closed tab can no longer show anything, so an unconfirmed stop is
+    // said where the reader now is: whichever conversation inherited the slot.
+    // A confirmed stop stays quiet — closing the tab already said what it did.
+    if (!this.disposed && (cancelOutcome === 'unsupported' || cancelOutcome === 'unknown')) {
+      this.activeRuntime.renderer.addSystemMessage(
+        cancelOutcome === 'unsupported' ? t().error.tabClosedUnsupported : t().error.tabClosedUnknown,
+      );
+    }
   }
 
   // ── Tab strip ──
