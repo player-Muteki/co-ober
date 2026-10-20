@@ -56,6 +56,12 @@ export class AgentRuntime implements OpencodeClient {
     }
     return new Promise<AcpResponse>((resolve, reject) => {
       let timeout: number;
+      // The watchdog owns the outcome once it fires. cancel() aborts the local
+      // stream first, so the wrapper's sendMessage rejects with AcpAbortError
+      // while the cancel is still on the wire; without this flag that rejection
+      // would settle the turn as "aborted" and the measured cancel outcome
+      // would never reach the reader.
+      let timedOut = false;
 
       const resetTimeout = () => {
         if (timeout) window.clearTimeout(timeout);
@@ -66,16 +72,21 @@ export class AgentRuntime implements OpencodeClient {
             resetTimeout();
             return;
           }
-          // Cancel the underlying stream too, otherwise the pending prompt and
-          // activeStreamSessionId linger and any retry fails with
-          // "A stream is already active".
-          void this.acp.cancel(id);
-          // The idle watchdog fires on the prompt turn, which the wire knows as
-          // session/prompt; the timeout line quotes whatever name is handed here,
-          // so the client-internal "sendMessage" would tell the reader the agent
-          // failed to answer a request it never received. Every other AcpTimeoutError
-          // site passes its real wire method.
-          reject(new AcpTimeoutError('session/prompt', timeoutMs));
+          timedOut = true;
+          // Await the result instead of discarding it: "stopped", "no cancel
+          // method" and "unconfirmed" are three different states for a turn the
+          // user may be about to retry. A cancel that throws is an unconfirmed
+          // stop, never a reason to leave the turn pending forever.
+          this.acp.cancel(id)
+            .catch((): 'unknown' => 'unknown')
+            .then((outcome) => {
+              // The idle watchdog fires on the prompt turn, which the wire knows as
+              // session/prompt; the timeout line quotes whatever name is handed here,
+              // so the client-internal "sendMessage" would tell the reader the agent
+              // failed to answer a request it never received. Every other AcpTimeoutError
+              // site passes its real wire method.
+              reject(new AcpTimeoutError('session/prompt', timeoutMs, outcome));
+            });
         }, timeoutMs);
       };
 
@@ -89,10 +100,12 @@ export class AgentRuntime implements OpencodeClient {
       this.acp.sendMessage(id, parts, heartbeatHandler)
         .then((res) => {
           window.clearTimeout(timeout);
+          if (timedOut) return;
           resolve(res);
         })
         .catch((err: unknown) => {
           window.clearTimeout(timeout);
+          if (timedOut) return;
           reject(err instanceof Error ? err : new Error(String(err)));
         });
     });

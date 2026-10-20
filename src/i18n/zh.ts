@@ -184,6 +184,11 @@ const zh: Locale = {
     reconnected: '连接已恢复，之前的请求已中断。',
     reconnectFailed: '多次重连后仍无法联系 Agent，请点击“重新连接”重试。',
     timedOut: 'Agent 未在 {ms} 毫秒内响应“{method}”，它可能仍在处理。',
+    timedOutStopped: 'Agent 未在 {ms} 毫秒内响应“{method}”，已取消这一轮，agent 确认它已停下。',
+    timedOutUnsupported:
+      'Agent 未在 {ms} 毫秒内响应“{method}”。这个 agent 没有提供取消的方法，那一轮可能还在它里面跑。',
+    timedOutUnknown:
+      'Agent 未在 {ms} 毫秒内响应“{method}”。已发送取消，但 agent 没有确认停下 —— 那一轮可能还在它里面跑。',
     sessionMissing: '这个会话在 Agent 侧已不存在，请新建会话后继续。',
     processExited: 'Agent 进程已退出（{detail}），请求被中断。',
     methodNotFound: 'Agent 不支持“{detail}”——它的版本可能低于本插件的预期。',

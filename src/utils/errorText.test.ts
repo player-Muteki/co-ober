@@ -22,6 +22,32 @@ describe('humanizeError (0.2.5 stage 3)', () => {
     expect(line).not.toContain('timed out after');
   });
 
+  it('says a timed-out turn is stopped when the agent confirmed the cancel', () => {
+    const line = humanizeError(new AcpTimeoutError('session/prompt', 300000, 'stopped'));
+    expect(line).toBe(
+      t().error.timedOutStopped.replace('{method}', 'session/prompt').replace('{ms}', '300000'),
+    );
+    // The old blanket hedge was false in this state: the agent confirmed it
+    // stopped, so nothing is left running.
+    expect(line).not.toMatch(/still/i);
+  });
+
+  it('separates a missing cancel method from a cancel the agent never confirmed', () => {
+    const unsupported = humanizeError(new AcpTimeoutError('session/prompt', 300000, 'unsupported'));
+    const unknown = humanizeError(new AcpTimeoutError('session/prompt', 300000, 'unknown'));
+    expect(unsupported).toBe(
+      t().error.timedOutUnsupported.replace('{method}', 'session/prompt').replace('{ms}', '300000'),
+    );
+    expect(unknown).toBe(
+      t().error.timedOutUnknown.replace('{method}', 'session/prompt').replace('{ms}', '300000'),
+    );
+    expect(unsupported).not.toBe(unknown);
+    // Only the unsupported line names the missing method as the cause; the
+    // unknown line names the absent confirmation instead.
+    expect(unsupported).toMatch(/no cancel method/i);
+    expect(unknown).toMatch(/did not confirm/i);
+  });
+
   it('says a vanished conversation stopped existing rather than quoting the agent id', () => {
     const line = humanizeError(new AcpSessionMissingError('ses_abc123'));
     expect(line).toBe(t().error.sessionMissing);

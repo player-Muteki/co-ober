@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { AgentRuntime } from './agent';
-import { AcpTimeoutError } from './AcpErrors';
+import { AcpAbortError, AcpTimeoutError } from './AcpErrors';
 import type { AcpClient } from './acp';
 import type { PermissionRequest, PermissionOption } from '../types';
 
@@ -30,7 +30,7 @@ describe('AgentRuntime', () => {
       setModel: vi.fn().mockResolvedValue(undefined),
       setConfigOption: vi.fn().mockResolvedValue([]),
       sendMessage: vi.fn().mockResolvedValue({ stopReason: 'end_turn' }),
-      cancel: vi.fn().mockResolvedValue(undefined),
+      cancel: vi.fn().mockResolvedValue('stopped'),
       compact: vi.fn().mockResolvedValue(undefined),
       getAgentCapabilities: vi.fn().mockReturnValue(null),
       getAvailableAgents: vi.fn().mockResolvedValue([]),
@@ -398,7 +398,7 @@ describe('AgentRuntime', () => {
     it('rejects on timeout', async () => {
       vi.useFakeTimers();
       mockAcp.sendMessage = vi.fn().mockImplementation(() => new Promise(() => {})); // Never resolves
-      mockAcp.cancel = vi.fn().mockResolvedValue(undefined);
+      mockAcp.cancel = vi.fn().mockResolvedValue('stopped');
 
       const handler = vi.fn();
       const promise = runtime.sendMessage('session-1', [{ type: 'text', text: 'Hello' }], handler);
@@ -415,8 +415,73 @@ describe('AgentRuntime', () => {
       // The idle timeout must also abort the underlying stream, otherwise the
       // next send fails with "A stream is already active".
       expect(mockAcp.cancel).toHaveBeenCalledWith('session-1');
+      // The cancel result is not discarded: the reader is told the turn was
+      // confirmed stopped, instead of the old blanket "it may still be working".
+      expect(err.cancelOutcome).toBe('stopped');
       vi.useRealTimers();
       await promise.catch(() => {});
+    });
+
+    it('carries an unsupported cancel into the timeout instead of discarding it', async () => {
+      vi.useFakeTimers();
+      mockAcp.sendMessage = vi.fn().mockImplementation(() => new Promise(() => {}));
+      mockAcp.cancel = vi.fn().mockResolvedValue('unsupported');
+
+      const promise = runtime.sendMessage('session-1', [{ type: 'text', text: 'Hello' }], vi.fn());
+      promise.catch(() => {});
+
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1);
+
+      const err = await promise.then(() => null).catch((e) => e);
+      expect(err).toBeInstanceOf(AcpTimeoutError);
+      expect(err.cancelOutcome).toBe('unsupported');
+      vi.useRealTimers();
+    });
+
+    it('reports the cancel outcome even when the stream aborts before cancel answers', async () => {
+      vi.useFakeTimers();
+      let rejectStream: (e: Error) => void = () => {};
+      mockAcp.sendMessage = vi.fn().mockImplementation(
+        () => new Promise((_, reject) => { rejectStream = reject; }),
+      );
+      mockAcp.cancel = vi.fn().mockImplementation(() => {
+        // AcpClient.cancel aborts the local stream first, so this rejection
+        // lands while the cancel request is still pending on the wire.
+        rejectStream(new AcpAbortError('session/prompt'));
+        return new Promise((resolve) => {
+          setTimeout(() => resolve('stopped'), 500);
+        });
+      });
+
+      const promise = runtime.sendMessage('session-1', [{ type: 'text', text: 'Hello' }], vi.fn());
+      promise.catch(() => {});
+
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1);
+      await vi.advanceTimersByTimeAsync(500);
+
+      const err = await promise.then(() => null).catch((e) => e);
+      // Letting the abort settle the turn would report "aborted" and lose the
+      // confirmed stop the cancel measured; the watchdog owns the outcome.
+      expect(err).toBeInstanceOf(AcpTimeoutError);
+      expect(err).not.toBeInstanceOf(AcpAbortError);
+      expect(err.cancelOutcome).toBe('stopped');
+      vi.useRealTimers();
+    });
+
+    it('treats a throwing cancel as an unconfirmed stop instead of leaving the turn pending', async () => {
+      vi.useFakeTimers();
+      mockAcp.sendMessage = vi.fn().mockImplementation(() => new Promise(() => {}));
+      mockAcp.cancel = vi.fn().mockRejectedValue(new Error('cancel broke'));
+
+      const promise = runtime.sendMessage('session-1', [{ type: 'text', text: 'Hello' }], vi.fn());
+      promise.catch(() => {});
+
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1);
+
+      const err = await promise.then(() => null).catch((e) => e);
+      expect(err).toBeInstanceOf(AcpTimeoutError);
+      expect(err.cancelOutcome).toBe('unknown');
+      vi.useRealTimers();
     });
 
     it('defers the idle timeout while a permission request is pending', async () => {

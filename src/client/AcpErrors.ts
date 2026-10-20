@@ -17,8 +17,21 @@ export class AcpProtocolError extends Error {
   }
 }
 
+/** What the agent confirmed about a cancelled turn; `unknown` never means "still running". */
+export type AcpCancelOutcome = 'stopped' | 'unsupported' | 'unknown';
+
 export class AcpTimeoutError extends AcpTransportError {
-  constructor(public readonly method: string, public readonly timeoutMs: number) {
+  constructor(
+    public readonly method: string,
+    public readonly timeoutMs: number,
+    /**
+     * Result of the cancel the watchdog attempted, when it attempted one. The
+     * timeout and the cancel are separate facts: without this, a line saying
+     * the turn "may still be working" covers both a confirmed stop and an
+     * agent that never had a cancel method.
+     */
+    public readonly cancelOutcome?: AcpCancelOutcome,
+  ) {
     super(`ACP request '${method}' timed out after ${timeoutMs}ms`);
     this.name = 'AcpTimeoutError';
   }

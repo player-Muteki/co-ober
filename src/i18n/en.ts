@@ -182,6 +182,12 @@ const en = {
     reconnected: 'Connection restored. The previous request was interrupted.',
     reconnectFailed: 'The agent could not be reached after repeated reconnect attempts. Click "Reconnect" to retry.',
     timedOut: 'The agent did not answer "{method}" within {ms} ms. It may still be working.',
+    timedOutStopped:
+      'The agent did not answer "{method}" within {ms} ms, so this turn was cancelled and the agent confirmed it stopped.',
+    timedOutUnsupported:
+      'The agent did not answer "{method}" within {ms} ms. This agent has no cancel method, so the turn may still be running inside it.',
+    timedOutUnknown:
+      'The agent did not answer "{method}" within {ms} ms. A cancel was sent, but the agent did not confirm that it stopped — the turn may still be running inside it.',
     sessionMissing: 'This conversation no longer exists on the agent side. Start a new session to continue.',
     processExited: 'The agent process exited ({detail}) and the request was interrupted.',
     methodNotFound: 'The agent does not support "{detail}" — it may be older than this plugin expects.',

@@ -62,6 +62,15 @@ describe('AcpErrors', () => {
       expect(error).toBeInstanceOf(AcpTransportError);
       expect(error).toBeInstanceOf(Error);
     });
+
+    it('carries the cancel outcome when a watchdog attempted one', () => {
+      const error = new AcpTimeoutError('session/prompt', 5000, 'unsupported');
+      expect(error.cancelOutcome).toBe('unsupported');
+      // The message stays the machine-shaped transport line; the reader-facing
+      // sentence is chosen in humanizeError from this outcome.
+      expect(error.message).toBe("ACP request 'session/prompt' timed out after 5000ms");
+      expect(new AcpTimeoutError('session/load', 5000).cancelOutcome).toBeUndefined();
+    });
   });
 
   describe('AcpProcessExitError', () => {

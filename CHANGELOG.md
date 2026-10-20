@@ -1,3 +1,22 @@
+## 0.2.76 - 2026-10-20
+
+Takes the idle watchdog path 0.2.75 left open. The watchdog fired a cancel and threw the answer away, so a turn the agent had confirmed stopped, a turn on an agent with no cancel method, and a cancel nobody answered all produced the same "it may still be working" line. This round keeps the answer, and keeps the local stream abort from erasing it.
+
+### Fixed
+
+- **The idle watchdog reported a timeout without the one fact it had measured.** It fired `void this.acp.cancel(id)` and rejected immediately with `AcpTimeoutError('session/prompt', timeoutMs)`, discarding the tri-state cancel result the 0.2.74 client already returned. `AcpTimeoutError` now carries an optional `cancelOutcome`; the watchdog awaits the cancel (bounded by the existing 2 s `ACP_CANCEL_TIMEOUT_MS`) and reports `stopped`, `unsupported` or `unknown`. The reader-facing line changes with it: a confirmed stop no longer says the turn may still be working, and a missing cancel method is named as the reason rather than hidden behind a generic hedge. A cancel that throws is an unconfirmed stop, not a reason to leave the turn pending forever.
+
+- **The local stream abort could settle the turn before the cancel answered.** `AcpClient.cancel()` aborts the local stream first and only then asks the agent, so the wrapper's `sendMessage` rejects with `AcpAbortError` while the cancel request is still on the wire. Awaiting the cancel naïvely would have let that abort win the outer promise — reporting "aborted" and losing the measured outcome, or worse, rejecting with the abort after the turn had already been classified. The watchdog now owns settlement from the moment it fires: a late resolve or reject from the wrapper is ignored, and only the cancel outcome settles the timeout. `activeStreamCount()` is 0 afterwards, so the next send is not blocked by "A stream is already active".
+
+### Validation
+
+- 86 test files / 2,531 tests (2,525 baseline plus six new). On this Windows host 2,512 pass; the other 19 are the same pre-existing, platform-bound failures in `NativeSessionReader.test.ts` (POSIX fixtures rewritten by win32 `path.join`) and `commandResolution.test.ts` (host PATH delimiter), both untouched by this release. TypeScript and ESLint are clean. Six boundaries, each confirmed to discriminate: the default timeout carries `stopped`; an unsupported cancel is preserved on the error; a stream abort that lands before the cancel answers does not win (`AcpTimeoutError`, not `AcpAbortError`); a throwing cancel reports `unknown` instead of hanging; `humanizeError` renders a confirmed stop without the word "still"; and the unsupported and unknown lines differ in what they say caused the doubt. Reverting the watchdog to `void cancel` drops the outcome from every one of the first four; letting the wrapper settle first fails the abort-race test; returning early on a rejected cancel fails the throwing test.
+- Live rig against the installed `opencode v2.0.28`, with the actual bundled `AgentRuntime` + `AcpClient`, a stub provider that holds its response, and `idleTimeoutMs = 4000`: the watchdog settled at 4545 ms with `AcpTimeoutError.cancelOutcome = "unsupported"`, the rendered line named the missing cancel method, and `activeStreamCount()` was 0. A second `session/prompt` sent while the first was still held rejected in under 1.5 s with `-32603`, which is the live shape of the warning: the first turn is still running inside the agent. The 545 ms beyond the window is the cancel attempt's own round trip; without awaiting it, that fact is simply unknown.
+
+### Still open
+
+The watchdog's report is now honest, but on this kernel the underlying state is not fixed: `unsupported` means a timed-out turn can still be running, and the 0.2.75 transcript guard is what refuses the retry. Tab close, view close and the side-chat path still discard the cancel result (0.2.74). Awaiting the cancel delays the timeout line by up to 2 s beyond the idle window; a late answer arriving in that gap is discarded, as it already was, though the window is wider. Measured against OpenCode 2.0.28 only.
+
 ## 0.2.75 - 2026-10-20
 
 Takes both retry paths 0.2.73 left open — timeout and rejection — and finds that the guard it shipped had never run. The runtime object the controller actually holds did not expose the probe, so every 0.2.73 restart retry resolved `unknown` and refused. That failed closed, which is why no duplicate was observed; it was not, however, checking anything.

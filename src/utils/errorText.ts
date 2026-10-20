@@ -73,7 +73,15 @@ export function humanizeError(e: unknown): string {
   const raw = e instanceof Error ? e.message : String(e);
 
   if (e instanceof AcpTimeoutError) {
-    return fill(t().error.timedOut, { method: e.method, ms: String(e.timeoutMs) });
+    const vars = { method: e.method, ms: String(e.timeoutMs) };
+    // "It may still be working" is true for a request the client never
+    // cancelled, and for a cancel the agent never confirmed. It is false when
+    // the agent said it stopped, and misleading when the agent has no cancel
+    // method at all — say which of the three actually happened.
+    if (e.cancelOutcome === 'stopped') return fill(t().error.timedOutStopped, vars);
+    if (e.cancelOutcome === 'unsupported') return fill(t().error.timedOutUnsupported, vars);
+    if (e.cancelOutcome === 'unknown') return fill(t().error.timedOutUnknown, vars);
+    return fill(t().error.timedOut, vars);
   }
   if (e instanceof AcpSessionMissingError) return t().error.sessionMissing;
   if (e instanceof AcpProcessExitError) return fill(t().error.processExited, { detail: describeExit(e) });
