@@ -1,3 +1,20 @@
+## 0.2.77 - 2026-10-20
+
+Takes the first of the cancel paths 0.2.74 left silently discarded — and the only one where the client itself would send the next prompt. `/compact` interrupted the running turn, threw away whether it stopped, and sent the compact prompt anyway.
+
+### Fixed
+
+- **`/compact` could be sent into a session whose previous turn was never confirmed stopped.** `cancelActiveGeneration` awaited `cancel()` and discarded its tri-state; `compactSession` then sent `/compact` unconditionally. Measured against the installed `opencode v2.0.28`: hold a turn, cancel it (`unsupported`), then send `/compact` on the same session — the kernel rejects it **in 2 ms** with `-32603 "Internal error: Session already has an active ACP prompt: ses_…"`. The same prompt on a fresh, idle session was accepted and returned `end_turn`. So the old path was a guaranteed internal error on this kernel, and would have stacked two instructions on any agent that accepts concurrent prompts. `cancelActiveGeneration` now returns `idle` / `stopped` / `unsupported` / `unknown` (a cancel that throws is `unknown`, never a stop), and `compactSession` sends `/compact` only on `idle` or `stopped`. The other two are refused with a line that names the reason: no cancel method, or no confirmation of a stop.
+
+### Validation
+
+- 86 test files / 2,537 tests (2,531 baseline plus six new). On this Windows host 2,518 pass; the other 19 are the same pre-existing, platform-bound failures in `NativeSessionReader.test.ts` and `commandResolution.test.ts`, both untouched. TypeScript and ESLint are clean. Six boundaries, each confirmed to discriminate: a confirmed stop still sends `/compact`; `unsupported` refuses and names the missing method; `unknown` refuses and names the absent confirmation; a throwing cancel is reported as `unknown` by `cancelActiveGeneration` and refuses the send; an idle tab sends without cancelling anything; and the compact text reaches `sendMessage` exactly once when allowed. Reverting `compactSession` to always send fails the middle three; dropping the `unknown` assignment in the catch fails the direct `cancelActiveGeneration` assertion; treating `idle` as blocked fails the idle case.
+- Live rig with the actual bundled `AcpClient`, a stub provider holding its response: after `cancel` returned `unsupported` in 2 ms, `/compact` was rejected in 2 ms with the `-32603` above, with no new provider request. A control `/compact` on a fresh session returned `{ stopReason: "end_turn" }`; that session was empty, so this establishes acceptance rather than a successful summary. The first turn's local promise rejected with `AcpAbortError` after the cancel, exactly the race 0.2.76 made the watchdog own for its own path.
+
+### Still open
+
+`closeTab`, `cancelAllStreams` (view close) and `abortSideChat` still discard the cancel result. Unlike `/compact`, they have no surviving surface to report into: the tab/panel is being removed, and a message written there would vanish with it. Closing a tab mid-turn therefore still stops watching without establishing that the kernel stopped — the 0.2.74 gap narrowed, not closed. On an agent with no cancel method, `/compact` during a live turn is now refused rather than attempted; the turn has to finish (or the session be replaced) before compaction is possible. Measured against OpenCode 2.0.28 only.
+
 ## 0.2.76 - 2026-10-20
 
 Takes the idle watchdog path 0.2.75 left open. The watchdog fired a cancel and threw the answer away, so a turn the agent had confirmed stopped, a turn on an agent with no cancel method, and a cancel nobody answered all produced the same "it may still be working" line. This round keeps the answer, and keeps the local stream abort from erasing it.

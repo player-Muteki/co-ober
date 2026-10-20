@@ -1527,19 +1527,26 @@ export class CoOberViewController {
     return false;
   }
 
-  async cancelActiveGeneration(rt: SessionRuntime = this.activeRuntime): Promise<void> {
+  /** Cancel this tab's in-flight turn, reporting what the agent confirmed. */
+  async cancelActiveGeneration(
+    rt: SessionRuntime = this.activeRuntime,
+  ): Promise<'idle' | 'stopped' | 'unsupported' | 'unknown'> {
     const client = this.deps.runtime.getClient();
-    if (!client || !rt.busy || !rt.state.sessionId) return;
+    if (!client || !rt.busy || !rt.state.sessionId) return 'idle';
     const sessionId = rt.state.sessionId;
+    let outcome: 'stopped' | 'unsupported' | 'unknown';
     try {
-      await client.cancel(sessionId);
+      outcome = await client.cancel(sessionId);
     } catch (e) {
       console.error('[co-ober] cancel:', e);
+      // A cancel that threw observed nothing. It cannot be reported as a stop.
+      outcome = 'unknown';
     }
     // The turn is over, so any question it left on screen can no longer be
     // answered in the context that asked it. Give the agent its cancelled
     // outcome now instead of a banner that outlives the stream behind it.
     this.deps.permissionBanner.dismiss([sessionId]);
+    return outcome;
   }
 
   async compactSession(rt: SessionRuntime = this.activeRuntime): Promise<void> {
@@ -1552,8 +1559,19 @@ export class CoOberViewController {
       rt.renderer.addSystemMessage(t().permission.queueBlocked);
       return;
     }
-    // Cancel any active generation, then send /compact through the ACP agent
-    await this.cancelActiveGeneration(rt);
+    // /compact is itself a prompt. Sending it into a session whose previous
+    // turn the agent never confirmed stopped is the stacking hazard Stop now
+    // warns about, except here the client would be the one stacking it. Refuse
+    // and say why; waiting for the turn to finish is always safe.
+    const cancelOutcome = await this.cancelActiveGeneration(rt);
+    if (cancelOutcome !== 'idle' && cancelOutcome !== 'stopped') {
+      rt.renderer.addSystemMessage(
+        cancelOutcome === 'unsupported'
+          ? t().error.compactBlockedUnsupported
+          : t().error.compactBlockedUnknown,
+      );
+      return;
+    }
     await this.sendTextToAgent('/compact', undefined, rt);
   }
 

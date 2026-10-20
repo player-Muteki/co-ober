@@ -208,6 +208,10 @@ const en = {
       'Stopped here, but this agent has no cancel method — the turn may still be running inside it. Anything you send next will land on top of it.',
     cancelUnknown:
       'Stopped here, but the agent did not confirm that it stopped. The turn may still be running inside it.',
+    compactBlockedUnsupported:
+      'The running turn could not be stopped — this agent has no cancel method — so /compact was not sent. That prompt would reach a session that is still running the previous turn.',
+    compactBlockedUnknown:
+      'The running turn could not be confirmed stopped, so /compact was not sent. That prompt would reach a session that may still be running the previous turn.',
   },
 
   rewind: {

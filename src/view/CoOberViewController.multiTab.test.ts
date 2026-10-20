@@ -194,7 +194,7 @@ function createMockClient(overrides: Record<string, unknown> = {}) {
     setModel: vi.fn().mockResolvedValue(undefined),
     setConfigOption: vi.fn().mockResolvedValue([]),
     sendMessage: vi.fn().mockResolvedValue({ stopReason: 'end_turn' }),
-    cancel: vi.fn().mockResolvedValue(undefined),
+    cancel: vi.fn().mockResolvedValue('stopped'),
     closeSession: vi.fn().mockResolvedValue(undefined),
     forkSession: vi.fn().mockResolvedValue('forked-session'),
     resumeSession: vi.fn().mockResolvedValue(undefined),
@@ -2374,6 +2374,79 @@ describe('CoOberViewController — closed means closed (0.2.6 stage 3)', () => {
     });
   });
 
+  describe('/compact interrupting a live turn', () => {
+    function busyTab(): { tabA: string; rt: SessionRuntime } {
+      const [tabA] = twoTabs();
+      const rt = rtOf(h, tabA);
+      rt.state.sessionId = 'ses-a';
+      rt.busy = true;
+      return { tabA, rt };
+    }
+
+    it('sends the compact prompt when the agent confirmed the stop', async () => {
+      const { tabA, rt } = busyTab();
+      const client = clientFor({ cancel: vi.fn().mockResolvedValue('stopped') });
+
+      await h.controller.compactSession(rt);
+
+      expect(client.cancel).toHaveBeenCalledWith('ses-a');
+      expect(client.sendMessage).toHaveBeenCalledTimes(1);
+      expect(client.sendMessage.mock.calls[0][1]).toEqual([{ type: 'text', text: '/compact' }]);
+      expect(h.renderers.get(tabA)?.addSystemMessage).not.toHaveBeenCalledWith(
+        t().error.compactBlockedUnsupported,
+      );
+    });
+
+    it('does not compact on an agent with no cancel method', async () => {
+      const { tabA, rt } = busyTab();
+      const client = clientFor({ cancel: vi.fn().mockResolvedValue('unsupported') });
+
+      await h.controller.compactSession(rt);
+
+      expect(client.sendMessage).not.toHaveBeenCalled();
+      expect(h.renderers.get(tabA)?.addSystemMessage).toHaveBeenCalledWith(
+        t().error.compactBlockedUnsupported,
+      );
+    });
+
+    it('does not compact when the cancel was not confirmed', async () => {
+      const { tabA, rt } = busyTab();
+      const client = clientFor({ cancel: vi.fn().mockResolvedValue('unknown') });
+
+      await h.controller.compactSession(rt);
+
+      expect(client.sendMessage).not.toHaveBeenCalled();
+      expect(h.renderers.get(tabA)?.addSystemMessage).toHaveBeenCalledWith(
+        t().error.compactBlockedUnknown,
+      );
+    });
+
+    it('does not compact when the cancel itself threw', async () => {
+      const { tabA, rt } = busyTab();
+      const client = clientFor({ cancel: vi.fn().mockRejectedValue(new Error('cancel broke')) });
+
+      await h.controller.compactSession(rt);
+
+      expect(client.sendMessage).not.toHaveBeenCalled();
+      expect(h.renderers.get(tabA)?.addSystemMessage).toHaveBeenCalledWith(
+        t().error.compactBlockedUnknown,
+      );
+    });
+
+    it('does not cancel an idle tab before compacting', async () => {
+      const [tabA] = twoTabs();
+      const rt = rtOf(h, tabA);
+      rt.state.sessionId = 'ses-a';
+      rt.busy = false;
+      const client = clientFor();
+
+      await h.controller.compactSession(rt);
+
+      expect(client.cancel).not.toHaveBeenCalled();
+      expect(client.sendMessage).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('a turn eaten by a lost connection', () => {
     it('says so in the tab whose turn it was', async () => {
       const [, tabB] = twoTabs();
@@ -2865,7 +2938,7 @@ describe('cancelActiveGeneration answers its own banner (0.2.7 stage 2)', () => 
     rt.state.sessionId = 'ses-a';
     rt.busy = true;
 
-    await h.controller.cancelActiveGeneration(rt);
+    await expect(h.controller.cancelActiveGeneration(rt)).resolves.toBe('stopped');
 
     expect(client.cancel).toHaveBeenCalledWith('ses-a');
     // The turn ended, so the banner that outlived it must resolve cancelled
@@ -2880,10 +2953,24 @@ describe('cancelActiveGeneration answers its own banner (0.2.7 stage 2)', () => 
     rt.state.sessionId = 'ses-a';
     rt.busy = false;
 
-    await h.controller.cancelActiveGeneration(rt);
+    await expect(h.controller.cancelActiveGeneration(rt)).resolves.toBe('idle');
 
     expect(client.cancel).not.toHaveBeenCalled();
     expect(h.deps.permissionBanner.dismiss).not.toHaveBeenCalled();
+  });
+
+  it('reports a throwing cancel as unknown rather than as a stop', async () => {
+    const client = createMockClient({ cancel: vi.fn().mockRejectedValue(new Error('cancel broke')) });
+    (h.deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+    const rt = rtOf(h, h.controller.activeTabId());
+    rt.state.sessionId = 'ses-a';
+    rt.busy = true;
+
+    await expect(h.controller.cancelActiveGeneration(rt)).resolves.toBe('unknown');
+
+    // The local stream is still dropped and the banner still retires; only the
+    // kernel claim is withheld.
+    expect(h.deps.permissionBanner.dismiss).toHaveBeenCalledWith(['ses-a']);
   });
 });
 

@@ -209,7 +209,7 @@ function createMockClient(overrides: Record<string, unknown> = {}) {
     sendMessage: vi
       .fn()
       .mockResolvedValue({ stopReason: 'end_turn', usage: { totalTokens: 10, inputTokens: 5, outputTokens: 5 } }),
-    cancel: vi.fn().mockResolvedValue(undefined),
+    cancel: vi.fn().mockResolvedValue('stopped'),
     abort: vi.fn(),
     closeSession: vi.fn().mockResolvedValue(undefined),
     forkSession: vi.fn().mockResolvedValue('forked-session'),

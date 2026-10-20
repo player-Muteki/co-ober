@@ -209,6 +209,10 @@ const zh: Locale = {
       '已在这个界面停下，但这个 agent 没有提供取消的方法 —— 那一轮可能还在它里面跑。接下来发的东西会叠在上面。',
     cancelUnknown:
       '已在这个界面停下，但 agent 没有确认它也停了。那一轮可能还在它里面跑。',
+    compactBlockedUnsupported:
+      '正在运行的那一轮无法停止 —— 这个 agent 没有取消方法 —— 因此没有发送 /compact。它会进入一个仍在运行上一轮的会话。',
+    compactBlockedUnknown:
+      '无法确认正在运行的那一轮已经停下，因此没有发送 /compact。它会进入一个可能仍在运行上一轮的会话。',
   },
 
   rewind: {
