@@ -1,3 +1,21 @@
+## 0.2.75 - 2026-10-20
+
+Takes both retry paths 0.2.73 left open — timeout and rejection — and finds that the guard it shipped had never run. The runtime object the controller actually holds did not expose the probe, so every 0.2.73 restart retry resolved `unknown` and refused. That failed closed, which is why no duplicate was observed; it was not, however, checking anything.
+
+### Fixed
+
+- **A timed-out or rejected turn could be re-sent while the kernel still held it.** Measured against the installed `opencode acp` (2.0.28): with the provider holding its response, `session/load` on the same connection answered in 15 ms and replayed the submitted prompt (unique marker present) while the original `session/prompt` was still pending, and `session/cancel` still answered `-32601` — so the old "retry" stacked a second instruction on a live turn that cannot be stopped. With the provider returning 500, the prompt rejected after 12 upstream retries and 84.9 s (`-32603`), and an 18 ms load replayed the prompt and 24 frames. Every post-send failure that offers a retry now asks the transcript first and re-sends only on `'no'`; `'yes'` and `'unknown'` are refused with the reason. Failures before the prompt reaches the wire keep the plain retry: the containment probe could match an identical earlier turn, and a refusal there would be false.
+
+- **0.2.73's guard was dead on arrival.** `submittedAlready` called `client.hasSubmittedPrompt` behind an optional check, but the controller's client is `AgentRuntime`, which never forwarded the method. Every probe resolved `unknown`, so the process-exit chip refused every retry — including safe ones — for a reason it had not measured. `AgentRuntime.hasSubmittedPrompt` now delegates to `AcpClient`, the object that actually reads the replay.
+
+### Validation
+
+- 86 test files / 2,525 tests (2,519 baseline plus six new). On this Windows host 2,506 pass; the other 19 are pre-existing, platform-bound failures in `NativeSessionReader.test.ts` (POSIX fixtures rewritten by win32 `path.join`) and `commandResolution.test.ts` (host PATH delimiter), both untouched by this release and left for the Linux CI runner. Six boundaries, each confirmed to discriminate: `'yes'` on the timeout chip re-sends nothing; `'unknown'` refuses to call an unreadable transcript safe; `'no'` re-sends; the restart chip reconnects before probing and refuses a held prompt; a pre-send failure retries without probing even when the probe would answer `'yes'`; and the runtime forwards the probe to the acp client. Restoring the blind retry fails the first; reading `'unknown'` as safe fails the second; removing the send-boundary split fails the fifth; dropping the forwarder brings the `unknown` constant back. Reference baseline: Claudian not re-fetched this round; prior record `8a7de7c6` (2.3.24).
+
+### Still open
+
+The idle watchdog still fires `void this.acp.cancel(id)` and discards the outcome — on this kernel that cancel answers `-32601`, so a "timed out" turn is reported while it may still be alive. Tab close, view close and the side-chat path still discard the cancel result (0.2.74). The containment match can refuse a legitimate retry, and `unknown` costs one extra click. Measured against OpenCode 2.0.28 only; the nine cancel spellings were measured on 2.0.32 and not re-probed here.
+
 ## 0.2.74 - 2026-10-18
 
 Takes the last of the gap analysis' stage-3 acceptance criteria — 中断不留后台工作 — and finds it does not hold on this kernel. The kernel has no cancellation at all, and the plugin had been reporting a stop it never observed.

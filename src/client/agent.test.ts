@@ -21,6 +21,7 @@ describe('AgentRuntime', () => {
       disconnect: vi.fn().mockResolvedValue(undefined),
       createSession: vi.fn().mockResolvedValue('session-1'),
       loadSession: vi.fn().mockResolvedValue(undefined),
+      hasSubmittedPrompt: vi.fn().mockResolvedValue('yes'),
       listSessions: vi.fn().mockResolvedValue([]),
       closeSession: vi.fn().mockResolvedValue(undefined),
       forkSession: vi.fn().mockResolvedValue('session-2'),
@@ -90,6 +91,11 @@ describe('AgentRuntime', () => {
       const onReplay = vi.fn();
       await runtime.loadSession('session-1', '/path', undefined, onReplay);
       expect(mockAcp.loadSession).toHaveBeenCalledWith('session-1', '/path', undefined, onReplay);
+    });
+
+    it('hasSubmittedPrompt delegates to acp', async () => {
+      await expect(runtime.hasSubmittedPrompt('session-1', 'hello')).resolves.toBe('yes');
+      expect(mockAcp.hasSubmittedPrompt).toHaveBeenCalledWith('session-1', 'hello');
     });
 
     it('listSessions delegates to acp', async () => {

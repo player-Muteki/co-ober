@@ -2189,6 +2189,28 @@ export class CoOberViewController {
     }
   }
 
+  /**
+   * Replay a failed turn only when the transcript proves it never reached the
+   * agent. Measured (0.2.75): a timed-out turn and a rejected one are both in
+   * the transcript already — "no answer" was never "nothing ran". Anything but
+   * `'no'` refuses the re-send; `'unknown'` costs the reader one click, while a
+   * guess that lands the other way repeats the turn's edits and commands.
+   */
+  private async retryUnlessSubmitted(
+    rt: SessionRuntime,
+    text: string,
+    retry: () => Promise<void>,
+  ): Promise<void> {
+    const landed = await this.submittedAlready(rt, text);
+    if (landed !== 'no') {
+      rt.renderer.addSystemMessage(
+        landed === 'yes' ? t().error.alreadySubmitted : t().error.submitUnknown,
+      );
+      return;
+    }
+    await retry();
+  }
+
   private async retryTurn(
     config: AgentCallConfig,
     text: string,
@@ -2300,6 +2322,9 @@ export class CoOberViewController {
     rt.renderer.addAssistantPlaceholder();
 
     let parkedForCapacity = false;
+    // A failure before the prompt reaches the wire cannot have run it; only a
+    // failure after the send needs the transcript consulted before a replay.
+    let promptAttempted = false;
     try {
       await this.syncRuntimeSession(sessionId, undefined, rt);
       if (rt.state.sessionId !== sessionId || !rt.busy) return;
@@ -2316,6 +2341,7 @@ export class CoOberViewController {
       const caps = c.getAgentCapabilities?.();
       parts.push(...(supportsPromptCapability(caps, 'image') ? imageParts : []));
       this.assertSessionDatabase(sessionId, c);
+      promptAttempted = true;
       const response = await c.sendMessage(sessionId, parts, (ch: NormalizedUpdate) => {
         if (rt.genId !== currentGen || !rt.busy || rt.state.sessionId !== sessionId) return;
         rt.streamCtrl.handleChunk(ch);
@@ -2384,22 +2410,27 @@ export class CoOberViewController {
             // ran". Re-sending on that basis executes the turn twice — twice the
             // edits, twice the commits. Ask what actually landed, and refuse the
             // re-send when the transcript says the prompt is already there.
-            const landed = await this.submittedAlready(rt, text);
-            if (landed !== 'no') {
-              rt.renderer.addSystemMessage(
-                landed === 'yes' ? t().error.alreadySubmitted : t().error.submitUnknown,
-              );
-              return;
-            }
-            await this.retryTurn(config, text, refs, imageParts, rt);
+            await this.retryUnlessSubmitted(rt, text, () =>
+              this.retryTurn(config, text, refs, imageParts, rt),
+            );
           }, undefined, 'error.restart');
         } else if (retryAction) {
           // A timed-out RPC and a rejected one are the same reader-problem: a
           // question that got no answer and a bubble above it saying so. The
           // timeout used to be the only failure with a way back, and the bare
           // "timed out" sentence was what every other path already replaces
-          // with the method and how long it waited.
-          rt.renderer.addError(humanizeError(e), t().error.retry, retryAction, undefined, 'error.retry');
+          // with the method and how long it waited. Once the prompt has gone
+          // out, that way back re-runs a turn the transcript may already hold,
+          // so it asks first — measured 0.2.75: both a timed-out and a rejected
+          // turn are still in the transcript, and replaying either repeats its
+          // edits and commands.
+          const guardedRetry = promptAttempted
+            ? (): Promise<void> =>
+                this.retryUnlessSubmitted(rt, text, () =>
+                  this.retryTurn(config, text, refs, imageParts, rt),
+                )
+            : retryAction;
+          rt.renderer.addError(humanizeError(e), t().error.retry, guardedRetry, undefined, 'error.retry');
         } else {
           rt.renderer.addError(humanizeError(e));
         }

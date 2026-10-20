@@ -201,6 +201,7 @@ function createMockClient(overrides: Record<string, unknown> = {}) {
     isConnected: vi.fn(() => true),
     getCurrentSessionId: vi.fn(() => undefined),
     loadSession: vi.fn().mockResolvedValue(undefined),
+    hasSubmittedPrompt: vi.fn().mockResolvedValue('no'),
     createSession: vi.fn().mockResolvedValue('new-session'),
     setMode: vi.fn().mockResolvedValue(undefined),
     setModel: vi.fn().mockResolvedValue(undefined),
@@ -1747,6 +1748,119 @@ describe('CoOberViewController', () => {
       expect(retryCall).toBeDefined();
       expect(String(retryCall![0])).toContain('session/prompt');
       expect(String(retryCall![0])).toContain('30000');
+    });
+
+    it('asks the transcript before replaying a timed-out turn, and refuses a second run', async () => {
+      const client = createMockClient({
+        sendMessage: vi.fn().mockRejectedValue(new AcpTimeoutError('session/prompt', 30000)),
+        hasSubmittedPrompt: vi.fn().mockResolvedValue('yes'),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      await controller.send('hello', []);
+
+      const addError = deps.renderer.addError as unknown as ReturnType<typeof vi.fn>;
+      const retryCall = addError.mock.calls.find((c) => c[1] === t().error.retry);
+      expect(retryCall).toBeDefined();
+      await (retryCall![2] as () => Promise<void>)();
+
+      // Measured: a turn that times out is still in the transcript, so the
+      // old retry ran the same edits and commands a second time.
+      expect(client.hasSubmittedPrompt).toHaveBeenCalledWith(expect.any(String), 'hello');
+      expect(client.sendMessage).toHaveBeenCalledTimes(1);
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().error.alreadySubmitted);
+    });
+
+    it('refuses a timed-out replay whose transcript cannot be read, without calling it safe', async () => {
+      const client = createMockClient({
+        sendMessage: vi.fn().mockRejectedValue(new AcpTimeoutError('session/prompt', 30000)),
+        hasSubmittedPrompt: vi.fn().mockResolvedValue('unknown'),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      await controller.send('hello', []);
+
+      const addError = deps.renderer.addError as unknown as ReturnType<typeof vi.fn>;
+      const retryCall = addError.mock.calls.find((c) => c[1] === t().error.retry);
+      await (retryCall![2] as () => Promise<void>)();
+
+      expect(client.sendMessage).toHaveBeenCalledTimes(1);
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().error.submitUnknown);
+    });
+
+    it('lets a timed-out turn replay only when the transcript proves it never arrived', async () => {
+      const sendMessage = vi
+        .fn()
+        .mockRejectedValueOnce(new AcpTimeoutError('session/prompt', 30000))
+        .mockResolvedValueOnce({ stopReason: 'end_turn' });
+      const client = createMockClient({
+        sendMessage,
+        hasSubmittedPrompt: vi.fn().mockResolvedValue('no'),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      await controller.send('hello', []);
+
+      const addError = deps.renderer.addError as unknown as ReturnType<typeof vi.fn>;
+      const retryCall = addError.mock.calls.find((c) => c[1] === t().error.retry);
+      await (retryCall![2] as () => Promise<void>)();
+
+      expect(client.hasSubmittedPrompt).toHaveBeenCalledWith(expect.any(String), 'hello');
+      expect(sendMessage).toHaveBeenCalledTimes(2);
+      expect(deps.renderer.addSystemMessage).not.toHaveBeenCalledWith(t().error.alreadySubmitted);
+    });
+
+    it('restart probes the transcript after reconnecting, and refuses a prompt it already holds', async () => {
+      const client = createMockClient({
+        sendMessage: vi.fn().mockRejectedValue(new AcpProcessExitError(1, null)),
+        hasSubmittedPrompt: vi.fn().mockResolvedValue('yes'),
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      const reconnect = vi.spyOn(controller, 'reconnect').mockResolvedValue(undefined);
+
+      await controller.send('hello', []);
+
+      const addError = deps.renderer.addError as unknown as ReturnType<typeof vi.fn>;
+      const restartCall = addError.mock.calls.find((c) => c[1] === t().error.restart);
+      expect(restartCall).toBeDefined();
+      await (restartCall![2] as () => Promise<void>)();
+
+      // The 0.2.73 guard asked the runtime for a method it never exposed, so the
+      // only possible answer was "unknown" and no restart ever retried. Now the
+      // reconnected transcript is read and the already-held prompt is refused.
+      expect(reconnect).toHaveBeenCalledTimes(1);
+      expect(client.hasSubmittedPrompt).toHaveBeenCalledWith(expect.any(String), 'hello');
+      expect(client.sendMessage).toHaveBeenCalledTimes(1);
+      expect(deps.renderer.addSystemMessage).toHaveBeenCalledWith(t().error.alreadySubmitted);
+    });
+
+    it('retries a failure before the send without asking the transcript', async () => {
+      const sendMessage = vi.fn().mockResolvedValue({ stopReason: 'end_turn' });
+      (deps.resolver.resolveNote as ReturnType<typeof vi.fn>)
+        .mockRejectedValueOnce(new Error('note boom'))
+        .mockResolvedValue({ ok: false, reason: 'missing' });
+      const client = createMockClient({
+        hasSubmittedPrompt: vi.fn().mockResolvedValue('yes'),
+        sendMessage,
+      });
+      (deps.runtime.getClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+      (deps.runtime.initClient as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      await controller.send('hello', [{ id: 'n1', type: 'note', name: 'note', path: 'note.md' }]);
+
+      const addError = deps.renderer.addError as unknown as ReturnType<typeof vi.fn>;
+      const retryCall = addError.mock.calls.find((c) => c[1] === t().error.retry);
+      await (retryCall![2] as () => Promise<void>)();
+
+      // The probe matches by containment, so an identical earlier turn makes it
+      // answer 'yes' even though this attempt never reached the wire. Only the
+      // send boundary may trigger it; before that, a refusal would be a lie.
+      expect(client.hasSubmittedPrompt).not.toHaveBeenCalled();
+      expect(sendMessage).toHaveBeenCalledTimes(1);
     });
 
     it('does not let a superseded turn tear down the current turn state', async () => {
