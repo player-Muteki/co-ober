@@ -25,7 +25,10 @@ export type AcpCancelOutcome = 'stopped' | 'unsupported' | 'unknown';
  * but the agent accepted `session/close` for the session holding the turn. Measured on
  * `opencode acp` 2.0.28: a close taken while a turn is live answers `{}`, and the live
  * prompt resolves `stopReason: "cancelled"` in the same millisecond, with no updates
- * after. A stop the agent answered is evidence; a stop nobody answered is not.
+ * after. Measured against the turn's own end too: closes fired inside the race window
+ * (answer already fully written, prompt still outstanding) are accepted and nothing
+ * ever grew afterward — 9/9 in-flight-close samples. A stop the agent answered is
+ * evidence; a stop nobody answered is not.
  */
 export type AcpStopEvidence = AcpCancelOutcome | 'closed';
 
