@@ -1,4 +1,7 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { afterAll, describe, expect, it, vi, beforeEach } from 'vitest';
 import type { SqliteRow } from './SqliteReader';
 import {
 	escapeSqlLiteral,
@@ -41,6 +44,18 @@ const fakeFs = {
 
 const V1_PROBE_ROW = { session_table: 1, session_columns: 6, v2_tables: 0 };
 const FORK_CLEAN_ROW = { migrated: 0, v2_rows: 0 };
+/**
+ * The shape read's answer for a v2-era database, in the shape measured on
+ * 2.0.28: `session_message` and a complete `session_v2` registry exist, and
+ * `data_migration` — the table the evidence read used to name — does not.
+ */
+const FORK_SHAPE_ROW = { migration_table: 0, message_table: 1, registry_columns: 10 };
+const NO_V2_SHAPE_ROW = { migration_table: 0, message_table: 0, registry_columns: 0 };
+
+/** The shape a probe that found v2 tables is answered with; overridable per test. */
+function shapeForProbe(probeRow: SqliteRow, forkShape: SqliteRow = FORK_SHAPE_ROW): SqliteRow {
+	return typeof probeRow.v2_tables === 'number' && probeRow.v2_tables > 0 ? forkShape : NO_V2_SHAPE_ROW;
+}
 
 /** Read helper that answers the schema probe with v1 shapes (or a custom row). */
 function sqliteBacked(rows: SqliteRow[], probeRow: SqliteRow = V1_PROBE_ROW) {
@@ -52,11 +67,13 @@ function sqliteBacked(rows: SqliteRow[], probeRow: SqliteRow = V1_PROBE_ROW) {
 				prepare(sql: string) {
 					return {
 						all: () =>
-							sql.includes('sqlite_master')
-								? [probeRow]
-								: sql.includes('data_migration')
-									? [FORK_CLEAN_ROW]
-									: rows,
+							sql.includes('registry_v2_rows')
+								? [FORK_CLEAN_ROW]
+								: sql.includes('migration_table')
+									? [shapeForProbe(probeRow)]
+									: sql.includes('sqlite_master')
+										? [probeRow]
+										: rows,
 					};
 				}
 			},
@@ -711,7 +728,7 @@ describe('v2 SQL against a real SQLite engine', () => {
 });
 
 describe('native schema probe (v2 defense)', () => {
-	function recordingSqlite(probeRow: unknown, forkRow: unknown = FORK_CLEAN_ROW, contentRows: unknown[] = []) {
+	function recordingSqlite(probeRow: unknown, forkRow: unknown = FORK_CLEAN_ROW, contentRows: unknown[] = [], forkShape: unknown = FORK_SHAPE_ROW) {
 		const seen: string[] = [];
 		return {
 			seen,
@@ -722,8 +739,9 @@ describe('native schema probe (v2 defense)', () => {
 						close() {}
 						prepare(sql: string) {
 							seen.push(sql);
+							if (sql.includes('registry_v2_rows')) return { all: () => [forkRow] };
+							if (sql.includes('migration_table')) return { all: () => [shapeForProbe(probeRow as SqliteRow, forkShape as SqliteRow)] };
 							if (sql.includes('sqlite_master')) return { all: () => [probeRow] };
-							if (sql.includes('data_migration')) return { all: () => [forkRow] };
 							return { all: () => contentRows };
 						}
 					},
@@ -800,7 +818,7 @@ describe('native schema probe (v2 defense)', () => {
 		await readNativeSessionUsage('ses_a', { ...base, sqlite: deps as never });
 		await readNativeMessageStats('ses_a', { ...base, sqlite: deps as never });
 		await readNativeToolErrors('ses_a', { ...base, sqlite: deps as never });
-		const contentQueries = seen.filter((sql) => !sql.includes('sqlite_master') && !sql.includes('data_migration'));
+		const contentQueries = seen.filter((sql) => !sql.includes('as session_table') && !sql.includes('migration_table') && !sql.includes('registry_v2_rows'));
 		expect(contentQueries.length).toBeGreaterThanOrEqual(4);
 		expect(contentQueries.every((sql) => sql.includes('session_message'))).toBe(true);
 		const forkWarnings = warn.mock.calls.filter((args) => String(args[0]).includes('v2 storage layout'));
@@ -816,7 +834,10 @@ describe('native schema probe (v2 defense)', () => {
 					constructor() {}
 					close() {}
 					prepare(sql: string) {
-						if (sql.includes('sqlite_master')) {
+						// Only the shape probe is answered; every v2 evidence read —
+						// the shape itself counts tables and the count read totals them
+						// — throws, which is the stale-mirror trap this test guards.
+						if (sql.includes('as session_table')) {
 							return { all: () => [{ session_table: 1, session_columns: 6, v2_tables: 2 }] };
 						}
 						return { all: () => { throw new Error('table is corrupt'); } };
@@ -852,8 +873,9 @@ describe('native session registry follows the current table (0.2.83)', () => {
 						close() {}
 						prepare(sql: string) {
 							seen.push(sql);
+							if (sql.includes('registry_v2_rows')) return { all: () => [forkRow] };
+							if (sql.includes('migration_table')) return { all: () => [FORK_SHAPE_ROW] };
 							if (sql.includes('sqlite_master')) return { all: () => [FORK_V2_PROBE_ROW] };
-							if (sql.includes('data_migration')) return { all: () => [forkRow] };
 							if (sql.includes('from session_v2 s')) return { all: () => registryRows };
 							return { all: () => legacyRows };
 						}
@@ -941,8 +963,9 @@ describe('native directory filter matches the stored shape (0.2.84)', () => {
 						close() {}
 						prepare(sql: string) {
 							seen.push(sql);
+							if (sql.includes('registry_v2_rows')) return { all: () => [{ migrated: 0, v2_rows: 1591, registry_v2_rows: 25 }] };
+							if (sql.includes('migration_table')) return { all: () => [FORK_SHAPE_ROW] };
 							if (sql.includes('sqlite_master')) return { all: () => [probeRow] };
-							if (sql.includes('data_migration')) return { all: () => [{ migrated: 0, v2_rows: 1591, registry_v2_rows: 25 }] };
 							if (sql.includes('from session_v2 s') && sql.includes(`= 'D:/vault'`)) return { all: () => storedRow };
 							return { all: () => [] };
 						}
@@ -1002,8 +1025,9 @@ describe('native history hides forked scratch sessions (0.2.85)', () => {
 					close() {}
 					prepare(sql: string) {
 						seen.push(sql);
+						if (sql.includes('registry_v2_rows')) return { all: () => [forkRow] };
+						if (sql.includes('migration_table')) return { all: () => [FORK_SHAPE_ROW] };
 						if (sql.includes('sqlite_master')) return { all: () => [probeRow] };
-						if (sql.includes('data_migration')) return { all: () => [forkRow] };
 						return { all: () => row };
 					}
 				},
@@ -1021,6 +1045,107 @@ describe('native history hides forked scratch sessions (0.2.85)', () => {
 			),
 		).toBe(true);
 		warn.mockRestore();
+	});
+});
+
+// 0.2.89: measured against the real database of `opencode 2.0.28`, there is no
+// `data_migration` table on it at all — that kernel's migration bookkeeping
+// lives in `migration` — while the legacy `session` table holds 2 fossil rows
+// and `session_v2` holds 22 current ones (16 for the vault being worked in).
+// The fork evidence read named the missing table in one query, so the read
+// threw at prepare time, its catch handed the registry back as the fossilized
+// `session`, and the history listing answered one session for a database whose
+// kernel had sixteen. These fixtures are real SQLite files in that shape,
+// because the lie only reproduces against an engine that actually refuses to
+// parse a query about a table that is not there.
+describe('fork evidence against a kernel without data_migration (0.2.89)', () => {
+	let sqlite: { DatabaseSync: new (p: string) => { prepare(sql: string): { run(...params: unknown[]): void }; close(): void } } | null = null;
+	try {
+		// eslint-disable-next-line @typescript-eslint/no-require-imports -- node:sqlite is only present on newer Node runtimes and this suite must degrade cleanly when it is missing
+		sqlite = require('node:sqlite');
+	} catch {
+		sqlite = null;
+	}
+	const maybe = sqlite ? describe : describe.skip;
+	const written: string[] = [];
+
+	function writeFixture(name: string, statements: string[]): string {
+		const file = path.join(os.tmpdir(), `co-ober-gate-${name}-${process.pid}.db`);
+		fs.rmSync(file, { force: true });
+		for (const leftover of ['-wal', '-shm']) fs.rmSync(file + leftover, { force: true });
+		const db = new sqlite!.DatabaseSync(file);
+		for (const statement of statements) db.prepare(statement).run();
+		db.close();
+		written.push(file);
+		return file;
+	}
+
+	afterAll(() => {
+		for (const file of written) {
+			try {
+				fs.rmSync(file, { force: true });
+			} catch {
+				// A fixture the host still has open is the host's business; a test
+				// run must not fail over it.
+			}
+		}
+	});
+
+	const SESSION_V2 = "create table session_v2 (id text primary key, parent_id text, fork_session_id text, directory text, title text, time_archived integer, time_updated integer, summary_additions integer, summary_deletions integer, summary_files integer)";
+	const SESSION_V2_LINEAGE_FREE = "create table session_v2 (id text primary key, parent_id text, directory text, title text, time_archived integer, time_updated integer, summary_additions integer, summary_deletions integer, summary_files integer)";
+	const SESSION_MESSAGE = 'create table session_message (id text primary key, session_id text, type text, seq integer, time_created integer, time_updated integer, data text)';
+	const LEGACY_SESSION = 'create table session (id text primary key, parent_id text, directory text, title text, agent text, model text, time_archived integer, time_updated integer, summary_additions integer, summary_deletions integer, summary_files integer)';
+	const FOSSIL = "insert into session (id, directory, title, time_updated) values ('ses_fossil', '/vault', 'Fossil', 100)";
+	const CURRENT = "insert into session_v2 values ('ses_now', null, null, '/vault', 'Current', null, 500, 2, 1, 1)";
+	const SCRATCH = "insert into session_v2 values ('ses_scratch', null, 'ses_now', '/vault', 'Current (fork #1)', null, 600, 0, 0, 0)";
+	const USER_EVENT = `insert into session_message values ('m1', 'ses_now', 'user', 1, 700, 700, '{"text":"hello needle here"}')`;
+
+	maybe('the 2.0.28 shape: legacy table fossilized, session_v2 current, no data_migration', () => {
+		it('lists the sessions the kernel actually has, not the fossil mirror', async () => {
+			const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			const file = writeFixture('current', [LEGACY_SESSION, SESSION_V2, SESSION_MESSAGE, FOSSIL, CURRENT, SCRATCH, USER_EVENT]);
+			expect(await probeNativeSchema(file, { databasePath: file })).toBe('forked');
+			const sessions = await listNativeSessions('/vault', { databasePath: file });
+			expect(sessions.map((s) => s.sessionId)).toEqual(['ses_now']);
+			const found = await searchNativeSessions('/vault', 'needle', { databasePath: file });
+			expect(found.map((s) => s.sessionId)).toEqual(['ses_now']);
+			warn.mockRestore();
+		});
+	});
+
+	maybe('a session_v2 that cannot be listed is not read at all', () => {
+		it('keeps the legacy registry when session_v2 has no fork_session_id column', async () => {
+			const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			const file = writeFixture('no-lineage', [LEGACY_SESSION, SESSION_V2_LINEAGE_FREE, SESSION_MESSAGE, FOSSIL, "insert into session_v2 values ('ses_now', null, '/vault', 'Current', null, 500, 2, 1, 1)"]);
+			// `session_v2` here has rows but no lineage column, so the v2 listing
+			// would throw on it and answer "no sessions" for a database full of
+			// them. Without `session_message` events there is no v2 content layout
+			// to read either, so the honest classification is v1 and the honest
+			// listing is the legacy table.
+			expect(await probeNativeSchema(file, { databasePath: file })).toBe('v1');
+			const sessions = await listNativeSessions('/vault', { databasePath: file });
+			expect(sessions.map((s) => s.sessionId)).toEqual(['ses_fossil']);
+			warn.mockRestore();
+		});
+	});
+
+	maybe('a kernel that dropped the legacy session table entirely', () => {
+		it('reads the v2 registry instead of declaring the database incompatible', async () => {
+			const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			const file = writeFixture('v2-only', [SESSION_V2, SESSION_MESSAGE, CURRENT, USER_EVENT]);
+			expect(await probeNativeSchema(file, { databasePath: file })).toBe('forked');
+			const sessions = await listNativeSessions('/vault', { databasePath: file });
+			expect(sessions.map((s) => s.sessionId)).toEqual(['ses_now']);
+			warn.mockRestore();
+		});
+
+		it('still calls a database with neither registry incompatible', async () => {
+			const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			const file = writeFixture('neither', ['create table kv (key text primary key, value text)']);
+			expect(await probeNativeSchema(file, { databasePath: file })).toBe('incompatible');
+			await expect(listNativeSessions('/vault', { databasePath: file })).rejects.toThrow(/unrecognized|unavailable/);
+			warn.mockRestore();
+		});
 	});
 });
 
@@ -1045,11 +1170,13 @@ describe('native whole-conversation transcript (0.2.50 stage B)', () => {
 					prepare(sql: string) {
 						return {
 							all: () =>
-								sql.includes('sqlite_master')
-									? [probeRow]
-									: sql.includes('data_migration')
-										? [forkRow]
-										: contentRows,
+								sql.includes('registry_v2_rows')
+									? [forkRow]
+									: sql.includes('migration_table')
+										? [shapeForProbe(probeRow as SqliteRow)]
+										: sql.includes('sqlite_master')
+											? [probeRow]
+											: contentRows,
 						};
 					}
 				},

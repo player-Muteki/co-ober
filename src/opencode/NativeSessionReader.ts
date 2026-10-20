@@ -43,7 +43,9 @@ export type NativeSchemaKind = 'v1' | 'forked' | 'incompatible' | 'unknown';
 // fossilize at their migration-time values while every new session lives only
 // in `session_v2`. Forked databases therefore read content through the v2
 // event tables and, when `session_v2` carries rows, the session registry
-// there too.
+// there too — which also means the legacy shape is no longer the only proof
+// that a database is readable: a kernel that drops `session` entirely is still
+// readable through a complete `session_v2` registry.
 const SCHEMA_PROBE_SQL = [
 	'select',
 	"(select count(*) from sqlite_master where type = 'table' and name = 'session') as session_table,",
@@ -51,12 +53,47 @@ const SCHEMA_PROBE_SQL = [
 	"(select count(*) from sqlite_master where type = 'table' and name in ('session_v2','session_message','data_migration')) as v2_tables",
 ].join(' ');
 
-const SCHEMA_FORK_SQL = [
+/** The registry columns the v2 listing and search read. */
+const V2_REGISTRY_COLUMNS = [
+	'id',
+	'title',
+	'directory',
+	'time_updated',
+	'time_archived',
+	'parent_id',
+	'fork_session_id',
+	'summary_additions',
+	'summary_deletions',
+	'summary_files',
+];
+
+/**
+ * Which v2-era tables this database actually has, and whether `session_v2`
+ * carries every column the listing reads. Every clause is written so that an
+ * absent table answers `0` rather than an error: `sqlite_master` is a list, and
+ * `pragma_table_info` of a table that was never created is an empty set —
+ * measured on 2.0.28. Existence therefore has to be established before a row
+ * count can name a table, because the count itself has no such mercy.
+ *
+ * The fork evidence read used to do that in one query, naming `data_migration`
+ * directly. Measured against the real database on 2.0.28, that table does not
+ * exist at all on this host (the migration bookkeeping lives in `migration`),
+ * so the whole evidence query threw at prepare time, its catch handed the
+ * registry back as `session`, and the history listing answered one fossilized
+ * session for a vault whose `session_v2` held sixteen.
+ */
+const SCHEMA_FORK_SHAPE_SQL = [
 	'select',
-	'(select count(*) from data_migration) as migrated,',
-	'(select count(*) from session_message) as v2_rows,',
-	"(select count(*) from pragma_table_info('session_v2')) as registry_v2_rows",
+	"(select count(*) from sqlite_master where type = 'table' and name = 'data_migration') as migration_table,",
+	"(select count(*) from sqlite_master where type = 'table' and name = 'session_message') as message_table,",
+	"(select count(*) from pragma_table_info('session_v2') where name in ('" + V2_REGISTRY_COLUMNS.join("','") + "')) as registry_columns",
 ].join(' ');
+
+/** Row counts, taken only from the tables the shape read proved present. */
+function buildForkEvidenceSql(shape: NativeForkShape): string {
+	const count = (present: boolean, table: string, label: string) => `${present ? `(select count(*) from ${table})` : '(select 0)'} as ${label}`;
+	return ['select', count(shape.migrationTable, 'data_migration', 'migrated') + ',', count(shape.messageTable, 'session_message', 'v2_rows') + ',', count(shape.registryColumns, 'session_v2', 'registry_v2_rows')].join(' ');
+}
 
 const schemaProbeCache = new Map<string, NativeSchemaProbe>();
 const warnedDegraded = new Set<string>();
@@ -106,16 +143,20 @@ async function resolveNativeSchemaProbe(databasePath: string, deps: NativeSessio
 	const sessionTable = typeof row?.session_table === 'number' ? row.session_table : 0;
 	const sessionColumns = typeof row?.session_columns === 'number' ? row.session_columns : 0;
 	const v2Tables = typeof row?.v2_tables === 'number' ? row.v2_tables : 0;
+	// The legacy v1 shape is one way to have a readable database, not the only
+	// one: a kernel that moves the registry into `session_v2` and drops `session`
+	// outright is readable through the v2 tables, and calling it incompatible
+	// would switch native history off on a database full of sessions.
+	const legacyReadable = sessionTable >= 1 && sessionColumns >= 6;
 	let kind: NativeSchemaKind;
 	let registry: NativeSessionRegistry = 'session';
-	if (sessionTable < 1 || sessionColumns < 6) {
-		kind = 'incompatible';
-	} else if (v2Tables > 0) {
-		const evidence = await readForkEvidence(databasePath, deps);
-		kind = evidence.diverged ? 'forked' : 'v1';
-		registry = evidence.registry;
-	} else {
+	if (legacyReadable && v2Tables === 0) {
 		kind = 'v1';
+	} else {
+		const evidence = await readForkEvidence(databasePath, deps);
+		registry = evidence.registry;
+		if (!legacyReadable) kind = evidence.registryReady ? 'forked' : 'incompatible';
+		else kind = evidence.diverged || evidence.registryReady ? 'forked' : 'v1';
 	}
 	const probe: NativeSchemaProbe = { kind, registry };
 	if (schemaProbeCache.size >= SCHEMA_CACHE_LIMIT) schemaProbeCache.clear();
@@ -153,25 +194,57 @@ async function resolveNativeSessionRegistry(databasePath: string, deps: NativeSe
 	return (await resolveNativeSchemaProbe(databasePath, deps)).registry;
 }
 
+/** Which v2-era tables exist and whether `session_v2` is shaped like a registry. */
+interface NativeForkShape {
+	migrationTable: boolean;
+	messageTable: boolean;
+	registryColumns: boolean;
+}
+
 /**
  * The v2 tables that actually carry current data, and which registry holds
- * session rows. A failed count is treated as diverged: existence plus an
- * unreadable table can only come from a v2-era database, and silently reading
- * a stale v1 mirror is the worse error — but the registry choice still falls
- * back to `session`, because a registry read that could not run is an
- * absence of evidence, not evidence of `session_v2`.
+ * session rows. A failed read is treated as diverged: an unreadable v2-era
+ * database can only be a forked one, and silently reading a stale v1 mirror is
+ * the worse error — but the registry choice still falls back to `session`,
+ * because a registry read that could not run is an absence of evidence, not
+ * evidence of `session_v2`.
+ *
+ * Existence is settled before any row count is asked, so a kernel that renamed
+ * or dropped one of these tables costs one honest `0`, not the whole listing.
  */
-async function readForkEvidence(databasePath: string, deps: NativeSessionReaderDeps): Promise<{ diverged: boolean; registry: NativeSessionRegistry }> {
+async function readForkEvidence(
+	databasePath: string,
+	deps: NativeSessionReaderDeps,
+): Promise<{ diverged: boolean; registry: NativeSessionRegistry; registryReady: boolean }> {
+	const failed = { diverged: true, registry: 'session' as NativeSessionRegistry, registryReady: false };
+	let shape: SqliteRow | undefined;
 	try {
-		const rows = await querySqliteJson(databasePath, SCHEMA_FORK_SQL, deps.sqlite);
-		const row: SqliteRow | undefined = rows[0];
-		const migrated = typeof row?.migrated === 'number' ? row.migrated : 0;
-		const v2Rows = typeof row?.v2_rows === 'number' ? row.v2_rows : 0;
-		const registryRows = typeof row?.registry_v2_rows === 'number' ? row.registry_v2_rows : 0;
-		const diverged = migrated > 0 || v2Rows > 0;
-		return { diverged, registry: diverged && registryRows > 0 ? 'session_v2' : 'session' };
+		shape = (await querySqliteJson(databasePath, SCHEMA_FORK_SHAPE_SQL, deps.sqlite))[0];
 	} catch {
-		return { diverged: true, registry: 'session' };
+		return failed;
+	}
+	if (!shape) return failed;
+	const forkShape: NativeForkShape = {
+		migrationTable: (toOptionalNumber(shape.migration_table) ?? 0) > 0,
+		messageTable: (toOptionalNumber(shape.message_table) ?? 0) > 0,
+		registryColumns: toOptionalNumber(shape.registry_columns) === V2_REGISTRY_COLUMNS.length,
+	};
+	if (!forkShape.migrationTable && !forkShape.messageTable && !forkShape.registryColumns) {
+		return { diverged: false, registry: 'session', registryReady: false };
+	}
+	try {
+		const row: SqliteRow | undefined = (await querySqliteJson(databasePath, buildForkEvidenceSql(forkShape), deps.sqlite))[0];
+		const migrated = toOptionalNumber(row?.migrated) ?? 0;
+		const v2Rows = toOptionalNumber(row?.v2_rows) ?? 0;
+		const registryRows = toOptionalNumber(row?.registry_v2_rows) ?? 0;
+		// The v2 registry is only worth reading when everything the v2 listing
+		// needs is there: the columns it selects, the `session_message` events the
+		// sessions it lists are made of, and rows of its own. An empty registry
+		// would answer "no sessions" to a database whose sessions are all legacy.
+		const registryReady = forkShape.registryColumns && forkShape.messageTable && registryRows > 0;
+		return { diverged: migrated > 0 || v2Rows > 0, registryReady, registry: registryReady ? 'session_v2' : 'session' };
+	} catch {
+		return failed;
 	}
 }
 

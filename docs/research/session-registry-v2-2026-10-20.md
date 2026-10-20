@@ -4,6 +4,8 @@
 - 内核：OpenCode `v2.0.28`（本机真实数据库 + `opencode acp` 活体 rig）
 - 范围：`NativeSessionReader` 的 schema 探测、`buildNativeSessionsSqlV2`、`buildNativeSessionSearchSqlV2`、`listNativeSessions`、`searchNativeSessions`
 - 结论：2.0.28 上 `session` 表停更（本机只剩迁移前的 2 行），所有新会话只写 `session_v2`；原生列表与内容搜索从此改读真正承载会话行的注册表
+> 0.2.89 更正：本轮把判定写进了代码，但**它在本机从未生效**。fork 证据读把 `data_migration` 写死在一条静态 SQL 里，而 2.0.28 本机没有这张表（记账表叫 `migration`，50 行）；SQLite 在 prepare 阶段就拒绝引用缺失表，整条证据读抛错，catch 的既定默认把注册表判回 `session`。于是 0.2.83 之后原生历史一直读的是化石——本轮跑插件自己的读管线实测：修复前该 vault 列出 1 条（2026-10-02），修复后 16 条（最新一条写于测量当天下午）。见 `native-compat-gate-anchor-2026-10-20.md`。
+
 
 ## 1. 本轮验收标准
 
