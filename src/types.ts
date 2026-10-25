@@ -7,6 +7,7 @@ export interface SessionMeta {
   nativeDatabasePath?: string;
   sessionId: string;
   cwd?: string;
+  /** Session label as the agent named it; absent when nothing ever named it. */
   title?: string;
   updatedAt?: string;
   /** Line-count summary from the OpenCode native database, when available. */

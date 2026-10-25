@@ -215,8 +215,17 @@ export class SessionDropdown {
 
 		const localIds = new Set(this.sessionStore.list().map((s) => s.sessionId));
 		const native = this.nativeSessions.filter((s) => !localIds.has(s.sessionId));
-		const filteredNative = filter
-			? native.filter((s) => s.title?.toLowerCase().includes(filter.toLowerCase()))
+		// The filter searches what the row is called *and* its id. An untitled
+		// session no longer carries the id in its label, so matching the label alone
+		// would make a session whose only visible identifier is `ses_…` impossible to
+		// find by typing exactly that.
+		const lowered = filter.toLowerCase();
+		const filteredNative = lowered
+			? native.filter(
+					(s) =>
+						(s.title || t().sessionDropdown.untitledSession).toLowerCase().includes(lowered) ||
+						s.sessionId.toLowerCase().includes(lowered),
+				)
 			: native;
 
 		if (this.nativeLoading) {
@@ -249,7 +258,13 @@ export class SessionDropdown {
 			const it = nativeList.createDiv({
 				cls: `co-ober-session-item co-ober-session-native${s.sessionId === currentId ? ' active' : ''}`,
 			});
-			it.createSpan({ text: s.title || s.sessionId, cls: 'session-label' });
+			it.createSpan({ text: s.title || t().sessionDropdown.untitledSession, cls: 'session-label' });
+			// A session the kernel never named has no label to show: measured on
+			// 2.0.28, 3 of the 21 rows the registry lists carry a null title. The key
+			// stays on the row as the hover text because it is what OpenCode's own
+			// session list prints beside the same words, and the only thing that tells
+			// two untitled sessions apart.
+			if (!s.title) it.setAttribute('title', s.sessionId);
 			const summary = nativeSummaryText(s);
 			if (summary) it.createSpan({ cls: 'session-summary', text: summary });
 			if (s.updatedAt) {
@@ -331,7 +346,8 @@ export class SessionDropdown {
 			const it = list.createDiv({
 				cls: `co-ober-session-item co-ober-session-content${s.sessionId === currentId ? ' active' : ''}`,
 			});
-			it.createSpan({ text: s.title || s.sessionId, cls: 'session-label' });
+			it.createSpan({ text: s.title || t().sessionDropdown.untitledSession, cls: 'session-label' });
+			if (!s.title) it.setAttribute('title', s.sessionId);
 			if (s.updatedAt) it.createSpan({ cls: 'session-time', text: this.formatSessionDate(s.updatedAt) });
 			if (s.snippet) it.createDiv({ cls: 'session-snippet', text: s.snippet.trim() });
 			it.onclick = () => {

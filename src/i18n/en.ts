@@ -25,6 +25,7 @@ const en = {
     nativeSection: 'OpenCode sessions',
     loadingNative: 'Loading OpenCode sessions…',
     nativeError: 'Native sessions unavailable (see console)',
+    untitledSession: 'Untitled session',
     contentSection: 'Content matches',
     contentError: 'Content search failed (see console)',
     actionFailed: 'Session action failed: {error}',

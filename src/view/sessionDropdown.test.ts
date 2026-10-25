@@ -3,7 +3,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { Notice } from '../test/obsidianMock';
 import { SessionDropdown, nativeSummaryText } from './sessionDropdown';
 import { installObsidianDomHelpers } from '../test/domHelpers';
-import { setLocale } from '../i18n/index';
+import { setLocale, t } from '../i18n/index';
 
 installObsidianDomHelpers();
 
@@ -595,6 +595,68 @@ describe('SessionDropdown', () => {
       dd.destroy();
     });
 
+    it('labels an untitled native session instead of printing its key', async () => {
+      const dd = makeDropdown(async () => [{ sessionId: 'ses_ec5edc66effevS', updatedAt: '2026-08-22T03:39:57.497Z' }]);
+      dd.open();
+      await new Promise((r) => setTimeout(r, 10));
+      const item = container.querySelector('.co-ober-session-native') as HTMLElement;
+      expect(item.querySelector('.session-label')?.textContent).toBe(t().sessionDropdown.untitledSession);
+      // OpenCode's own list prints this key beside the same words, and it is the
+      // only thing that tells two untitled sessions apart, so the row keeps it as
+      // hover text rather than losing it with the label.
+      expect(item.getAttribute('title')).toBe('ses_ec5edc66effevS');
+      dd.destroy();
+    });
+
+    it('re-speaks an untitled row when the language changes', async () => {
+      const loader = vi.fn(async () => [{ sessionId: 'ses_ec5edc66effevS' }]);
+      const dd = makeDropdown(loader);
+      dd.open();
+      await new Promise((r) => setTimeout(r, 10));
+      expect(container.querySelector('.co-ober-session-native .session-label')?.textContent).toBe('Untitled session');
+
+      // The row is built from the loader's facts at draw time, so a locale switch
+      // between openings must re-speak the label the reader left unsaid. A wording
+      // baked into the cached native list would stay English over a Chinese UI, the
+      // bug the tab strip was fixed for.
+      dd.close();
+      setLocale('zh');
+      dd.open();
+      await new Promise((r) => setTimeout(r, 10));
+      expect(container.querySelector('.co-ober-session-native .session-label')?.textContent).toBe('未命名会话');
+      setLocale('en');
+      dd.destroy();
+    });
+
+    it('still finds an untitled session by the key its label no longer shows', async () => {
+      const dd = makeDropdown(async () => [
+        { sessionId: 'ses_ec5edc66effevS' },
+        { sessionId: 'ses_native_1', title: 'Terminal chat' },
+      ]);
+      dd.open();
+      await new Promise((r) => setTimeout(r, 10));
+      const search = container.querySelector('.co-ober-session-search') as HTMLInputElement;
+      search.value = 'ses_ec5';
+      search.dispatchEvent(new Event('input'));
+      await new Promise((r) => setTimeout(r, 10));
+
+      // The filter searched the label alone, which used to be the key. Dropping the
+      // key out of the label without widening the match would make a session whose
+      // only visible identifier is `ses_…` unfindable by typing exactly that.
+      const shown = container.querySelectorAll('.co-ober-session-native');
+      expect(shown.length).toBe(1);
+      expect(shown[0].getAttribute('title')).toBe('ses_ec5edc66effevS');
+
+      search.value = 'terminal';
+      search.dispatchEvent(new Event('input'));
+      await new Promise((r) => setTimeout(r, 10));
+      const kept = container.querySelectorAll('.co-ober-session-native');
+      expect(kept.length).toBe(1);
+      expect(kept[0].querySelector('.session-label')?.textContent).toBe('Terminal chat');
+      expect(kept[0].hasAttribute('title')).toBe(false);
+      dd.destroy();
+    });
+
     it('switches to native session with opencode source', async () => {
       const dd = makeDropdown(async () => [{ sessionId: 'ses_native_1', title: 'Terminal chat', nativeDatabasePath: '/listed/opencode.db' }]);
       dd.open();
@@ -844,6 +906,20 @@ describe('SessionDropdown', () => {
       const item = section?.querySelector('.co-ober-session-content');
       expect(item?.querySelector('.session-label')?.textContent).toBe('Deep chat');
       expect(item?.querySelector('.session-snippet')?.textContent).toBe('…talks about foobar somewhere…');
+      dd.destroy();
+    });
+
+    it('words an untitled content match instead of printing its key', async () => {
+      const searcher = vi.fn(async () => [{ sessionId: 'ses_deep_1', snippet: 'talks about foobar' }]);
+      const dd = makeContentDropdown(searcher);
+      typeQuery(dd, 'foo');
+      await new Promise((r) => setTimeout(r, 10));
+
+      // The content section painted the same key into the same label slot; a hit
+      // found by its text has even less use for an identifier nobody typed.
+      const item = container.querySelector('.co-ober-session-content') as HTMLElement;
+      expect(item.querySelector('.session-label')?.textContent).toBe('Untitled session');
+      expect(item.getAttribute('title')).toBe('ses_deep_1');
       dd.destroy();
     });
 

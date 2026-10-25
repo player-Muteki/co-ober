@@ -139,7 +139,10 @@ describe('listNativeSessions', () => {
 			cwd: '/vault',
 			updatedAt: new Date(1787369997497).toISOString(),
 		});
-		expect(sessions[1].title).toBe('ses_b');
+		// A blank title is not a name and the key is not a substitute for one: the
+		// row carries no title, so the dropdown can say so in its own words.
+		expect(sessions[1]).not.toHaveProperty('title');
+		expect(sessions[1].sessionId).toBe('ses_b');
 	});
 
 	it('reads an unusable time_updated as no time rather than a date', async () => {
@@ -469,7 +472,10 @@ describe('native session content search', () => {
 			updatedAt: new Date(1787369997497).toISOString(),
 			snippet: 'around the term',
 		});
-		expect(sessions[1].title).toBe('ses_b');
+		// A row the kernel never titled carries no title at all. Handing up the
+		// primary key here let the dropdown print `ses_b` where a name goes.
+		expect(sessions[1]).not.toHaveProperty('title');
+		expect(sessions[1].sessionId).toBe('ses_b');
 		expect(sessions[1].snippet).toBeUndefined();
 	});
 
@@ -1290,7 +1296,10 @@ describe('fork evidence against a kernel without data_migration (0.2.89)', () =>
 			// turn, and the kernel never titled the session.
 			const restored = await readNativeSessionTranscript('ses_errored', { databasePath: file });
 			expect(restored.map((m) => m.role)).toEqual(['user']);
-			expect(sessions.find((s) => s.sessionId === 'ses_errored')?.title).toBe('ses_errored');
+			// What the listing hands up for that row is the absence of a name, not
+			// its primary key: the dropdown is the one that says so, in the language
+			// the interface is currently speaking.
+			expect(sessions.find((s) => s.sessionId === 'ses_errored')).not.toHaveProperty('title');
 			warn.mockRestore();
 		});
 
@@ -1299,6 +1308,10 @@ describe('fork evidence against a kernel without data_migration (0.2.89)', () =>
 			const file = writeFixture('shell-search', [SESSION_V2, SESSION_MESSAGE, ERRORED, ERRORED_USER_EVENT, SHELL, SHELL_AGENT_EVENT]);
 			const found = await searchNativeSessions('/vault', '范式', { databasePath: file });
 			expect(found.map((s) => s.sessionId)).toEqual(['ses_errored']);
+			// The search half of the dropdown reads the same field, so an untitled
+			// hit loses the key there too and keeps only what it actually matched.
+			expect(found[0]).not.toHaveProperty('title');
+			expect(found[0].snippet).toBeTruthy();
 			warn.mockRestore();
 		});
 

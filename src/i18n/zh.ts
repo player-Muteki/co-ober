@@ -27,6 +27,7 @@ const zh: Locale = {
     nativeSection: 'OpenCode 会话',
     loadingNative: '正在加载 OpenCode 会话…',
     nativeError: '原生会话读取失败（详见控制台）',
+    untitledSession: '未命名会话',
     contentSection: '内容匹配',
     contentError: '内容搜索失败（详见控制台）',
     actionFailed: '会话操作失败：{error}',

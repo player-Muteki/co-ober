@@ -329,13 +329,15 @@ const V2_TIME_UPDATED_EXPR = [
  * The same gate also hides a registry row nobody ever spoke into. Rig-measured
  * on 2.0.28: `session/new` writes the row and nothing else — no title, no
  * agent, no model, and zero `session_message` events — so an abandoned tab
- * leaves a session the history dropdown labels with the raw `ses_…` id and
- * restoring opens an empty pane. (The one such row in the user's own database
+ * leaves a session the history dropdown would have labelled with the raw
+ * `ses_…` id and that restoring opens an empty pane. (The one such row in the
+ * user's own database
  * additionally carries an `agent-switched` event, so something wrote its agent
  * after creation; a bare new session does not even have that.) A row with at
  * least one `user` event stays even when the turn failed: two such rows here
  * hold the prompt the user actually typed and only lack a title because the
- * kernel never titles an errored session.
+ * kernel never titles an errored session — those two arrive with no `title`,
+ * which the dropdown words as an untitled session rather than as a key.
  */
 function v2RegistryWhere(registry: NativeSessionRegistry): string {
 	if (registry !== 'session_v2') return 'where s.parent_id is null and s.time_archived is null';
@@ -1007,9 +1009,15 @@ export async function listNativeSessions(cwd: string, deps: NativeSessionReaderD
 		const meta: SessionMeta = {
 			sessionId,
 			nativeDatabasePath: databasePath,
-			title: typeof row.title === 'string' && row.title.trim() ? row.title : sessionId,
 			cwd: typeof row.directory === 'string' ? row.directory : undefined,
 		};
+		// A row the kernel never titled gets no label from this reader. Handing up
+		// the primary key as a name made the dropdown print `ses_…` in the slot the
+		// conversation's own title occupies; the fact this reader actually has is
+		// that there is no title, so that is what it reports and the row says it in
+		// whatever words the interface is speaking.
+		const title = typeof row.title === 'string' ? row.title.trim() : '';
+		if (title) meta.title = title;
 		if (updatedAt !== undefined) meta.updatedAt = updatedAt;
 		if (additions !== undefined) meta.additions = additions;
 		if (deletions !== undefined) meta.deletions = deletions;
@@ -1083,10 +1091,11 @@ export async function searchNativeSessions(cwd: string, query: string, deps: Nat
 		const meta: SessionMeta = {
 			sessionId,
 			nativeDatabasePath: databasePath,
-			title: typeof row.title === 'string' && row.title.trim() ? row.title : sessionId,
 			cwd: typeof row.directory === 'string' ? row.directory : undefined,
 			updatedAt: toIsoString(row.time_updated),
 		};
+		const title = typeof row.title === 'string' ? row.title.trim() : '';
+		if (title) meta.title = title;
 		if (typeof row.snippet === 'string' && row.snippet.trim()) meta.snippet = row.snippet.trim();
 		sessions.push(meta);
 	}
